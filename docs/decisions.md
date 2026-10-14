@@ -299,3 +299,50 @@ throughput.
 
 **Cost if wrong.** The writer loop is a serial bottleneck inside the engine; its batch size and latency are metrics
 and part of the scale benchmark.
+
+## D27. Worker nodes are authorised per request (2026-10-14)
+
+**Decision.** A node's certificate carries only its id. Its scope (pipelines, allowed labels) is copied from its join
+token into its record and checked on every request. A node may advertise only allowed labels, leases only deliveries
+of granted pipelines, and fetches packages and artifacts only for deliveries it holds. Revocation expires its leases
+at once.
+
+**Evidence.** Self-reported labels let a compromised node attract deliveries meant for a restricted site, and fetches
+by hash would otherwise expose any pipeline's packages and artifacts to any certified node.
+
+**Cost if wrong.** Every node request costs a lookup of the node's record, cached in the active engine.
+
+## D28. Proposal patches are confined and published by hash (2026-10-14)
+
+**Decision.** A proposal's patch may touch only the package paths its kind allows. The publish action runs in its
+own container with only forge credentials, never builds or runs candidate code, disables git hooks, and publishes
+only the patch whose hash was validated.
+
+**Evidence.** Patches are drafted by an agent that read crawled, untrusted data; an injected instruction could add
+CI workflows or build files that run with repository secrets as soon as a branch is pushed, or candidate code could
+read forge credentials if they shared an environment.
+
+**Cost if wrong.** Some legitimate improvements (a helper file next to an action, a CI tweak) must be made by hand.
+
+## D29. Acceptance is conditional on the base revision (2026-10-14)
+
+**Decision.** Accepting a proposal succeeds only if its base revision is still active, in one writer transaction
+that also marks overlapping open proposals stale. On git routes, applied revisions are matched to proposals by commit
+trailer, and a proposal merged onto another base triggers evals and a backtest of the new revision.
+
+**Evidence.** Two proposals validated on the same base could otherwise be combined without ever being validated
+together, and a pull request may merge after other commits.
+
+**Cost if wrong.** Busy pipelines see more stale proposals and revalidation runs, charged to the improve budget.
+
+## D30. Static schema checking covers a defined subset (2026-10-14)
+
+**Decision.** `check` proves compatibility within a stated subset of JSON Schema 2020-12 (types with `null`,
+properties and required, single-schema items, enum and const, allOf, local `$ref`), requires producers to require
+what consumers require, reports every construct outside the subset as not statically checked, and refuses remote
+`$ref`.
+
+**Evidence.** The previous rule let an optional producer property satisfy a required consumer property, the most
+common real mismatch, and left unions, references and arrays to each implementer's guess.
+
+**Cost if wrong.** Schemas using unions get only runtime validation for those parts; the warnings make that visible.
