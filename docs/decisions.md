@@ -400,3 +400,17 @@ user-chosen identifiers (pipeline, step, stream, trigger names) keep their own g
 public JSON APIs, so clients map keys to fields without renaming.
 
 **Cost if wrong.** None before release; changing it later would break every protocol client.
+
+## D35. One naming rule for keys and values (2026-10-14)
+
+**Decision.** Extends D34. Keys Millstream defines in YAML (pipeline file, action manifests, environment file,
+lessons) and its multi-word enum and state values (`awaitingReview`, `completedWithErrors`, `slowStep`) are
+lowerCamelCase, acronyms written as words (`maxCostUsd`). Metric names, log-store tables and columns, CLI flags,
+environment variables and user-chosen names keep their own conventions. Names used in earlier entries of this log
+are as they were when written.
+
+**Evidence.** `config:` blocks are passed to actions as JSON and validated by JSON Schema, and CEL reads JSON
+payloads, so any other YAML convention would mix two styles in every pipeline file. Kubernetes manifests have made
+camelCase YAML familiar to the engineers who write pipelines.
+
+**Cost if wrong.** Slightly less readable YAML than snake_case; none to change before release.
