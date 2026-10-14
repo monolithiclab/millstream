@@ -5,7 +5,8 @@ Parked ideas and follow-ups. Committed scope and milestones are in the
 
 ## Before implementation
 
-- Choose the final product name; check trademarks, the GitHub organisation name and domains.
+- Choose the final product name: shortlist and availability in
+  [the naming note](docs/research/2026-10-14-naming.md); trademark search before renaming.
 - Create the `monolithiclab/strand` remote and a CI workflow running `make ci`.
 
 ## After v1
