@@ -359,3 +359,17 @@ together, and validation, lineage, metrics and schemas treat trigger items like 
 
 **Cost if wrong.** `in: trigger.daily` reads less directly than `on: daily`, and the engine must still treat trigger
 streams as run roots, enforced by `check`.
+
+## D32. Collect is one builtin that emits an artifact (2026-10-14)
+
+**Decision.** `collect` is the only way to gather a run's items. It is a builtin run by the engine: when the run's
+barrier closes, it streams the items into a JSON Lines artifact and emits one item referencing it, read by an
+ordinary map action downstream. The `mode` step key, the collect messages of the action protocol (`begin`, `end`,
+items without a delivery) and the SDK's `Collect` are removed. Its parameters, like every builtin's, live under
+`config`; output streams are declared only in `out`.
+
+**Evidence.** Two mechanisms (`mode: collect` on any action and a `collect` builtin emitting `{items: [...]}`)
+duplicated one concept, let a step pair a mode with an action that could not run in it, and put a whole run inside
+one payload, contradicting the paging guarantee.
+
+**Cost if wrong.** A run's items are copied into the artifact store, and aggregation takes two steps instead of one.

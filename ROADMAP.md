@@ -17,6 +17,7 @@ Parked ideas and follow-ups. Committed scope and milestones are in the
 - Federation of independent instances with their own stores, for data residency.
 - Streams shared across pipelines.
 - Python SDK.
+- `collect` grouped by key or by time window, beyond one batch per run (D32).
 - Vault and Kubernetes secret sources.
 - NATS JetStream store for high-throughput deployments (D2).
 - Alerting rules in the engine (v1 relies on Prometheus alerting).
