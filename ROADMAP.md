@@ -5,9 +5,9 @@ Parked ideas and follow-ups. Committed scope and milestones are in the
 
 ## Before implementation
 
-- Choose the final product name: shortlist and availability in
-  [the naming note](docs/research/2026-10-14-naming.md); trademark search before renaming.
-- Create the `monolithiclab/strand` remote and a CI workflow running `make ci`.
+- Trademark search for Millstream (INPI, EUIPO, UKIPO, USPTO; classes 9 and 42), then register `millstream.dev` and
+  `getmillstream.com`; see [the naming note](docs/research/2026-10-14-naming.md).
+- Create the `monolithiclab/millstream` remote and a CI workflow running `make ci`.
 
 ## After v1
 

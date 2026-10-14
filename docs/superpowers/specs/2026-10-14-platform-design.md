@@ -1,8 +1,9 @@
-# Strand: platform design
+# Millstream: platform design
 
-Date: 2026-10-14. Status: draft for review. Working name: Strand.
+Date: 2026-10-14. Status: draft for review. Name chosen in
+[the naming note](../../research/2026-10-14-naming.md), pending a trademark search.
 
-Strand is a pipeline platform for processing work that mixes code, LLM agents and human decisions. A pipeline is
+Millstream is a pipeline platform for processing work that mixes code, LLM agents and human decisions. A pipeline is
 a graph of actions connected by persisted streams of items. It runs on a laptop with one binary, and unchanged on a
 VPS or a Kubernetes cluster. Every pipeline is instrumented by default.
 
@@ -20,7 +21,7 @@ Built ad hoc, each project re-implements scheduling, fan-out, retries, error col
 see what happened. The result can't be reused at the next customer, and nobody can answer "how many listings did we
 score yesterday, what did it cost, and which ones failed?" without reading logs.
 
-### 1.2 What Strand is
+### 1.2 What Millstream is
 
 - **A standard way to define pipelines:** a declarative file describing triggers, streams and steps, validated
   before it runs.
@@ -48,7 +49,7 @@ Later, a deduplication step is inserted between crawling and scoring without tou
 
 ### 1.4 Success criteria
 
-- The reference pipeline runs end to end on a laptop with `strand run`, with no service to install.
+- The reference pipeline runs end to end on a laptop with `millstream run`, with no service to install.
 - Killing the engine or any worker at any point loses no item and duplicates no item downstream.
 - Inserting a step is a change of a few lines in the pipeline file, and past items can be replayed through it.
 - For any pipeline, the UI answers: what is running now, how many items went through each step, what failed and
@@ -72,7 +73,7 @@ Later, a deduplication step is inserted between crawling and scoring without tou
 
 - A graphical pipeline editor. The pipeline file in git is the source of truth (D7).
 - Multi-tenant SaaS. Each customer gets their own deployment (D6).
-- Exactly-once side effects on external systems. Strand passes an idempotency key; the external system enforces it.
+- Exactly-once side effects on external systems. Millstream passes an idempotency key; the external system enforces it.
 - High availability of the engine. One engine is active per deployment; leader election on Postgres comes later.
 - Sub-second, high-throughput stream processing. The design target is 1,000 items per second per engine on
   Postgres and 300 on SQLite, far above what agent steps need.
@@ -223,7 +224,7 @@ implementation.
 - **Item expressions.** Builtins (`filter`, `route`, `dedupe`) evaluate CEL per item over `item`, `vars` and `run`.
   `item` is the payload; `envelope` gives `id`, `key`, `ts` and `attempt`.
 - Action config never depends on `item`: the same config applies to every item of a run.
-- Every expression is compiled and type-checked by `strand check`. Evaluation has a cost limit; exceeding it fails
+- Every expression is compiled and type-checked by `millstream check`. Evaluation has a cost limit; exceeding it fails
   the item as non-retryable.
 
 The CEL context:
@@ -250,7 +251,7 @@ Secrets:
 | Kind | Definition | Run input |
 | --- | --- | --- |
 | `cron` | `{cron: "<5-field spec>", tz: <IANA zone>}` | `{trigger, scheduled_at}` |
-| `manual` | `{manual: {}}`, optional `input_schema` | The input given by `strand trigger` or the UI, validated |
+| `manual` | `{manual: {}}`, optional `input_schema` | The input given by `millstream trigger` or the UI, validated |
 | `webhook` | `{webhook: {path: /hooks/x}, input_schema}` | The request body, validated; authenticated by a per-trigger token |
 
 Firing a trigger creates a run and one **trigger item** whose id is derived from the trigger name and the scheduled
@@ -276,7 +277,7 @@ threshold is visible in the pipeline file.
 
 ### 4.8 Validation
 
-`strand check` runs before every `run`, `serve` reload and `apply`, and fails on:
+`millstream check` runs before every `run`, `serve` reload and `apply`, and fails on:
 
 - unknown actions, triggers or streams, or steps with neither or both of `on` and `in`;
 - cycles in the step graph;
@@ -290,7 +291,7 @@ threshold is visible in the pipeline file.
 - an agent step that can reach a step whose action declares `effects: external` without a `review` or `filter`
   step in between (warning; section 14.4).
 
-`strand graph` prints the resolved graph as Mermaid or DOT.
+`millstream graph` prints the resolved graph as Mermaid or DOT.
 
 ## 5. Execution model
 
@@ -394,7 +395,7 @@ timeout.
   revision is applied. Removed steps stop receiving deliveries; their pending deliveries are dropped and counted.
   Changed steps (action, config) apply to deliveries dispatched after the change.
 - **Replay** creates new deliveries, at a new generation, for a selection of items on a step:
-  `strand replay --step score --since 7d`, `--from dlq`, `--run <id>`, `--where '<CEL>'`. This is how a newly
+  `millstream replay --step score --since 7d`, `--from dlq`, `--run <id>`, `--where '<CEL>'`. This is how a newly
   inserted `dedupe` step is back-filled, and how last week's listings are re-scored with a new prompt.
 - Replays are recorded as runs of kind `replay`, so their cost and results are tracked like any other run.
 
@@ -434,7 +435,7 @@ runtime:
     max_cost_usd: 0.50
 ```
 
-Schemas are JSON Schema 2020-12. `effects: external` declares that the action changes something outside Strand
+Schemas are JSON Schema 2020-12. `effects: external` declares that the action changes something outside Millstream
 (sends email, writes to a CRM); it drives the safety check in section 4.8 and the idempotency key in section 6.3.
 
 ### 6.2 References and resolution
@@ -445,9 +446,9 @@ Schemas are JSON Schema 2020-12. `effects: external` declares that the action ch
 | Registry | `lab/score-listing@2` | An OCI artifact; `@2` is a semver range, resolved to an exact version and digest |
 | Builtin | `filter` | Compiled into the engine |
 
-`strand lock` writes `strand.lock` next to the pipeline with each reference's exact version and digest; `run` and
-`apply` use the lock and refuse a digest mismatch. The registry namespace maps to an OCI registry in the
-environment file (`lab` → `ghcr.io/monolithiclab/strand-actions`).
+`millstream lock` writes `millstream.lock` next to the pipeline with each reference's exact version and digest;
+`run` and `apply` use the lock and refuse a digest mismatch. The registry namespace maps to an OCI registry in the
+environment file (`lab` → `ghcr.io/monolithiclab/millstream-actions`).
 
 ### 6.3 The action protocol
 
@@ -479,7 +480,7 @@ Action to engine:
 - A long-lived worker handles one delivery at a time; concurrency comes from running several workers. This keeps
   actions simple to write.
 - Artifacts are files written under the working directory the engine gives the worker
-  (`STRAND_WORKDIR`); the engine moves them to the artifact store on `emit`. Input artifacts are materialised in the
+  (`MILLSTREAM_WORKDIR`); the engine moves them to the artifact store on `emit`. Input artifacts are materialised in the
   same directory before the `item` message.
 - `idempotency_key` is `hash(step, item id, generation)`: stable across retries, new on replay.
 - A protocol violation (malformed line, `done` for an unknown delivery) kills the worker; the delivery is retried.
@@ -493,10 +494,10 @@ Action to engine:
 | `agent` | The agent adapter in a sandbox container (section 7) | Same, as a pod |
 | builtins, `review` | In the engine | In the engine |
 
-On Kubernetes the engine cannot attach to a pod's stdio. Each worker pod runs `strand worker` as its entrypoint: an
-init container copies the static `strand` binary into a shared volume, and `strand worker` starts the action's own
-command as a child, speaks the stdio protocol to it, and relays it to the engine over an authenticated HTTP/2
-stream. Action images need no change.
+On Kubernetes the engine cannot attach to a pod's stdio. Each worker pod runs `millstream worker` as its entrypoint:
+an init container copies the static `millstream` binary into a shared volume, and `millstream worker` starts the
+action's own command as a child, speaks the stdio protocol to it, and relays it to the engine over an authenticated
+HTTP/2 stream. Action images need no change.
 
 ### 6.5 Worker lifecycle and memory
 
@@ -517,14 +518,14 @@ SDKs are thin wrappers over the protocol; writing an action without one is suppo
 
 ```go
 func main() {
-    strand.Map(func(ctx strand.Context, in Listing) ([]Priced, error) {
+    millstream.Map(func(ctx millstream.Context, in Listing) ([]Priced, error) {
         ctx.Metric("works_estimate_eur", float64(estimate))
         return []Priced{price(in, ctx.Config())}, nil
     })
 }
 ```
 
-- Go SDK in v1 (`strand.Map`, `strand.MapKeyed` for multi-emit with keys, `strand.Collect`), with schema
+- Go SDK in v1 (`millstream.Map`, `millstream.MapKeyed` for multi-emit with keys, `millstream.Collect`), with schema
   generation from Go types.
 - Python SDK after v1.
 
@@ -532,7 +533,7 @@ func main() {
 
 ### 7.1 Harness-agnostic adapter
 
-An agent action is run by the **agent adapter**, a program shipped with Strand that speaks the action protocol on
+An agent action is run by the **agent adapter**, a program shipped with Millstream that speaks the action protocol on
 one side and drives an LLM harness on the other (D4). The engine never knows which model ran.
 
 | Harness | How it runs |
@@ -568,7 +569,7 @@ logged at every start.
 ### 7.4 Evals
 
 Each agent action may ship an `evals/` directory of cases: an input, and assertions on the output (CEL over the
-output, or an LLM judge with a rubric). `strand eval <action>` runs them, reports a score per case, and stores the
+output, or an LLM judge with a rubric). `millstream eval <action>` runs them, reports a score per case, and stores the
 result as metrics so prompt and model changes are compared before they ship. Record/replay of harness calls keeps
 eval and test runs deterministic in CI (section 15).
 
@@ -593,7 +594,7 @@ eval and test runs deterministic in CI (section 15).
 
 - **Approve** emits the payload, as edited, to `out`. **Reject** marks the delivery `filtered` with the reviewer's
   reason. Every decision records who, when, the reason and the diff of any edit.
-- Reviews are made from the web inbox, `strand inbox`, or the signed notification links.
+- Reviews are made from the web inbox, `millstream inbox`, or the signed notification links.
 - Metrics: decisions by outcome, time to decision, edit rate, and **intervention rate** (reviewed items over items
   reaching the step), per step and per pipeline.
 
@@ -629,7 +630,7 @@ hash.
 
 - Retention is set per stream (payloads and artifacts), and globally for events, logs and rollups. Expired payloads
   are replaced by a tombstone; envelopes and lineage stay, so counts and lineage remain correct.
-- `strand purge --key <key>` (or `--item`) erases an item, its descendants, their artifacts and logs, for GDPR
+- `millstream purge --key <key>` (or `--item`) erases an item, its descendants, their artifacts and logs, for GDPR
   erasure requests, and records a purge event without the erased data.
 
 ## 10. Observability
@@ -676,7 +677,7 @@ A versioned REST API (`/api/v1`) with a published OpenAPI document. The UI and t
 
 ### 11.2 Web UI
 
-A React and TypeScript single-page application, built with Vite and embedded in the binary (`go:embed`); `strand
+A React and TypeScript single-page application, built with Vite and embedded in the binary (`go:embed`); `millstream
 run` serves it on localhost. Graphs use React Flow; time series use uPlot. The UI is localised in English and
 French from the first commit and meets WCAG 2.2 AA.
 
@@ -699,34 +700,34 @@ their files.
 
 | Command | Purpose |
 | --- | --- |
-| `strand init pipeline \| action <name>` | Scaffold a pipeline or an action (Go or raw protocol) |
-| `strand check [file]` | Validate (section 4.8) |
-| `strand graph [file]` | Print the graph as Mermaid or DOT |
-| `strand run [file…]` | Run locally: engine, SQLite, UI on localhost; `--var`, `--once` (one run then exit) |
-| `strand serve` | Run the engine as a server from the environment file |
-| `strand apply <file…>` | Push a revision to a running engine |
-| `strand trigger <pipeline> <trigger>` | Fire a manual trigger |
-| `strand status`, `strand tail` | Pipelines and runs; live tail of events and logs |
-| `strand replay` | Section 5.7 |
-| `strand inbox` | List and decide reviews |
-| `strand lock` | Write `strand.lock` |
-| `strand test action \| pipeline` | Section 15 |
-| `strand eval <action>` | Section 7.4 |
-| `strand purge` | Section 9.3 |
-| `strand worker` | Remote worker entrypoint (section 6.4) |
+| `millstream init pipeline \| action <name>` | Scaffold a pipeline or an action (Go or raw protocol) |
+| `millstream check [file]` | Validate (section 4.8) |
+| `millstream graph [file]` | Print the graph as Mermaid or DOT |
+| `millstream run [file…]` | Run locally: engine, SQLite, UI on localhost; `--var`, `--once` (one run then exit) |
+| `millstream serve` | Run the engine as a server from the environment file |
+| `millstream apply <file…>` | Push a revision to a running engine |
+| `millstream trigger <pipeline> <trigger>` | Fire a manual trigger |
+| `millstream status`, `millstream tail` | Pipelines and runs; live tail of events and logs |
+| `millstream replay` | Section 5.7 |
+| `millstream inbox` | List and decide reviews |
+| `millstream lock` | Write `millstream.lock` |
+| `millstream test action \| pipeline` | Section 15 |
+| `millstream eval <action>` | Section 7.4 |
+| `millstream purge` | Section 9.3 |
+| `millstream worker` | Remote worker entrypoint (section 6.4) |
 
 ## 13. Deployment
 
-The pipeline file is identical everywhere; the **environment file** `strand.yaml` describes where it runs:
+The pipeline file is identical everywhere; the **environment file** `millstream.yaml` describes where it runs:
 
 ```yaml
-store: { postgres: { dsn: { env: STRAND_DSN } } }    # or { sqlite: { path: .strand/strand.db } }
-artifacts: { s3: { bucket: strand-artifacts, endpoint: https://s3.fr-par.scw.cloud } }
+store: { postgres: { dsn: { env: MILLSTREAM_DSN } } }    # or { sqlite: { path: .millstream/millstream.db } }
+artifacts: { s3: { bucket: millstream-artifacts, endpoint: https://s3.fr-par.scw.cloud } }
 runtime: { container: docker }                       # docker | podman | kubernetes
 listen: 127.0.0.1:7070
-auth: { token: { env: STRAND_TOKEN } }
+auth: { token: { env: MILLSTREAM_TOKEN } }
 workers: { max: 32 }
-registries: { lab: ghcr.io/monolithiclab/strand-actions }
+registries: { lab: ghcr.io/monolithiclab/millstream-actions }
 vars_overlay: vars.prod.yaml
 retention: { events: 90d, logs: 30d, rollups: 400d }
 prices: { claude-sonnet-5-5: { in_per_mtok: 3, out_per_mtok: 15 } }
@@ -734,9 +735,9 @@ prices: { claude-sonnet-5-5: { in_per_mtok: 3, out_per_mtok: 15 } }
 
 | Target | Store | Workers | Packaging |
 | --- | --- | --- | --- |
-| Laptop | SQLite | Child processes, local Docker | `strand run`, defaults without an environment file |
+| Laptop | SQLite | Child processes, local Docker | `millstream run`, defaults without an environment file |
 | VPS | Postgres | Docker | Docker Compose file or systemd unit, shipped in the repo |
-| Kubernetes | Postgres | Pods with `strand worker` | Helm chart: engine Deployment (one replica), RBAC to create worker pods |
+| Kubernetes | Postgres | Pods with `millstream worker` | Helm chart: engine Deployment (one replica), RBAC to create worker pods |
 
 ## 14. Security
 
@@ -764,12 +765,12 @@ Crawled pages and documents reach agents, so agent output is treated as untruste
 - it is validated against the output schema before it goes anywhere;
 - an agent gets only the tools, MCP servers and network destinations its manifest declares, and no secrets beyond
   its config;
-- `strand check` warns when agent output can reach an `effects: external` step with no `review` or `filter`
+- `millstream check` warns when agent output can reach an `effects: external` step with no `review` or `filter`
   between them.
 
 ### 14.5 Supply chain
 
-Registry actions are pinned by digest in `strand.lock`. Catalog actions are signed with cosign; the engine verifies
+Registry actions are pinned by digest in `millstream.lock`. Catalog actions are signed with cosign; the engine verifies
 signatures on pull when `registries.<name>.verify` is set.
 
 ### 14.6 Personal data
@@ -788,10 +789,10 @@ Testing is planned from the first commit and gated by `make ci`, which includes 
 | Delivery state machine | Property tests: random sequences of emit, done, error, crash, lease expiry, replay; invariants checked after each |
 | Log store | The same suite against SQLite and Postgres (testcontainers) |
 | Crash safety | Seeded runs of the reference pipeline with stub actions; `kill -9` of the engine and workers at random points; assert no item lost and none duplicated downstream |
-| Action protocol | Conformance suite runnable against any action (`strand test action --conformance`) |
-| Actions | `strand test action`: fixture inputs against golden outputs |
-| Agent actions | Record/replay of harness calls in CI; `strand eval` for quality, run on demand and before releases |
-| Pipelines | `strand test pipeline`: the graph with stubbed actions on in-memory SQLite, assertions on stream contents |
+| Action protocol | Conformance suite runnable against any action (`millstream test action --conformance`) |
+| Actions | `millstream test action`: fixture inputs against golden outputs |
+| Agent actions | Record/replay of harness calls in CI; `millstream eval` for quality, run on demand and before releases |
+| Pipelines | `millstream test pipeline`: the graph with stubbed actions on in-memory SQLite, assertions on stream contents |
 | Reference pipeline | End to end in CI with stub crawlers and a recorded agent |
 | API | Contract tests against the OpenAPI document |
 | UI | Vitest for components; Playwright end to end against a seeded engine, including the live SSE view; axe accessibility checks; a check that every string exists in English and French |
@@ -804,7 +805,7 @@ Testing is planned from the first commit and gated by `make ci`, which includes 
 | Open-source core | Apache-2.0 | Engine, CLI, Go SDK, builtins, agent adapter, the whole web UI (single user, token auth), Helm chart, protocol specification |
 | Commercial | Commercial licence, separate repository | OIDC/SSO, RBAC per pipeline and inbox, audit export; a catalog of production actions and connectors (crawlers, CRM and ERP connectors, document generation, agent templates per vertical); a fleet control plane across customer deployments (inventory, upgrades, health); support |
 
-The UI is in the core because it is what makes engineers adopt Strand and what makes it convincing to a customer.
+The UI is in the core because it is what makes engineers adopt Millstream and what makes it convincing to a customer.
 Organisations pay for identity, governance, connectors and support (D11).
 
 Distribution: release binaries and a Homebrew formula (goreleaser), a container image, the Helm chart, and actions
@@ -827,7 +828,7 @@ CLI and deployment guides.
 Repository layout:
 
 ```text
-cmd/strand/            CLI entrypoint
+cmd/millstream/            CLI entrypoint
 internal/pipeline/     file parsing, interpolation, validation, graph
 internal/expr/         CEL environment
 internal/store/        log store interface; sqlite/ and postgres/
@@ -852,14 +853,14 @@ examples/property-sourcing/   the reference pipeline and its stub actions
 | M2 | Builtins, `collect` mode, agent adapter (`claude-code` and `api` with Anthropic, Mistral and OpenAI-compatible endpoints), transcripts, budgets, evals, metric rollups, replay, artifacts | Scoring runs with a real agent; inserting `dedupe` and replaying seven days works |
 | M3 | Web UI: pipeline graph with live overlays, run timeline, streams and items with lineage, logs, metrics explorer, dead letters; `review` builtin, inbox and notifications | The full reference demo from the browser, in English and French, with no axe violation |
 | M4 | Postgres store, `container` runtime, `serve`, `apply`, webhook triggers, token auth, Prometheus and OTLP, VPS packaging | A pipeline running unattended on a VPS for a week |
-| M5 | Kubernetes runtime and Helm chart, `strand worker`, retention and purge, `strand.lock` and signature verification, documentation site, protocol specification | Open-source release |
+| M5 | Kubernetes runtime and Helm chart, `millstream worker`, retention and purge, `millstream.lock` and signature verification, documentation site, protocol specification | Open-source release |
 | M6 | Commercial edition: OIDC and RBAC, first catalog actions, fleet control plane | First commercial deployment |
 
 Each milestone gets its own implementation plan.
 
 ## 19. Prior art and positioning
 
-| Tool | What it is | Why Strand differs |
+| Tool | What it is | Why Millstream differs |
 | --- | --- | --- |
 | Temporal | Durable execution of code-first workflows | Item streams and declarative graphs fit poorly; a laptop needs the dev server; our standard would be a layer on someone else's engine (D1) |
 | Airflow, Dagster, Prefect | Python data orchestration | Batch and task oriented rather than item streaming; Python-centric; no agent or human step model |
@@ -867,9 +868,9 @@ Each milestone gets its own implementation plan.
 | n8n | Low-code automation | Visual-first, sustainable-use licence, not built for engineers' code or durable item lineage |
 | Redpanda Connect (Benthos) | Declarative stream processing in Go | Stream ETL, with no agents, humans, runs or lineage; part of it is now commercially licensed |
 | Inngest, Trigger.dev | Event-driven functions | Function-centric, tied to their hosted models |
-| LangGraph, CrewAI | In-process agent frameworks | They orchestrate inside one agent; they can run inside a Strand agent action |
+| LangGraph, CrewAI | In-process agent frameworks | They orchestrate inside one agent; they can run inside a Millstream agent action |
 
-Strand's position: declarative item-stream pipelines that mix code, agents and people in one graph; one binary from
+Millstream's position: declarative item-stream pipelines that mix code, agents and people in one graph; one binary from
 laptop to Kubernetes; lineage, evals, cost and human-intervention rate built in; an open action protocol any
 language can implement.
 

@@ -1,4 +1,4 @@
-# Strand
+# Millstream
 
 A pipeline platform for work that mixes code, LLM agents and human decisions. A pipeline is a graph of actions
 connected by persisted streams of items: a crawler streams listings, an agent scores each one, a filter keeps the
@@ -19,7 +19,8 @@ steps:
     config: { expr: "item.score >= vars.min_score" }
 ```
 
-**Status:** design. The platform specification is written and under review; no code yet. Strand is a working name.
+**Status:** design. The platform specification is written and under review; no code yet. The name is
+chosen, pending a trademark search ([naming note](docs/research/2026-10-14-naming.md)).
 
 ## Documentation
 

@@ -1,6 +1,6 @@
 include common.mk
 
-# Docs-only until the first implementation plan lands; the Go targets arrive with cmd/strand (see lab-go-app).
+# Docs-only until the first implementation plan lands; the Go targets arrive with cmd/millstream (see lab-go-app).
 
 .PHONY: build
 build: ## Check that every relative Markdown link resolves and prose wraps at 120 columns

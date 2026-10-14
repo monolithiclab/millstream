@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Strand is a Monolithic Lab pipeline platform (Go engine, React UI) in its design phase: the repo holds the
+Millstream is a Monolithic Lab pipeline platform (Go engine, React UI) in its design phase: the repo holds the
 specification and decisions only. See [README.md](README.md) for what it is, `docs/` (table below) for the
 reasoning, and `make help` for every command.
 

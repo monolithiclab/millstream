@@ -6,7 +6,7 @@ entry; supersede it with a new one. The design they belong to is
 
 ## D1. Build our own Go engine (2026-10-14)
 
-**Decision.** Strand is its own engine in Go, over a durable item log. It is not built on Temporal, and not
+**Decision.** Millstream is its own engine in Go, over a durable item log. It is not built on Temporal, and not
 assembled from stream tools such as Redpanda Connect.
 
 **Evidence.** The pipeline file and the action protocol are the product, and they must be ours to standardise and
@@ -34,7 +34,7 @@ needs much more, a NATS JetStream store would sit behind the same store interfac
 one JSON object per line; stderr is logs.
 
 **Evidence.** Any language works with no SDK. Local processes and `docker run -i` need no network setup. The same
-protocol is relayed to the engine by `strand worker` on Kubernetes.
+protocol is relayed to the engine by `millstream worker` on Kubernetes.
 
 **Cost if wrong.** Large payloads go through pipes; artifacts are passed as files to keep that bounded. A gRPC
 transport could be added later as a second protocol binding.
@@ -70,7 +70,7 @@ certifications are a product of their own.
 
 ## D7. The pipeline file is the source of truth (2026-10-14)
 
-**Decision.** Pipelines change through their files, in git, applied with `strand apply`. The v1 UI visualises and
+**Decision.** Pipelines change through their files, in git, applied with `millstream apply`. The v1 UI visualises and
 operates; it does not edit pipelines.
 
 **Evidence.** Files diff, review and version like code; a revision hash ties every run to the exact definition.
@@ -117,3 +117,16 @@ Commercial edition: SSO and RBAC, audit export, the action and connector catalog
 pay for identity, governance, connectors and someone to call.
 
 **Cost if wrong.** If the core alone covers a customer's needs, revenue rests on the catalog and support.
+
+## D12. The product is named Millstream (2026-10-14)
+
+**Decision.** The platform is named Millstream; the CLI, environment file, lock file, environment variables and
+registry namespace follow (`millstream`, `millstream.yaml`, `millstream.lock`, `MILLSTREAM_*`). It replaces the
+working name Strand.
+
+**Evidence.** Strand collides with AWS Strands Agents, an AI agent SDK with the same audience. Millstream is plain
+English, names the platform's core concept (streams driving the work), is unused in the developer and AI space, and
+`millstream.dev` is free. Two rounds of candidates are in [the naming note](research/2026-10-14-naming.md).
+
+**Cost if wrong.** Small companies in unrelated markets use the name, one of them a UK software firm; if the
+trademark search finds an obstacle, the rename is mechanical while there is no code and no public release.
