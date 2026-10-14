@@ -414,3 +414,17 @@ payloads, so any other YAML convention would mix two styles in every pipeline fi
 camelCase YAML familiar to the engineers who write pipelines.
 
 **Cost if wrong.** Slightly less readable YAML than snake_case; none to change before release.
+
+## D36. Logs live in files, not in the database (2026-10-14)
+
+**Decision.** Log lines are JSON objects tagged with pipeline, run, step, item, delivery, attempt and node, written by
+nodes into one segment per attempt and shipped to the artifact store (plain files on a laptop). The database keeps
+only an index of segments. Errors store a class and a truncated message, and refer to the attempt's segment and
+transcript instead of copying them.
+
+**Evidence.** Storing every worker log line, plus 200 lines copied into each error, would make logs the largest and
+least valuable data in Postgres, competing with deliveries for write throughput. Tagged JSON lines in files are
+cheap to keep, expire as whole segments, and can be read with `grep` and `jq`.
+
+**Cost if wrong.** No full-text search across all logs without exporting to a log system over OTLP; reading logs for
+a delivery costs a fetch from the artifact store.
