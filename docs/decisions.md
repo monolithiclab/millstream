@@ -223,3 +223,49 @@ and job is keyed by pipeline id so that pipelines can later be sharded across st
 needs it would multiply the operational and testing surface.
 
 **Cost if wrong.** A deployment beyond the target needs the sharding work parked in the roadmap.
+
+## D21. Outputs publish on done by default (2026-10-14)
+
+**Decision.** A step's outputs are staged with the attempt and published atomically with `done`. Steps that need
+streaming, such as crawlers, opt into `commit: emit`. Items are immutable and the first commit of an id wins; a
+conflicting re-emit is discarded and recorded.
+
+**Evidence.** Two adversarial reviews showed that publishing on emit lets a delivery that later dies leave partial
+outputs flowing downstream, and that "upsert" contradicted immutable items. Publishing on done gives the simple
+guarantee by default and keeps streaming where it pays.
+
+**Cost if wrong.** Staging costs a write per output and delays downstream work until each delivery completes;
+streaming steps must say so explicitly.
+
+## D22. Runs are pinned to their revision (2026-10-14)
+
+**Decision.** A run executes entirely on the revision it started with. `apply` and `rollback` affect new runs;
+in-flight work changes only through a replay, or a dead-letter replay with `--migrate`, which records the change.
+
+**Evidence.** Applying changes to pending deliveries made a run's recorded revision unable to explain its results,
+and let a retry produce a new revision's output under an old output id.
+
+**Cost if wrong.** A fix does not reach runs already in flight, such as runs waiting on long reviews, without an
+explicit replay.
+
+## D23. v1 commits to 2,000 deliveries per second, measured (2026-10-14)
+
+**Decision.** Refines D20. v1 guarantees 2,000 deliveries per second on one Postgres on a documented benchmark
+workload; about 10,000 per second remains the design goal. A feasibility benchmark opens M5, before replica work.
+Leases are taken in batches, notifications coalesced per transaction, and events partitioned by time.
+
+**Evidence.** A delivery costs about eight row writes (lease, completion, item, consumer delivery, events), so
+10,000 per second means about 80,000 row writes per second before indexes and WAL, and 90 days of events at that
+rate is hundreds of billions of rows. The target was asserted, not measured.
+
+**Cost if wrong.** If the benchmark finds a lower ceiling, the commitment drops before release rather than after.
+
+## D24. Events are published through an outbox (2026-10-14)
+
+**Decision.** Events are inserted without a public sequence number; a publisher job per pipeline, under a job lease,
+assigns contiguous sequence numbers to committed events. Live views and `Last-Event-ID` use that sequence.
+
+**Evidence.** A Postgres sequence is assigned at insert, not at commit, and rolled-back transactions burn values, so
+"advance up to the oldest transaction in flight" could neither be implemented exactly nor tell a gap from a delay.
+
+**Cost if wrong.** Live views lag by the publisher's batch interval, and the publisher is one more job per pipeline.
