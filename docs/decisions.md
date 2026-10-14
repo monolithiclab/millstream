@@ -373,3 +373,19 @@ duplicated one concept, let a step pair a mode with an action that could not run
 one payload, contradicting the paging guarantee.
 
 **Cost if wrong.** A run's items are copied into the artifact store, and aggregation takes two steps instead of one.
+
+## D33. Routing lives in out, with a dead-letter stream for gaps (2026-10-14)
+
+**Decision.** Every step's `out` takes one of three shapes: a stream, a list of streams (each output goes to all), or
+a list of route objects `{when, out}` evaluated in order when an output is published, first match wins. An output
+matching no route goes to the step's `dlq` as an `unrouted` dead letter; a step with route objects must name its
+`dlq`. The `route` builtin is removed, and item ids include the output stream.
+
+**Evidence.** A separate `route` step cost one more delivery per item and was the one builtin that declared outputs
+outside `out`. Evaluating routes at publication makes routing free and available to every action, including
+catalog actions that know nothing of the pipeline. Sending unmatched outputs to a dead-letter stream, rather than to
+an implicit default, makes a gap in the routes visible and replayable; first match keeps classification short, with
+an explicit `when: "true"` as a catch-all.
+
+**Cost if wrong.** Conditional multicast (one output to several matching routes) is not expressible; unconditional
+fan-out still is, with a list of streams.
