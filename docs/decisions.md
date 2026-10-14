@@ -15,7 +15,7 @@ there, and a laptop needs its dev server. Stream ETL tools have no model for age
 The hard part we take on, durable leased deliveries, is a well-known pattern on SQLite and Postgres.
 
 **Cost if wrong.** We own crash recovery and leasing bugs that Temporal would have solved. Mitigated by the crash
-test suite (spec section 15) from M1.
+test suite (spec section 16) from M1.
 
 ## D2. A durable item log is the only state (2026-10-14)
 
@@ -130,3 +130,48 @@ English, names the platform's core concept (streams driving the work), is unused
 
 **Cost if wrong.** Small companies in unrelated markets use the name, one of them a UK software firm; if the
 trademark search finds an obstacle, the rename is mechanical while there is no code and no public release.
+
+## D13. Learnings reach production only through accepted proposals (2026-10-14)
+
+**Decision.** Insights, lessons, prompt changes, new filters and code that replaces an agent reach a pipeline only
+as proposals that a person accepts, each validated by evals and a backtest against past items. Nothing applies on
+its own, and agents do not read a live learnings store.
+
+**Evidence.** A pipeline that changes itself unseen breaks revision hashes and replay, and leaves no one accountable
+for a wrong change. A validated diff is cheap to review and keeps git as the source of truth (D7).
+
+**Cost if wrong.** A pipeline improves only as fast as people accept proposals. Auto-applying low-risk classes can
+be added later behind a policy without changing the proposal model.
+
+## D14. Lessons are versioned per step (2026-10-14)
+
+**Decision.** What a pipeline learns for an agent step lives in a lessons file per step, in the pipeline
+repository, injected into the prompt by the agent adapter, and part of the revision hash.
+
+**Evidence.** Actions may be locked, shared or from the catalog, while what was learned is specific to one
+pipeline's use of them. A file in the revision keeps replay deterministic; a live memory store would not.
+
+**Cost if wrong.** Static examples use prompt space whether or not they apply to the item; selecting examples by
+similarity is parked in the roadmap.
+
+## D15. Self-improvement runs as a Millstream pipeline (2026-10-14)
+
+**Decision.** Insights are computed by the engine without an LLM. Drafting proposals is done by an `improve`
+pipeline embedded in the binary, in the ordinary pipeline format; validation (check, evals, backtest, shadow) is done
+by the engine.
+
+**Evidence.** As a pipeline, the LLM work gets budgets, transcripts, replay and the UI for free, and the engine holds
+no agent logic. Deterministic insights work on a laptop with no API key.
+
+**Cost if wrong.** The `improve` pipeline needs engine hooks (backtest, shadow) that ordinary pipelines do not use;
+if they grow, they become a builtin set of their own.
+
+## D16. Forge integration goes through actions (2026-10-14)
+
+**Decision.** Accepted proposals are published by an action chosen in `improve.publish`: `apply`, `patch-file`, or
+`git-pr-gh` and `git-pr-glab`, which wrap the `gh` and `glab` CLIs with the credentials they already have.
+
+**Evidence.** Millstream then holds no forge tokens or configuration, and a new forge is a new action, not an engine
+change.
+
+**Cost if wrong.** Pull requests depend on the CLIs being installed and authenticated in the action's environment.
