@@ -269,3 +269,33 @@ assigns contiguous sequence numbers to committed events. Live views and `Last-Ev
 "advance up to the oldest transaction in flight" could neither be implemented exactly nor tell a gap from a delay.
 
 **Cost if wrong.** Live views lag by the publisher's batch interval, and the publisher is one more job per pipeline.
+
+## D25. One active engine with a hot standby (2026-10-14)
+
+**Decision.** Supersedes D18. One engine is active per deployment, elected by a Postgres session advisory lock held
+on its only write connection; a second engine on the same store waits as a hot standby and takes over within about
+30 seconds. Concurrency slots, limits, fair queuing and rate pools live in the active engine's memory; budget
+reservations are written on deliveries. Worker nodes (D19) connect to the active engine and follow it across a
+failover. An active-active control plane is deferred to the roadmap.
+
+**Evidence.** Replicas sharing one Postgres add no throughput, because the database is the bottleneck, and the
+workload (daily triggers, agent calls of seconds, reviews of days) does not notice a 30-second failover that loses
+nothing. The leaderless design carried most of the specification's complexity (job leases, membership, an events
+outbox, shared counters in the store) and most of the adversarial reviews' findings. Holding the lock on the write
+connection means an engine that loses leadership cannot write, without relying on clocks or epochs.
+
+**Cost if wrong.** Throughput is capped by one engine on one Postgres (D23), and failover is tens of seconds, not
+instant. Going active-active later reintroduces job leases and a sequencing scheme behind the same store interfaces.
+
+## D26. A single writer loop sequences events (2026-10-14)
+
+**Decision.** Supersedes D24. The active engine applies every state change through one writer loop that
+group-commits batches of atomic units and assigns event sequence numbers in commit order, on Postgres and SQLite
+alike.
+
+**Evidence.** With one writer, commit order is known in process, so live views resume without gaps with no outbox or
+publisher job, and batching keeps the transaction rate well below the database's limits at the committed
+throughput.
+
+**Cost if wrong.** The writer loop is a serial bottleneck inside the engine; its batch size and latency are metrics
+and part of the scale benchmark.

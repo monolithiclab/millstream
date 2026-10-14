@@ -11,6 +11,8 @@ Parked ideas and follow-ups. Committed scope and milestones are in the
 ## After v1
 
 - Graphical pipeline editor writing YAML back (D7).
+- Active-active control plane: several engines dispatching at once, with job leases and an events outbox
+  (D25, D26).
 - Sharding pipelines across several Postgres stores (D20).
 - Federation of independent instances with their own stores, for data residency.
 - Streams shared across pipelines.
