@@ -20,13 +20,13 @@ steps:
 ```
 
 **Status:** design. The platform specification is written and under review; no code yet. The name is
-chosen, pending a trademark search ([naming note](docs/research/2026-10-14-naming.md)).
+chosen, pending a trademark search ([naming note](docs/research/20261014.naming.md)).
 
 ## Documentation
 
 | Document | Content |
 | --- | --- |
-| [Platform design](docs/superpowers/specs/2026-10-14-platform-design.md) | The full specification: concepts, pipeline file, execution model, actions, agents, UI, deployment, milestones |
+| [Platform design](docs/specs/20261014.platform-design.md) | The full specification: concepts, pipeline file, execution model, actions, agents, UI, deployment, milestones |
 | [Decisions](docs/decisions.md) | Key architecture decisions and their reasoning |
 | [Roadmap](ROADMAP.md) | Parked ideas and follow-ups |
 

@@ -2,7 +2,7 @@
 
 Append-only. Each entry records what was decided, the evidence, and the cost if it turns out wrong. Never edit an
 entry; supersede it with a new one. The design they belong to is
-[the platform spec](superpowers/specs/2026-10-14-platform-design.md).
+[the platform spec](specs/20261014.platform-design.md).
 
 ## D1. Build our own Go engine (2026-10-14)
 
@@ -126,7 +126,7 @@ working name Strand.
 
 **Evidence.** Strand collides with AWS Strands Agents, an AI agent SDK with the same audience. Millstream is plain
 English, names the platform's core concept (streams driving the work), is unused in the developer and AI space, and
-`millstream.dev` is free. Two rounds of candidates are in [the naming note](research/2026-10-14-naming.md).
+`millstream.dev` is free. Two rounds of candidates are in [the naming note](research/20261014.naming.md).
 
 **Cost if wrong.** Small companies in unrelated markets use the name, one of them a UK software firm; if the
 trademark search finds an obstacle, the rename is mechanical while there is no code and no public release.

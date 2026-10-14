@@ -22,14 +22,14 @@ reasoning, and `make help` for every command.
 ## Where things go
 
 - Architecture decisions: a new D-entry in `docs/decisions.md`, never an edit of an old one.
-- Specs and plans: `docs/superpowers/specs/` and `docs/superpowers/plans/`, dated.
+- Specs and plans: `docs/specs/YYYYMMDD.<topic>-design.md` and `docs/plans/YYYYMMDD.<topic>.md`.
 - Parked ideas and follow-ups: `ROADMAP.md`.
 
 ## Documentation
 
 | Document | Owns |
 | --- | --- |
-| `docs/superpowers/specs/2026-10-14-platform-design.md` | The platform design: concepts, file format, execution model, protocol, UI, deployment, milestones |
+| `docs/specs/20261014.platform-design.md` | The platform design: concepts, file format, execution model, protocol, UI, deployment, milestones |
 | `docs/decisions.md` | Architecture decisions D1 onward |
 | `ROADMAP.md` | Parked ideas and follow-ups |
 

@@ -1,12 +1,12 @@
 # Roadmap
 
 Parked ideas and follow-ups. Committed scope and milestones are in the
-[platform spec](docs/superpowers/specs/2026-10-14-platform-design.md), section 18.
+[platform spec](docs/specs/20261014.platform-design.md), section 18.
 
 ## Before implementation
 
 - Trademark search for Millstream (INPI, EUIPO, UKIPO, USPTO; classes 9 and 42); see
-  [the naming note](docs/research/2026-10-14-naming.md).
+  [the naming note](docs/research/20261014.naming.md).
 
 ## After v1
 
