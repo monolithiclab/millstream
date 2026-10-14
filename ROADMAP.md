@@ -11,7 +11,8 @@ Parked ideas and follow-ups. Committed scope and milestones are in the
 ## After v1
 
 - Graphical pipeline editor writing YAML back (D7).
-- Engine high availability: leader election on Postgres.
+- Sharding pipelines across several Postgres stores (D20).
+- Federation of independent instances with their own stores, for data residency.
 - Streams shared across pipelines.
 - Python SDK.
 - Vault and Kubernetes secret sources.

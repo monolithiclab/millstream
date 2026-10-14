@@ -175,3 +175,51 @@ if they grow, they become a builtin set of their own.
 change.
 
 **Cost if wrong.** Pull requests depend on the CLIs being installed and authenticated in the action's environment.
+
+## D17. The package is the unit of deployment and isolation (2026-10-14)
+
+**Decision.** A pipeline is deployed as a package: a directory with the pipeline file, local actions, lessons,
+evals, assets, vars overlays and the lock file. A revision is the hash of the whole package. Within one instance,
+the pipeline id scopes data, secrets grants, capacity limits, placement and lifecycle.
+
+**Evidence.** One instance must run many pipelines of an organisation without one's backlog, secrets or rollout
+affecting another. Hashing only the pipeline file would let a change to a local action or lesson slip past the
+revision, breaking replay and proposals.
+
+**Cost if wrong.** Packages are uploaded as bundles, so large assets make every apply heavier; content addressing
+limits this to changed packages.
+
+## D18. Leaderless control-plane replicas over Postgres (2026-10-14)
+
+**Decision.** `millstream serve` runs as several identical replicas over one Postgres. Dispatch is coordinated by
+delivery leases; jobs that need a single owner (cron, collect settlement, projections, retention) run under fenced
+job leases spread by rendezvous hashing. SQLite stays single-replica. This replaces the v1 non-goal of a single
+active engine.
+
+**Evidence.** Losing the engine must cost only lease expiry. `SKIP LOCKED` leasing already makes replicas safe for
+dispatch, so a leader would add failover delay without adding safety.
+
+**Cost if wrong.** Postgres becomes the shared bottleneck; D20 bounds the target and keeps sharding possible.
+
+## D19. Worker nodes pull deliveries under fenced leases (2026-10-14)
+
+**Decision.** Actions run on worker nodes that join with a token, receive a client certificate, advertise labels
+and runtimes, and pull deliveries from any replica. Leases carry fencing tokens; nodes never connect to the store.
+On a laptop, one worker is embedded and pulls over an in-memory transport.
+
+**Evidence.** Pull scales out by adding nodes anywhere (VMs, GPU machines, on-premises, Kubernetes) without the
+engine reaching into them, and survives node loss by lease expiry. Fencing stops a cut-off node from completing a
+delivery handed to another. One code path from laptop to fleet keeps M1 tests meaningful for production.
+
+**Cost if wrong.** A pull round trip adds latency per delivery compared with an engine-spawned child process;
+negligible against agent steps, measurable for very short code steps, where nodes pull in batches.
+
+## D20. Scale target on one Postgres, pipeline as partition key (2026-10-14)
+
+**Decision.** v1 targets about 10,000 deliveries per second across the fleet on one well-sized Postgres. Every table
+and job is keyed by pipeline id so that pipelines can later be sharded across stores.
+
+**Evidence.** Agent-heavy workloads are bound by model latency far below this rate; sharding before a workload
+needs it would multiply the operational and testing surface.
+
+**Cost if wrong.** A deployment beyond the target needs the sharding work parked in the roadmap.
