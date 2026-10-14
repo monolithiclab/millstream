@@ -346,3 +346,16 @@ what consumers require, reports every construct outside the subset as not static
 common real mismatch, and left unions, references and arrays to each implementer's guess.
 
 **Cost if wrong.** Schemas using unions get only runtime validation for those parts; the warnings make that visible.
+
+## D31. Triggers publish to trigger streams (2026-10-14)
+
+**Decision.** A trigger `x` publishes its trigger item to the reserved stream `trigger.x`; steps read it with `in`
+like any stream, and the `on` step key is removed. Only the trigger writes to its stream, and each item on it starts a
+run.
+
+**Evidence.** Steps already know only streams; triggers were the one exception. With trigger streams, inserting a
+step right after a trigger is the same few-line change as anywhere else, a step can be fed by a trigger and a stream
+together, and validation, lineage, metrics and schemas treat trigger items like any item.
+
+**Cost if wrong.** `in: trigger.daily` reads less directly than `on: daily`, and the engine must still treat trigger
+streams as run roots, enforced by `check`.
