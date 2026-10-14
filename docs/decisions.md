@@ -389,3 +389,14 @@ an explicit `when: "true"` as a catch-all.
 
 **Cost if wrong.** Conditional multicast (one output to several matching routes) is not expressible; unconditional
 fan-out still is, with a list of streams.
+
+## D34. JSON keys are lowerCamelCase (2026-10-14)
+
+**Decision.** Every JSON document Millstream defines (item envelope, action protocol, HTTP API, event payloads) uses
+lowerCamelCase keys (`runId`, `idempotencyKey`, `producedBy`). Metric names follow Prometheus snake_case, and
+user-chosen identifiers (pipeline, step, stream, trigger names) keep their own grammar.
+
+**Evidence.** lowerCamelCase is the common JSON convention, matching JavaScript, the web UI's TypeScript and most
+public JSON APIs, so clients map keys to fields without renaming.
+
+**Cost if wrong.** None before release; changing it later would break every protocol client.
