@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# Checks every Markdown file in the repo: prose lines wrap at 120 columns (tables, fenced code and HTML exempt, per
+# the lab markdown-format rule), and every relative link points at a file that exists.
+set -euo pipefail
+status=0
+while IFS= read -r f; do
+	awk -v f="$f" 'BEGIN{c=0} /^[[:space:]]*```/{c=!c; next}
+		!c && !/^[[:space:]]*\|/ && !/^[[:space:]]*</ && length > 120 {print f":"NR": line is "length" columns (max 120)"; bad=1}
+		END{exit bad}' "$f" || status=1
+	dir=$(dirname "$f")
+	while IFS= read -r link; do
+		target=${link%%#*}
+		[ -z "$target" ] && continue
+		[ -e "$dir/$target" ] || { echo "$f: broken link $link"; status=1; }
+	done < <(grep -oE '\]\([^)[:space:]]+\)' "$f" | sed -E 's/^\]\((.*)\)$/\1/' | grep -vE '^(https?:|mailto:|#)' || true)
+done < <(git ls-files --cached --others --exclude-standard '*.md')
+exit $status
