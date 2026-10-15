@@ -1,0 +1,27 @@
+name: m1-fixture/score
+version: 1.0.0
+description: Scores a listing from its discount to the market and its condition
+kind: exec
+effects: none
+input:
+  type: object
+  properties:
+    id: { type: string }
+    city: { type: string }
+    priceEur: { type: integer }
+    surfaceM2: { type: integer }
+    condition: { enum: [good, fair, poor] }
+  required: [id, city, priceEur, surfaceM2, condition]
+output:
+  type: object
+  properties:
+    id: { type: string }
+    city: { type: string }
+    priceEur: { type: integer }
+    surfaceM2: { type: integer }
+    rooms: { type: integer }
+    condition: { enum: [good, fair, poor] }
+    monthlyRentEur: { type: integer }
+    score: { type: integer, minimum: 0, maximum: 100 }
+  required: [id, city, priceEur, surfaceM2, rooms, condition, score]
+runtime: { exec: { command: [score] } }

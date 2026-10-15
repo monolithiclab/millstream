@@ -1,0 +1,26 @@
+name: m1-fixture/crawl
+version: 1.0.0
+description: Emits synthetic listings, keyed by id, deterministically from a seed
+kind: exec
+effects: none
+input: { type: object }
+config:
+  type: object
+  properties:
+    seed: { type: integer, minimum: 0 }
+    count: { type: integer, minimum: 1 }
+    delayMs: { type: integer, minimum: 0 }
+  required: [seed, count]
+  additionalProperties: false
+output:
+  type: object
+  properties:
+    id: { type: string }
+    city: { type: string }
+    priceEur: { type: integer }
+    surfaceM2: { type: integer }
+    rooms: { type: integer }
+    condition: { enum: [good, fair, poor] }
+    monthlyRentEur: { type: integer }
+  required: [id, city, priceEur, surfaceM2, rooms, condition]
+runtime: { exec: { command: [crawl] } }

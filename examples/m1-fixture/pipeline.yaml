@@ -1,0 +1,43 @@
+# The M1 fixture: the reference pipeline's shape (spec section 1.3) with exec actions built from the Go SDK, on
+# synthetic listings. One listing has no rent estimate and dead-letters at rentability while strict is on.
+pipeline: m1-fixture
+description: Synthetic real estate sourcing, the M1 end-to-end fixture
+
+vars:
+  minScore: 70
+  minMarginPct: 15
+  listings: 50
+  crawlDelayMs: 0 # simulated source latency: the crash suite slows the crawl to see a lease renewed
+
+triggers:
+  adhoc: { manual: {} }
+  daily: { cron: "0 6 * * *" }
+
+steps:
+  crawl:
+    action: ./actions/crawl
+    in: [trigger.adhoc, trigger.daily]
+    out: listings.raw
+    config: { seed: 7, count: "${vars.listings}", delayMs: "${vars.crawlDelayMs}" }
+
+  score:
+    action: ./actions/score
+    in: listings.raw
+    concurrency: 4
+    out:
+      - { when: "item.score >= vars.minScore", out: listings.shortlist }
+      - { when: "true", out: listings.rejected }
+
+  rentability:
+    action: ./actions/rentability
+    in: listings.shortlist
+    out: listings.priced
+    dlq: listings.failed
+    concurrency: 2
+    config: { strict: true }
+
+  report:
+    action: ./actions/report
+    in: listings.priced
+    out: reports.done
+    config: { minMarginPct: "${vars.minMarginPct}" }

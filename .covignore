@@ -1,3 +1,5 @@
 # Generated-code patterns (regexes) filtered out of the coverage profile.
 # main only wires os.Args to the cli package, which is tested.
 /cmd/millstream/
+# The M1 fixture's actions run as child processes of the e2e suite, outside the coverage profile.
+/examples/
