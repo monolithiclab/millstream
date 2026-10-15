@@ -235,9 +235,12 @@ func validateJSON(s *schema.Schema, doc []byte) error {
 }
 
 // processEnv is the environment of action processes: PATH, HOME and TMPDIR from the engine's, when set.
-func (e *Engine) processEnv() []string {
+func (e *Engine) processEnv() []string { return e.envOf(envPassed) }
+
+// envOf returns the variables keys of the engine's environment that are set.
+func (e *Engine) envOf(keys []string) []string {
 	var env []string
-	for _, k := range envPassed {
+	for _, k := range keys {
 		if v, ok := e.opts.Env(k); ok {
 			env = append(env, k+"="+v)
 		}
@@ -323,7 +326,8 @@ func (e *Engine) agentSpec(spec *exec.Spec, act *resolvedAction, names []string,
 			"pipeline", l.Pipeline, "step", l.Step, "deliveryId", l.DeliveryID)
 		spec.Kind, spec.Dir = pipeline.KindExec, act.dir
 		spec.Command = append([]string{ag.Executable}, args...)
-		spec.Env = append(e.processEnv(), env...)
+		// The adapter hands the claude CLI its own variables (agent.ClaudeEnv), a superset of envPassed.
+		spec.Env = append(e.envOf(agent.ClaudeEnv), env...)
 	default:
 		return dispatchErr(ClassSandbox, false, "agent step %s needs a container sandbox (a container runtime, "+
 			"agents.image, and off Linux a Linux build of millstream in agents.linuxBinary), or "+

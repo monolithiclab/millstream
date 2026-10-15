@@ -115,16 +115,18 @@ func TestAgentAssignmentSandboxed(t *testing.T) {
 }
 
 // TestAgentAssignmentUnsandboxed: allowed by the environment file, the adapter runs as this binary's agent
-// subcommand in the action directory, with the engine's PATH, HOME and TMPDIR only, logged at every start; a
-// recordings directory being recorded is mounted writable in a sandbox.
+// subcommand in the action directory, with the engine's variables the claude CLI needs (agent.ClaudeEnv, USER
+// included) only, logged at every start; a recordings directory being recorded is mounted writable in a sandbox.
 func TestAgentAssignmentUnsandboxed(t *testing.T) {
 	t.Parallel()
-	environ := map[string]string{"MILLSTREAM_SECRET_KEY": "sk-0123456789", "PATH": "/usr/bin", "OTHER": "x"}
+	environ := map[string]string{"MILLSTREAM_SECRET_KEY": "sk-0123456789", "PATH": "/usr/bin", "OTHER": "x",
+		"USER": "u", "CLAUDE_CONFIG_DIR": "/c"}
 	a, v := agentAssignment(t, Agents{AllowUnsandboxed: true, Executable: "/usr/local/bin/millstream"}, environ)
 	s := a.Spec
 	if s.Kind != pipeline.KindExec || s.Command[0] != "/usr/local/bin/millstream" || s.Command[1] != "agent" ||
 		slices.Contains(s.Command, "--price-in") || filepath.Base(s.Dir) != "score" || s.Mounts != nil ||
-		!slices.Equal(s.Env, []string{"PATH=/usr/bin", "MILLSTREAM_SECRET_KEY=sk-0123456789"}) {
+		!slices.Equal(s.Env, []string{"PATH=/usr/bin", "USER=u", "CLAUDE_CONFIG_DIR=/c",
+			"MILLSTREAM_SECRET_KEY=sk-0123456789"}) {
 		t.Fatalf("spec = %+v", s)
 	}
 	if !strings.Contains(v.logs.String(), "agent running without a sandbox") {

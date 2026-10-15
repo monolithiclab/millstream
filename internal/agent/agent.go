@@ -189,8 +189,10 @@ func (a *adapter) setup(secrets map[string]string) error {
 	return nil
 }
 
-// claudeEnv are the variables of the adapter's environment the claude CLI receives, besides its API key.
-var claudeEnv = []string{"PATH", "HOME", "TMPDIR", "CLAUDE_CONFIG_DIR", "XDG_CONFIG_HOME"}
+// ClaudeEnv are the variables of the adapter's environment the claude CLI receives, besides its API key: USER too,
+// since on macOS the CLI reads its login from the user's keychain by account name and reports "Not logged in"
+// without it.
+var ClaudeEnv = []string{"PATH", "HOME", "TMPDIR", "USER", "CLAUDE_CONFIG_DIR", "XDG_CONFIG_HOME"}
 
 // defaultHarness is the driver the manifest names.
 func (a *adapter) defaultHarness(rt *pipeline.AgentRuntime, apiKey string) Harness {
@@ -203,7 +205,7 @@ func (a *adapter) defaultHarness(rt *pipeline.AgentRuntime, apiKey string) Harne
 		bin = "claude" // running it reports the error
 	}
 	c := ClaudeCode{Bin: bin, Dir: a.workdir}
-	for _, k := range claudeEnv {
+	for _, k := range ClaudeEnv {
 		if v, ok := a.opts.Env(k); ok {
 			c.Env = append(c.Env, k+"="+v)
 		}

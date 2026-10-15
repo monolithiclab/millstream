@@ -321,16 +321,16 @@ func TestClaudeCodeFailures(t *testing.T) {
 }
 
 // TestDefaultHarness: the manifest's harness is built with its API key; claude-code is found on the adapter's PATH
-// and receives only its own variables and the key.
+// and receives only its own variables, USER included (its keychain login on macOS), and the key.
 func TestDefaultHarness(t *testing.T) {
 	t.Parallel()
 	bin, dir := fakeClaude(t, claudeStream, 0)
-	env := map[string]string{"PATH": "/nonexistent:" + dir, "HOME": "/home/u", "MILLSTREAM_SECRET_X": "s",
+	env := map[string]string{"PATH": "/nonexistent:" + dir, "HOME": "/home/u", "USER": "u", "MILLSTREAM_SECRET_X": "s",
 		"MILLSTREAM_WORKDIR": "/w"}
 	a := &adapter{opts: Options{Env: func(k string) (string, bool) { v, ok := env[k]; return v, ok }}, workdir: "/w"}
 	h := a.defaultHarness(&pipeline.AgentRuntime{Harness: pipeline.HarnessClaudeCode}, "sk")
 	c, ok := h.(ClaudeCode)
-	if !ok || c.Bin != bin || c.Dir != "/w" || strings.Join(c.Env, " ") != "PATH=/nonexistent:"+dir+" HOME=/home/u ANTHROPIC_API_KEY=sk" {
+	if !ok || c.Bin != bin || c.Dir != "/w" || strings.Join(c.Env, " ") != "PATH=/nonexistent:"+dir+" HOME=/home/u USER=u ANTHROPIC_API_KEY=sk" {
 		t.Fatalf("claude-code harness %+v", h)
 	}
 	h = a.defaultHarness(&pipeline.AgentRuntime{Harness: pipeline.HarnessAPI, Provider: pipeline.ProviderOpenAI,
