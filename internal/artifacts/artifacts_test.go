@@ -30,10 +30,9 @@ func TestPutAndOpen(t *testing.T) {
 		{"photo.png", string(png), "image/png"},
 		{"empty", "", "text/plain; charset=utf-8"},
 	}
+	s := New(t.TempDir()) // one store: the contents differ, so do their files
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			s := New(t.TempDir())
 			ref, err := s.Put("listings", tt.name, strings.NewReader(tt.content))
 			if err != nil {
 				t.Fatalf("Put: %v", err)
