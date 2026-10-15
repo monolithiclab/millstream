@@ -109,12 +109,11 @@ func TestRunActionFailure(t *testing.T) {
 func TestRunAgentRecordReplay(t *testing.T) {
 	t.Parallel()
 	srv, calls := fakeModel(t, "```json\n{\"score\": 7}\n```")
-	dir := writePackage(t, srv.URL, map[string]string{
+	pkg := memPackage(t, srv.URL, map[string]string{
 		"actions/score/evals/one.yaml": "input: { url: \"https://example.com/1\" }\nassert: [\"output.score == 7\"]\n",
 	})
-	action, recordings := filepath.Join(dir, "actions", "score"), t.TempDir()
-	c := loadOne(t, action)
-	opts := options(t, dir, "./actions/score", agent.ModeRecord, recordings)
+	c, recordings := memCase(t, pkg, "actions/score"), t.TempDir()
+	opts := pkgOptions(t, pkg, "./actions/score", agent.ModeRecord, recordings)
 	opts.Client = srv.Client
 	opts.Price = &pipeline.Price{InPerMtok: 3, OutPerMtok: 15}
 	if r := Run(t.Context(), opts, c); !r.Passes() || r.Score != 1 || r.CostUSD != 0.0045 {

@@ -75,8 +75,8 @@ func newSession(t *testing.T, pkg *pipeline.Package, h Harness) *session {
 // dirSession runs the action of the package the adapter loads from dir.
 func dirSession(t *testing.T, pkg string, h Harness) *session {
 	t.Helper()
-	s := &session{t: t, workdir: t.TempDir(), config: map[string]any{"rooms": 2}}
-	s.env = map[string]string{"MILLSTREAM_WORKDIR": s.workdir, "MILLSTREAM_SECRET_API_TOKEN": "sk-test-0123456789"}
+	s := &session{t: t, config: map[string]any{"rooms": 2}}
+	s.env = map[string]string{"MILLSTREAM_SECRET_API_TOKEN": "sk-test-0123456789"}
 	s.opts = Options{
 		Package: pkg, Action: "./actions/score", Secrets: []string{"apiToken"},
 		Env:    func(k string) (string, bool) { v, ok := s.env[k]; return v, ok },
@@ -88,6 +88,15 @@ func dirSession(t *testing.T, pkg string, h Harness) *session {
 			return h
 		}
 	}
+	return s
+}
+
+// withWorkdir gives the session a working directory, where the adapter writes its transcripts: only the tests of
+// transcripts and artifacts need one.
+func (s *session) withWorkdir() *session {
+	s.t.Helper()
+	s.workdir = s.t.TempDir()
+	s.env["MILLSTREAM_WORKDIR"] = s.workdir
 	return s
 }
 
@@ -163,7 +172,7 @@ var transcriptArtifact = []protocol.Artifact{{Name: TranscriptFile, Path: Transc
 func TestRunEmitsOutput(t *testing.T) {
 	t.Parallel()
 	h := &fakeHarness{fn: answer("Here it is.\n```json\n{\"score\": 7}\n```\n", 1000, 500)}
-	s := newSession(t, memPackage(t, testManifest, testPrompt), h)
+	s := newSession(t, memPackage(t, testManifest, testPrompt), h).withWorkdir()
 	s.opts.Price = &pipeline.Price{InPerMtok: 3, OutPerMtok: 15}
 	msgs := s.run(`{"url": "https://example.com/1"}`)
 	if len(msgs) != 7 {
@@ -204,7 +213,7 @@ func TestRunEmitsOutput(t *testing.T) {
 func TestRunSchemaMismatch(t *testing.T) {
 	t.Parallel()
 	h := &fakeHarness{fn: answer("```json\n{\"score\": \"high\"}\n```", 10, 5)}
-	s := newSession(t, memPackage(t, testManifest, testPrompt), h)
+	s := newSession(t, memPackage(t, testManifest, testPrompt), h).withWorkdir()
 	for attempt := 1; attempt <= 2; attempt++ {
 		_ = os.Remove(filepath.Join(s.workdir, TranscriptFile)) // the node empties the working directory
 		payloads := []string{`{"url": "u"}`, `{"url": "u"}`}[:attempt]
@@ -251,7 +260,7 @@ func TestRunFailures(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			s := newSession(t, memPackage(t, testManifest, tt.prompt), &fakeHarness{fn: tt.fn})
+			s := newSession(t, memPackage(t, testManifest, tt.prompt), &fakeHarness{fn: tt.fn}).withWorkdir()
 			msgs := s.run(`{"url": "u"}`)
 			last, ok := msgs[len(msgs)-1].(protocol.Error)
 			if !ok || last.Retryable != tt.retryable || !strings.Contains(last.Message, tt.message) ||
@@ -325,7 +334,7 @@ func TestRunRedactsSecrets(t *testing.T) {
 			{Role: "user", Text: req.Prompt}, {Role: "assistant", Text: "token " + secret, Data: data},
 		}}, nil
 	}}
-	s := newSession(t, memPackage(t, testManifest, "Use {{ .Config.token }} on {{ .Payload.url }}."), h)
+	s := newSession(t, memPackage(t, testManifest, "Use {{ .Config.token }} on {{ .Payload.url }}."), h).withWorkdir()
 	s.env["MILLSTREAM_SECRET_API_TOKEN"] = secret
 	s.config = map[string]any{"token": secret}
 	s.run(`{"url": "u"}`)

@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path"
 	"path/filepath"
 	"sync/atomic"
 	"testing"
@@ -77,6 +78,12 @@ func options(t *testing.T, dir, ref, mode, recordings string) Options {
 	if err != nil {
 		t.Fatal(err)
 	}
+	return pkgOptions(t, pkg, ref, mode, recordings)
+}
+
+// pkgOptions are the options of a run of the action ref of pkg.
+func pkgOptions(t *testing.T, pkg *pipeline.Package, ref, mode, recordings string) Options {
+	t.Helper()
 	act, err := pipeline.Resolver{}.Resolve(pkg, ref)
 	if err != nil {
 		t.Fatal(err)
@@ -117,4 +124,39 @@ func fakeModel(t *testing.T, text string) (*model, *atomic.Int32) {
 type model struct {
 	URL    string
 	Client *http.Client
+}
+
+// memPackage builds writePackage's package in memory, for the tests of agent actions, which run in this process
+// in every build and need no file.
+func memPackage(t *testing.T, baseURL string, files map[string]string) *pipeline.Package {
+	t.Helper()
+	all := map[string][]byte{
+		"pipeline.yaml": []byte(testPipeline), "actions/echo/action.yaml": []byte(echoManifest),
+		"actions/score/action.yaml": []byte(fmt.Sprintf(agentManifest, baseURL)),
+		"actions/score/prompt.md":   []byte("Score {{ .Payload.url }}.\n"),
+	}
+	for name, body := range files {
+		all[name] = []byte(body)
+	}
+	pkg, err := pipeline.FromFiles("/pkg", all)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return pkg
+}
+
+// memCase parses the only eval case of the action directory dir of pkg, as Load reads it from disk.
+func memCase(t *testing.T, pkg *pipeline.Package, dir string) *Case {
+	t.Helper()
+	var names []string
+	for name := range pkg.Files {
+		if path.Dir(name) == dir+"/"+Dir && path.Ext(name) == ".yaml" {
+			names = append(names, name)
+		}
+	}
+	cases, err := parseCases(names, func(name string) ([]byte, error) { return pkg.Files[name], nil })
+	if err != nil || len(cases) != 1 {
+		t.Fatalf("parseCases = %v, %v", cases, err)
+	}
+	return cases[0]
 }

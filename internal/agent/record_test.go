@@ -31,7 +31,7 @@ func recordingSession(t *testing.T, mode, dir string) *session {
 	t.Helper()
 	s := dirSession(t, "testdata/score", nil)
 	s.opts.Secrets = []string{"anthropicKey"}
-	s.env = map[string]string{"MILLSTREAM_WORKDIR": s.workdir, "MILLSTREAM_SECRET_ANTHROPIC_KEY": "sk-ant-test-key",
+	s.env = map[string]string{"MILLSTREAM_SECRET_ANTHROPIC_KEY": "sk-ant-test-key",
 		EnvHarnessMode: mode, EnvHarnessDir: dir}
 	return s
 }
