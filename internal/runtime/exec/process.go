@@ -141,6 +141,9 @@ type Options struct {
 	Logger          *slog.Logger
 	ReadyTimeout    time.Duration
 	ShutdownTimeout time.Duration
+	// maxLine replaces protocol.MaxLine as the longest line written to the process: tests refuse an oversized item at
+	// a small size. Zero is MaxLine.
+	maxLine int
 }
 
 func (o Options) withDefaults() Options {
@@ -152,6 +155,9 @@ func (o Options) withDefaults() Options {
 	}
 	if o.ShutdownTimeout <= 0 {
 		o.ShutdownTimeout = DefaultShutdownTimeout
+	}
+	if o.maxLine <= 0 {
+		o.maxLine = protocol.MaxLine
 	}
 	return o
 }
@@ -272,7 +278,7 @@ func (p *Process) spawn() error {
 		}
 		p.terminate, wait = func() { KillProcessGroup(cmd.Process) }, cmd.Wait
 	}
-	p.w = protocol.NewWriter(p.stdin)
+	p.w = protocol.NewWriterLimit(p.stdin, p.opts.maxLine)
 	var readers sync.WaitGroup
 	readers.Go(p.readStdout)
 	readers.Go(p.relayStderr)

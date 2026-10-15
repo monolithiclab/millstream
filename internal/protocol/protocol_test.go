@@ -199,4 +199,7 @@ func TestReaderAndWriterLimitIsMaxLine(t *testing.T) {
 	if r, w := NewReader(strings.NewReader("")), NewWriter(io.Discard); r.maxLine != MaxLine || w.maxLine != MaxLine {
 		t.Fatalf("limits %d and %d, want MaxLine", r.maxLine, w.maxLine)
 	}
+	if w := NewWriterLimit(io.Discard, testLine); w.maxLine != testLine {
+		t.Fatalf("NewWriterLimit: limit %d, want %d", w.maxLine, testLine)
+	}
 }

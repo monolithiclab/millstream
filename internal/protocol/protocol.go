@@ -206,7 +206,11 @@ type Writer struct {
 }
 
 // NewWriter returns a Writer over w.
-func NewWriter(w io.Writer) *Writer { return &Writer{w: w, maxLine: MaxLine} }
+func NewWriter(w io.Writer) *Writer { return NewWriterLimit(w, MaxLine) }
+
+// NewWriterLimit returns a Writer over w whose longest line is maxLine instead of MaxLine: tests of a refusal use a
+// small limit rather than build a message of MaxLine bytes.
+func NewWriterLimit(w io.Writer, maxLine int) *Writer { return &Writer{w: w, maxLine: maxLine} }
 
 // Write encodes m with its type as one line and writes it. A message that would exceed MaxLine is refused with
 // ErrProtocol and nothing is written.

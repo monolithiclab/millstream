@@ -61,3 +61,9 @@ func TestStderrOutsideDeliveryAndLongLines(t *testing.T) {
 		t.Errorf("got %d lines; second = %v", len(lines), lines[len(lines)-1]["msg"])
 	}
 }
+
+// TestOversizedItemAtMaxLine: TestOversizedItemIsPermanentAndKeepsProcess at the real limit, protocol.MaxLine.
+func TestOversizedItemAtMaxLine(t *testing.T) {
+	t.Parallel()
+	testOversizedItem(t, testOpts)
+}

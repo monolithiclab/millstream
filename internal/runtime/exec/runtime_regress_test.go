@@ -66,16 +66,29 @@ func TestItemWriteHonoursTimeoutAndContext(t *testing.T) {
 }
 
 // An item larger than a protocol line fails the delivery as a permanent protocol error and leaves the process
-// healthy for the next delivery.
+// healthy for the next delivery. The line limit is 1 KiB here: TestOversizedItemAtMaxLine (e2e) builds an item of
+// MaxLine.
 func TestOversizedItemIsPermanentAndKeepsProcess(t *testing.T) {
 	t.Parallel()
-	p := startFake(t, "echo", nil)
+	opts := testOpts
+	opts.maxLine = 1 << 10
+	testOversizedItem(t, opts)
+}
+
+// testOversizedItem delivers an item over the line limit of opts between two that fit.
+func testOversizedItem(t *testing.T, opts Options) {
+	t.Helper()
+	p, err := Start(t.Context(), fakeSpec("echo", nil), opts)
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	t.Cleanup(func() { _ = p.Close() })
 	res, err := p.Deliver(t.Context(), delivery("dl_0", `{}`))
 	if err != nil {
 		t.Fatalf("first delivery: %v", err)
 	}
 	pid := decodeEcho(t, res).PID
-	_, err = deliverWithin(t, t.Context(), p, delivery("dl_1", bigPayload(protocol.MaxLine)))
+	_, err = deliverWithin(t, t.Context(), p, delivery("dl_1", bigPayload(p.opts.maxLine)))
 	requireClass(t, err, ClassProtocol)
 	if !Permanent(err) {
 		t.Fatalf("err = %v, want a permanent error", err)
