@@ -1,101 +1,41 @@
 package cli
 
 import (
-	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
-	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
-	"sync"
 	"testing"
 )
 
-// appliedDB returns a copy of a database where the run fixture is applied and one run settled by run --once with
-// the extra flags, and the package it was applied from, which the test must not modify. The run happens once per
-// set of flags and test process: the tests share its package and copy its database.
-func appliedDB(t *testing.T, extra ...string) (db, pkg string) {
-	t.Helper()
-	f, _ := appliedRuns.LoadOrStore(strings.Join(extra, " "), sync.OnceValues(func() (appliedRun, error) {
-		return applyRun(extra)
-	}))
-	run, err := f.(func() (appliedRun, error))()
-	if err != nil {
-		t.Fatal(err)
-	}
-	return writeDB(t, run.db), run.pkg
-}
-
-// appliedRuns holds a func() (appliedRun, error) per appliedDB flag set.
-var appliedRuns sync.Map
-
-// appliedRun is what appliedDB copies: the database after the run, and the package applied.
-type appliedRun struct {
-	db  []byte
-	pkg string
-}
-
-// applyRun runs the run fixture once with run --once and the extra flags, under testDir.
-func applyRun(extra []string) (appliedRun, error) {
-	dir, err := os.MkdirTemp(testDir, "applied-")
-	if err != nil {
-		return appliedRun{}, err
-	}
-	pkg, db := filepath.Join(dir, "pkg"), filepath.Join(dir, "state", "millstream.db")
-	if err := copyPackage(pkg, "run"); err != nil {
-		return appliedRun{}, err
-	}
-	var errOut bytes.Buffer
-	argv := append(append([]string{"--db", db, "run", "--once", "--request-id", "r1"}, extra...), pkg)
-	code := Run(context.Background(), argv, IO{In: strings.NewReader(""), Out: io.Discard, Err: &errOut}, "dev",
-		func(rt *Runtime) {
-			rt.Env = func(string) (string, bool) { return "", false }
-			rt.Launchers = testLaunchers()
-		})
-	if code > 1 {
-		return appliedRun{}, fmt.Errorf("run: code %d\n%s", code, errOut.String())
-	}
-	data, err := readDB(db)
-	return appliedRun{db: data, pkg: pkg}, err
-}
-
 func Test_triggerCommand(t *testing.T) {
 	t.Parallel()
-	db, _ := appliedDB(t)
-	out, _ := mustRun(t, 0, "--db", db, "trigger", "listings", "adhoc", "--payload", `{"city":"Lyon"}`,
-		"--request-id", "t1", "--var", "count=5")
+	s := newState(t, false)
+	out, _ := s.must(0, "trigger", "listings", "adhoc", "--payload", `{"city":"Lyon"}`, "--request-id", "t1",
+		"--var", "count=5")
 	if out != "run_t1_adhoc\n" {
 		t.Fatalf("stdout = %q", out)
 	}
-	out, _ = mustRun(t, 0, "--db", db, "trigger", "listings", "adhoc", "--request-id", "t1")
+	out, _ = s.must(0, "trigger", "listings", "adhoc", "--request-id", "t1")
 	if out != "run_t1_adhoc (already fired)\n" {
 		t.Fatalf("refire stdout = %q", out)
 	}
-	out, _ = mustRun(t, 0, "--db", db, "trigger", "listings", "adhoc")
+	out, _ = s.must(0, "trigger", "listings", "adhoc")
 	if !regexp.MustCompile(`^run_\d{8}T\d{6}Z-[0-9a-f]{8}_adhoc\n$`).MatchString(out) {
 		t.Fatalf("generated id stdout = %q", out)
 	}
-	tests := []struct {
-		argv    []string
-		code    int
-		wantErr string
-	}{
-		{[]string{"trigger", "listings", "adhoc", "--payload", "{"}, 2, "--payload: not valid JSON"},
-		{[]string{"trigger", "listings", "adhoc", "--var", "nope=1"}, 2, "declares no such variable"},
-		{[]string{"trigger", "other", "adhoc", "--var", "nope=1"}, 1, "pipeline other: not found"},
-		{[]string{"trigger", "listings", "weekly"}, 1, `has no trigger "weekly"`},
-	}
-	for _, tt := range tests {
-		code, _, errOut := runCLICtx(t, context.Background(), nil, append([]string{"--db", db}, tt.argv...)...)
-		if code != tt.code || !strings.Contains(errOut, tt.wantErr) {
-			t.Fatalf("%v: code %d, stderr %q; want %d, %q", tt.argv, code, errOut, tt.code, tt.wantErr)
-		}
-	}
-	status, _ := mustRun(t, 0, "--db", db, "status", "--pipeline", "listings", "--limit", "5")
+	s.checkRefusals(t, nil, []refusal{
+		{TriggerCmd{Pipeline: "listings", Trigger: "adhoc", Payload: "{"}, true, "--payload: not valid JSON"},
+		{TriggerCmd{Pipeline: "listings", Trigger: "adhoc", Payload: "{}", Var: map[string]string{"nope": "1"}}, true,
+			"declares no such variable"},
+		{TriggerCmd{Pipeline: "other", Trigger: "adhoc", Payload: "{}", Var: map[string]string{"nope": "1"}}, false,
+			"pipeline other: not found"},
+		{TriggerCmd{Pipeline: "listings", Trigger: "weekly", Payload: "{}"}, false, `has no trigger "weekly"`},
+	})
+	status, _ := s.must(0, "status", "--pipeline", "listings", "--limit", "5")
 	if !regexp.MustCompile(`run_t1_adhoc\s+listings\s+running\s+\S+\s+1\s+0`).MatchString(status) {
 		t.Fatalf("status:\n%s", status)
 	}
@@ -103,22 +43,22 @@ func Test_triggerCommand(t *testing.T) {
 
 func Test_cancelCommand(t *testing.T) {
 	t.Parallel()
-	db, _ := appliedDB(t)
-	mustRun(t, 0, "--db", db, "trigger", "listings", "adhoc", "--request-id", "c1")
-	out, _ := mustRun(t, 0, "--db", db, "cancel", "listings", "run_c1_adhoc")
+	s := newState(t, false)
+	s.must(0, "trigger", "listings", "adhoc", "--request-id", "c1")
+	out, _ := s.must(0, "cancel", "listings", "run_c1_adhoc")
 	if out != "run_c1_adhoc cancelled\n" {
 		t.Fatalf("stdout = %q", out)
 	}
-	_, errOut := mustRun(t, 1, "--db", db, "cancel", "listings", "run_r1_adhoc")
+	_, errOut := s.must(1, "cancel", "listings", "run_r1_adhoc")
 	if !strings.Contains(errOut, "conflict") {
 		t.Fatalf("cancelling a settled run: %q", errOut)
 	}
-	mustRun(t, 1, "--db", db, "cancel", "listings", "nope")
+	s.must(1, "cancel", "listings", "nope")
 }
 
 func Test_pauseAndResumeCommands(t *testing.T) {
 	t.Parallel()
-	db, _ := appliedDB(t)
+	s := newState(t, false)
 	steps := []struct {
 		argv []string
 		out  string
@@ -129,21 +69,24 @@ func Test_pauseAndResumeCommands(t *testing.T) {
 		{[]string{"pause", "listings", "score"}, "listings.score paused\n", regexp.MustCompile(`listings\s+active\s+1\s+score`)},
 		{[]string{"resume", "listings", "score"}, "listings.score resumed\n", regexp.MustCompile(`listings\s+active\s+1\s+-`)},
 	}
-	for _, s := range steps {
-		out, _ := mustRun(t, 0, append([]string{"--db", db}, s.argv...)...)
-		if out != s.out {
-			t.Fatalf("%v: stdout %q, want %q", s.argv, out, s.out)
+	for _, step := range steps {
+		out, _ := s.must(0, step.argv...)
+		if out != step.out {
+			t.Fatalf("%v: stdout %q, want %q", step.argv, out, step.out)
 		}
-		status, _ := mustRun(t, 0, "--db", db, "status")
-		if !s.want.MatchString(status) {
-			t.Fatalf("%v: status:\n%s", s.argv, status)
+		status, _ := s.must(0, "status")
+		if !step.want.MatchString(status) {
+			t.Fatalf("%v: status:\n%s", step.argv, status)
 		}
 	}
-	mustRun(t, 1, "--db", db, "pause", "nope")
+	s.must(1, "pause", "nope")
+	if !e2eBuild {
+		return
+	}
 
 	// A budget pauses the agent steps with its cause (store tests cover how); status shows it and resume lifts it,
-	// leaving a step a user paused as it is.
-	sqldb, err := sql.Open("sqlite", db)
+	// leaving a step a user paused as it is. The test writes the cause into the database file: e2e build only.
+	sqldb, err := sql.Open("sqlite", s.db)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -155,12 +98,12 @@ func Test_pauseAndResumeCommands(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	status, _ := mustRun(t, 0, "--db", db, "status")
+	status, _ := s.must(0, "status")
 	if !regexp.MustCompile(`listings\s+active\s+1\s+crawl,score \(budget\.day\)`).MatchString(status) {
 		t.Fatalf("status:\n%s", status)
 	}
-	mustRun(t, 0, "--db", db, "resume", "listings")
-	status, _ = mustRun(t, 0, "--db", db, "status")
+	s.must(0, "resume", "listings")
+	status, _ = s.must(0, "status")
 	if !regexp.MustCompile(`listings\s+active\s+1\s+crawl\n`).MatchString(status) {
 		t.Fatalf("status after resume:\n%s", status)
 	}
@@ -168,8 +111,8 @@ func Test_pauseAndResumeCommands(t *testing.T) {
 
 func Test_dlqAndReplayCommands(t *testing.T) {
 	t.Parallel()
-	db, pkg := appliedDB(t, "--var", "scoreMode=error")
-	out, _ := mustRun(t, 0, "--db", db, "dlq", "list", "--pipeline", "listings", "--run", "run_r1_adhoc")
+	s := newState(t, true)
+	out, _ := s.must(0, "dlq", "list", "--pipeline", "listings", "--run", "run_r1_adhoc")
 	lines := splitLines(out)
 	if len(lines) != 4 || !strings.HasPrefix(lines[0], "ID") || !strings.Contains(lines[1], "score") ||
 		!strings.Contains(lines[1], "portal answered 503") {
@@ -179,42 +122,45 @@ func Test_dlqAndReplayCommands(t *testing.T) {
 	for _, l := range lines[1:] {
 		ids = append(ids, strings.Fields(l)[0])
 	}
-	out, _ = mustRun(t, 0, "--db", db, "dlq", "discard", "--pipeline", "listings", ids[0])
+	out, _ = s.must(0, "dlq", "discard", "--pipeline", "listings", ids[0])
 	if out != "1 dead letter discarded\n" {
 		t.Fatalf("discard stdout = %q", out)
 	}
-	mustRun(t, 1, "--db", db, "dlq", "discard", "--pipeline", "listings", ids[0])
-	out, _ = mustRun(t, 0, "--db", db, "dlq", "list", "--state", "all")
+	s.must(1, "dlq", "discard", "--pipeline", "listings", ids[0])
+	out, _ = s.must(0, "dlq", "list", "--state", "all")
 	if len(splitLines(out)) != 4 || !strings.Contains(out, "discarded") {
 		t.Fatalf("dlq list --state all:\n%s", out)
 	}
-	out, _ = mustRun(t, 0, "--db", db, "replay", "--from", "dlq", "--pipeline", "listings", "--run", "run_r1_adhoc",
-		"--migrate", ids[1])
+	out, _ = s.must(0, "replay", "--from", "dlq", "--pipeline", "listings", "--run", "run_r1_adhoc", "--migrate", ids[1])
 	if out != "1 dead letter replayed\n" {
 		t.Fatalf("replay stdout = %q", out)
 	}
-	status, _ := mustRun(t, 0, "--db", db, "status")
+	status, _ := s.must(0, "status")
 	if !regexp.MustCompile(`run_r1_adhoc\s+listings\s+running`).MatchString(status) {
 		t.Fatalf("status after replay:\n%s", status)
 	}
-	// The rerun waits for the reopened run, whose stored vars still fail the step.
-	out, _ = mustRun(t, 1, "--db", db, "run", "--once", "--request-id", "r1", pkg)
-	if !strings.HasPrefix(out, "listings run_r1_adhoc completedWithErrors\n") {
-		t.Fatalf("rerun summary:\n%s", out)
+	replayed := "1 dead letter replayed\n"
+	if e2eBuild {
+		// The rerun waits for the reopened run, whose stored vars still fail the step.
+		out, _ = s.must(1, "run", "--once", "--request-id", "r1", s.pkg)
+		if !strings.HasPrefix(out, "listings run_r1_adhoc completedWithErrors\n") {
+			t.Fatalf("rerun summary:\n%s", out)
+		}
+		replayed = "2 dead letters replayed\n"
 	}
-	out, _ = mustRun(t, 0, "--db", db, "replay", "--from", "dlq", "--pipeline", "listings", "--run", "run_r1_adhoc")
-	if out != "2 dead letters replayed\n" {
-		t.Fatalf("replay all stdout = %q", out)
+	out, _ = s.must(0, "replay", "--from", "dlq", "--pipeline", "listings", "--run", "run_r1_adhoc")
+	if out != replayed {
+		t.Fatalf("replay all stdout = %q, want %q", out, replayed)
 	}
-	mustRun(t, 1, "--db", db, "replay", "--from", "dlq", "--pipeline", "listings", "--run", "nope")
+	s.must(1, "replay", "--from", "dlq", "--pipeline", "listings", "--run", "nope")
 }
 
 func Test_replayStepCommand(t *testing.T) {
 	t.Parallel()
-	db, pkg := appliedDB(t)
+	s := newState(t, false)
 	replay := func(want int, args ...string) (string, string) {
 		t.Helper()
-		return mustRun(t, want, append([]string{"--db", db, "replay", "--pipeline", "listings"}, args...)...)
+		return s.must(want, append([]string{"replay", "--pipeline", "listings"}, args...)...)
 	}
 	out, _ := replay(0, "--step", "score", "--run", "run_r1_adhoc", "--since", "7d", "--revision", "1",
 		"--where", "envelope.key != ''", "--request-id", "s1", "--var", "count=3")
@@ -228,42 +174,41 @@ func Test_replayStepCommand(t *testing.T) {
 	if !regexp.MustCompile(`^run_replay_\d{8}T\d{6}Z-[0-9a-f]{8}\n$`).MatchString(out) {
 		t.Fatalf("generated id stdout = %q", out)
 	}
-	// run --once waits for the replay runs too, and reports them.
-	out, _ = mustRun(t, 0, "--db", db, "run", "--once", "--request-id", "r1", pkg)
-	if !strings.Contains(out, "listings run_replay_s1 succeeded\n") {
-		t.Fatalf("summary:\n%s", out)
-	}
-	tests := []struct {
-		args    []string
-		code    int
-		wantErr string
-	}{
-		{[]string{"--from", "dlq", "--step", "score"}, 2, "--from and --step are mutually exclusive"},
-		{nil, 2, "replay needs --from dlq or --step"},
-		{[]string{"--from", "later"}, 2, "--from later: only dlq is supported"},
-		{[]string{"--from", "dlq"}, 2, "--from dlq needs --run"},
-		{[]string{"--from", "dlq", "--run", "run_r1_adhoc", "--since", "7d"}, 2, "go with --step"},
-		{[]string{"--step", "score", "--migrate"}, 2, "go with --from dlq"},
-		{[]string{"--step", "score", "it_x"}, 2, "go with --from dlq"},
-		{[]string{"--step", "score", "--since", "soon"}, 2, "--since: invalid duration"},
-		{[]string{"--step", "score", "--var", "nope=1"}, 2, "declares no such variable"},
-		{[]string{"--step", "score", "--where", "item.n >"}, 1, "--where"},
-		{[]string{"--step", "nope"}, 1, `has no step "nope"`},
-		{[]string{"--step", "score", "--run", "nope"}, 1, "selects no item"},
-	}
-	for _, tt := range tests {
-		code, _, errOut := runCLICtx(t, context.Background(), nil,
-			append([]string{"--db", db, "replay", "--pipeline", "listings"}, tt.args...)...)
-		if code != tt.code || !strings.Contains(errOut, tt.wantErr) {
-			t.Errorf("%v: code %d, stderr %q; want %d, %q", tt.args, code, errOut, tt.code, tt.wantErr)
+	if e2eBuild {
+		// run --once waits for the replay runs too, and reports them.
+		out, _ = s.must(0, "run", "--once", "--request-id", "r1", s.pkg)
+		if !strings.Contains(out, "listings run_replay_s1 succeeded\n") {
+			t.Fatalf("summary:\n%s", out)
 		}
 	}
+	// Through the parser: a usage error exits 2, a refusal of the engine 1.
+	if code, _, errOut := s.run("replay", "--pipeline", "listings", "--from", "dlq", "--step", "score"); code != 2 ||
+		!strings.Contains(errOut, "--from and --step are mutually exclusive") {
+		t.Errorf("--from and --step: code %d, stderr %q", code, errOut)
+	}
+	if code, _, errOut := s.run("replay", "--pipeline", "listings", "--step", "nope"); code != 1 ||
+		!strings.Contains(errOut, `has no step "nope"`) {
+		t.Errorf("--step nope: code %d, stderr %q", code, errOut)
+	}
+	replayCmd := func(c ReplayCmd) ReplayCmd { c.Pipeline = "listings"; return c }
+	s.checkRefusals(t, nil, []refusal{
+		{replayCmd(ReplayCmd{}), true, "replay needs --from dlq or --step"},
+		{replayCmd(ReplayCmd{From: "later"}), true, "--from later: only dlq is supported"},
+		{replayCmd(ReplayCmd{From: "dlq"}), true, "--from dlq needs --run"},
+		{replayCmd(ReplayCmd{From: "dlq", RunID: "run_r1_adhoc", Since: "7d"}), true, "go with --step"},
+		{replayCmd(ReplayCmd{Step: "score", Migrate: true}), true, "go with --from dlq"},
+		{replayCmd(ReplayCmd{Step: "score", IDs: []string{"it_x"}}), true, "go with --from dlq"},
+		{replayCmd(ReplayCmd{Step: "score", Since: "soon"}), true, "--since: invalid duration"},
+		{replayCmd(ReplayCmd{Step: "score", Var: map[string]string{"nope": "1"}}), true, "declares no such variable"},
+		{replayCmd(ReplayCmd{Step: "score", Where: "item.n >"}), false, "--where"},
+		{replayCmd(ReplayCmd{Step: "score", RunID: "nope"}), false, "selects no item"},
+	})
 }
 
 func Test_tailCommand(t *testing.T) {
 	t.Parallel()
-	db, _ := appliedDB(t)
-	out, _ := mustRun(t, 0, "--db", db, "tail")
+	s := newState(t, false)
+	out, _ := s.must(0, "tail")
 	lines := splitLines(out)
 	if len(lines) < 5 {
 		t.Fatalf("tail:\n%s", out)
@@ -275,18 +220,17 @@ func Test_tailCommand(t *testing.T) {
 	if first["seq"] != float64(1) || first["kind"] != "revisionApplied" || first["pipeline"] != "listings" {
 		t.Fatalf("first event = %v", first)
 	}
-	out, _ = mustRun(t, 0, "--db", db, "tail", "--from", "2")
+	out, _ = s.must(0, "tail", "--from", "2")
 	if len(splitLines(out)) != len(lines)-2 {
 		t.Fatalf("tail --from 2 printed %d lines of %d", len(splitLines(out)), len(lines))
 	}
-	// --follow prints the events from --from, then keeps polling until interrupted: the test interrupts it once it
-	// has printed them all.
+	// --follow prints the events from --from, then waits --interval and polls again, until interrupted: the test
+	// interrupts it once it has printed them all, during its first wait.
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	follow := newWatchBuffer(func(s string) bool { return len(splitLines(s)) >= len(lines)-1 })
 	go func() { <-follow.Done; cancel() }()
-	code := Run(ctx, []string{"--db", db, "tail", "--follow", "--interval", "20ms", "--from", "1"},
-		IO{In: strings.NewReader(""), Out: follow, Err: io.Discard}, "dev", func(rt *Runtime) { rt.Launchers = testLaunchers() })
+	code, _ := s.exec(ctx, nil, follow, "tail", "--follow", "--interval", "1h", "--from", "1")
 	if code != 0 || len(splitLines(follow.String())) != len(lines)-1 {
 		t.Fatalf("tail --follow: code %d, %d lines", code, len(splitLines(follow.String())))
 	}

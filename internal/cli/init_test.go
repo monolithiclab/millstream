@@ -9,8 +9,8 @@ import (
 	"github.com/monolithiclab/millstream/internal/pipeline"
 )
 
-// Test_initPipeline: the scaffolded package passes check and test pipeline as generated, and init refuses to write
-// over it or under a name that is not an identifier.
+// Test_initPipeline: the scaffolded package passes check and test pipeline as generated (e2e build), and init
+// refuses to write over it or under a name that is not an identifier.
 func Test_initPipeline(t *testing.T) {
 	t.Parallel()
 	parent := t.TempDir()
@@ -25,27 +25,24 @@ func Test_initPipeline(t *testing.T) {
 			t.Error(err)
 		}
 	}
-	if _, errOut := mustRun(t, 0, "check", pkg); !strings.Contains(errOut, "greetings: 0 errors") {
-		t.Fatalf("check: %s", errOut)
-	}
-	if out, _ := mustRun(t, 0, "test", "pipeline", pkg); out != "PASS one name greeted\n" {
-		t.Fatalf("test pipeline: %q", out)
-	}
-
-	tests := []struct {
-		argv []string
-		want string
-	}{
-		{[]string{"init", "pipeline", "greetings", "--dir", parent}, "the directory exists and is not empty"},
-		{[]string{"init", "pipeline", "Greetings", "--dir", parent}, "lowercase letters, digits and single dashes"},
-		{[]string{"init", "action", "a--b", "--dir", parent}, "lowercase letters, digits and single dashes"},
-		{[]string{"init", "action", "x", "--lang", "sh", "--dir", parent}, "--lang"},
-	}
-	for _, tt := range tests {
-		if _, errOut := mustRun(t, 2, tt.argv...); !strings.Contains(errOut, tt.want) {
-			t.Errorf("%v: stderr %q, want %q", tt.argv, errOut, tt.want)
+	if e2eBuild { // check and test pipeline on the generated package: an engine run, e2e build only
+		if _, errOut := mustRun(t, 0, "check", pkg); !strings.Contains(errOut, "greetings: 0 errors") {
+			t.Fatalf("check: %s", errOut)
+		}
+		if out, _ := mustRun(t, 0, "test", "pipeline", pkg); out != "PASS one name greeted\n" {
+			t.Fatalf("test pipeline: %q", out)
 		}
 	}
+
+	if _, errOut := mustRun(t, 2, "init", "action", "x", "--lang", "sh", "--dir", parent); !strings.Contains(errOut,
+		"--lang") {
+		t.Errorf("--lang sh: stderr %q", errOut)
+	}
+	(&state{t: t}).checkRefusals(t, nil, []refusal{
+		{InitPipelineCmd{Name: "greetings", Dir: parent}, true, "the directory exists and is not empty"},
+		{InitPipelineCmd{Name: "Greetings", Dir: parent}, true, "lowercase letters, digits and single dashes"},
+		{InitActionCmd{Name: "a--b", Dir: parent, Lang: "go"}, true, "lowercase letters, digits and single dashes"},
+	})
 	empty := filepath.Join(parent, "empty")
 	if err := os.Mkdir(empty, 0o750); err != nil {
 		t.Fatal(err)

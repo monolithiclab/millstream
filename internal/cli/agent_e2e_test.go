@@ -1,3 +1,5 @@
+//go:build e2e
+
 package cli
 
 import (
@@ -16,7 +18,7 @@ import (
 
 // Test_runAgentRecordReplay runs an agent step through millstream run --once, unsandboxed as the environment file
 // allows: first recording against a fake OpenAI-compatible server, then replaying with the server gone. Each run
-// keeps the attempt's transcript.
+// keeps the attempt's transcript. Two engine runs and an HTTP server: in the e2e build.
 func Test_runAgentRecordReplay(t *testing.T) {
 	t.Parallel()
 	var calls atomic.Int32

@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // writeFiles writes files (path relative to dir: content) under dir.
@@ -67,8 +68,7 @@ func Test_testActionFake(t *testing.T) {
 // Test_testActionUsage: what test action cannot run exits 2, an unreadable fixture 1.
 func Test_testActionUsage(t *testing.T) {
 	t.Parallel()
-	pkg := runPackage(t, "run")
-	fake := filepath.Join(pkg, "actions", "fake")
+	fake := filepath.Join(sharedPackage(t, "run"), "actions", "fake")
 	bad := t.TempDir()
 	writeFiles(t, bad, map[string]string{
 		"action.yaml":    "name: bad\nkind: exec\nruntime: { exec: { command: [./bad] } }\n",
@@ -77,20 +77,18 @@ func Test_testActionUsage(t *testing.T) {
 		"tests/y.yaml":   "nope: 1\n",
 		"tests/z.yaml.b": "",
 	})
-	tests := []struct {
-		argv []string
-		code int
-		want string
-	}{
-		{[]string{"test", "action", fake}, 2, "no test case in"},
-		{[]string{"test", "action", fake, "--package", t.TempDir()}, 2, "is not inside the package"},
-		{[]string{"test", "action", fake, "--harness-mode", "dry"}, 2, "--harness-mode"},
-		{[]string{"test", "action", bad}, 1, "expect needs outputs or error, not both"},
-		{[]string{"test", "action", t.TempDir()}, 1, "action.yaml in the package"},
+	if _, errOut := mustRun(t, 2, "test", "action", fake, "--harness-mode", "dry"); !strings.Contains(errOut,
+		"--harness-mode") {
+		t.Errorf("--harness-mode dry: stderr %q", errOut)
 	}
-	for _, tt := range tests {
-		if _, errOut := mustRun(t, tt.code, tt.argv...); !strings.Contains(errOut, tt.want) {
-			t.Errorf("%v: stderr %q, want %q", tt.argv, errOut, tt.want)
-		}
+	if _, errOut := mustRun(t, 1, "test", "action", bad); !strings.Contains(errOut,
+		"expect needs outputs or error, not both") {
+		t.Errorf("bad fixture: stderr %q", errOut)
 	}
+	testAction := func(c TestActionCmd) TestActionCmd { c.HarnessMode, c.Timeout = "replay", 5*time.Second; return c }
+	(&state{t: t}).checkRefusals(t, nil, []refusal{
+		{testAction(TestActionCmd{Dir: fake}), true, "no test case in"},
+		{testAction(TestActionCmd{Dir: fake, Package: t.TempDir()}), true, "is not inside the package"},
+		{testAction(TestActionCmd{Dir: t.TempDir()}), false, "action.yaml in the package"},
+	})
 }

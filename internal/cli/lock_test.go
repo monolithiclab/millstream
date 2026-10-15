@@ -96,7 +96,7 @@ func TestLockAndEnvironmentErrors(t *testing.T) {
 
 func TestLockWithoutContainerActions(t *testing.T) {
 	t.Parallel()
-	pkg := runPackage(t, "run")
+	pkg := sharedPackage(t, "run")
 	code, out, errOut := runCLICtx(t, context.Background(), nil, "lock", pkg)
 	if code != 0 || out != "" || !strings.Contains(errOut, "no container or registry actions to lock") {
 		t.Fatalf("lock: %d\n%s%s", code, out, errOut)

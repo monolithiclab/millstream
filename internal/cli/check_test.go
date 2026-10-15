@@ -1,12 +1,15 @@
 package cli
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
 
-func fixture(name string) string { return filepath.Join("testdata", name) }
+// fixture returns the absolute path of testdata/<name>: Kong makes a relative path argument absolute with a getwd,
+// which costs more than the rest of a parse.
+func fixture(name string) string { return filepath.Join(testdata, name) }
 
 const syntaxError = `Syntax error: mismatched input '<EOF>'`
 
@@ -76,7 +79,13 @@ func Test_checkCommand(t *testing.T) {
 				"step that has no autoApprove in between",
 		}, "p: 0 errors, 1 warning\n"},
 	}
+	// The default build checks a sample, enough for what the command owns: the exit code, the diagnostic lines and
+	// the summary. The pipeline package tests the diagnostics themselves; the e2e build checks every fixture.
+	sample := map[string]bool{"valid": true, "no-in": true, "unknown-action": true, "unread-output": true}
 	for _, tt := range tests {
+		if !e2eBuild && !sample[tt.fixture] {
+			continue
+		}
 		t.Run(tt.fixture, func(t *testing.T) {
 			t.Parallel()
 			code, out, errOut := runCLIEnv(t, "dev", tt.env, "check", fixture(tt.fixture))
@@ -93,8 +102,23 @@ func Test_checkCommand(t *testing.T) {
 	}
 }
 
+// The directory arguments default to the current directory. The e2e build also runs check there: internal/cli,
+// whose testdata loading the package reads whole.
 func Test_checkDefaultsToCurrentDirectory(t *testing.T) {
 	t.Parallel()
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := dirOrCurrent(""); got != wd {
+		t.Fatalf("dirOrCurrent of nothing = %q, want %q", got, wd)
+	}
+	if got := dirOrCurrent("pkg"); got != "pkg" {
+		t.Fatalf("dirOrCurrent(pkg) = %q", got)
+	}
+	if !e2eBuild {
+		return
+	}
 	code, _, errOut := runCLI(t, "dev", "check")
 	if code != 1 || !strings.Contains(errOut, "no pipeline.yaml") {
 		t.Fatalf("code=%d err=%q", code, errOut)

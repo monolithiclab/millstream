@@ -3,7 +3,9 @@ package cli
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -15,8 +17,9 @@ import (
 	"github.com/monolithiclab/millstream/internal/store/sqlite"
 )
 
-// testDir is TestMain's temporary directory, for what tests build once and share.
-var testDir string
+// testDir is TestMain's temporary directory, for what tests build once and share; testdata is the absolute path
+// of the testdata directory.
+var testDir, testdata string
 
 func TestMain(m *testing.M) {
 	// The engine runs unsandboxed agents as its own executable's agent subcommand: in the e2e build, which starts real
@@ -36,6 +39,10 @@ func runTests(m *testing.M) int {
 	defer func() { _ = os.RemoveAll(dir) }()
 	defer fakeexec.Cleanup()
 	testDir = dir
+	if testdata, err = filepath.Abs("testdata"); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
 	return m.Run()
 }
 
@@ -50,6 +57,24 @@ func runPackage(t *testing.T, name string) string {
 	}
 	return dst
 }
+
+// sharedPackage is a copy of testdata/<name> as runPackage makes it, made once per process for the tests that do not
+// modify it.
+func sharedPackage(t *testing.T, name string) string {
+	t.Helper()
+	f, _ := sharedPackages.LoadOrStore(name, sync.OnceValues(func() (string, error) {
+		dst := filepath.Join(testDir, "shared", name)
+		return dst, copyPackage(dst, name)
+	}))
+	dst, err := f.(func() (string, error))()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return dst
+}
+
+// sharedPackages holds a func() (string, error) per sharedPackage name.
+var sharedPackages sync.Map
 
 // copyPackage copies testdata/<name> to dst and places the fake action at actions/fake/fakeaction.
 func copyPackage(dst, name string) error {
@@ -82,58 +107,6 @@ func copyPackage(dst, name string) error {
 func dbPath(t *testing.T) string {
 	t.Helper()
 	return filepath.Join(t.TempDir(), "state", "millstream.db")
-}
-
-// migrated is a migrated state database's contents, built once: migratedDB copies it rather than have each test's
-// first command migrate a fresh database.
-var migrated = sync.OnceValues(func() ([]byte, error) {
-	dir, err := os.MkdirTemp("", "cli-db-")
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = os.RemoveAll(dir) }()
-	path := filepath.Join(dir, "millstream.db")
-	st, err := sqlite.Open(path, sqlite.Options{})
-	if err != nil {
-		return nil, err
-	}
-	if err := st.Close(); err != nil {
-		return nil, err
-	}
-	return readDB(path)
-})
-
-// readDB reads the closed state database at path: closing the last connection checkpoints the write-ahead log into
-// the database file and removes it, so the file is the whole database.
-func readDB(path string) ([]byte, error) {
-	if _, err := os.Stat(path + "-wal"); !os.IsNotExist(err) {
-		return nil, fmt.Errorf("the write-ahead log outlived the store: %v", err)
-	}
-	return os.ReadFile(path) // #nosec G304 -- our own temporary file
-}
-
-// migratedDB returns the path of a fresh, already migrated state database under a temporary directory. Tests that do
-// not test the database's creation use it: Test_runOnce starts from a path that does not exist.
-func migratedDB(t *testing.T) string {
-	t.Helper()
-	data, err := migrated()
-	if err != nil {
-		t.Fatal(err)
-	}
-	return writeDB(t, data)
-}
-
-// writeDB writes data as the state database at a fresh dbPath and returns the path.
-func writeDB(t *testing.T, data []byte) string {
-	t.Helper()
-	path := dbPath(t)
-	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path, data, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	return path
 }
 
 // runCLICtx runs the CLI under ctx with env as the whole environment.
@@ -199,4 +172,107 @@ func (b *watchBuffer) Write(p []byte) (int, error) {
 		b.once.Do(func() { close(b.Done) })
 	}
 	return n, err
+}
+
+// state is a test's state database: the run fixture applied and run r1 settled, all of its score deliveries failed
+// when scoreErrors. The default build fills an in-memory store through engine stubs, which the test's commands share
+// (Runtime.Store); the e2e build copies a database run --once settled with the fake action, which each command opens
+// with --db, as the binary does.
+type state struct {
+	t   *testing.T
+	db  string
+	pkg string // the package applied: e2e build only
+	st  *sqlite.Store
+}
+
+// exec runs the CLI against the state under ctx with env as the whole environment.
+func (s *state) exec(ctx context.Context, env map[string]string, out io.Writer, argv ...string) (code int,
+	stderr string,
+) {
+	var errb bytes.Buffer
+	code = Run(ctx, append([]string{"--db", s.db}, argv...), IO{In: strings.NewReader(""), Out: out, Err: &errb},
+		"dev", func(rt *Runtime) {
+			rt.Env = func(k string) (string, bool) { v, ok := env[k]; return v, ok }
+			rt.Launchers = testLaunchers()
+			rt.Store = s.st
+		})
+	return code, errb.String()
+}
+
+// run runs the CLI against the state and returns its exit code and output.
+func (s *state) run(argv ...string) (code int, stdout, stderr string) {
+	var out bytes.Buffer
+	code, stderr = s.exec(context.Background(), nil, &out, argv...)
+	return code, out.String(), stderr
+}
+
+// must runs the CLI against the state and fails the test unless it exits with want.
+func (s *state) must(want int, argv ...string) (stdout, stderr string) {
+	s.t.Helper()
+	code, out, errOut := s.run(argv...)
+	if code != want {
+		s.t.Fatalf("millstream %s: code %d, want %d\nstdout:\n%s\nstderr:\n%s", strings.Join(argv, " "), code, want,
+			out, errOut)
+	}
+	return out, errOut
+}
+
+// newEmptyState is a state with nothing applied yet: in the default build an in-memory store, with a --db path that
+// is never created; in the e2e build a --db path that does not exist yet, which the first command creates.
+func newEmptyState(t *testing.T) *state {
+	t.Helper()
+	if e2eBuild {
+		return &state{t: t, db: dbPath(t)}
+	}
+	return &state{t: t, db: unusedDB(), st: memoryStore(t)}
+}
+
+// memoryStore opens an in-memory store, closed when the test ends.
+func memoryStore(t *testing.T) *sqlite.Store {
+	t.Helper()
+	st, err := sqlite.Open(sqlite.Memory, sqlite.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	return st
+}
+
+// unusedDB is the --db path of the states whose commands use an in-memory store: nothing creates it.
+func unusedDB() string { return filepath.Join(testDir, "unused", "millstream.db") }
+
+// runner is a command as the parser builds it.
+type runner interface{ Run(rt *Runtime) error }
+
+// call runs cmd against the state without the parser, which costs more than most commands' work: a table of a
+// command's refusals builds each case's command directly, and a test of the same command through Run covers its
+// flags and exit codes. Fields the parser would default are the case's to set.
+func (s *state) call(env map[string]string, cmd runner) (stdout, stderr string, err error) {
+	var out, errb bytes.Buffer
+	rt := &Runtime{Ctx: context.Background(), IO: IO{In: strings.NewReader(""), Out: &out, Err: &errb},
+		Version: "dev", Env: func(k string) (string, bool) { v, ok := env[k]; return v, ok }, DB: s.db,
+		Launchers: testLaunchers(), Store: s.st}
+	err = cmd.Run(rt)
+	return out.String(), errb.String(), err
+}
+
+// refusal is a case of a table of refusals: cmd fails with an error that holds want, a usage error (exit status 2)
+// when usage.
+type refusal struct {
+	cmd   runner
+	usage bool
+	want  string
+}
+
+// checkRefusals runs each refusal against the state.
+func (s *state) checkRefusals(t *testing.T, env map[string]string, refusals []refusal) {
+	t.Helper()
+	for _, r := range refusals {
+		_, stderr, err := s.call(env, r.cmd)
+		var usage usageError
+		if err == nil || errors.As(err, &usage) != r.usage || !strings.Contains(err.Error()+"\n"+stderr, r.want) {
+			t.Errorf("%+v: error %v (usage %v), stderr %q; want usage %v, %q", r.cmd, err, errors.As(err, &usage),
+				stderr, r.usage, r.want)
+		}
+	}
 }
