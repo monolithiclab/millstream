@@ -22,7 +22,6 @@ func TestMetricsInsightsAndReport(t *testing.T) {
 		!strings.Contains(out, "# TYPE millstream_delivery_latency_seconds histogram") {
 		t.Fatalf("exposition:\n%s", out)
 	}
-	s.must(2, "metrics", "--since", "soon")
 
 	out, _ = s.must(0, "insights")
 	if !strings.Contains(out, "failureCluster") || !strings.Contains(out, "score") {
@@ -53,7 +52,6 @@ func TestMetricsInsightsAndReport(t *testing.T) {
 	if !strings.Contains(out, in.ID) {
 		t.Fatalf("muted insights:\n%s", out)
 	}
-	s.must(1, "insights", "ack", "in_missing")
 
 	out, _ = s.must(0, "run", "report", "listings", runID)
 	for _, want := range []string{"Run run_r1_adhoc of listings (trigger): completedWithErrors", "Critical path",
@@ -71,5 +69,9 @@ func TestMetricsInsightsAndReport(t *testing.T) {
 		r.Failures[0].Count != 3 {
 		t.Fatalf("report JSON = %+v, %v\n%s", r, err, out)
 	}
-	s.must(1, "run", "report", "listings", "run_missing")
+	s.checkRefusals(t, nil, []refusal{
+		{MetricsCmd{Since: "soon"}, true, "--since: invalid duration"},
+		{InsightsAckCmd{insightRef{ID: "in_missing"}}, false, "insight in_missing: not found"},
+		{RunReportCmd{Pipeline: "listings", RunID: "run_missing"}, false, "run run_missing: not found"},
+	})
 }

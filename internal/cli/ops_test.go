@@ -74,7 +74,7 @@ func Test_pauseAndResumeCommands(t *testing.T) {
 		if out != step.out {
 			t.Fatalf("%v: stdout %q, want %q", step.argv, out, step.out)
 		}
-		status, _ := s.must(0, "status")
+		status := s.status()
 		if !step.want.MatchString(status) {
 			t.Fatalf("%v: status:\n%s", step.argv, status)
 		}
@@ -98,12 +98,12 @@ func Test_pauseAndResumeCommands(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	status, _ := s.must(0, "status")
+	status := s.status()
 	if !regexp.MustCompile(`listings\s+active\s+1\s+crawl,score \(budget\.day\)`).MatchString(status) {
 		t.Fatalf("status:\n%s", status)
 	}
 	s.must(0, "resume", "listings")
-	status, _ = s.must(0, "status")
+	status = s.status()
 	if !regexp.MustCompile(`listings\s+active\s+1\s+crawl\n`).MatchString(status) {
 		t.Fatalf("status after resume:\n%s", status)
 	}
@@ -126,7 +126,7 @@ func Test_dlqAndReplayCommands(t *testing.T) {
 	if out != "1 dead letter discarded\n" {
 		t.Fatalf("discard stdout = %q", out)
 	}
-	s.must(1, "dlq", "discard", "--pipeline", "listings", ids[0])
+	s.checkRefusals(t, nil, []refusal{{DLQDiscardCmd{Pipeline: "listings", IDs: ids[:1]}, false, "not found"}})
 	out, _ = s.must(0, "dlq", "list", "--state", "all")
 	if len(splitLines(out)) != 4 || !strings.Contains(out, "discarded") {
 		t.Fatalf("dlq list --state all:\n%s", out)
@@ -135,7 +135,7 @@ func Test_dlqAndReplayCommands(t *testing.T) {
 	if out != "1 dead letter replayed\n" {
 		t.Fatalf("replay stdout = %q", out)
 	}
-	status, _ := s.must(0, "status")
+	status := s.status()
 	if !regexp.MustCompile(`run_r1_adhoc\s+listings\s+running`).MatchString(status) {
 		t.Fatalf("status after replay:\n%s", status)
 	}
@@ -152,7 +152,9 @@ func Test_dlqAndReplayCommands(t *testing.T) {
 	if out != replayed {
 		t.Fatalf("replay all stdout = %q, want %q", out, replayed)
 	}
-	s.must(1, "replay", "--from", "dlq", "--pipeline", "listings", "--run", "nope")
+	s.checkRefusals(t, nil, []refusal{
+		{ReplayCmd{From: "dlq", Pipeline: "listings", RunID: "nope"}, false, "run nope: not found"},
+	})
 }
 
 func Test_replayStepCommand(t *testing.T) {

@@ -10,6 +10,7 @@ func Test_varsCommand(t *testing.T) {
 	tests := []struct {
 		name     string
 		argv     []string
+		cmd      runner // run directly instead of argv
 		env      map[string]string
 		wantCode int
 		wantOut  string
@@ -17,7 +18,7 @@ func Test_varsCommand(t *testing.T) {
 	}{
 		{
 			name: "defaults, without needing secrets",
-			argv: []string{"vars", fixture("valid")},
+			cmd:  VarsCmd{Dir: fixture("valid")},
 			wantOut: "NAME      VALUE   SOURCE   ENVIRONMENT\n" +
 				"city      \"Lyon\"  default  MILLSTREAM_VAR_CITY\n" +
 				"maxPrice  400000  default  MILLSTREAM_VAR_MAX_PRICE\n",
@@ -32,7 +33,7 @@ func Test_varsCommand(t *testing.T) {
 		},
 		{
 			name:     "required variable missing",
-			argv:     []string{"vars", fixture("config-schema")},
+			cmd:      VarsCmd{Dir: fixture("config-schema")},
 			wantCode: 1,
 			wantOut: "NAME      VALUE     SOURCE   ENVIRONMENT\n" +
 				"maxPrice  \"400000\"  default  MILLSTREAM_VAR_MAX_PRICE\n" +
@@ -49,12 +50,16 @@ func Test_varsCommand(t *testing.T) {
 				"maxPrice  -       unset    MILLSTREAM_VAR_MAX_PRICE\n",
 			wantErr: "--var nope: pipeline listings declares no such variable; variable maxPrice from env: not valid JSON",
 		},
-		{name: "load error", argv: []string{"vars", fixture("mixed-out")}, wantCode: 1, wantErr: "never both"},
+		{name: "load error", cmd: VarsCmd{Dir: fixture("mixed-out")}, wantCode: 1, wantErr: "never both"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			code, out, errOut := runCLIEnv(t, "dev", tt.env, tt.argv...)
+			run := func() (int, string, string) { return runCLIEnv(t, "dev", tt.env, tt.argv...) }
+			if tt.cmd != nil {
+				run = func() (int, string, string) { return direct(tt.env, tt.cmd) }
+			}
+			code, out, errOut := run()
 			if code != tt.wantCode {
 				t.Fatalf("code = %d, want %d; stderr %q", code, tt.wantCode, errOut)
 			}

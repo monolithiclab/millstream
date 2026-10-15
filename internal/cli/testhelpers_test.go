@@ -276,3 +276,31 @@ func (s *state) checkRefusals(t *testing.T, env map[string]string, refusals []re
 		}
 	}
 }
+
+// status is what millstream status prints, run without the parser: the tests read the state with it, and
+// Test_triggerCommand runs status through Run.
+func (s *state) status() string {
+	s.t.Helper()
+	out, _, err := s.call(nil, StatusCmd{Limit: 10})
+	if err != nil {
+		s.t.Fatalf("status: %v", err)
+	}
+	return out
+}
+
+// direct runs cmd, built as the parser would build it, without the parser, and returns what Run would: the exit
+// code, stdout, and stderr with the error printed as Run prints it. The tables of a command's outputs use it for
+// the cases whose flags another case covers through Run.
+func direct(env map[string]string, cmd runner) (code int, stdout, stderr string) {
+	stdout, stderr, err := (&state{}).call(env, cmd)
+	switch {
+	case err == nil:
+		return exitOK, stdout, stderr
+	case errors.Is(err, errFailed):
+		return exitFail, stdout, stderr
+	case errors.As(err, new(usageError)):
+		return exitUsage, stdout, stderr + "millstream: " + err.Error() + "\n"
+	default:
+		return exitFail, stdout, stderr + "millstream: " + err.Error() + "\n"
+	}
+}

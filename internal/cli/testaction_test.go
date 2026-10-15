@@ -35,9 +35,11 @@ func Test_testActionFake(t *testing.T) {
 			"expect: { outputs: [{ key: k0, payload: 0 }, { key: k1, payload: 1 }] }\n",
 		"tests/down.yaml": "config: { mode: error, retryable: true }\nexpect: { error: { retryable: true } }\n",
 	})
-	if out, errOut := mustRun(t, 0, "test", "action", action); out != "PASS down\nPASS keyed\n" ||
-		!strings.Contains(errOut, "fake: 2 passed, 0 failed") {
-		t.Fatalf("stdout %q, stderr %q", out, errOut)
+	if e2eBuild { // every fixture passing exits 0; the default build runs the fixtures once, below
+		if out, errOut := mustRun(t, 0, "test", "action", action); out != "PASS down\nPASS keyed\n" ||
+			!strings.Contains(errOut, "fake: 2 passed, 0 failed") {
+			t.Fatalf("stdout %q, stderr %q", out, errOut)
+		}
 	}
 
 	writeFiles(t, action, map[string]string{
@@ -88,7 +90,7 @@ func Test_testActionUsage(t *testing.T) {
 	testAction := func(c TestActionCmd) TestActionCmd { c.HarnessMode, c.Timeout = "replay", 5*time.Second; return c }
 	(&state{t: t}).checkRefusals(t, nil, []refusal{
 		{testAction(TestActionCmd{Dir: fake}), true, "no test case in"},
-		{testAction(TestActionCmd{Dir: fake, Package: t.TempDir()}), true, "is not inside the package"},
-		{testAction(TestActionCmd{Dir: t.TempDir()}), false, "action.yaml in the package"},
+		{testAction(TestActionCmd{Dir: fake, Package: bad}), true, "is not inside the package"},
+		{testAction(TestActionCmd{Dir: filepath.Join(bad, "tests")}), false, "action.yaml in the package"},
 	})
 }

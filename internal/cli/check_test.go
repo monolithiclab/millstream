@@ -88,7 +88,11 @@ func Test_checkCommand(t *testing.T) {
 		}
 		t.Run(tt.fixture, func(t *testing.T) {
 			t.Parallel()
-			code, out, errOut := runCLIEnv(t, "dev", tt.env, "check", fixture(tt.fixture))
+			run := func() (int, string, string) { return direct(tt.env, CheckCmd{Dir: fixture(tt.fixture)}) }
+			if tt.fixture == "valid" { // through the parser; the others without
+				run = func() (int, string, string) { return runCLIEnv(t, "dev", tt.env, "check", fixture(tt.fixture)) }
+			}
+			code, out, errOut := run()
 			if code != tt.wantCode {
 				t.Fatalf("code = %d, want %d\nstdout:\n%s\nstderr:\n%s", code, tt.wantCode, out, errOut)
 			}

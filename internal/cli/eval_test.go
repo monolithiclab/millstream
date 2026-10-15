@@ -27,13 +27,20 @@ func writeEvals(t *testing.T, pkg string, cases map[string]string) string {
 	return action
 }
 
-// Test_evalCommandUsage: what eval cannot run exits 2 with why.
-func Test_evalCommandUsage(t *testing.T) {
+// Test_evalCommandFake: eval scores the fake action's case in-process and, with --db, records the score and shows
+// the previous one; what eval cannot run exits 2 with why. Test_evalCommand (e2e) adds a judge and failing cases.
+func Test_evalCommandFake(t *testing.T) {
 	t.Parallel()
 	pkg := runPackage(t, "run")
 	action := writeEvals(t, pkg, map[string]string{"keyed.yaml": "config: { mode: keyed, n: 1 }\nassert: [output == 0]\n"})
 	lone := t.TempDir()
 	writeEvals(t, lone, map[string]string{"x.yaml": "assert: [\"true\"]\n"})
+	s := newEmptyState(t)
+	for i, want := range []string{`keyed\s+1/1\s+-\s+\$0\.0000\s+1\.00\s+-\n`, `keyed\s+1/1\s+-\s+\$0\.0000\s+1\.00\s+1\.00\n`} {
+		if out, _ := s.must(0, "eval", action); !regexp.MustCompile(want).MatchString(out) {
+			t.Fatalf("eval %d:\n%s", i, out)
+		}
+	}
 	if code, _, errOut := runCLICtx(t, context.Background(), nil, "eval", action, "--harness-mode", "dry"); code != 2 ||
 		!strings.Contains(errOut, "--harness-mode") {
 		t.Errorf("--harness-mode dry: code %d, stderr %q", code, errOut)
@@ -45,7 +52,7 @@ func Test_evalCommandUsage(t *testing.T) {
 	evalCmd := func(c EvalCmd) EvalCmd { c.HarnessMode = "replay"; return c }
 	(&state{t: t}).checkRefusals(t, nil, []refusal{
 		{evalCmd(EvalCmd{Action: filepath.Join(pkg, "actions")}), true, "no eval case to run"},
-		{evalCmd(EvalCmd{Action: action, Package: t.TempDir()}), true, "is not inside the package"},
+		{evalCmd(EvalCmd{Action: action, Package: lone}), true, "is not inside the package"},
 		{evalCmd(EvalCmd{Action: filepath.Join(lone, "actions", "fake")}), true, "name the package with --package"},
 		{evalCmd(EvalCmd{Action: filepath.Join(lone, "actions", "fake"), Package: lone}), false, "no pipeline.yaml"},
 	})

@@ -28,8 +28,9 @@ steps:
 
 const scoreLabel = `{"name": "lab/score", "version": "1.2.0", "kind": "container", "runtime": {"container": {}}}`
 
-// containerSetup writes the container package, an environment file mapping lab, and a fake docker answering for
-// report:dev with id reportImage: a shell script, so the tests that run it are in lock_e2e_test.go. It returns the package, the environment file and the CLI's environment.
+// containerSetup writes the container package, an environment file mapping lab and, in the e2e build, a fake docker
+// answering for report:dev with id reportImage: a shell script, so the tests that run it are in lock_e2e_test.go.
+// It returns the package, the environment file and the CLI's environment.
 func containerSetup(t *testing.T, reportImage string) (pkg, envFile string, env map[string]string) {
 	t.Helper()
 	pkg = t.TempDir()
@@ -50,6 +51,9 @@ func containerSetup(t *testing.T, reportImage string) (pkg, envFile string, env 
 	if err := os.WriteFile(envFile, []byte("registries: { lab: ghcr.io/lab/actions }\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	if !e2eBuild { // the default build's cases fail before looking for docker
+		return pkg, envFile, map[string]string{"PATH": filepath.Join(pkg, "no-bin")}
+	}
 	bin := t.TempDir()
 	if _, err := containertest.Write(bin, "docker", map[string]containertest.Image{
 		"report:dev":                      {ID: reportImage},
@@ -63,7 +67,7 @@ func containerSetup(t *testing.T, reportImage string) (pkg, envFile string, env 
 func TestLockAndEnvironmentErrors(t *testing.T) {
 	t.Parallel()
 	pkg, envFile, env := containerSetup(t, reportID)
-	bad := filepath.Join(t.TempDir(), "bad.yaml")
+	bad := filepath.Join(filepath.Dir(envFile), "bad.yaml")
 	if err := os.WriteFile(bad, []byte("listen: 127.0.0.1:7070\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
