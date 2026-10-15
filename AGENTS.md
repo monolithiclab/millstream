@@ -27,8 +27,20 @@ below) for the reasoning, and `make help` for every command.
   `redact` and the other packages named in the M1 plan's file structure.
 - `sdk/go/`: the Go action SDK, its own module.
 - `examples/`: fixture and example pipeline packages.
-- `make ci` is the gate: lint (golangci-lint, govulncheck, tidy, pins, shellcheck), tests with `-race`, and the docs
-  check, for the main module and the SDK module alike.
+- `make ci` is the gate: lint (golangci-lint over the default and the e2e-tagged files, govulncheck, tidy, pins,
+  shellcheck), the fast tests with `-race`, and the docs check, for the main module and the SDK module alike.
+
+## Test suites
+
+- `make test` runs the default build: unit tests only, in a few hundred milliseconds of test time plus the SQLite
+  floor under `-race`. Actions run in-process (`exec.FuncLauncher` with `exectest.Serve`, wired through `fakeexec` and
+  `cli.Runtime.Launchers`); time is a fake clock or a small injected duration. No `go build`, no process, no Docker,
+  no sleep or polling: a test that needs one goes behind the `e2e` build tag, in a `*_e2e_test.go` file.
+- `make test-e2e` (`go test -race -count=1 -tags e2e ./...`, and the SDK module's) runs everything: the
+  `internal/e2e` package (crash matrix, M1 and M2 scenarios), the real-process twins of the in-process tests (under
+  the tag, `fakeexec` runs the built fake binary), Docker tests, and the long property runs. It is slow, is not part
+  of `make ci`, and runs in CI as its own job; run it before closing a milestone and after touching the exec runtime,
+  the node, the CLI's run path or the crash recovery.
 
 ## Agent recordings and the live smoke test
 
@@ -39,7 +51,7 @@ below) for the reasoning, and `make help` for every command.
   CLI (installed, logged in) on two listings, recording into a temporary directory, and spends a few cents:
   `MILLSTREAM_LIVE=1 go test -tags e2e -count=1 -v -run TestLiveScore ./internal/e2e` (`MILLSTREAM_LIVE_MODEL` picks
   the model, `haiku` by default). It is never part of `make ci`; never commit what it records.
-- The M2 end-to-end and crash tests sit behind the `e2e` build tag: `go test -tags e2e ./internal/e2e`.
+- The end-to-end and crash tests sit behind the `e2e` build tag: `make test-e2e`, or `go test -tags e2e ./internal/e2e`.
 
 ## Where things go
 
