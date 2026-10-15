@@ -11,6 +11,7 @@ import (
 	"github.com/monolithiclab/millstream/internal/node"
 	"github.com/monolithiclab/millstream/internal/pipeline"
 	"github.com/monolithiclab/millstream/internal/runtime/exec"
+	"github.com/monolithiclab/millstream/internal/runtime/exec/exectest/fakeexec"
 	"github.com/monolithiclab/millstream/internal/store"
 	"github.com/monolithiclab/millstream/internal/store/sqlite"
 )
@@ -63,7 +64,7 @@ func TestEndToEnd(t *testing.T) {
 	t.Cleanup(func() { _ = st.Close() })
 	logs := &syncBuffer{}
 	e, err := New(Options{
-		Store: st, NoCron: true, TickInterval: 20 * time.Millisecond, Logger: newLogger(logs),
+		Store: st, NoCron: true, TickInterval: 5 * time.Millisecond, Logger: newLogger(logs),
 		Env: os.LookupEnv,
 	})
 	if err != nil {
@@ -79,9 +80,8 @@ func TestEndToEnd(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	pool := exec.NewPool(exec.PoolOptions{Options: exec.Options{ShutdownTimeout: 300 * time.Millisecond}})
-	t.Cleanup(func() { _ = pool.Close() })
-	n, err := node.New(e, node.Options{Owner: "node-a", Slots: 4, Pool: pool, PullInterval: 20 * time.Millisecond,
+	pool := fakeexec.NewPool(t, exec.Options{ShutdownTimeout: 300 * time.Millisecond})
+	n, err := node.New(e, node.Options{Owner: "node-a", Slots: 4, Pool: pool, PullInterval: 5 * time.Millisecond,
 		Logger: newLogger(logs)})
 	if err != nil {
 		t.Fatal(err)
@@ -144,22 +144,26 @@ func TestWaitSettledHonoursContext(t *testing.T) {
 // to pending and is leased again after its backoff.
 func TestRunExpiresLeases(t *testing.T) {
 	t.Parallel()
-	v := newEnv(t, Options{LeaseTTL: time.Minute, TickInterval: 5 * time.Millisecond})
+	v := newEnv(t, Options{LeaseTTL: time.Minute})
 	v.apply(writePackage(t, manualPipeline("p", "  a: { action: ./actions/a, in: trigger.adhoc }\n"), "a"))
 	id := v.fire("p", "adhoc", "k")
 	if got := v.pull(1); len(got) != 1 {
 		t.Fatalf("pull = %v", got)
 	}
+	v.clock.Advance(2 * time.Minute)
+	ticked := make(chan struct{}, 1)
+	v.e.ticked = func() {
+		select {
+		case ticked <- struct{}{}:
+		default:
+		}
+	}
 	ctx, cancel := context.WithCancel(v.ctx)
 	done := make(chan error, 1)
 	go func() { done <- v.e.Run(ctx) }()
-	v.clock.Advance(2 * time.Minute)
-	deadline := time.Now().Add(10 * time.Second)
-	for v.deliveries(id)[0].State != store.DeliveryPending {
-		if time.Now().After(deadline) {
-			t.Fatal("the lease did not expire")
-		}
-		time.Sleep(5 * time.Millisecond)
+	<-ticked // Run's first pass, on the advanced clock
+	if d := v.deliveries(id)[0]; d.State != store.DeliveryPending {
+		t.Fatalf("the lease did not expire: %+v", d)
 	}
 	cancel()
 	if err := <-done; err != nil {

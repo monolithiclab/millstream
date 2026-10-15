@@ -158,7 +158,7 @@ func TestStartupResyncRacingPull(t *testing.T) {
 		select {
 		case <-pulled:
 			t.Error("a pull completed while the rebuild held its read")
-		case <-time.After(200 * time.Millisecond):
+		case <-time.After(50 * time.Millisecond): // a pull not blocked by the rebuild completes well within it
 		}
 	}
 	ctx, cancel := context.WithCancel(v.ctx)

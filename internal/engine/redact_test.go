@@ -11,6 +11,7 @@ import (
 	"github.com/monolithiclab/millstream/internal/node"
 	"github.com/monolithiclab/millstream/internal/pipeline"
 	"github.com/monolithiclab/millstream/internal/runtime/exec"
+	"github.com/monolithiclab/millstream/internal/runtime/exec/exectest/fakeexec"
 	"github.com/monolithiclab/millstream/internal/store"
 	"github.com/monolithiclab/millstream/internal/store/sqlite"
 )
@@ -63,7 +64,7 @@ func TestSecretsRedacted(t *testing.T) {
 		}
 		return "", false
 	}
-	e, err := New(Options{Store: st, NoCron: true, TickInterval: 20 * time.Millisecond, Logger: newLogger(logs), Env: env})
+	e, err := New(Options{Store: st, NoCron: true, TickInterval: 5 * time.Millisecond, Logger: newLogger(logs), Env: env})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -76,9 +77,8 @@ func TestSecretsRedacted(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	pool := exec.NewPool(exec.PoolOptions{Options: exec.Options{ShutdownTimeout: 300 * time.Millisecond}})
-	t.Cleanup(func() { _ = pool.Close() })
-	n, err := node.New(e, node.Options{Owner: "node-a", Pool: pool, PullInterval: 20 * time.Millisecond,
+	pool := fakeexec.NewPool(t, exec.Options{ShutdownTimeout: 300 * time.Millisecond})
+	n, err := node.New(e, node.Options{Owner: "node-a", Pool: pool, PullInterval: 5 * time.Millisecond,
 		Logger: newLogger(logs)})
 	if err != nil {
 		t.Fatal(err)

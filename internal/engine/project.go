@@ -23,6 +23,9 @@ func (e *Engine) projectLoop(ctx context.Context) {
 		if err := e.project(ctx, false); err != nil && ctx.Err() == nil {
 			e.log.Error("projections", "error", err.Error())
 		}
+		if e.projected != nil {
+			e.projected()
+		}
 	}
 }
 

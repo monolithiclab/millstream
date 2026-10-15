@@ -184,8 +184,8 @@ func (e *Engine) bucket(ref store.StepRef, rate string, now time.Time) *bucket {
 	return b
 }
 
-// release forgets the delivery in flight under ref's lease and returns what was recorded about it. A newer lease of
-// the same delivery, under another fencing token, is left alone.
+// release forgets the delivery in flight under ref's lease, wakes WaitSettled, and returns what was recorded about
+// it. A newer lease of the same delivery, under another fencing token, is left alone.
 func (e *Engine) release(ref store.LeaseRef) (flight, bool) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -194,6 +194,10 @@ func (e *Engine) release(ref store.LeaseRef) (flight, bool) {
 		return flight{}, false
 	}
 	delete(e.inflight, ref.DeliveryID)
+	if e.changed != nil {
+		close(e.changed)
+		e.changed = nil
+	}
 	return f, true
 }
 

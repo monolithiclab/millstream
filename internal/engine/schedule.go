@@ -81,7 +81,7 @@ func (e *Engine) scheduleTrigger(ctx context.Context, rev *revision, name string
 			onTime = append(onTime, t)
 			continue
 		}
-		if len(missed) == maxDue {
+		if len(missed) == e.maxDue {
 			missed, dropped = missed[1:], dropped+1
 		}
 		missed = append(missed, t)

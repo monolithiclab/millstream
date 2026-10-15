@@ -148,17 +148,18 @@ func TestScheduleFireErrorIsLogged(t *testing.T) {
 func TestScheduleDropsOldestBeyondBound(t *testing.T) {
 	t.Parallel()
 	v := newEnv(t, Options{})
+	v.e.maxDue = 5 // the bound, small: the production one would write 10000 skipped firings
 	v.clock.Set(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC))
 	v.apply(writePackage(t, strings.Replace(cronPipeline("none", ""), "0 6 * * *", "* * * * *", 1), "crawl"))
-	v.clock.Set(time.Date(2026, 1, 8, 0, 0, 30, 0, time.UTC)) // 7 days of minutes: more than maxDue
+	v.clock.Set(time.Date(2026, 1, 1, 0, 10, 30, 0, time.UTC)) // ten minutes of firings: more than the bound
 	v.e.schedule(v.ctx)
-	if n := len(v.events(store.EventFiringSkipped)); n != maxDue {
-		t.Fatalf("%d skipped, want %d", n, maxDue)
+	if n := len(v.events(store.EventFiringSkipped)); n != v.e.maxDue {
+		t.Fatalf("%d skipped, want %d", n, v.e.maxDue)
 	}
 	if !strings.Contains(v.logs.String(), "oldest dropped") {
 		t.Fatal("dropping was not logged")
 	}
-	if rs := v.runs("listings"); len(rs) != 1 || rs[0].TriggerKey != "2026-01-08T00:00Z" {
+	if rs := v.runs("listings"); len(rs) != 1 || rs[0].TriggerKey != "2026-01-01T00:10Z" {
 		t.Fatalf("on-time runs = %v", runIDs(rs))
 	}
 }

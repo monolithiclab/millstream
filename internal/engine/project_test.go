@@ -98,18 +98,22 @@ func TestProjectWhenDue(t *testing.T) {
 // Run runs the projectors on their ticker and stops them before it returns.
 func TestRunProjects(t *testing.T) {
 	t.Parallel()
-	v := stubbedEnv(t, Options{ProjectInterval: 10 * time.Millisecond})
+	v := stubbedEnv(t, Options{ProjectInterval: time.Millisecond})
 	v.fire("p", "adhoc", "r1")
 	v.pull(10)
+	projected := make(chan struct{}, 1)
+	v.e.projected = func() {
+		select {
+		case projected <- struct{}{}:
+		default:
+		}
+	}
 	ctx, cancel := context.WithCancel(v.ctx)
 	done := make(chan error, 1)
 	go func() { done <- v.e.Run(ctx) }()
-	deadline := time.Now().Add(10 * time.Second)
-	for len(v.insights()) == 0 {
-		if time.Now().After(deadline) {
-			t.Fatal("the projectors never ran")
-		}
-		time.Sleep(10 * time.Millisecond)
+	<-projected
+	if len(v.insights()) == 0 {
+		t.Fatal("the projectors ran without effect")
 	}
 	cancel()
 	if err := <-done; err != nil {

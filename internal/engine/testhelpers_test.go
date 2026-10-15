@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -13,30 +12,15 @@ import (
 	"time"
 
 	"github.com/monolithiclab/millstream/internal/pipeline"
-	"github.com/monolithiclab/millstream/internal/runtime/exec/exectest"
+	"github.com/monolithiclab/millstream/internal/runtime/exec/exectest/fakeexec"
 	"github.com/monolithiclab/millstream/internal/store"
 	"github.com/monolithiclab/millstream/internal/store/sqlite"
 )
 
-// fakeBin is the fake action, built once by TestMain.
-var fakeBin string
-
 func TestMain(m *testing.M) {
-	os.Exit(runTests(m))
-}
-
-func runTests(m *testing.M) int {
-	dir, err := os.MkdirTemp("", "engine-test-")
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	defer func() { _ = os.RemoveAll(dir) }()
-	if fakeBin, err = exectest.Build(dir); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	return m.Run()
+	code := m.Run()
+	fakeexec.Cleanup()
+	os.Exit(code)
 }
 
 var t0 = time.Date(2026, 10, 15, 6, 0, 0, 0, time.UTC)
@@ -127,10 +111,11 @@ func writePackage(t *testing.T, pipelineYAML string, actions ...string) *pipelin
 	return pkg
 }
 
-// linkFakeAction places the fake action binary in the package directory dir at rel.
+// linkFakeAction places the fake action in the package directory dir at rel: a stub the in-process launcher
+// ignores in the default build, the built binary in the e2e build.
 func linkFakeAction(t *testing.T, dir, rel string) {
 	t.Helper()
-	if err := exectest.Place(fakeBin, filepath.Join(dir, filepath.FromSlash(rel))); err != nil {
+	if err := fakeexec.Place(filepath.Join(dir, filepath.FromSlash(rel))); err != nil {
 		t.Fatal(err)
 	}
 }

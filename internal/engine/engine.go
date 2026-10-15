@@ -123,6 +123,9 @@ type Engine struct {
 	inflight map[string]flight              // leased deliveries by delivery id
 	buckets  map[store.StepRef]*bucket      // step rate limits
 	builtins map[builtinKey]*builtin        // compiled builtin steps by package hash and step
+	// changed, made when WaitSettled first asks for it, is closed (and forgotten) when a lease in flight ends, the
+	// moments a run may settle.
+	changed chan struct{}
 
 	crons map[[2]string]*cronState // cron triggers by pipeline and name; the scheduler's goroutine only
 
@@ -131,6 +134,12 @@ type Engine struct {
 
 	projMu       sync.Mutex           // serialises Project
 	lastInsights map[string]time.Time // when each pipeline's insights last ran; under projMu
+
+	// Test seams, set before Run: maxDue bounds the missed cron times kept (the maxDue constant), and ticked and
+	// projected, when set, are called after each pass of Run's expiry tick and of its projectors.
+	maxDue    int
+	ticked    func()
+	projected func()
 }
 
 // revision is a decoded revision.
@@ -182,8 +191,8 @@ func New(opts Options) (*Engine, error) {
 		packages: map[string]*pipeline.Package{}, revs: map[store.RevisionID]*revision{},
 		actions:  map[actionKey]*resolvedAction{},
 		lessonsC: map[actionKey]lessonsEntry{}, inflight: map[string]flight{}, buckets: map[store.StepRef]*bucket{},
-		builtins: map[builtinKey]*builtin{},
-		crons:    map[[2]string]*cronState{}, ready: make(chan struct{}), lastInsights: map[string]time.Time{},
+		builtins: map[builtinKey]*builtin{}, maxDue: maxDue,
+		crons: map[[2]string]*cronState{}, ready: make(chan struct{}), lastInsights: map[string]time.Time{},
 		parser: cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor),
 	}, nil
 }
@@ -229,6 +238,9 @@ func (e *Engine) Run(ctx context.Context) error {
 		e.expire(ctx)
 		if !e.opts.NoCron {
 			e.schedule(ctx)
+		}
+		if e.ticked != nil {
+			e.ticked()
 		}
 		select {
 		case <-ctx.Done():
@@ -291,11 +303,13 @@ func (e *Engine) Settled(ctx context.Context, runs []RunRef) (bool, error) {
 	return true, nil
 }
 
-// WaitSettled polls until every run named is settled or ctx ends.
+// WaitSettled waits until every run named is settled or ctx ends. It checks again whenever a lease in flight ends,
+// and polls for what settles a run elsewhere (another engine's nodes, a cancel).
 func (e *Engine) WaitSettled(ctx context.Context, runs []RunRef) error {
 	poll := time.NewTicker(50 * time.Millisecond)
 	defer poll.Stop()
 	for {
+		changed := e.changes()
 		ok, err := e.Settled(ctx, runs)
 		if err != nil || ok {
 			return err
@@ -303,9 +317,20 @@ func (e *Engine) WaitSettled(ctx context.Context, runs []RunRef) error {
 		select {
 		case <-ctx.Done():
 			return fmt.Errorf("wait for runs to settle: %w", ctx.Err())
+		case <-changed:
 		case <-poll.C:
 		}
 	}
+}
+
+// changes returns the channel closed when a lease in flight next ends.
+func (e *Engine) changes() <-chan struct{} {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.changed == nil {
+		e.changed = make(chan struct{})
+	}
+	return e.changed
 }
 
 // revision returns the decoded revision id, from the cache or the store.
