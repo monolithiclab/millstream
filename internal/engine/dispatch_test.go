@@ -73,7 +73,7 @@ func TestAssignment(t *testing.T) {
 
 func TestConcurrencyAndLimits(t *testing.T) {
 	t.Parallel()
-	t.Run("step concurrency", func(t *testing.T) {
+	t.Run("step concurrency and pipeline limit", func(t *testing.T) {
 		t.Parallel()
 		v := newEnv(t, Options{})
 		v.apply(newPackage(t, manualPipeline("p", `
@@ -93,18 +93,16 @@ func TestConcurrencyAndLimits(t *testing.T) {
 		if got := v.pull(10); len(got) != 1 {
 			t.Fatalf("pull after one done = %v, want 1", got)
 		}
-	})
-	t.Run("pipeline limit", func(t *testing.T) {
-		t.Parallel()
-		v := newEnv(t, Options{})
-		v.apply(newPackage(t, manualPipeline("p", `
+		// p is at its step's capacity again. q has a step a too, fired under the same keys: its deliveries have the
+		// ids of p's, and must not take the place of p's in flight. q pulls up to its pipeline limit, p nothing.
+		v.apply(newPackage(t, manualPipeline("q", `
   a: { action: ./actions/a, in: trigger.adhoc, concurrency: 5 }
   b: { action: ./actions/a, in: trigger.adhoc, concurrency: 5 }
 limits: { concurrency: 3 }
 `), "a"))
-		fireN(v, "p", 4)
-		if got := v.pull(10); len(got) != 3 {
-			t.Fatalf("pull = %v, want 3", got)
+		fireN(v, "q", 4)
+		if got := v.pull(10); len(got) != 3 || slices.ContainsFunc(got, func(s string) bool { return s == "p/a" }) {
+			t.Fatalf("pull = %v, want 3 of q", got)
 		}
 		if got := v.pull(10); len(got) != 0 {
 			t.Fatalf("pull at the limit = %v", got)

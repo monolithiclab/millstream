@@ -39,7 +39,7 @@ func inflightIDs(e *Engine) map[string]int64 {
 	defer e.mu.Unlock()
 	out := map[string]int64{}
 	for id, f := range e.inflight {
-		out[id] = f.token
+		out[id.id] = f.token
 	}
 	return out
 }

@@ -162,9 +162,9 @@ func (e *Engine) assign(ctx context.Context, l store.Lease) (node.Assignment, er
 func (e *Engine) setRedactor(ref store.LeaseRef, r *redact.Redactor) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	if f, ok := e.inflight[ref.DeliveryID]; ok && f.token == ref.FencingToken {
+	if f, ok := e.inflight[keyOf(ref)]; ok && f.token == ref.FencingToken {
 		f.redact = r
-		e.inflight[ref.DeliveryID] = f
+		e.inflight[keyOf(ref)] = f
 	}
 }
 

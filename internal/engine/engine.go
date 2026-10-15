@@ -120,7 +120,7 @@ type Engine struct {
 	revs     map[store.RevisionID]*revision // decoded revisions, immutable once built
 	actions  map[actionKey]*resolvedAction  // by package hash and reference
 	lessonsC map[actionKey]lessonsEntry     // agent steps' lessons by package hash and step
-	inflight map[string]flight              // leased deliveries by delivery id
+	inflight map[deliveryKey]flight         // leased deliveries
 	buckets  map[store.StepRef]*bucket      // step rate limits
 	builtins map[builtinKey]*builtin        // compiled builtin steps by package hash and step
 	// changed, made when WaitSettled first asks for it, is closed (and forgotten) when a lease in flight ends, the
@@ -190,7 +190,7 @@ func New(opts Options) (*Engine, error) {
 		st: opts.Store, opts: opts, log: opts.Logger,
 		packages: map[string]*pipeline.Package{}, revs: map[store.RevisionID]*revision{},
 		actions:  map[actionKey]*resolvedAction{},
-		lessonsC: map[actionKey]lessonsEntry{}, inflight: map[string]flight{}, buckets: map[store.StepRef]*bucket{},
+		lessonsC: map[actionKey]lessonsEntry{}, inflight: map[deliveryKey]flight{}, buckets: map[store.StepRef]*bucket{},
 		builtins: map[builtinKey]*builtin{}, maxDue: maxDue,
 		crons: map[[2]string]*cronState{}, ready: make(chan struct{}), lastInsights: map[string]time.Time{},
 		parser: cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor),
@@ -278,9 +278,9 @@ func (e *Engine) resync(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("engine: read leased deliveries: %w", err)
 	}
-	inflight := make(map[string]flight, len(ds))
+	inflight := make(map[deliveryKey]flight, len(ds))
 	for _, d := range ds {
-		inflight[d.ID] = flight{
+		inflight[deliveryKey{d.Pipeline, d.ID}] = flight{
 			step: store.StepRef{Pipeline: d.Pipeline, Step: d.Step}, runID: d.RunID, itemID: d.ItemID,
 			attempt: d.Attempt, token: d.FencingToken,
 		}
