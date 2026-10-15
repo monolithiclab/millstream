@@ -28,7 +28,7 @@ below) for the reasoning, and `make help` for every command.
 - `sdk/go/`: the Go action SDK, its own module.
 - `examples/`: fixture and example pipeline packages.
 - `make ci` is the gate: lint (golangci-lint, govulncheck, tidy, pins, shellcheck), tests with `-race`, and the docs
-  check.
+  check, for the main module and the SDK module alike.
 
 ## Where things go
 
@@ -43,6 +43,7 @@ below) for the reasoning, and `make help` for every command.
 | --- | --- |
 | `docs/specs/20261014.platform-design.md` | The platform design: concepts, file format, execution model, protocol, UI, deployment, milestones |
 | `docs/decisions.md` | Architecture decisions D1 onward |
+| `docs/protocol.md` | The action protocol: messages, framing, ordering, errors, for action authors and SDKs |
 | `docs/design/20261015.ui-brief.md` | Design brief for the web UI, written for Claude Design |
 | `docs/design/canvas/` | Snapshot of the Claude Design canvas for the web UI, with its version id |
 | `ROADMAP.md` | Parked ideas and follow-ups |

@@ -1,0 +1,154 @@
+# Millstream action protocol, version 1
+
+How the engine and an action process talk. This is the minimal document of milestone M1: enough to write an
+action in any language without an SDK. The design and its reasoning are in the
+[platform design](specs/20261014.platform-design.md), section 6.3; the Go SDK (`sdk/go`) implements this document.
+
+## Purpose
+
+An action is a program that turns one input item into zero or more output items. Millstream starts it as a child
+process, hands it items one at a time, and collects what it emits. The protocol is the whole contract between the
+two: an action needs no Millstream library, no network access to the engine and no knowledge of the log store.
+
+## Transport
+
+- The engine writes to the action's **stdin** and reads its **stdout**. Nothing else may be written to stdout.
+- **stderr** is free-form logging. The node re-emits each line with the run, step, item, delivery and attempt.
+  Writing JSON log lines there is recommended; writing payload values there is not.
+- The process starts with its working directory set by the node, and these environment variables:
+
+| Variable | Meaning |
+| --- | --- |
+| `MILLSTREAM_WORKDIR` | A directory for this process: input artifacts are placed in it, output artifacts are written to it |
+| `MILLSTREAM_ASSETS` | The package's `assets/` directory, read-only, when the package has one |
+
+## Framing
+
+- One JSON object per line, UTF-8, terminated by `\n`. A line is at most **8 MiB**, newline excluded.
+- Every object has a `type`. Keys are lowerCamelCase.
+- Receivers ignore keys they do not know, so a later revision of protocol 1 may add optional fields. A new message
+  type, or a change in meaning, needs a new protocol version, announced in `hello`.
+
+## Messages
+
+### Engine to action
+
+**`hello`** is the first message a process receives. It names the action and gives the step's config, already
+interpolated for the run, and the run's variables. A process only ever receives items with this same action
+digest, config and vars, so it may prepare once (open clients, load models) and reuse that for every item.
+
+```json
+{"type":"hello","protocol":1,"action":"lab/score-listing","version":"2.1.0","config":{"minRooms":2},"vars":{"city":"Lyon"}}
+```
+
+**`item`** hands the process one delivery: one item for one step.
+
+```json
+{"type":"item","delivery":"dl_3f…","id":"it_9a…","key":"listing-42","payload":{"url":"https://example.com/42"},"artifacts":[{"name":"page.html","path":"in/page.html"}],"run":{"id":"run_2026-10-14T06:00Z_daily","trigger":"daily","startedAt":"2026-10-14T06:00:00Z","revision":"5c1d…"},"attempt":1,"idempotencyKey":"7e2b…"}
+```
+
+| Field | Meaning |
+| --- | --- |
+| `delivery` | The delivery id; every answer about this item carries it |
+| `id`, `key` | The item's id and key; `key` may be empty |
+| `payload` | The item, any JSON value valid against the action's input schema |
+| `artifacts` | Input files, already placed under `MILLSTREAM_WORKDIR` at `path` |
+| `run` | The run the item belongs to |
+| `attempt` | 1 on the first try, then 2, 3… on retries |
+| `idempotencyKey` | Stable across retries of this delivery, new on replay (see below) |
+
+**`shutdown`** asks the process to exit. It is only sent between deliveries. The process exits with status 0; the
+end of stdin means the same.
+
+```json
+{"type":"shutdown"}
+```
+
+### Action to engine
+
+**`ready`** answers `hello` once the process can take items.
+
+```json
+{"type":"ready"}
+```
+
+**`emit`** stages one output of the current delivery. `key` is optional for a single output and required on every
+output when a delivery has several. `artifacts` lists files the action wrote under `MILLSTREAM_WORKDIR`, by path
+relative to it.
+
+```json
+{"type":"emit","delivery":"dl_3f…","key":"listing-42","payload":{"url":"https://example.com/42","score":81},"artifacts":[{"name":"report.pdf","path":"out/report.pdf"}]}
+```
+
+**`metric`** records a measurement for the current delivery. Names are Prometheus snake_case.
+
+```json
+{"type":"metric","delivery":"dl_3f…","name":"pages_fetched","value":12,"labels":{"source":"portal"}}
+```
+
+**`done`** ends the delivery successfully. Its staged outputs are published now, all together.
+
+```json
+{"type":"done","delivery":"dl_3f…"}
+```
+
+**`error`** ends the delivery in failure. `retryable: true` asks for a retry with backoff; `false` sends the item to
+the step's dead-letter stream at once.
+
+```json
+{"type":"error","delivery":"dl_3f…","message":"portal answered 503","retryable":true}
+```
+
+## Ordering
+
+1. The engine sends `hello`; the process answers `ready` within 10 seconds.
+2. The engine sends one `item`. The process answers with any number of `emit` and `metric` messages, then exactly
+   one `done` or `error` for that delivery.
+3. Only then does the engine send the next `item`, or `shutdown`. A process handles **one delivery at a time**;
+   concurrency comes from running several processes.
+
+A process may be long-lived (the default for `exec` and `container` actions: it serves item after item) or
+per-item (the default for agents: one `hello`, one `item`, then `shutdown`), as the manifest's `lifecycle` says.
+An action written to this document works under both.
+
+## Errors and retries
+
+- Outputs are staged by `emit` and published only on `done`. A delivery that ends in `error`, in a crash or in a
+  timeout publishes nothing, so a retry starts from a clean slate.
+- A retryable error, a crash, a timeout (the step's `timeout`, 10 minutes by default; the process is killed) and a
+  protocol violation are retried with exponential backoff and jitter, up to the step's `retry.maxAttempts`; the
+  item then becomes a dead letter.
+- A non-retryable error, and an input that fails the action's input schema, dead-letter the item at once.
+- Delivery is at least once: an item may be handed to an action again after a crash, even when the action had
+  already acted on it. The idempotency key makes that safe.
+
+## Idempotency key
+
+`idempotencyKey` is a hash of the step, the item id and the item's generation. It is the same on every attempt of
+a delivery and changes when the item is replayed. An action with external effects (`effects: external` in its
+manifest: sending an email, writing to a CRM) passes it to the system it calls, so a retried request is recognised
+and not applied twice.
+
+## Artifacts
+
+Files go through `MILLSTREAM_WORKDIR`, never through the protocol itself. Before an `item`, the node places the
+item's input artifacts in that directory and lists them in `artifacts`. An action writes its output files there
+and names them in `emit`; the node moves them to the artifact store when the delivery is `done`. Paths are relative
+to the working directory and must stay inside it.
+
+## Protocol violations
+
+The engine kills the process and retries the delivery when it receives:
+
+- a line that is not a JSON object, or longer than 8 MiB;
+- a `type` it does not know, or a message out of order (an `emit` before `ready`, a second `done`);
+- a message for a delivery other than the current one;
+- several outputs for one delivery where any has no key.
+
+An action that receives something it does not understand should exit with a non-zero status, after logging why on
+stderr.
+
+## Not in version 1 yet
+
+`abstain` (hand a delivery to the step's fallback) and fallback audits (`audit` on `item`) arrive with
+self-improvement in milestone M5, as described in the platform design, section 11.5.
