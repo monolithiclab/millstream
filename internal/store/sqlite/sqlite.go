@@ -66,19 +66,26 @@ const (
 )
 
 // Memory opens a store on a fresh in-memory database, freed by Close: a database of SQLite's memdb VFS under a
-// name of its own, which Clone copies from. It starts as a copy of a database migrated once per process, so opening
-// many (tests, millstream test) does not migrate each. It has no read pool: memdb has no write-ahead log, so its
+// name of its own, which Clone copies from. It starts as a copy of the migrated template (templateImage), loaded once
+// per process, or as a closed store's database emptied (memoryPool), so opening many (tests, millstream test) does
+// not migrate each. It has no read pool: memdb has no write-ahead log, so its
 // reads run on the writer's connection, between batches, where a file store's read pool runs them alongside.
 const Memory = ":memory:"
 
-// memoryTemplateURI names the migrated database Memory stores start as a copy of.
+// memoryTemplateURI names the template database Memory stores start as a copy of.
 const memoryTemplateURI = "file:/millstream-template?vfs=memdb"
 
 // memorySeq numbers the process's Memory stores, whose databases are named after it.
 var memorySeq atomic.Uint64
 
-// memoryTemplate opens and migrates the template database once, and keeps a connection to it open for the life of
-// the process: a memdb database lives as long as a connection to it.
+// templateImage is the database the migrations build, serialised (TestTemplateImage checks it, and rewrites it with
+// -update): loading it costs a tenth of migrating, which every process opening a Memory store would pay.
+//
+//go:embed template.db
+var templateImage []byte
+
+// memoryTemplate loads the template database once, and keeps a connection to it open for the life of the process: a
+// memdb database lives as long as a connection to it.
 var memoryTemplate = sync.OnceValues(func() (*sql.DB, error) {
 	db, err := sql.Open("sqlite", memoryTemplateURI)
 	if err != nil {
@@ -87,12 +94,52 @@ var memoryTemplate = sync.OnceValues(func() (*sql.DB, error) {
 	db.SetMaxOpenConns(1)
 	db.SetMaxIdleConns(1)
 	db.SetConnMaxLifetime(0)
-	if err := migrate(db); err != nil {
+	if err := db.Ping(); err != nil {
 		_ = db.Close()
 		return nil, err
 	}
+	if err := loadImage(templateImage, memoryTemplateURI); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("load the template image: %w", err)
+	}
 	return db, nil
 })
+
+// loadImage copies a serialised database into the database at dstURI, which a connection must hold open: it
+// deserialises the image on a connection of its own, then backs that up to dstURI.
+func loadImage(image []byte, dstURI string) error {
+	db, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		return err
+	}
+	defer func() { _ = db.Close() }()
+	conn, err := db.Conn(context.Background())
+	if err != nil {
+		return err
+	}
+	defer func() { _ = conn.Close() }()
+	return conn.Raw(func(dc any) error {
+		c, ok := dc.(interface {
+			Deserialize(buf []byte) error
+			NewBackup(dstURI string) (*msqlite.Backup, error)
+		})
+		if !ok {
+			return fmt.Errorf("%T has no deserialize or backup API", dc)
+		}
+		if err := c.Deserialize(image); err != nil {
+			return err
+		}
+		b, err := c.NewBackup(dstURI)
+		if err != nil {
+			return err
+		}
+		_, err = b.Step(-1)
+		if ferr := b.Finish(); err == nil {
+			err = ferr
+		}
+		return err
+	})
+}
 
 // restore copies the database at srcURI, with SQLite's backup API, into the database db is open on.
 func restore(db *sql.DB, srcURI string) error {
@@ -225,7 +272,7 @@ func (s *Store) open(path, from string) error {
 	if memory {
 		if template {
 			if _, err := memoryTemplate(); err != nil {
-				return fmt.Errorf("open store: migrate template: %w", err)
+				return fmt.Errorf("open store: %w", err)
 			}
 			from = memoryTemplateURI
 		}
