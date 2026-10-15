@@ -22,6 +22,7 @@ func TestFormulas(t *testing.T) {
 		{"trigger item", TriggerItem("daily", "2026-10-14T06:00Z"), "it_bea56cf8f4c9e5aa5300a47d723b1147"},
 		{"delivery", Delivery("score", "it_abc", 0), "dl_97b5cc0cd5a9ea320c8e6080daa86944"},
 		{"delivery generation", Delivery("score", "it_abc", 3), "dl_db1b24ea30608ee7d9fd6eb68913bd62"},
+		{"idempotency", Idempotency("score", "it_abc", 0), "97b5cc0cd5a9ea320c8e6080daa86944"},
 		{"dead letter dead", DeadLetter("score.dlq", "dl_abc", ""), "it_48732360d2924713b56697361593f0d3"},
 		{"dead letter unrouted", DeadLetter("score.dlq", "dl_abc", "it_out"), "it_9ec2fce27ee574d3c9392f5fd293a4b5"},
 		{"cron key in UTC", CronKey(time.Date(2026, 10, 14, 8, 0, 42, 0, cest)), "2026-10-14T06:00Z"},

@@ -108,6 +108,7 @@ const (
 	EventRunSettled             = "runSettled"
 	EventPaused                 = "paused"
 	EventResumed                = "resumed"
+	EventFiringSkipped          = "firingSkipped"
 )
 
 // PackageRecord is a package to apply: its content hash, an opaque bundle of its files, and its pipeline as
@@ -182,6 +183,9 @@ type LeaseRequest struct {
 	// Slots caps the deliveries leased per step in this call (free concurrency). A nil map means no cap; with a
 	// non-nil map, a step that is absent is not capped.
 	Slots map[StepRef]int
+	// PipelineSlots caps the deliveries leased per pipeline in this call, across its steps (free limits.concurrency),
+	// with the same nil and absent rules as Slots.
+	PipelineSlots map[string]int
 }
 
 // Lease is a leased delivery with what a node needs to run it.

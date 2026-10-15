@@ -193,5 +193,5 @@ func TestUnitsAreNamed(t *testing.T) {
 		}
 		seen[u] = true
 	}
-	wantState(t, "units", len(Units), 11)
+	wantState(t, "units", len(Units), 12)
 }

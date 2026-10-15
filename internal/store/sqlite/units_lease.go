@@ -99,8 +99,11 @@ func (w *wtx) dueQueues(req store.LeaseRequest) (map[string][]candidate, error) 
 		}
 		queues[ref.Pipeline] = append(queues[ref.Pipeline], cs...)
 	}
-	for _, q := range queues {
+	for name, q := range queues {
 		slices.SortFunc(q, func(a, b candidate) int { return cmp.Compare(a.rowid, b.rowid) })
+		if slots, ok := req.PipelineSlots[name]; ok {
+			queues[name] = q[:min(len(q), max(slots, 0))]
+		}
 	}
 	return queues, nil
 }

@@ -55,6 +55,7 @@ func TestUnitsSurfaceStoreErrors(t *testing.T) {
 			count(err)
 			count(e.s.SetPaused(ctx, "listings", "crawl", true))
 			count(e.s.Cancel(ctx, "listings", "r2"))
+			count(e.s.SkipFirings(ctx, "listings", "daily", []string{"k"}))
 			e.clock.Advance(time.Hour)
 			_, err = e.s.ExpireLeases(ctx)
 			count(err)
@@ -68,6 +69,8 @@ func TestUnitsSurfaceStoreErrors(t *testing.T) {
 				func() error { _, err := e.s.ActiveRevision(ctx, "listings"); return err },
 				func() error { _, err := e.s.Revision(ctx, 1); return err },
 				func() error { _, err := e.s.PipelineState(ctx, "listings"); return err },
+				func() error { _, err := e.s.Pipelines(ctx); return err },
+				func() error { _, err := e.s.LastFiring(ctx, "listings", "daily"); return err },
 			} {
 				count(read())
 			}

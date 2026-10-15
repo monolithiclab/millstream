@@ -39,7 +39,7 @@ import (
 // Units names the atomic units, as their failpoints spell them.
 var Units = []string{
 	unitApplyRevision, unitFire, unitLease, unitRenew, unitDone, unitFail, unitCancel,
-	unitReplay, unitDiscard, unitExpireLeases, unitSetPaused,
+	unitReplay, unitDiscard, unitExpireLeases, unitSetPaused, unitSkipFirings,
 }
 
 const (
@@ -54,6 +54,7 @@ const (
 	unitDiscard       = "discard"
 	unitExpireLeases  = "expireLeases"
 	unitSetPaused     = "setPaused"
+	unitSkipFirings   = "skipFirings"
 )
 
 // Memory opens a store on a fresh temporary database file, removed by Close. A real file rather than SQLite's

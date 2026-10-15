@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -298,3 +299,6 @@ func wantState[S comparable](t *testing.T, what string, got, want S) {
 		t.Fatalf("%s = %v, want %v", what, got, want)
 	}
 }
+
+// otherPipeline is the fixture under another pipeline name.
+var otherPipeline = strings.Replace(fixture, "pipeline: listings", "pipeline: other", 1)

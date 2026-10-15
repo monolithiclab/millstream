@@ -7,6 +7,7 @@ toolchain go1.27.2
 require (
 	cel.dev/cel-go v0.32.0
 	github.com/alecthomas/kong v1.16.1
+	github.com/robfig/cron/v3 v3.0.1
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
 	go.yaml.in/yaml/v3 v3.0.5
 	golang.org/x/text v0.43.0
