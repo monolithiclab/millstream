@@ -118,7 +118,8 @@ An action written to this document works under both.
 - A retryable error, a crash, a timeout (the step's `timeout`, 10 minutes by default; the process is killed) and a
   protocol violation are retried with exponential backoff and jitter, up to the step's `retry.maxAttempts`; the
   item then becomes a dead letter.
-- A non-retryable error, and an input that fails the action's input schema, dead-letter the item at once.
+- A non-retryable error, an input that fails the action's input schema, and several outputs not all keyed
+  dead-letter the item at once.
 - Delivery is at least once: an item may be handed to an action again after a crash, even when the action had
   already acted on it. The idempotency key makes that safe.
 
@@ -142,8 +143,10 @@ The engine kills the process and retries the delivery when it receives:
 
 - a line that is not a JSON object, or longer than 8 MiB;
 - a `type` it does not know, or a message out of order (an `emit` before `ready`, a second `done`);
-- a message for a delivery other than the current one;
-- several outputs for one delivery where any has no key.
+- a message for a delivery other than the current one, or any message between deliveries.
+
+Several outputs for one delivery where any has no key is not a protocol violation but a key-rule error: it is
+deterministic, so the item is dead-lettered at once instead of retried.
 
 An action that receives something it does not understand should exit with a non-zero status, after logging why on
 stderr.
