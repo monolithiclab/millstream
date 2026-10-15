@@ -31,7 +31,7 @@ type Package struct {
 }
 
 // Load reads the package at path. A directory is a package; a path to a single file is a package of that one
-// file. Every regular file outside .git and .millstream is read, and the hash is SHA-256 over path NUL content NUL
+// file. Every regular file outside .git and .millstream is read, except an environment file at the root, and the hash is SHA-256 over path NUL content NUL
 // for each file in path order, so it is independent of directory listing order.
 func Load(path string) (*Package, error) {
 	info, err := os.Stat(path)
@@ -84,8 +84,8 @@ func readTree(dir string, files map[string][]byte) error {
 			}
 			return nil
 		}
-		if !d.Type().IsRegular() {
-			return nil
+		if !d.Type().IsRegular() || p == EnvironmentFile {
+			return nil // the environment file describes where packages run, not the package
 		}
 		data, err := fs.ReadFile(fsys, p)
 		if err != nil {

@@ -25,8 +25,8 @@ import (
 
 // Error classes of deliveries the engine fails at dispatch.
 const (
-	// ClassUnsupported: the step's action is a builtin, a registry action or a kind this build cannot run (review
-	// arrives in M3; exec actions are the only kind run on nodes). Never retried.
+	// ClassUnsupported: the step's action is a builtin, or a kind this build cannot run yet (review arrives in M3,
+	// agent actions with the agent adapter), or it needs a runtime this machine lacks. Never retried.
 	ClassUnsupported = "unsupported"
 	// ClassConfig: the step's config does not interpolate, a secret is unset, or the action does not resolve.
 	// Never retried (spec section 5.5).
@@ -117,12 +117,19 @@ func (e *Engine) assign(ctx context.Context, l store.Lease) (node.Assignment, er
 				"config of step %s does not match the config schema of %s: %w", l.Step, step.Action, err)
 		}
 	}
+	spec := exec.Spec{
+		Action: act.a.Name, Version: act.a.Version, Kind: act.a.Kind, Digest: act.digest,
+		Command: slices.Clone(act.a.Command), Lifecycle: act.a.Lifecycle, Config: config, Vars: run.Vars,
+	}
+	if act.a.Kind == pipeline.KindContainer {
+		// A container gets no variable of the engine's environment: the host's PATH and HOME mean nothing in it.
+		spec.Image, spec.Network = act.a.Pin, act.a.Network
+	} else {
+		spec.Dir, spec.Env = act.dir, e.processEnv()
+	}
 	return node.Assignment{
 		Lease: l,
-		Spec: exec.Spec{
-			Action: act.a.Name, Version: act.a.Version, Digest: act.digest, Command: slices.Clone(act.a.Command),
-			Dir: act.dir, Lifecycle: act.a.Lifecycle, Config: config, Vars: run.Vars, Env: e.processEnv(),
-		},
+		Spec:  spec,
 		ItemMsg: protocol.Item{
 			Delivery: l.DeliveryID, ID: l.Item.ID, Key: l.Item.Key, Payload: l.Item.Payload,
 			Artifacts: []protocol.Artifact{},
@@ -177,11 +184,14 @@ func resolve(r pipeline.ActionResolver, pkg *pipeline.Package, ref string) *reso
 	case a.Builtin: // runBuiltin runs builtins before assign is reached; a resolver may still return one
 		return &resolvedAction{err: dispatchErr(ClassUnsupported, false,
 			"the %s builtin runs in the engine, never on a node", a.Name)}
-	case a.Kind != pipeline.KindExec:
+	case a.Kind != pipeline.KindExec && a.Kind != pipeline.KindContainer:
 		return &resolvedAction{err: dispatchErr(ClassUnsupported, false,
-			"action %s is of kind %s: this build runs exec actions only", ref, a.Kind)}
+			"action %s is of kind %s: this build runs exec and container actions only", ref, a.Kind)}
 	}
 	ra := &resolvedAction{a: a, dir: filepath.Join(pkg.Dir, filepath.FromSlash(a.Dir)), digest: digest(pkg, a.Dir)}
+	if a.Kind == pipeline.KindContainer {
+		ra.digest = a.ImageDigest // the image is the action's content
+	}
 	for _, sc := range []struct {
 		doc []byte
 		dst **schema.Schema

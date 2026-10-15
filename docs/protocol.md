@@ -22,6 +22,9 @@ two: an action needs no Millstream library, no network access to the engine and 
 | `MILLSTREAM_WORKDIR` | A directory for this process: input artifacts are placed in it, output artifacts are written to it |
 | `MILLSTREAM_ASSETS` | The package's `assets/` directory, read-only, when the package has one |
 
+A container action sees the same: its working directory is mounted at the same path inside the container, which
+receives no other variable of the node's environment.
+
 ## Framing
 
 - One JSON object per line, UTF-8, terminated by `\n`. A line is at most **8 MiB**, newline excluded.

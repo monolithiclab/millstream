@@ -154,6 +154,10 @@ func (c *checker) checkStep(name string, actions ActionResolver) {
 		c.errorf(joinPath(at, "action"), "%v", err)
 	default:
 		c.actions[name] = a
+		if a.Unpinned {
+			c.warnf(joinPath(at, "action"), "image %s (%s) is not pinned in %s: run millstream lock", a.Image,
+				a.ImageDigest, LockFile)
+		}
 	}
 
 	cfgAt := joinPath(at, "config")

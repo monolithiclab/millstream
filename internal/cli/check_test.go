@@ -28,7 +28,7 @@ func Test_checkCommand(t *testing.T) {
 			`error steps.bogus.action: unknown action "frobnicate": want a builtin (filter, dedupe, review), a local path ` +
 				`(./actions/x) or a registry reference (namespace/name@version)`,
 			"error steps.local.action: action ./actions/missing: no actions/missing/action.yaml in the package",
-			"warning steps.registry.action: registry action lab/score@2: registry actions arrive in M2: not available in this build",
+			"warning steps.registry.action: registry action lab/score@2: needs Docker or Podman: not available in this build",
 		}, "p: 2 errors, 1 warning\n"},
 		{"unknown-trigger", nil, 1, []string{"error steps.a.in[1]: there is no trigger weekly"}, "p: 1 error, 0 warnings\n"},
 		{"unknown-stream", nil, 1, []string{

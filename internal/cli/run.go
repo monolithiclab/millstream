@@ -44,14 +44,19 @@ func (c RunCmd) Run(rt *Runtime) error {
 	ctx, stop := signalContext(rt.Ctx)
 	defer stop()
 	log := slog.New(slog.NewJSONHandler(rt.IO.Err, nil))
-	pkgs, err := c.load(rt, log)
+	env, err := environment(rt)
+	if err != nil {
+		return err
+	}
+	actions := resolver(rt, env, false)
+	pkgs, err := c.load(rt, log, actions)
 	if err != nil {
 		return err
 	}
 	return withStore(rt, func(st *sqlite.Store) error {
 		e, err := engine.New(engine.Options{
 			Store: st, Logger: log, LeaseTTL: c.LeaseTTL, Env: rt.Env, Flags: c.Var, NoCron: c.Once,
-			Artifacts: artifactStore(rt),
+			Artifacts: artifactStore(rt), Resolver: actions,
 		})
 		if err != nil {
 			return err
@@ -67,7 +72,7 @@ func (c RunCmd) Run(rt *Runtime) error {
 				return err
 			}
 		}
-		pool := exec.NewPool(exec.PoolOptions{Options: exec.Options{Logger: log}})
+		pool := exec.NewPool(exec.PoolOptions{Options: exec.Options{Logger: log, Launchers: launchers(rt, env)}})
 		defer func() { _ = pool.Close() }()
 		n, err := node.New(e, node.Options{
 			Owner: "embedded-" + strconv.Itoa(os.Getpid()), Slots: c.Slots, Pool: pool, Logger: log,
@@ -108,7 +113,7 @@ func (c RunCmd) Run(rt *Runtime) error {
 
 // load loads and checks each package, logging each diagnostic, and fails on any check error and on a --var no
 // package declares.
-func (c RunCmd) load(rt *Runtime, log *slog.Logger) ([]*pipeline.Package, error) {
+func (c RunCmd) load(rt *Runtime, log *slog.Logger, actions pipeline.ActionResolver) ([]*pipeline.Package, error) {
 	dirs := c.Dirs
 	if len(dirs) == 0 {
 		dirs = []string{"."}
@@ -124,7 +129,7 @@ func (c RunCmd) load(rt *Runtime, log *slog.Logger) ([]*pipeline.Package, error)
 		if err != nil {
 			return nil, err
 		}
-		diags := pipeline.Check(pkg, pipeline.Resolver{}, rt.Env)
+		diags := pipeline.Check(pkg, actions, rt.Env)
 		for _, d := range diags {
 			level := slog.LevelWarn
 			if d.Severity == pipeline.SeverityError {

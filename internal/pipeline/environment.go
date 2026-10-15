@@ -1,0 +1,179 @@
+package pipeline
+
+import (
+	"errors"
+	"fmt"
+	"io/fs"
+	"os"
+	"slices"
+	"strings"
+
+	"go.yaml.in/yaml/v3"
+)
+
+// EnvironmentFile is the environment file's default name (spec section 14). It describes where packages run, so
+// it is never part of a package, even when it sits at the root of one.
+const EnvironmentFile = "millstream.yaml"
+
+// Container runtimes (spec section 6.4).
+const (
+	RuntimeDocker = "docker"
+	RuntimePodman = "podman"
+)
+
+// Environment is the environment file: the keys this build reads (spec section 14).
+type Environment struct {
+	// Registries maps a registry namespace to an OCI repository prefix (lab: ghcr.io/monolithiclab/actions).
+	Registries map[string]string
+	// ContainerRuntime is runtime.container: docker (the default) or podman.
+	ContainerRuntime string
+	// Prices are the token prices of agent models, by model (used from the agent adapter on).
+	Prices map[string]Price
+	// AllowUnsandboxed is agents.allowUnsandboxed: agents may run without a container sandbox.
+	AllowUnsandboxed bool
+}
+
+// Price is a model's price per million tokens, in US dollars.
+type Price struct {
+	InPerMtok  float64
+	OutPerMtok float64
+}
+
+// laterEnvironmentKeys are keys of the environment file in spec section 14 that this build does not read yet.
+var laterEnvironmentKeys = []string{"environment", "store", "artifacts", "listen", "auth", "node", "secrets",
+	"retention", "lessons", "improve"}
+
+// LoadEnvironment reads the environment file at path. A missing file is an empty environment when required is
+// false, an error otherwise.
+func LoadEnvironment(path string, required bool) (*Environment, error) {
+	data, err := os.ReadFile(path) // #nosec G304 -- the operator names the environment file
+	if errors.Is(err, fs.ErrNotExist) && !required {
+		return &Environment{ContainerRuntime: RuntimeDocker}, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("environment file: %w", err)
+	}
+	env, err := ParseEnvironment(data)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	return env, nil
+}
+
+// ParseEnvironment parses an environment file strictly: an unknown key, or a key of spec section 14 this build
+// does not read yet, is an error located by its key path.
+func ParseEnvironment(data []byte) (*Environment, error) {
+	env := &Environment{ContainerRuntime: RuntimeDocker}
+	var doc yaml.Node
+	if err := yaml.Unmarshal(data, &doc); err != nil {
+		return nil, fmt.Errorf("parse YAML: %w", err)
+	}
+	if len(doc.Content) == 0 {
+		return env, nil
+	}
+	f, err := mapping(doc.Content[0], "")
+	if err != nil {
+		return nil, err
+	}
+	for _, k := range f.keys {
+		if slices.Contains(laterEnvironmentKeys, k.Value) {
+			return nil, errAt(k, k.Value, "is not supported by this build yet")
+		}
+	}
+	if err := f.allow("registries", "runtime", "prices", "agents"); err != nil {
+		return nil, err
+	}
+	for _, err := range []error{
+		optional(f, "registries", &env.Registries, registries),
+		readRuntime(f, env),
+		optional(f, "prices", &env.Prices, prices),
+		readAgents(f, env),
+	} {
+		if err != nil {
+			return nil, err
+		}
+	}
+	return env, nil
+}
+
+// registries reads registries: a mapping from namespace to OCI repository prefix.
+func registries(n *yaml.Node, path string) (map[string]string, error) {
+	f, err := mapping(n, path)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]string, len(f.keys))
+	for _, k := range f.keys {
+		at := f.sub(k.Value)
+		if !namespace.MatchString(k.Value) {
+			return nil, errAt(k, at, "a namespace is lowercase letters, digits and dashes")
+		}
+		prefix, err := nonEmptyStr(f.get(k.Value), at)
+		if err != nil {
+			return nil, err
+		}
+		prefix = strings.TrimSuffix(prefix, "/")
+		if strings.Contains(prefix, "://") || strings.ContainsAny(prefix, "@ \t") {
+			return nil, errAt(f.get(k.Value), at, "want a repository prefix such as ghcr.io/org/actions, without "+
+				"a scheme or digest")
+		}
+		out[k.Value] = prefix
+	}
+	return out, nil
+}
+
+func readRuntime(f *fields, env *Environment) error {
+	n := f.get("runtime")
+	if isNull(n) {
+		return nil
+	}
+	rf, err := mapping(n, f.sub("runtime"))
+	if err != nil {
+		return err
+	}
+	if err := rf.allow("container"); err != nil {
+		return err
+	}
+	return optional(rf, "container", &env.ContainerRuntime, oneOf(RuntimeDocker, RuntimePodman))
+}
+
+func prices(n *yaml.Node, path string) (map[string]Price, error) {
+	f, err := mapping(n, path)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]Price, len(f.keys))
+	for _, k := range f.keys {
+		pf, err := mapping(f.get(k.Value), f.sub(k.Value))
+		if err != nil {
+			return nil, err
+		}
+		if err := pf.allow("inPerMtok", "outPerMtok"); err != nil {
+			return nil, err
+		}
+		var p Price
+		if err := required(pf, "inPerMtok", &p.InPerMtok, nonNegativeNumber); err != nil {
+			return nil, err
+		}
+		if err := required(pf, "outPerMtok", &p.OutPerMtok, nonNegativeNumber); err != nil {
+			return nil, err
+		}
+		out[k.Value] = p
+	}
+	return out, nil
+}
+
+func readAgents(f *fields, env *Environment) error {
+	n := f.get("agents")
+	if isNull(n) {
+		return nil
+	}
+	af, err := mapping(n, f.sub("agents"))
+	if err != nil {
+		return err
+	}
+	if err := af.allow("allowUnsandboxed"); err != nil {
+		return err
+	}
+	return optional(af, "allowUnsandboxed", &env.AllowUnsandboxed, boolean)
+}

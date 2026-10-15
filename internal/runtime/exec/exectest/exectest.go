@@ -13,15 +13,24 @@ import (
 )
 
 // Build compiles the fake action into dir and returns the binary's path. Tests call it once, from TestMain.
-func Build(dir string) (string, error) {
+func Build(dir string) (string, error) { return build(filepath.Join(dir, "fakeaction"), nil) }
+
+// BuildFor compiles the fake action for another platform, statically (CGO_ENABLED=0), into dir, so it can run in
+// an image FROM scratch, and returns the binary's path.
+func BuildFor(dir, goos, goarch string) (string, error) {
+	return build(filepath.Join(dir, "fakeaction-"+goos+"-"+goarch),
+		[]string{"CGO_ENABLED=0", "GOOS=" + goos, "GOARCH=" + goarch})
+}
+
+func build(bin string, env []string) (string, error) {
 	_, file, _, ok := runtime.Caller(0)
 	if !ok {
 		return "", fmt.Errorf("locate exectest source")
 	}
 	src := filepath.Join(filepath.Dir(file), "..", "testdata", "fakeaction")
-	bin := filepath.Join(dir, "fakeaction")
 	cmd := osexec.Command("go", "build", "-o", bin, ".") // #nosec G204 -- fixed arguments; bin is the caller's temp dir
 	cmd.Dir = src
+	cmd.Env = append(os.Environ(), env...)
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
 		return "", fmt.Errorf("build fake action: %w", err)

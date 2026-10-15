@@ -116,7 +116,7 @@ steps:
   d: { action: ../outside, in: lyon }
 `,
 			want: []string{
-				"warning steps.a.action: registry action lab/crawl@1: registry actions arrive in M2: not available in this build",
+				"warning steps.a.action: registry action lab/crawl@1: no registries are configured: not available in this build",
 				"error steps.a.out[1].when: compile \"item.city +\": ERROR: <input>:1:12: Syntax error: ...",
 				"error steps.a.out[2].when: compile \"secrets.x == ''\": secrets are only available in config interpolation",
 				"error steps.b.action: action ./actions/missing: no actions/missing/action.yaml in the package",

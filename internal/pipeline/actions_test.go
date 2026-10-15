@@ -35,13 +35,14 @@ runtime: { exec: { command: [score, --fast] } }
 		{"actions/script/action.yaml", "name: s\nkind: exec\nruntime: { exec: { command: [./run.sh] } }\n"},
 		{"actions/script/run.sh", "#!/bin/sh\n"},
 		{"actions/agent/action.yaml", "name: g\nkind: agent\n"},
-		{"actions/container/action.yaml", "name: c\nkind: container\nlifecycle: perItem\n"},
+		{"actions/container/action.yaml", "name: c\nkind: container\nlifecycle: perItem\n" +
+			"runtime: { container: { image: report:dev, network: [api.example.com] } }\n"},
 	})
 	pkg, err := Load(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	r := Resolver{Platform: "plan9-mips"}
+	r := Resolver{Platform: "plan9-mips", Images: testImages}
 	tests := []struct {
 		ref  string
 		want Action
@@ -62,7 +63,11 @@ runtime: { exec: { command: [score, --fast] } }
 			Command: []string{filepath.Join(dir, "actions", "script", "run.sh")},
 		}},
 		{"./actions/agent", Action{Ref: "./actions/agent", Name: "g", Kind: KindAgent, Lifecycle: LifecyclePerItem, Dir: "actions/agent"}},
-		{"./actions/container", Action{Ref: "./actions/container", Name: "c", Kind: KindContainer, Lifecycle: LifecyclePerItem, Dir: "actions/container"}},
+		{"./actions/container", Action{
+			Ref: "./actions/container", Name: "c", Kind: KindContainer, Lifecycle: LifecyclePerItem,
+			Dir: "actions/container", Image: "report:dev", Pin: idReport, ImageDigest: idReport, Network: true,
+			Unpinned: true,
+		}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.ref, func(t *testing.T) {

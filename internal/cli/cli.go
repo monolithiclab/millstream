@@ -38,6 +38,9 @@ type Runtime struct {
 	Env func(string) (string, bool)
 	// DB is the state database path, from the global --db flag.
 	DB string
+	// EnvFile is the environment file named by the global --env-file flag; empty reads ./millstream.yaml when it
+	// exists.
+	EnvFile string
 }
 
 // usageError marks an error that exits with the usage status.
@@ -53,10 +56,12 @@ type exitSignal int
 
 // CLI is the command tree.
 type CLI struct {
-	DB string `name:"db" default:".millstream/millstream.db" help:"State database path (created with its directory)."`
+	DB      string `name:"db" default:".millstream/millstream.db" help:"State database path (created with its directory)."`
+	EnvFile string `name:"env-file" type:"path" help:"Environment file (default: ./millstream.yaml when it exists)."`
 
 	Run     RunCmd     `cmd:"" help:"Apply packages and run the engine with an embedded node."`
 	Check   CheckCmd   `cmd:"" help:"Validate a pipeline package."`
+	Lock    LockCmd    `cmd:"" help:"Pin a package's container and registry actions by image digest in millstream.lock."`
 	Graph   GraphCmd   `cmd:"" help:"Print a package's graph as Mermaid or DOT."`
 	Vars    VarsCmd    `cmd:"" help:"Print a package's variables, values and sources."`
 	Status  StatusCmd  `cmd:"" help:"Show pipelines and recent runs."`
@@ -107,7 +112,7 @@ func Run(ctx context.Context, argv []string, stdio IO, version string, configure
 		return exitFail
 	}
 	kctx, err := parser.Parse(argv)
-	rt.DB = tree.DB
+	rt.DB, rt.EnvFile = tree.DB, tree.EnvFile
 	if err != nil {
 		fmt.Fprintf(rt.IO.Err, "millstream: %v\n", err)
 		if trace, terr := kong.Trace(parser, argv); terr == nil {

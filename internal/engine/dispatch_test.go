@@ -214,7 +214,8 @@ func TestPauseAndResume(t *testing.T) {
 
 func TestUndispatchableDeliveriesFail(t *testing.T) {
 	t.Parallel()
-	containerManifest := "name: c\nkind: container\n"
+	containerManifest := "name: c\nkind: container\nruntime: { container: { image: c:1 } }\n"
+	agentManifest := "name: g\nkind: agent\n"
 	tests := []struct {
 		name      string
 		action    string
@@ -226,9 +227,11 @@ func TestUndispatchableDeliveriesFail(t *testing.T) {
 		config    string
 	}{
 		{"builtin", "review", nil, nil, ClassUnsupported, false, "the review builtin arrives in M3", ""},
-		{"registry", "lab/score@1", nil, nil, ClassUnsupported, false, "registry actions arrive in M2", ""},
-		{"container", "./actions/c", map[string]string{"actions/c/action.yaml": containerManifest}, nil,
-			ClassUnsupported, false, "this build runs exec actions only", ""},
+		{"registry", "lab/score@1", nil, nil, ClassUnsupported, false, "no registries are configured", ""},
+		{"container without a runtime", "./actions/c", map[string]string{"actions/c/action.yaml": containerManifest},
+			nil, ClassUnsupported, false, "container actions need Docker or Podman", ""},
+		{"agent", "./actions/c", map[string]string{"actions/c/action.yaml": agentManifest}, nil,
+			ClassUnsupported, false, "this build runs exec and container actions only", ""},
 		{"missing manifest", "./actions/none", nil, nil, ClassConfig, false, "no actions/none/action.yaml", ""},
 		{"bad interpolation", "./actions/a", nil, nil, ClassConfig, false, "interpolate config of step s",
 			`, config: { x: "${vars.nope}" }`},

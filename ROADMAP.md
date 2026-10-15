@@ -21,6 +21,10 @@ earlier designs are in the git history of the spec.
 
 - Go SDK: per-output artifacts for `MapKeyed` (today `Context.Artifact` attaches a file to every output of the
   delivery).
+- Registry actions: listing a remote registry's tags to resolve ranges, and pulling the pinned digest on a node that
+  lacks it (M2 resolves against local images only).
+- Container actions: enforcing the manifest's network destinations (M2 grants the default network to any declared
+  list).
 - Artifact files orphaned by a retry whose item already existed (first commit wins) are only reclaimed by a sweep
   of unreferenced hashes, which arrives with retention (M4).
 

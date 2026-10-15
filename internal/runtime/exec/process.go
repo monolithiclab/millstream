@@ -1,7 +1,9 @@
-// Package exec is the exec runtime (spec sections 6.3 to 6.5): it runs an action as a child process speaking the
-// JSON-lines protocol of internal/protocol on its stdin and stdout, one delivery at a time. Anything that goes wrong
-// below the action itself (no ready, a timeout, an exit mid-delivery, a protocol violation) is a RuntimeError: the
-// process is killed and never reused, and the delivery is retried. An action's own error message is an ActionError
+// Package exec is the action process runtime (spec sections 6.3 to 6.5): it runs an action as a child process
+// speaking the JSON-lines protocol of internal/protocol on its stdin and stdout, one delivery at a time. A Launcher
+// says how the process starts: ExecLauncher runs the action's command directly, the container package runs it under
+// Docker or Podman; everything else is shared. Anything that goes wrong below the action itself (no ready, a
+// timeout, an exit mid-delivery, a protocol violation) is a RuntimeError: the process is killed and never reused,
+// and the delivery is retried. An action's own error message is an ActionError
 // in the Result, retryable as the action says. The process's stderr is re-emitted line by line through slog with
 // the delivery's keys; payloads are never logged. A Pool keeps long-lived processes for reuse.
 package exec
@@ -18,6 +20,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/monolithiclab/millstream/internal/pipeline"
 	"github.com/monolithiclab/millstream/internal/protocol"
 	"github.com/monolithiclab/millstream/internal/store"
 )
@@ -32,10 +35,19 @@ const (
 type Spec struct {
 	Action  string
 	Version string
+	// Kind is the runtime that starts the process: pipeline.KindExec (also when empty) or pipeline.KindContainer.
+	// Options.Launchers maps it to a Launcher.
+	Kind string
 	// Digest identifies the action's content; with the config and the vars it keys process reuse.
-	Digest  string
+	Digest string
+	// Command is the program and its arguments; for a container, the command run in the image, empty for the
+	// image's own.
 	Command []string
-	// Dir is the process's working directory: the action directory on disk.
+	// Image is a container action's image, pinned by digest (an image id or repository@digest).
+	Image string
+	// Network gives a container action the network; it has none otherwise.
+	Network bool
+	// Dir is an exec process's working directory: the action directory on disk.
 	Dir string
 	// Lifecycle is pipeline.LifecycleLong (the default) or pipeline.LifecyclePerItem.
 	Lifecycle string
@@ -46,8 +58,39 @@ type Spec struct {
 	Env []string
 }
 
+// Launcher starts the processes of one kind of action (spec section 6.4). The runtime around it is shared: the
+// protocol, the pool, the timeouts and the process group, which the runtime sets on the command and kills.
+type Launcher interface {
+	// Command returns the command that runs spec, with workdir as the process's MILLSTREAM_WORKDIR.
+	Command(spec Spec, workdir string) (*osexec.Cmd, error)
+	// Kill releases what outlives the process group once it is killed, such as a container. It is called only when
+	// the process did not exit cleanly.
+	Kill(spec Spec, workdir string)
+}
+
+// ExecLauncher runs exec actions as child processes of the node, in their action directory.
+type ExecLauncher struct{}
+
+// Command implements Launcher.
+func (ExecLauncher) Command(spec Spec, workdir string) (*osexec.Cmd, error) {
+	if len(spec.Command) == 0 {
+		return nil, fmt.Errorf("action %s has no command", spec.Action)
+	}
+	// #nosec G204 -- the command comes from the operator's package manifest: running it is the runtime's job.
+	cmd := osexec.Command(spec.Command[0], spec.Command[1:]...)
+	cmd.Dir = spec.Dir
+	cmd.Env = append(append(make([]string, 0, len(spec.Env)+1), spec.Env...), "MILLSTREAM_WORKDIR="+workdir)
+	return cmd, nil
+}
+
+// Kill implements Launcher: the process group was everything.
+func (ExecLauncher) Kill(Spec, string) {}
+
 // Options tune processes. Zero values take the defaults.
 type Options struct {
+	// Launchers start the processes of each kind; exec actions default to ExecLauncher. A kind without one fails
+	// its deliveries, permanently.
+	Launchers map[string]Launcher
 	// Logger receives stderr lines written before the first delivery; nil discards them.
 	Logger          *slog.Logger
 	ReadyTimeout    time.Duration
@@ -65,6 +108,20 @@ func (o Options) withDefaults() Options {
 		o.ShutdownTimeout = DefaultShutdownTimeout
 	}
 	return o
+}
+
+// launcher returns the launcher of kind.
+func (o Options) launcher(kind string) (Launcher, bool) {
+	if kind == "" {
+		kind = pipeline.KindExec
+	}
+	if l, ok := o.Launchers[kind]; ok {
+		return l, true
+	}
+	if kind == pipeline.KindExec {
+		return ExecLauncher{}, true
+	}
+	return nil, false
 }
 
 // Delivery is one item to hand to a process.
@@ -98,14 +155,15 @@ type ActionError struct {
 
 // Process is a running action process. It serves one delivery at a time: Deliver must not be called concurrently.
 type Process struct {
-	spec    Spec
-	opts    Options
-	cmd     *osexec.Cmd
-	stdin   io.WriteCloser
-	stdout  io.ReadCloser
-	stderr  io.ReadCloser
-	w       *protocol.Writer
-	workdir string
+	spec     Spec
+	opts     Options
+	launcher Launcher
+	cmd      *osexec.Cmd
+	stdin    io.WriteCloser
+	stdout   io.ReadCloser
+	stderr   io.ReadCloser
+	w        *protocol.Writer
+	workdir  string
 
 	// msgs carries stdout's messages; it is closed when stdout ends, after readErr is set.
 	msgs    chan protocol.Message
@@ -125,16 +183,18 @@ type Process struct {
 // Start spawns the process, sends hello and waits for ready. ctx bounds only the handshake: the process outlives
 // it. On failure the process is gone and the error is a RuntimeError.
 func Start(ctx context.Context, spec Spec, opts Options) (*Process, error) {
-	if len(spec.Command) == 0 {
-		return nil, runtimeErr(ClassCrash, "action %s has no command", spec.Action)
-	}
 	opts = opts.withDefaults()
+	launcher, ok := opts.launcher(spec.Kind)
+	if !ok {
+		return nil, &RuntimeError{Class: ClassCrash, Permanent: true,
+			Err: fmt.Errorf("action %s is of kind %s: this node has no runtime for it", spec.Action, spec.Kind)}
+	}
 	workdir, err := os.MkdirTemp("", "millstream-work-")
 	if err != nil {
 		return nil, runtimeErr(ClassCrash, "create workdir: %w", err)
 	}
 	p := &Process{
-		spec: spec, opts: opts, workdir: workdir, log: opts.Logger,
+		spec: spec, opts: opts, launcher: launcher, workdir: workdir, log: opts.Logger,
 		msgs: make(chan protocol.Message), dead: make(chan struct{}), exited: make(chan struct{}),
 	}
 	if err := p.spawn(); err != nil {
@@ -149,12 +209,11 @@ func Start(ctx context.Context, spec Spec, opts Options) (*Process, error) {
 }
 
 func (p *Process) spawn() error {
-	// #nosec G204 -- the command comes from the operator's package manifest: running it is the runtime's job.
-	cmd := osexec.Command(p.spec.Command[0], p.spec.Command[1:]...)
-	cmd.Dir = p.spec.Dir
+	cmd, err := p.launcher.Command(p.spec, p.workdir)
+	if err != nil {
+		return runtimeErr(ClassCrash, "%w", err)
+	}
 	setProcessGroup(cmd) // so kill reaches the children the action starts
-	cmd.Env = append(append(make([]string, 0, len(p.spec.Env)+1), p.spec.Env...), "MILLSTREAM_WORKDIR="+p.workdir)
-	var err error
 	if p.stdin, err = cmd.StdinPipe(); err != nil {
 		return runtimeErr(ClassCrash, "stdin pipe: %w", err)
 	}
@@ -165,7 +224,7 @@ func (p *Process) spawn() error {
 		return runtimeErr(ClassCrash, "stderr pipe: %w", err)
 	}
 	if err := cmd.Start(); err != nil {
-		return runtimeErr(ClassCrash, "start %s: %w", p.spec.Command[0], err)
+		return runtimeErr(ClassCrash, "start %s: %w", cmd.Path, err)
 	}
 	p.cmd = cmd
 	p.w = protocol.NewWriter(p.stdin)
@@ -481,16 +540,30 @@ func (p *Process) shutdown() bool {
 	}
 }
 
-// kill ends the process and every process of its group with SIGKILL, and closes its pipes, so readers return even
-// if a grandchild that escaped the group holds them open.
+// kill ends the process and every process of its group with SIGKILL, has the launcher release what outlives them
+// unless the process had exited cleanly, and closes its pipes, so readers return even if a grandchild that escaped
+// the group holds them open.
 func (p *Process) kill() {
 	p.killOnce.Do(func() {
 		close(p.dead)
 		killProcessGroup(p.cmd.Process)
+		if !p.exitedCleanly() {
+			p.launcher.Kill(p.spec, p.workdir)
+		}
 		_ = p.stdin.Close()
 		_ = p.stdout.Close()
 		_ = p.stderr.Close()
 	})
+}
+
+// exitedCleanly reports whether the process has exited with status 0.
+func (p *Process) exitedCleanly() bool {
+	select {
+	case <-p.exited:
+		return p.waitErr == nil
+	default:
+		return false
+	}
 }
 
 func (p *Process) setLog(l *slog.Logger) {
