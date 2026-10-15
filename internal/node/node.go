@@ -95,6 +95,19 @@ type Node struct {
 	t    Transport
 	opts Options
 	log  *slog.Logger
+	// newTimer makes the pull and heartbeat tickers (repeat) and the drain timer: real ones, which in-package tests
+	// replace to drive them.
+	newTimer func(d time.Duration, repeat bool) (c <-chan time.Time, stop func())
+}
+
+// realTimer is Node.newTimer outside tests.
+func realTimer(d time.Duration, repeat bool) (<-chan time.Time, func()) {
+	if repeat {
+		t := time.NewTicker(d)
+		return t.C, t.Stop
+	}
+	t := time.NewTimer(d)
+	return t.C, func() { t.Stop() }
 }
 
 // New returns a node pulling from t.
@@ -122,7 +135,7 @@ func New(t Transport, opts Options) (*Node, error) {
 	if opts.Logger == nil {
 		opts.Logger = slog.New(slog.DiscardHandler)
 	}
-	return &Node{t: t, opts: opts, log: opts.Logger.With("node", opts.Owner)}, nil
+	return &Node{t: t, opts: opts, log: opts.Logger.With("node", opts.Owner), newTimer: realTimer}, nil
 }
 
 // running is a delivery in flight.
@@ -143,24 +156,24 @@ type loop struct {
 // Run pulls and runs deliveries until ctx is cancelled, then drains. It returns nil after a clean drain.
 func (n *Node) Run(ctx context.Context) error {
 	l := &loop{Node: n, base: context.WithoutCancel(ctx), held: map[string]*running{}, finished: make(chan string)}
-	pull := time.NewTicker(n.opts.PullInterval)
-	defer pull.Stop()
-	heartbeat := time.NewTicker(n.opts.HeartbeatInterval)
-	defer heartbeat.Stop()
+	pull, stopPull := n.newTimer(n.opts.PullInterval, true)
+	defer stopPull()
+	heartbeat, stopHeartbeat := n.newTimer(n.opts.HeartbeatInterval, true)
+	defer stopHeartbeat()
 	l.pull(ctx)
 	for ctx.Err() == nil {
 		select {
 		case <-ctx.Done():
-		case <-pull.C:
+		case <-pull:
 			l.pull(ctx)
-		case <-heartbeat.C:
+		case <-heartbeat:
 			l.heartbeat()
 		case id := <-l.finished:
 			delete(l.held, id)
 			l.pull(ctx)
 		}
 	}
-	return l.drain(heartbeat.C)
+	return l.drain(heartbeat)
 }
 
 func (l *loop) pull(ctx context.Context) {
@@ -310,8 +323,8 @@ func (l *loop) drain(heartbeat <-chan time.Time) error {
 		return nil
 	}
 	l.log.Info("draining", "inFlight", len(l.held))
-	timer := time.NewTimer(l.opts.DrainTimeout)
-	defer timer.Stop()
+	timeout, stop := l.newTimer(l.opts.DrainTimeout, false)
+	defer stop()
 	abandoned := 0
 	for len(l.held) > 0 {
 		select {
@@ -319,7 +332,7 @@ func (l *loop) drain(heartbeat <-chan time.Time) error {
 			delete(l.held, id)
 		case <-heartbeat:
 			l.heartbeat()
-		case <-timer.C:
+		case <-timeout:
 			abandoned = len(l.held)
 			for _, r := range l.held {
 				r.cancel()
