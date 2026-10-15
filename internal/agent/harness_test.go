@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	osexec "os/exec"
 	"path/filepath"
@@ -13,6 +12,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/monolithiclab/millstream/internal/agent/agenttest"
 	"github.com/monolithiclab/millstream/internal/pipeline"
 	"github.com/monolithiclab/millstream/internal/protocol"
 )
@@ -131,7 +131,7 @@ type fakeAPI struct {
 
 func newFakeAPI(t *testing.T, status int, body string) *fakeAPI {
 	t.Helper()
-	f := &fakeAPI{URL: "http://model.test"}
+	f := &fakeAPI{URL: agenttest.URL}
 	f.h = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		raw, _ := io.ReadAll(r.Body)
 		var b map[string]any
@@ -147,16 +147,7 @@ func newFakeAPI(t *testing.T, status int, body string) *fakeAPI {
 }
 
 // Client returns a client whose requests reach the fake.
-func (f *fakeAPI) Client() *http.Client { return &http.Client{Transport: f} }
-
-// RoundTrip serves req with the handler.
-func (f *fakeAPI) RoundTrip(req *http.Request) (*http.Response, error) {
-	rec := httptest.NewRecorder()
-	f.h.ServeHTTP(rec, req)
-	resp := rec.Result()
-	resp.Request = req
-	return resp, nil
-}
+func (f *fakeAPI) Client() *http.Client { return agenttest.Client(f.h) }
 
 const (
 	anthropicBody = `{"id":"msg_1","type":"message","role":"assistant","content":[{"type":"text","text":"Score:\n` +
@@ -333,9 +324,7 @@ func TestAPIMaxCost(t *testing.T) {
 				"apiKeySecret: apiToken, baseUrl: \""+srv.URL+"\", maxCostUsd: "+tt.limit, 1)
 			s := newSession(t, memPackage(t, manifest, testPrompt), nil)
 			s.opts.Price = &pipeline.Price{InPerMtok: 3, OutPerMtok: 15}
-			s.opts.NewHarness = func(rt *pipeline.AgentRuntime, apiKey string) Harness {
-				return API{Provider: rt.Provider, BaseURL: rt.BaseURL, APIKey: apiKey, Client: srv.Client()}
-			}
+			s.opts.Client = srv.Client()
 			msgs := s.run(`{"url":"https://example.com/1"}`)
 			var cost float64
 			for _, m := range msgs {

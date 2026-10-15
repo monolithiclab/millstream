@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net/http"
 	"os"
 	"path/filepath"
 	"text/template"
@@ -66,6 +67,8 @@ type Options struct {
 	// NewHarness builds the harness of an action from its runtime and API key; nil means the driver the manifest
 	// names. The record/replay layer wraps it either way.
 	NewHarness func(rt *pipeline.AgentRuntime, apiKey string) Harness
+	// Client sends the default api harness's requests; nil means http.DefaultClient.
+	Client *http.Client
 }
 
 // Run serves the protocol on in and out until shutdown or the end of input. A problem with the action itself (its
@@ -202,7 +205,7 @@ var ClaudeEnv = []string{"PATH", "HOME", "TMPDIR", "USER", "CLAUDE_CONFIG_DIR", 
 // defaultHarness is the driver the manifest names.
 func (a *adapter) defaultHarness(rt *pipeline.AgentRuntime, apiKey string) Harness {
 	if rt.Harness == pipeline.HarnessAPI {
-		return API{Provider: rt.Provider, BaseURL: rt.BaseURL, APIKey: apiKey}
+		return API{Provider: rt.Provider, BaseURL: rt.BaseURL, APIKey: apiKey, Client: a.opts.Client}
 	}
 	path, _ := a.opts.Env("PATH")
 	bin, ok := exec.LookPath("claude", path)

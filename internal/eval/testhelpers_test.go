@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"sync/atomic"
 	"testing"
 
+	"github.com/monolithiclab/millstream/internal/agent/agenttest"
 	"github.com/monolithiclab/millstream/internal/pipeline"
 	"github.com/monolithiclab/millstream/internal/runtime/exec/exectest/fakeexec"
 )
@@ -96,8 +96,8 @@ func loadOne(t *testing.T, dir string) *Case {
 	return cases[0]
 }
 
-// fakeModel is a Messages API answering every request with text, and counting the requests.
-func fakeModel(t *testing.T, text string) (*httptest.Server, *atomic.Int32) {
+// fakeModel is a Messages API answering every request with text, in process, and counting the requests.
+func fakeModel(t *testing.T, text string) (*model, *atomic.Int32) {
 	t.Helper()
 	calls := &atomic.Int32{}
 	body, _ := json.Marshal(map[string]any{
@@ -105,12 +105,16 @@ func fakeModel(t *testing.T, text string) (*httptest.Server, *atomic.Int32) {
 		"content": []map[string]string{{"type": "text", "text": text}},
 		"usage":   map[string]int{"input_tokens": 1000, "output_tokens": 100},
 	})
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	return &model{URL: agenttest.URL, Client: agenttest.Client(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = io.Copy(io.Discard, r.Body)
 		calls.Add(1)
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write(body)
-	}))
-	t.Cleanup(srv.Close)
-	return srv, calls
+	}))}, calls
+}
+
+// model is a fake provider: its URL for manifests and judges, and the client that reaches it.
+type model struct {
+	URL    string
+	Client *http.Client
 }

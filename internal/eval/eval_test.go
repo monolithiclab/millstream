@@ -115,11 +115,12 @@ func TestRunAgentRecordReplay(t *testing.T) {
 	action, recordings := filepath.Join(dir, "actions", "score"), t.TempDir()
 	c := loadOne(t, action)
 	opts := options(t, dir, "./actions/score", agent.ModeRecord, recordings)
+	opts.Client = srv.Client
 	opts.Price = &pipeline.Price{InPerMtok: 3, OutPerMtok: 15}
 	if r := Run(t.Context(), opts, c); !r.Passes() || r.Score != 1 || r.CostUSD != 0.0045 {
 		t.Fatalf("record = %+v", r)
 	}
-	srv.Close()
+	opts.Client = nil // the model is gone: a replay never calls it
 	opts.Mode = agent.ModeReplay
 	opts.Env = func(k string) (string, bool) { return "", false }
 	if r := Run(t.Context(), opts, c); !r.Passes() || r.Score != 1 || calls.Load() != 1 {
@@ -148,6 +149,7 @@ judge: { rubric: "The output is zero.", model: claude-haiku-5, baseUrl: "` + srv
 	c := loadOne(t, filepath.Join(dir, "actions", "echo"))
 	recordings := t.TempDir()
 	opts := options(t, dir, "./actions/echo", agent.ModeRecord, recordings)
+	opts.Client = srv.Client
 	r := Run(t.Context(), opts, c)
 	if !r.Passes() || r.Judge == nil || r.Judge.Score != 0.5 || r.Judge.Reason != "The city is right." || r.Score != 0.75 {
 		t.Fatalf("record = %+v", r)
@@ -160,14 +162,14 @@ judge: { rubric: "The output is zero.", model: claude-haiku-5, baseUrl: "` + srv
 	if !strings.Contains(string(raw), "The output is zero.") || !strings.Contains(string(raw), `\"city\": \"Lyon\"`) {
 		t.Fatalf("recording = %s", raw)
 	}
-	srv.Close()
+	opts.Client = nil // the model is gone: a replay never calls it
 	opts.Mode = agent.ModeReplay
 	if r := Run(t.Context(), opts, c); r.Judge == nil || r.Score != 0.75 || calls.Load() != 1 {
 		t.Fatalf("replay = %+v after %d calls", r, calls.Load())
 	}
 
 	bad, _ := fakeModel(t, "```json\n{\"score\": 2, \"reason\": \"x\"}\n```")
-	c.Judge.BaseURL = bad.URL
+	c.Judge.BaseURL, opts.Client = bad.URL, bad.Client
 	opts.Mode, opts.Dir = agent.ModeLive, ""
 	if r := Run(t.Context(), opts, c); r.Passes() || r.Score != 0 || !strings.Contains(r.Err, "judge: the verdict") {
 		t.Fatalf("out of range = %+v", r)

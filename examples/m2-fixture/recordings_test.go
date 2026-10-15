@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -17,6 +16,7 @@ import (
 	"github.com/monolithiclab/millstream/examples/m1-fixture/listing"
 	"github.com/monolithiclab/millstream/examples/m2-fixture/pool"
 	"github.com/monolithiclab/millstream/internal/agent"
+	"github.com/monolithiclab/millstream/internal/agent/agenttest"
 	"github.com/monolithiclab/millstream/internal/pipeline"
 	"github.com/monolithiclab/millstream/internal/protocol"
 )
@@ -85,17 +85,6 @@ func fakeModel(t *testing.T) http.Handler {
 	})
 }
 
-// handlerTransport serves requests with a handler, in process.
-type handlerTransport struct{ h http.Handler }
-
-func (ht handlerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	rec := httptest.NewRecorder()
-	ht.h.ServeHTTP(rec, req)
-	resp := rec.Result()
-	resp.Request = req
-	return resp, nil
-}
-
 // record runs the score action over listings with the lessons file, through the agent adapter and the
 // real api harness pointed at the fake model, recording into dir.
 func record(t *testing.T, model http.Handler, lessonsFile, dir string, listings []listing.Listing) {
@@ -130,8 +119,7 @@ func record(t *testing.T, model http.Handler, lessonsFile, dir string, listings 
 		Package: ".", Loaded: loadFixture(t), Action: "./actions/score", Secrets: []string{"scorerKey"},
 		Env: func(k string) (string, bool) { v, ok := env[k]; return v, ok },
 		NewHarness: func(rt *pipeline.AgentRuntime, apiKey string) agent.Harness {
-			return agent.API{Provider: rt.Provider, BaseURL: "http://model.test", APIKey: apiKey,
-				Client: &http.Client{Transport: handlerTransport{model}}}
+			return agent.API{Provider: rt.Provider, BaseURL: agenttest.URL, APIKey: apiKey, Client: agenttest.Client(model)}
 		},
 	})
 	if err != nil {

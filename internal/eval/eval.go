@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net/http"
 	"os"
 	"path/filepath"
 	"slices"
@@ -172,6 +173,8 @@ type Options struct {
 	Logger *slog.Logger
 	// Launchers start exec and container processes by kind, as exec.Options says; nil runs exec actions only.
 	Launchers map[string]exec.Launcher
+	// Client sends the api harness's requests, the agent action's and the judge's; nil means http.DefaultClient.
+	Client *http.Client
 }
 
 // Result is a case's outcome.
@@ -359,7 +362,7 @@ func runAgent(ctx context.Context, opts Options, config, vars map[string]any, it
 	}
 	err = agent.Run(ctx, &in, &out, agent.Options{
 		Package: opts.Package.Dir, Loaded: opts.Package, Action: opts.Ref, Secrets: opts.Package.Pipeline.Secrets,
-		Price: opts.Price, Logger: opts.Logger,
+		Price: opts.Price, Logger: opts.Logger, Client: opts.Client,
 		Env: func(k string) (string, bool) {
 			if v, ok := overlay[k]; ok {
 				return v, v != ""
@@ -428,7 +431,7 @@ func judge(ctx context.Context, opts Options, c *Case, output any) (*Verdict, er
 		key, _ = opts.Env(pipeline.SecretEnv(j.APIKeySecret))
 	}
 	h := agent.Recorder{
-		Harness: agent.API{Provider: j.Provider, BaseURL: j.BaseURL, APIKey: key},
+		Harness: agent.API{Provider: j.Provider, BaseURL: j.BaseURL, APIKey: key, Client: opts.Client},
 		Name:    pipeline.HarnessAPI, Mode: opts.Mode, Dir: opts.Dir,
 	}
 	resp, err := h.Run(ctx, agent.Request{
