@@ -8,7 +8,7 @@
 <body>
 <x-dc>
 <helmet>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Mono:wght@400;500;700&amp;family=Atkinson+Hyperlegible+Next:wght@400;500;700;800&amp;display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Mono:wght@400;500;700&amp;family=Atkinson+Hyperlegible+Next:wght@400;500;700;800&amp;family=Instrument+Serif:ital@0;1&amp;display=swap">
 <style>
 body{margin:0}
 </style>
@@ -17,17 +17,17 @@ body{margin:0}
 
 <nav aria-label="Main" style="width: 228px; flex: none; box-sizing: border-box; background: {{c.s2}}; border-right: 1px solid {{c.line}}; padding: 18px 12px; display: flex; flex-direction: column; gap: 22px">
 <div style="display: flex; align-items: center; gap: 10px; padding: 0 8px">
-<svg width="22" height="22" viewBox="0 0 22 22" aria-hidden="true"><path d="M1 5.5H21M1 16.5H21" stroke="{{c.ink}}" stroke-width="1.6"></path><rect x="4" y="9" width="4" height="4" fill="{{c.acc}}" opacity="0.45"></rect><rect x="13" y="9" width="4" height="4" fill="{{c.acc}}"></rect></svg>
-<span style="font-size: 17px; font-weight: 800; letter-spacing: -0.02em">Millstream</span>
+<svg width="22" height="22" viewBox="0 0 22 22" aria-hidden="true"><path d="M1 6C6 3.5 11 8.5 21 5.5M1 16.5C6 14 11 19 21 16" fill="none" stroke="{{c.ink}}" stroke-width="1.5" stroke-linecap="round"></path><circle cx="7" cy="11.2" r="1.9" fill="{{c.acc}}" opacity="0.45"></circle><circle cx="14" cy="11" r="2.3" fill="{{c.acc}}"></circle></svg>
+<span style="font-family: 'Instrument Serif', 'Iowan Old Style', Georgia, serif; font-size: 26px; line-height: 26px; font-weight: 400; letter-spacing: -0.01em">Millstream</span>
 </div>
-<button type="button" aria-label="Switch pipeline, current listings-daily" style="display: flex; align-items: center; gap: 8px; width: 100%; box-sizing: border-box; padding: 8px 10px; background: {{c.s1}}; color: {{c.ink}}; border: 1px solid {{c.line}}; border-radius: 2px; font: inherit; cursor: pointer; text-align: left"><span style="flex: 1 1 auto; font-family: 'Atkinson Hyperlegible Mono', ui-monospace, Menlo, monospace; font-size: 13px; font-weight: 700">listings-daily</span><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5L6 7.5L9 4.5" fill="none" stroke="{{c.ink2}}" stroke-width="1.5"></path></svg></button>
+<button type="button" aria-label="Switch pipeline, current listings-daily" style="display: flex; align-items: center; gap: 8px; width: 100%; box-sizing: border-box; padding: 8px 10px; background: {{c.s1}}; color: {{c.ink}}; border: 1px solid {{c.line}}; border-radius: 10px; font: inherit; cursor: pointer; text-align: left"><span style="flex: 1 1 auto; font-family: 'Atkinson Hyperlegible Mono', ui-monospace, Menlo, monospace; font-size: 13px; font-weight: 700">listings-daily</span><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5L6 7.5L9 4.5" fill="none" stroke="{{c.ink2}}" stroke-width="1.5"></path></svg></button>
 <div style="display: flex; flex-direction: column; gap: 2px">
-<div style="padding: 0 10px 6px; font-size: 11px; font-weight: 700; letter-spacing: 0.06em; color: {{c.ink3}}">WORKSPACE</div>
-<sc-for list="{{nav.g}}" as="n" hint-placeholder-count="4"><a href="#" style="display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: 2px; text-decoration: none; color: {{n.color}}; background: {{n.bg}}; font-weight: {{n.fw}}; box-shadow: {{n.sh}}"><span>{{n.label}}</span><span style="margin-left: auto; font-family: 'Atkinson Hyperlegible Mono', ui-monospace, Menlo, monospace; font-size: 12px; font-weight: 700; color: {{n.cc}}">{{n.count}}</span></a></sc-for>
+<div style="padding: 0 10px 6px; font-family: 'Instrument Serif', Georgia, serif; font-style: italic; font-size: 17px; color: {{c.ink3}}">Workspace</div>
+<sc-for list="{{nav.g}}" as="n" hint-placeholder-count="4"><a href="#" style="display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: 10px; text-decoration: none; color: {{n.color}}; background: {{n.bg}}; font-weight: {{n.fw}}; box-shadow: {{n.sh}}"><span>{{n.label}}</span><span style="margin-left: auto; font-family: 'Atkinson Hyperlegible Mono', ui-monospace, Menlo, monospace; font-size: 12px; font-weight: 700; color: {{n.cc}}">{{n.count}}</span></a></sc-for>
 </div>
 <div style="display: flex; flex-direction: column; gap: 2px">
-<div style="padding: 0 10px 6px; font-size: 11px; font-weight: 700; letter-spacing: 0.06em; color: {{c.ink3}}">PIPELINE</div>
-<sc-for list="{{nav.p}}" as="n" hint-placeholder-count="7"><a href="#" style="display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: 2px; text-decoration: none; color: {{n.color}}; background: {{n.bg}}; font-weight: {{n.fw}}; box-shadow: {{n.sh}}"><span>{{n.label}}</span><span style="margin-left: auto; font-family: 'Atkinson Hyperlegible Mono', ui-monospace, Menlo, monospace; font-size: 12px; font-weight: 700; color: {{n.cc}}">{{n.count}}</span></a></sc-for>
+<div style="padding: 0 10px 6px; font-family: 'Instrument Serif', Georgia, serif; font-style: italic; font-size: 17px; color: {{c.ink3}}">Pipeline</div>
+<sc-for list="{{nav.p}}" as="n" hint-placeholder-count="7"><a href="#" style="display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: 10px; text-decoration: none; color: {{n.color}}; background: {{n.bg}}; font-weight: {{n.fw}}; box-shadow: {{n.sh}}"><span>{{n.label}}</span><span style="margin-left: auto; font-family: 'Atkinson Hyperlegible Mono', ui-monospace, Menlo, monospace; font-size: 12px; font-weight: 700; color: {{n.cc}}">{{n.count}}</span></a></sc-for>
 </div>
 <div style="margin-top: auto; display: flex; flex-direction: column; gap: 8px; padding: 12px 10px 0; border-top: 1px solid {{c.line}}; font-size: 12px; color: {{c.ink2}}">
 <div style="display: flex; align-items: center; gap: 8px"><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M1.8 6.4L4.8 9.3L10.2 2.9" fill="none" stroke="{{c.ok}}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path></svg><span>Engine <strong style="color: {{c.ink}}">mill-01</strong> active</span></div>
@@ -38,8 +38,8 @@ body{margin:0}
 <main style="flex: 1 1 0; min-width: 0; display: flex; flex-direction: column">
 <header style="flex: none; box-sizing: border-box; display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; padding: 14px 24px; border-bottom: 1px solid {{c.line}}; background: {{c.s1}}">
 <div style="display: flex; align-items: center; gap: 8px; font-size: 13px"><a href="#" style="color: {{c.ink2}}; text-decoration: none; font-family: 'Atkinson Hyperlegible Mono', ui-monospace, Menlo, monospace">listings-daily</a><span aria-hidden="true" style="color: {{c.ink3}}">/</span></div>
-<h1 style="margin: 0; font-size: 18px; font-weight: 800">Insights</h1>
-<div role="group" aria-label="State" style="display: flex; border: 1px solid {{c.line2}}; border-radius: 2px; overflow: hidden; font-size: 13px">
+<h1 style="margin: 0; font-family: 'Instrument Serif', 'Iowan Old Style', Georgia, serif; font-size: 32px; line-height: 34px; font-weight: 400">Insights</h1>
+<div role="group" aria-label="State" style="display: flex; border: 1px solid {{c.line2}}; border-radius: 10px; overflow: hidden; font-size: 13px">
 <button type="button" aria-pressed="true" style="padding: 5px 12px; border: 0; border-right: 1px solid {{c.line}}; background: {{c.ink}}; color: {{c.bg}}; font: inherit; font-weight: 700; cursor: pointer">Needs attention 3</button>
 <button type="button" aria-pressed="false" style="padding: 5px 12px; border: 0; border-right: 1px solid {{c.line}}; background: transparent; color: {{c.ink2}}; font: inherit; cursor: pointer">Resolved 14</button>
 <button type="button" aria-pressed="false" style="padding: 5px 12px; border: 0; background: transparent; color: {{c.ink2}}; font: inherit; cursor: pointer">Muted 1</button>
@@ -50,28 +50,28 @@ body{margin:0}
 
 <div style="flex: 1 1 auto; display: flex; flex-wrap: wrap; gap: 24px; padding: 20px 24px; align-items: flex-start">
 <aside aria-label="Filter by kind" style="flex: 1 1 200px; max-width: 240px; display: flex; flex-direction: column; gap: 4px">
-<div style="font-size: 11px; font-weight: 700; letter-spacing: 0.05em; color: {{c.ink3}}; padding: 0 8px 6px">KIND</div>
-<sc-for list="{{kinds}}" as="k" hint-placeholder-count="5"><label style="display: flex; align-items: center; gap: 10px; padding: 7px 8px; border-radius: 2px; font-size: 13px; color: {{k.col}}; cursor: pointer"><input type="checkbox" checked="{{k.on}}" style="width: 15px; height: 15px; accent-color: {{c.acc}}"><span style="flex: 1 1 auto">{{k.l}}</span><span style="font-family: 'Atkinson Hyperlegible Mono', ui-monospace, Menlo, monospace; font-size: 12px; color: {{c.ink3}}">{{k.n}}</span></label></sc-for>
+<div style="font-family: 'Instrument Serif', Georgia, serif; font-style: italic; font-size: 20px; color: {{c.ink3}}; padding: 0 8px 6px">By kind</div>
+<sc-for list="{{kinds}}" as="k" hint-placeholder-count="5"><label style="display: flex; align-items: center; gap: 10px; padding: 7px 8px; border-radius: 10px; font-size: 13px; color: {{k.col}}; cursor: pointer"><input type="checkbox" checked="{{k.on}}" style="width: 15px; height: 15px; accent-color: {{c.acc}}"><span style="flex: 1 1 auto">{{k.l}}</span><span style="font-family: 'Atkinson Hyperlegible Mono', ui-monospace, Menlo, monospace; font-size: 12px; color: {{c.ink3}}">{{k.n}}</span></label></sc-for>
 </aside>
 
 <div style="flex: 999 1 640px; min-width: 0; display: flex; flex-direction: column; gap: 16px">
 <sc-for list="{{insights}}" as="i" hint-placeholder-count="3">
-<article style="background: {{c.s1}}; border: 1px solid {{c.line}}; border-radius: 3px; padding: 18px 20px; display: flex; flex-direction: column; gap: 12px">
+<article style="background: {{c.s1}}; border: 1px solid {{c.line}}; border-radius: 20px; box-shadow: {{c.card}}; padding: 18px 20px; display: flex; flex-direction: column; gap: 12px">
 <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; font-size: 12px">
-<span style="display: inline-flex; align-items: center; gap: 6px; padding: 1px 8px; background: {{i.soft}}; color: {{i.col}}; border-radius: 2px; font-weight: 700"><svg width="11" height="11" viewBox="0 0 12 12" aria-hidden="true"><path d="{{i.d}}" fill="{{i.f}}" stroke="{{i.col}}" stroke-width="1.7" stroke-linejoin="round" stroke-linecap="round"></path></svg>{{i.state}}</span>
+<span style="display: inline-flex; align-items: center; gap: 6px; padding: 1px 8px; background: {{i.soft}}; color: {{i.col}}; border-radius: 10px; font-weight: 700"><svg width="11" height="11" viewBox="0 0 12 12" aria-hidden="true"><path d="{{i.d}}" fill="{{i.f}}" stroke="{{i.col}}" stroke-width="1.7" stroke-linejoin="round" stroke-linecap="round"></path></svg>{{i.state}}</span>
 <span style="font-weight: 700; color: {{c.ink2}}">{{i.kind}}</span>
 <a href="#" style="font-family: 'Atkinson Hyperlegible Mono', ui-monospace, Menlo, monospace; color: {{c.ink}}; font-weight: 700">{{i.step}}</a>
 <span style="color: {{c.ink3}}">{{i.when}}</span>
 </div>
-<h2 style="margin: 0; font-size: 17px; line-height: 24px; font-weight: 800">{{i.title}}</h2>
+<h2 style="margin: 0; font-family: 'Instrument Serif', 'Iowan Old Style', Georgia, serif; font-size: 32px; line-height: 36px; font-weight: 400">{{i.title}}</h2>
 <p style="margin: 0; font-size: 14px; line-height: 21px; color: {{c.ink2}}; max-width: 760px">{{i.body}}</p>
-<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 1px; background: {{c.line}}; border: 1px solid {{c.line}}">
-<sc-for list="{{i.ev}}" as="e" hint-placeholder-count="3"><a href="#" style="display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; background: {{c.s1}}; text-decoration: none; color: {{c.ink}}"><span style="font-size: 12px; color: {{c.ink3}}">{{e.k}}</span><span style="font-size: 18px; line-height: 24px; font-weight: 800">{{e.v}}</span><span style="font-size: 12px; color: {{c.ink2}}">{{e.s}}</span></a></sc-for>
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px">
+<sc-for list="{{i.ev}}" as="e" hint-placeholder-count="3"><a href="#" style="display: flex; flex-direction: column; gap: 2px; padding: 14px 16px; background: {{c.s2}}; border-radius: 14px; text-decoration: none; color: {{c.ink}}"><span style="font-size: 12px; color: {{c.ink3}}">{{e.k}}</span><span style="font-family: 'Instrument Serif', 'Iowan Old Style', Georgia, serif; font-size: 32px; line-height: 36px; font-weight: 400">{{e.v}}</span><span style="font-size: 12px; color: {{c.ink2}}">{{e.s}}</span></a></sc-for>
 </div>
 <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; font-size: 12px"><span style="color: {{c.ink3}}">Sample items</span><sc-for list="{{i.samples}}" as="s" hint-placeholder-count="3"><a href="#" style="font-family: 'Atkinson Hyperlegible Mono', ui-monospace, Menlo, monospace; color: {{c.ink}}">{{s.id}}</a></sc-for></div>
 <div style="display: flex; flex-wrap: wrap; gap: 8px; padding-top: 4px">
-<a href="#" style="display: inline-flex; align-items: center; padding: 6px 12px; background: {{c.acc}}; color: {{c.accInk}}; border-radius: 2px; font-size: 13px; font-weight: 700; text-decoration: none">{{i.primary}}</a>
-<sc-for list="{{i.actions}}" as="a" hint-placeholder-count="2"><button type="button" style="padding: 6px 12px; background: transparent; color: {{c.ink}}; border: 1px solid {{c.line2}}; border-radius: 2px; font: inherit; font-size: 13px; font-weight: 700; cursor: pointer">{{a.t}}</button></sc-for>
+<a href="#" style="display: inline-flex; align-items: center; padding: 6px 12px; background: {{c.acc}}; color: {{c.accInk}}; border-radius: 10px; font-size: 13px; font-weight: 700; text-decoration: none">{{i.primary}}</a>
+<sc-for list="{{i.actions}}" as="a" hint-placeholder-count="2"><button type="button" style="padding: 6px 12px; background: transparent; color: {{c.ink}}; border: 1px solid {{c.line2}}; border-radius: 10px; font: inherit; font-size: 13px; font-weight: 700; cursor: pointer">{{a.t}}</button></sc-for>
 </div>
 </article>
 </sc-for>
@@ -82,8 +82,8 @@ body{margin:0}
 </x-dc>
 <script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["light","dark"],"default":"light"},"$preview":{"width":1440,"height":1000}}'>
 const PAL = {
-  light: {bg:'#F3F3EF',s1:'#FFFFFF',s2:'#E9E9E4',s3:'#DEDED7',line:'#D6D6CE',line2:'#B9BAB1',ink:'#15191B',ink2:'#454D52',ink3:'#5F676C',acc:'#0A7770',accInk:'#FFFFFF',accSoft:'#DCEEEB',ok:'#2B7A3A',okSoft:'#E2EFE2',warn:'#8F5B00',warnSoft:'#F6E9CC',bad:'#B3261E',badSoft:'#F8E0DC',rev:'#5B45B0',revSoft:'#E9E4F7',mute:'#5F676C',muteSoft:'#E6E6E0'},
-  dark: {bg:'#0E1112',s1:'#15191B',s2:'#1B2023',s3:'#2A3135',line:'#2A3135',line2:'#3B4449',ink:'#E6EAE8',ink2:'#AEB6B9',ink3:'#8C969A',acc:'#3EC2B4',accInk:'#06201D',accSoft:'#123331',ok:'#6FC77F',okSoft:'#16291A',warn:'#E8AE45',warnSoft:'#2F2510',bad:'#F2806F',badSoft:'#3A1916',rev:'#AE9BF5',revSoft:'#241E3D',mute:'#8C969A',muteSoft:'#20262A'}
+  light: {bg:'#F7F4EE',s1:'#FFFFFF',s2:'#F3EFE8',s3:'#E6E0D5',line:'#E6E0D5',line2:'#D6CEC0',ink:'#1F1C18',ink2:'#4F4A42',ink3:'#6C665C',acc:'#0E6B66',accInk:'#FFFFFF',accSoft:'#E2EEEA',ok:'#2F6E3B',okSoft:'#E6EFE2',warn:'#8A5A0C',warnSoft:'#F7ECD5',bad:'#A8322A',badSoft:'#F8E4DF',rev:'#6A4A9C',revSoft:'#EFE8F6',mute:'#6C665C',muteSoft:'#EEEAE2',card:'0 1px 2px rgba(64,48,24,.05), 0 6px 20px rgba(64,48,24,.07)'},
+  dark: {bg:'#14120F',s1:'#1C1915',s2:'#23201B',s3:'#2F2A23',line:'#2F2A23',line2:'#453F35',ink:'#EFEAE2',ink2:'#BFB7AA',ink3:'#9B9386',acc:'#52C4B6',accInk:'#0B1F1D',accSoft:'#173230',ok:'#7FC68A',okSoft:'#1B2A1D',warn:'#E5B056',warnSoft:'#33280F',bad:'#EF8B79',badSoft:'#3D1C17',rev:'#BCA4F2',revSoft:'#2A2140',mute:'#9B9386',muteSoft:'#27231E',card:'0 1px 2px rgba(0,0,0,.35), 0 8px 24px rgba(0,0,0,.35)'}
 };
 function nav(c, active){
   const mk=(id,label,count,tone)=>({label, count: count||'', fw: id===active?700:500, color: id===active?c.ink:c.ink2, bg: id===active?c.s1:'transparent', sh: id===active?('inset 0 0 0 1px '+c.line):'none', cc: tone==='bad'?c.bad:(tone==='rev'?c.rev:(tone==='warn'?c.warn:c.ink3))});

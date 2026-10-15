@@ -22,7 +22,7 @@ a{color:#0E6B66}a:hover{color:#0A524E}
 .pill{display:inline-flex;align-items:center;gap:7px;padding:4px 12px 4px 9px;border-radius:999px;font-size:13px;font-weight:700;white-space:nowrap}
 </style>
 </helmet>
-<div style="width: 1440px; min-height: 2140px; box-sizing: border-box; background: #F7F4EE; color: #1F1C18; font-family: 'Atkinson Hyperlegible Next', 'Segoe UI', system-ui, sans-serif; font-variant-numeric: tabular-nums; padding: 80px 88px; display: flex; flex-direction: column; gap: 72px">
+<div style="width: 1440px; min-height: 2880px; box-sizing: border-box; background: #F7F4EE; color: #1F1C18; font-family: 'Atkinson Hyperlegible Next', 'Segoe UI', system-ui, sans-serif; font-variant-numeric: tabular-nums; padding: 80px 88px; display: flex; flex-direction: column; gap: 72px">
 
 <header style="display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 72px; align-items: end">
 <div style="display: flex; flex-direction: column; gap: 26px">
@@ -163,11 +163,69 @@ a{color:#0E6B66}a:hover{color:#0A524E}
   --ms-ease: cubic-bezier(.2,.8,.2,1);
   --ms-focus: 0 0 0 2px var(--ms-bg), 0 0 0 4px var(--ms-accent);
 }</pre>
-<p class="lede" style="font-size: 13px; line-height: 20px">Every text pair meets WCAG 2.2 AA on paper, card and its soft status fill. Dark mode will be re-derived from these warm neutrals in the next pass.</p>
+<p class="lede" style="font-size: 13px; line-height: 20px">Every text pair meets WCAG 2.2 AA on paper, card and its soft status fill.</p>
+</section>
+
+<section style="display: flex; flex-direction: column; gap: 22px">
+<h2 class="h2">Colour and tokens · <em>dark</em></h2>
+<p class="lede">The same warm family after dusk: a brown-black ground instead of slate, cream ink, and every accent lifted in lightness so it keeps its AA contrast. Shadows get deeper because there is less light to separate cards.</p>
+<div style="background: #14120F; color: #EFEAE2; border-radius: 20px; padding: 36px 40px; display: flex; flex-direction: column; gap: 30px; box-shadow: 0 8px 28px rgba(64,48,24,.18)">
+<div style="display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 18px">
+<div class="sw"><div class="chip" style="background: #14120F; box-shadow: inset 0 0 0 1px #453F35"></div><strong style="font-size: 14px">Night paper</strong><span class="k" style="color: #9B9386">--ms-bg #14120F</span></div>
+<div class="sw"><div class="chip" style="background: #1C1915; box-shadow: inset 0 0 0 1px #453F35"></div><strong style="font-size: 14px">Card</strong><span class="k" style="color: #9B9386">--ms-surface #1C1915</span></div>
+<div class="sw"><div class="chip" style="background: #23201B; box-shadow: inset 0 0 0 1px #453F35"></div><strong style="font-size: 14px">Linen</strong><span class="k" style="color: #9B9386">--ms-sunken #23201B</span></div>
+<div class="sw"><div class="chip" style="background: #2F2A23"></div><strong style="font-size: 14px">Seam</strong><span class="k" style="color: #9B9386">--ms-line #2F2A23</span></div>
+<div class="sw"><div class="chip" style="background: #EFEAE2"></div><strong style="font-size: 14px">Cream ink</strong><span class="k" style="color: #9B9386">--ms-ink #EFEAE2</span></div>
+<div class="sw"><div class="chip" style="background: #9B9386"></div><strong style="font-size: 14px">Ink soft</strong><span class="k" style="color: #9B9386">--ms-ink-3 #9B9386</span></div>
+<div class="sw"><div class="chip" style="background: #52C4B6"></div><strong style="font-size: 14px">Millrace</strong><span class="k" style="color: #9B9386">--ms-accent #52C4B6</span></div>
+<div class="sw"><div class="chip" style="background: #173230"></div><strong style="font-size: 14px">Millrace mist</strong><span class="k" style="color: #9B9386">--ms-accent-soft</span></div>
+<div class="sw"><div class="chip" style="background: #BCA4F2"></div><strong style="font-size: 14px">Plum · people</strong><span class="k" style="color: #9B9386">--ms-human #BCA4F2</span></div>
+<div class="sw"><div class="chip" style="background: #7FC68A"></div><strong style="font-size: 14px">Moss · done</strong><span class="k" style="color: #9B9386">--ms-ok #7FC68A</span></div>
+<div class="sw"><div class="chip" style="background: #E5B056"></div><strong style="font-size: 14px">Amber · attention</strong><span class="k" style="color: #9B9386">--ms-warn #E5B056</span></div>
+<div class="sw"><div class="chip" style="background: #EF8B79"></div><strong style="font-size: 14px">Brick · failed</strong><span class="k" style="color: #9B9386">--ms-bad #EF8B79</span></div>
+</div>
+<div style="display: flex; flex-wrap: wrap; gap: 12px">
+<span class="pill" style="background: #173230; color: #52C4B6"><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M6 1.5a4.5 4.5 0 1 1 0 9a4.5 4.5 0 1 1 0-9Z" fill="#52C4B6"></path></svg>Running</span>
+<span class="pill" style="background: #2A2140; color: #BCA4F2"><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M6 1.5a4.5 4.5 0 1 1 0 9a4.5 4.5 0 1 1 0-9Z" fill="none" stroke="#BCA4F2" stroke-width="1.6"></path><path d="M6 1.5a4.5 4.5 0 0 0 0 9Z" fill="#BCA4F2"></path></svg>Awaiting review</span>
+<span class="pill" style="background: #1B2A1D; color: #7FC68A"><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M1.8 6.4L4.8 9.3L10.2 2.9" fill="none" stroke="#7FC68A" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path></svg>Done</span>
+<span class="pill" style="background: #33280F; color: #E5B056"><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M6 1.3L11 10.4H1Z" fill="none" stroke="#E5B056" stroke-width="1.6" stroke-linejoin="round"></path></svg>Failed · will retry</span>
+<span class="pill" style="background: #3D1C17; color: #EF8B79"><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><rect x="2" y="2" width="8" height="8" rx="2" fill="#EF8B79"></rect><path d="M4.2 4.2L7.8 7.8M7.8 4.2L4.2 7.8" stroke="#1C1915" stroke-width="1.4" stroke-linecap="round"></path></svg>Dead</span>
+<span class="pill" style="background: #27231E; color: #9B9386"><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M6 1.2L10.8 6L6 10.8L1.2 6Z" fill="none" stroke="#9B9386" stroke-width="1.6" stroke-linejoin="round"></path></svg>Filtered</span>
+</div>
+<pre class="k" style="margin: 0; background: #1C1915; color: #EFEAE2; border: 1px solid #2F2A23; border-radius: 16px; padding: 28px 32px; font-size: 12.5px; line-height: 20px; white-space: pre; overflow: auto; columns: 2; column-gap: 48px">[data-theme="dark"] {
+  --ms-bg: #14120F;         --ms-surface: #1C1915;
+  --ms-sunken: #23201B;     --ms-line: #2F2A23;
+  --ms-line-strong: #453F35;
+  --ms-ink: #EFEAE2;  --ms-ink-2: #BFB7AA;  --ms-ink-3: #9B9386;
+  --ms-accent: #52C4B6;  --ms-accent-ink: #0B1F1D;
+  --ms-accent-soft: #173230;
+  --ms-ok: #7FC68A;    --ms-ok-soft: #1B2A1D;
+  --ms-warn: #E5B056;  --ms-warn-soft: #33280F;
+  --ms-bad: #EF8B79;   --ms-bad-soft: #3D1C17;
+  --ms-human: #BCA4F2; --ms-human-soft: #2A2140;
+  --ms-mute: #9B9386;  --ms-mute-soft: #27231E;
+
+  /* graph channels */
+  --ms-channel: #18292A;   --ms-channel-bank: #24393A;
+
+  --ms-shadow-1: 0 1px 2px rgb(0 0 0 / .35),
+                 0 8px 24px rgb(0 0 0 / .35);
+  --ms-shadow-2: 0 2px 6px rgb(0 0 0 / .5),
+                 0 24px 48px rgb(0 0 0 / .55);
+  --ms-focus: 0 0 0 2px var(--ms-bg), 0 0 0 4px var(--ms-accent);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { /* same values */ }
+}
+/* light channels: --ms-channel #E6F0EC,
+   --ms-channel-bank #D2E2DC */</pre>
+</div>
+<p class="lede" style="font-size: 13px; line-height: 20px">Fonts, radii, spacing and motion are shared by both themes. Dark text pairs also meet WCAG 2.2 AA on night paper, card and soft status fills.</p>
 </section>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":2140}}'>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":2880}}'>
 class Component extends DCLogic {
   renderVals() { return {}; }
 }

@@ -127,7 +127,7 @@ body{margin:0}
 <script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["light","dark"],"default":"light"},"$preview":{"width":1440,"height":920}}'>
 const PAL = {
   light: {bg:'#F7F4EE',s1:'#FFFFFF',s2:'#F3EFE8',s3:'#E6E0D5',line:'#E6E0D5',line2:'#D6CEC0',ink:'#1F1C18',ink2:'#4F4A42',ink3:'#6C665C',acc:'#0E6B66',accInk:'#FFFFFF',accSoft:'#E2EEEA',ok:'#2F6E3B',okSoft:'#E6EFE2',warn:'#8A5A0C',warnSoft:'#F7ECD5',bad:'#A8322A',badSoft:'#F8E4DF',rev:'#6A4A9C',revSoft:'#F3EEF8',mute:'#6C665C',muteSoft:'#EEEAE2',card:'0 1px 2px rgba(64,48,24,.05), 0 6px 20px rgba(64,48,24,.07)'},
-  dark: {bg:'#0E1112',s1:'#15191B',s2:'#1B2023',s3:'#2A3135',line:'#2A3135',line2:'#3B4449',ink:'#E6EAE8',ink2:'#AEB6B9',ink3:'#8C969A',acc:'#3EC2B4',accInk:'#06201D',accSoft:'#123331',ok:'#6FC77F',okSoft:'#16291A',warn:'#E8AE45',warnSoft:'#2F2510',bad:'#F2806F',badSoft:'#3A1916',rev:'#AE9BF5',revSoft:'#241E3D',mute:'#8C969A',muteSoft:'#20262A'}
+  dark: {bg:'#14120F',s1:'#1C1915',s2:'#23201B',s3:'#2F2A23',line:'#2F2A23',line2:'#453F35',ink:'#EFEAE2',ink2:'#BFB7AA',ink3:'#9B9386',acc:'#52C4B6',accInk:'#0B1F1D',accSoft:'#173230',ok:'#7FC68A',okSoft:'#1B2A1D',warn:'#E5B056',warnSoft:'#33280F',bad:'#EF8B79',badSoft:'#3D1C17',rev:'#BCA4F2',revSoft:'#2A2140',mute:'#9B9386',muteSoft:'#27231E',card:'0 1px 2px rgba(0,0,0,.35), 0 8px 24px rgba(0,0,0,.35)'}
 };
 function nav(c, active){
   const mk=(id,label,count,tone)=>({label, count: count||'', fw: id===active?700:500, color: id===active?c.ink:c.ink2, bg: id===active?c.s1:'transparent', sh: id===active?('inset 0 0 0 1px '+c.line):'none', cc: tone==='bad'?c.bad:(tone==='rev'?c.rev:(tone==='warn'?c.warn:c.ink3))});
