@@ -1,0 +1,85 @@
+#!/bin/sh
+# Measures the default test suite against its budget, without -race. Compilation and binary start are not counted.
+#   - Serial-equivalent test time: the suite runs one package and one test at a time (-p 1 -parallel 1), and each
+#     top-level test's time comes from the events' timestamps (test2json's Elapsed has a 10 ms resolution). The sum is
+#     at most BUDGET_TOTAL_MS, and no test takes more than BUDGET_TEST_MS.
+#   - Package wall time: the suite runs again one package at a time, with t.Parallel in effect (-p 1), and no
+#     package's Elapsed is more than BUDGET_PKG_MS above its floor: the Elapsed of its test binary running no test
+#     (-run '^$': process start, package initialisation, TestMain). Both take the faster of two runs, macOS
+#     start-up times being noisy. An empty test binary's Elapsed, the floor of the smallest binary, is printed
+#     for reference: a larger binary takes longer to start.
+# Prints the per-package figures and the TOP slowest tests, and exits 1 when the budget is exceeded.
+# Usage: scripts/test-times [go test arguments, default ./...]   e.g. scripts/test-times -tags e2e ./internal/cli
+set -eu
+
+: "${BUDGET_TOTAL_MS:=500}" "${BUDGET_TEST_MS:=20}" "${BUDGET_PKG_MS:=100}" "${TOP:=30}"
+[ $# -gt 0 ] || set -- ./...
+
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+
+# An empty package with one empty test, in a module of its own, run three times for the fastest: macOS assesses a
+# binary the first time it runs. The suite's binaries go through that in the serial pass, which runs first.
+mkdir "$tmp/empty"
+printf 'module empty\n\ngo 1.25\n' > "$tmp/empty/go.mod"
+printf 'package empty\n\nimport "testing"\n\nfunc TestEmpty(*testing.T) {}\n' > "$tmp/empty/empty_test.go"
+for _ in 1 2 3; do (cd "$tmp/empty" && go test -count=1 -json .); done > "$tmp/empty.json"
+
+status=0
+go test -count=1 -json -p 1 -parallel 1 "$@" > "$tmp/serial.json" || status=$?
+for _ in 1 2; do go test -count=1 -json -p 1 -run '^$' "$@" || status=$?; done > "$tmp/floor.json"
+for _ in 1 2; do go test -count=1 -json -p 1 "$@" || status=$?; done > "$tmp/wall.json"
+
+# go test -json emits one event per line, with flat fields: a regexp per field is enough.
+awk -v total_budget="$BUDGET_TOTAL_MS" -v test_budget="$BUDGET_TEST_MS" -v pkg_budget="$BUDGET_PKG_MS" -v top="$TOP" '
+	function field(name,   re, s) {
+		re = "\"" name "\":(\"[^\"]*\"|[^,}]*)"
+		if (!match($0, re)) return ""
+		s = substr($0, RSTART + length(name) + 3, RLENGTH - length(name) - 3)
+		gsub(/"/, "", s)
+		return s
+	}
+	# seconds since midnight of an RFC 3339 timestamp; a test running across midnight is rare enough to ignore.
+	function secs(ts,   hms) {
+		split(substr(ts, 12), hms, /[:+Z-]/)
+		return hms[1] * 3600 + hms[2] * 60 + hms[3]
+	}
+	FNR == 1 { file++ }
+	{ action = field("Action"); pkg = field("Package"); test = field("Test"); ms = field("Elapsed") * 1000 }
+	action !~ /^(pass|fail)$/ && file != 2 { next }
+	file == 1 { if (test == "" && (base == "" || ms < base)) base = ms; next }
+	file == 3 { if (test == "" && (!(pkg in floor) || ms < floor[pkg])) floor[pkg] = ms; next }
+	file == 4 { if (test == "" && (!(pkg in wall) || ms < wall[pkg])) wall[pkg] = ms; next }
+	# One test runs at a time: the time between two consecutive events of the same top-level test (its own or those
+	# of its subtests) belongs to that test, and a gap between events of different tests to the framework.
+	test == "" { next }
+	{ key = pkg " " substr(test, 1, index(test "/", "/") - 1); now = secs(field("Time")) }
+	key == last { d = (now - then) * 1000; took[key] += d; sum[pkg] += d; total += d }
+	!(key in took) { took[key] = 0 }
+	{ last = key; then = now }
+	END {
+		printf "empty test binary: %.0f ms\n\n%-56s %7s %7s %7s %8s\n", base, "package", "wall", "floor", "over",
+			"tests"
+		for (p in wall) {
+			over = wall[p] - floor[p]
+			flag = over > pkg_budget ? "  OVER" : ""
+			if (flag != "") over_pkg++
+			name = p; sub(/^github.com\/monolithiclab\/millstream\//, "", name)
+			printf "%-56s %7.0f %7.0f %7.0f %8.1f%s\n", name, wall[p], floor[p], over, sum[p], flag | "sort -k5 -rn"
+		}
+		close("sort -k5 -rn")
+		printf "\nserial-equivalent test time: %.0f ms (budget %d ms)\n\ntop %d tests (budget %d ms each):\n",
+			total, total_budget, top, test_budget
+		for (k in took) {
+			if (took[k] > test_budget) over_test++
+			name = k; sub(/^github.com\/monolithiclab\/millstream\//, "", name)
+			printf "%8.1f  %s\n", took[k], name | ("sort -rn | head -" top)
+		}
+		close("sort -rn | head -" top)
+		bad = 0
+		if (total > total_budget) { print "\nOVER: serial-equivalent test time"; bad = 1 }
+		if (over_test) { printf "OVER: %d tests above %d ms\n", over_test, test_budget; bad = 1 }
+		if (over_pkg) { printf "OVER: %d packages above their floor + %d ms\n", over_pkg, pkg_budget; bad = 1 }
+		exit bad
+	}' "$tmp/empty.json" "$tmp/serial.json" "$tmp/floor.json" "$tmp/wall.json" || status=1
+exit "$status"
