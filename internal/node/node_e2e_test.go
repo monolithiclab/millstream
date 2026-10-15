@@ -65,8 +65,9 @@ func TestHeartbeatRenewsHeldLeasesRealTime(t *testing.T) {
 func TestLostLeaseDropsResultRealTime(t *testing.T) {
 	t.Parallel()
 	var logs syncBuffer
-	tr := newFakeTransport(assignment("dl_1", "slow", map[string]any{"sleepMs": 3000}))
-	tr.lose["dl_1"] = true
+	a := assignment("dl_1", "slow", map[string]any{"sleepMs": 3000})
+	tr := newFakeTransport(a)
+	tr.lose[a.Lease.Ref()] = true
 	start := time.Now()
 	stop := startNode(t, tr, Options{HeartbeatInterval: 5 * time.Millisecond, Logger: newJSONLogger(&logs)})
 	await(t, tr.lost, 1)

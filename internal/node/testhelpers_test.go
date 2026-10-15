@@ -69,7 +69,7 @@ type fakeTransport struct {
 	outstanding int // pulled and not yet reported
 	maxOut      int
 	heartbeats  [][]store.LeaseRef
-	lose        map[string]bool // delivery ids whose lease the next heartbeat reports lost
+	lose        map[store.LeaseRef]bool // the leases the next heartbeat reports lost
 	dones       []store.DoneRequest
 	fails       []store.FailRequest
 	reportErr   error
@@ -86,7 +86,7 @@ type fakeTransport struct {
 
 func newFakeTransport(as ...Assignment) *fakeTransport {
 	return &fakeTransport{
-		queue: as, lose: map[string]bool{},
+		queue: as, lose: map[store.LeaseRef]bool{},
 		pulled: make(chan string, 64), lost: make(chan string, 64), reported: make(chan string, 64),
 		beats: make(chan int, 64),
 	}
@@ -124,8 +124,8 @@ func (f *fakeTransport) Heartbeat(_ context.Context, _ string, refs []store.Leas
 	}
 	var lost []store.LeaseRef
 	for _, r := range refs {
-		if f.lose[r.DeliveryID] {
-			delete(f.lose, r.DeliveryID)
+		if f.lose[r] {
+			delete(f.lose, r)
 			lost = append(lost, r)
 			f.lost <- r.DeliveryID
 		}

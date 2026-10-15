@@ -326,8 +326,9 @@ func TestLostLeaseDropsResult(t *testing.T) {
 	t.Parallel()
 	var logs syncBuffer
 	pool, _ := heldPool(t) // never released: only the lost lease ends the delivery
-	tr := newFakeTransport(assignment("dl_1", "echo", nil))
-	tr.lose["dl_1"] = true
+	a := assignment("dl_1", "echo", nil)
+	tr := newFakeTransport(a)
+	tr.lose[a.Lease.Ref()] = true
 	stop, clk := startNodeClock(t, tr, Options{Pool: pool, Logger: newJSONLogger(&logs)})
 	await(t, tr.pulled, 1)
 	clk.fire(DefaultHeartbeatInterval)
@@ -458,5 +459,33 @@ func TestRealTimer(t *testing.T) {
 			t.Errorf("repeat %v: a stopped timer fired", repeat)
 		default:
 		}
+	}
+}
+
+// Delivery ids are unique within a pipeline only: two held leases of different pipelines with the same delivery id
+// are both renewed, and a heartbeat that reports one lost cancels that one alone.
+func TestSameDeliveryIDInTwoPipelines(t *testing.T) {
+	t.Parallel()
+	pool, release := heldPool(t)
+	kept, lost := assignment("dl_1", "echo", nil), assignment("dl_1", "echo", nil)
+	lost.Lease.Pipeline = "other"
+	tr := newFakeTransport(kept, lost)
+	tr.lose[lost.Lease.Ref()] = true
+	stop, clk := startNodeClock(t, tr, Options{Slots: 2, Pool: pool})
+	await(t, tr.pulled, 2)
+	clk.fire(DefaultHeartbeatInterval)
+	if n := await(t, tr.beats, 1)[0]; n != 2 {
+		t.Fatalf("heartbeat renewed %d leases, want both", n)
+	}
+	await(t, tr.lost, 1)
+	release()
+	await(t, tr.reported, 1)
+	if err := stop(); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	if len(tr.dones) != 1 || tr.dones[0].Pipeline != "listings" || len(tr.fails) != 0 {
+		t.Fatalf("dones %+v, fails %+v; want the kept lease done, the lost one dropped", tr.dones, tr.fails)
 	}
 }

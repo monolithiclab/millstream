@@ -149,13 +149,19 @@ type running struct {
 type loop struct {
 	*Node
 	base     context.Context // outlives Run's ctx, so in-flight work and its reports survive the drain
-	held     map[string]*running
-	finished chan string
+	held     map[deliveryKey]*running
+	finished chan deliveryKey
 }
+
+// deliveryKey names a delivery: its id is unique within its pipeline only.
+type deliveryKey struct{ pipeline, id string }
+
+func keyOf(ref store.LeaseRef) deliveryKey { return deliveryKey{ref.Pipeline, ref.DeliveryID} }
 
 // Run pulls and runs deliveries until ctx is cancelled, then drains. It returns nil after a clean drain.
 func (n *Node) Run(ctx context.Context) error {
-	l := &loop{Node: n, base: context.WithoutCancel(ctx), held: map[string]*running{}, finished: make(chan string)}
+	l := &loop{Node: n, base: context.WithoutCancel(ctx), held: map[deliveryKey]*running{},
+		finished: make(chan deliveryKey)}
 	pull, stopPull := n.newTimer(n.opts.PullInterval, true)
 	defer stopPull()
 	heartbeat, stopHeartbeat := n.newTimer(n.opts.HeartbeatInterval, true)
@@ -198,11 +204,12 @@ func (l *loop) start(a Assignment) {
 	log := a.Redact.Logger(l.log.With("pipeline", ls.Pipeline, "runId", ls.RunID, "step", ls.Step,
 		"itemId", ls.Item.ID, "deliveryId", ls.DeliveryID, "attempt", ls.Attempt))
 	ctx, cancel := context.WithCancel(l.base)
-	l.held[ls.DeliveryID] = &running{ref: ls.Ref(), log: log, cancel: cancel}
+	ref := ls.Ref()
+	l.held[keyOf(ref)] = &running{ref: ref, log: log, cancel: cancel}
 	go func() {
 		defer cancel()
 		l.execute(ctx, log, a)
-		l.finished <- ls.DeliveryID
+		l.finished <- keyOf(ref)
 	}()
 }
 
@@ -309,7 +316,7 @@ func (l *loop) heartbeat() {
 		return
 	}
 	for _, ref := range lost {
-		if r, ok := l.held[ref.DeliveryID]; ok && r.ref == ref {
+		if r, ok := l.held[keyOf(ref)]; ok && r.ref == ref {
 			r.log.Warn("lease lost, cancelling delivery")
 			r.cancel()
 		}
