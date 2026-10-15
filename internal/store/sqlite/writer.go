@@ -97,7 +97,8 @@ func (s *Store) commit(batch []*request) []error {
 }
 
 // commitBatch runs the units, each under a savepoint, then the failpoints and the commit. A failure that is not a
-// single unit's (beginning, committing, a failpoint) is returned and applies to every unit that succeeded.
+// single unit's (beginning, a savepoint that cannot be rolled back, committing, a failpoint) is returned and applies
+// to every unit without an error of its own.
 func (s *Store) commitBatch(batch []*request, results []error) (err error) {
 	ctx := context.Background() // a caller's cancellation must not abort the others' transaction
 	tx, err := s.write.BeginTx(ctx, nil)
@@ -126,7 +127,11 @@ func (s *Store) commitBatch(batch []*request, results []error) (err error) {
 			results[i] = err
 			continue
 		}
-		results[i] = applyUnit(&wtx{ctx: ctx, tx: tx, now: now, s: s}, r.fn)
+		var abort error
+		results[i], abort = applyUnit(&wtx{ctx: ctx, tx: tx, now: now, s: s}, r.fn)
+		if abort != nil {
+			return abort // rolled back whole; units without an error of their own get this one
+		}
 	}
 	for i, r := range batch {
 		if results[i] == nil {
@@ -145,24 +150,26 @@ func (s *Store) commitBatch(batch []*request, results []error) (err error) {
 	return nil
 }
 
-// applyUnit runs one unit under a savepoint, rolling back to it when the unit fails.
-func applyUnit(w *wtx, fn func(*wtx) error) error {
+// applyUnit runs one unit under a savepoint, rolling back to it when the unit fails, and returns the unit's error.
+// When the savepoint itself cannot be set, rolled back to or released, the transaction's state is unknown: abort is
+// set, and the caller must roll the whole batch back.
+func applyUnit(w *wtx, fn func(*wtx) error) (err, abort error) {
 	if _, err := w.tx.ExecContext(w.ctx, `SAVEPOINT unit`); err != nil {
-		return fmt.Errorf("savepoint: %w", err)
+		return nil, fmt.Errorf("savepoint: %w", err)
 	}
 	if err := fn(w); err != nil {
 		if _, rbErr := w.tx.ExecContext(w.ctx, `ROLLBACK TO unit`); rbErr != nil {
-			return fmt.Errorf("%w (rollback: %w)", err, rbErr)
+			return err, fmt.Errorf("roll back a failed unit (%w): %w", err, rbErr)
 		}
 		if _, rbErr := w.tx.ExecContext(w.ctx, `RELEASE unit`); rbErr != nil {
-			return fmt.Errorf("%w (release: %w)", err, rbErr)
+			return err, fmt.Errorf("release a failed unit (%w): %w", err, rbErr)
 		}
-		return err
+		return err, nil
 	}
 	if _, err := w.tx.ExecContext(w.ctx, `RELEASE unit`); err != nil {
-		return fmt.Errorf("release savepoint: %w", err)
+		return nil, fmt.Errorf("release savepoint: %w", err)
 	}
-	return nil
+	return nil, nil
 }
 
 func (w *wtx) exec(query string, args ...any) (sql.Result, error) {

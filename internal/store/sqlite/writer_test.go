@@ -195,3 +195,35 @@ func TestUnitsAreNamed(t *testing.T) {
 	}
 	wantState(t, "units", len(Units), 12)
 }
+
+// A unit whose savepoint cannot be rolled back leaves the transaction in an unknown state: the whole batch is
+// aborted, with an error for every unit in it, and nothing commits.
+func TestRollbackFailureAbortsBatch(t *testing.T) {
+	t.Parallel()
+	e := newEnv(t, fixture)
+	unit := func(fn func(*wtx) error) *request {
+		return &request{ctx: e.ctx, unit: "test", fn: fn, done: make(chan error, 1)}
+	}
+	good := func(w *wtx) error { return w.event("listings", "", "kept?", nil) }
+	sabotage := func(w *wtx) error {
+		if err := w.event("listings", "", "doomed", nil); err != nil {
+			return err
+		}
+		if _, err := w.exec(`RELEASE unit`); err != nil { // ROLLBACK TO unit now has no savepoint to go back to
+			return err
+		}
+		return errUnit
+	}
+	results := e.s.commit([]*request{unit(good), unit(sabotage), unit(good)})
+	for i, err := range results {
+		if err == nil {
+			t.Errorf("unit %d committed", i)
+		}
+	}
+	if !errors.Is(results[1], errUnit) {
+		t.Errorf("sabotaged unit: %v, want its own error", results[1])
+	}
+	if evs := e.events(); len(evs) != 1 || evs[0].Kind != store.EventRevisionApplied {
+		t.Fatalf("events = %+v; want only the revision applied", evs)
+	}
+}
