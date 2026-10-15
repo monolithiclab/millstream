@@ -1,0 +1,40 @@
+{
+  "key": "4714def22e61baddc80b109bbc1cbdcffa4883d1e6914bcf379ef04ac645e511",
+  "harness": "api",
+  "model": "fake-scorer-1",
+  "response": {
+    "text": "```json\n{\"id\":\"L010\",\"city\":\"Lyon\",\"priceEur\":210000,\"surfaceM2\":44,\"rooms\":2,\"condition\":\"poor\",\"monthlyRentEur\":704,\"score\":44,\"reason\":\"poor condition at 210000 EUR for 44 m² in Lyon. Lowered by 25 points for hidden renovation costs.\"}\n```",
+    "tokensIn": 274,
+    "tokensOut": 60,
+    "turns": 1,
+    "transcript": [
+      {
+        "role": "user",
+        "text": "You score real estate listings as renovation opportunities, from 0 to 100.\n\nListing L010: 44 m², 2 rooms in Lyon,\ncondition poor, asking 210000 EUR, estimated rent 704 EUR a month.\n\nScore it from its discount to the city's market price per square metre, and from its condition: a poorer condition\nis a better opportunity. Answer with the listing as given, every field unchanged, plus `score` (an integer) and\n`reason` (one sentence).\n\n\n## Lessons from past runs\n\nRules:\n\n- A listing in poor condition hides renovation costs, so lower its score by 25 points.\n\n\nEnd your answer with a fenced ```json block holding only your result, a JSON value valid against this JSON Schema:\n\n```\n{\"properties\":{\"city\":{\"type\":\"string\"},\"condition\":{\"enum\":[\"good\",\"fair\",\"poor\"]},\"id\":{\"type\":\"string\"},\"monthlyRentEur\":{\"type\":\"integer\"},\"priceEur\":{\"type\":\"integer\"},\"reason\":{\"type\":\"string\"},\"rooms\":{\"type\":\"integer\"},\"score\":{\"maximum\":100,\"minimum\":0,\"type\":\"integer\"},\"surfaceM2\":{\"type\":\"integer\"}},\"required\":[\"id\",\"city\",\"priceEur\",\"surfaceM2\",\"rooms\",\"condition\",\"score\",\"reason\"],\"type\":\"object\"}\n```\n"
+      },
+      {
+        "role": "assistant",
+        "text": "```json\n{\"id\":\"L010\",\"city\":\"Lyon\",\"priceEur\":210000,\"surfaceM2\":44,\"rooms\":2,\"condition\":\"poor\",\"monthlyRentEur\":704,\"score\":44,\"reason\":\"poor condition at 210000 EUR for 44 m² in Lyon. Lowered by 25 points for hidden renovation costs.\"}\n```",
+        "data": {
+          "choices": [
+            {
+              "finish_reason": "stop",
+              "index": 0,
+              "message": {
+                "content": "```json\n{\"id\":\"L010\",\"city\":\"Lyon\",\"priceEur\":210000,\"surfaceM2\":44,\"rooms\":2,\"condition\":\"poor\",\"monthlyRentEur\":704,\"score\":44,\"reason\":\"poor condition at 210000 EUR for 44 m² in Lyon. Lowered by 25 points for hidden renovation costs.\"}\n```",
+                "role": "assistant"
+              }
+            }
+          ],
+          "id": "chatcmpl-fake",
+          "model": "fake-scorer-1",
+          "object": "chat.completion",
+          "usage": {
+            "completion_tokens": 60,
+            "prompt_tokens": 274
+          }
+        }
+      }
+    ]
+  }
+}

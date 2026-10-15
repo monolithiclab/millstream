@@ -1,0 +1,38 @@
+name: m2-fixture/score
+version: 1.0.0
+description: Scores a listing as a renovation opportunity, with an LLM
+kind: agent
+input:
+  type: object
+  properties:
+    id: { type: string }
+    city: { type: string }
+    priceEur: { type: integer }
+    surfaceM2: { type: integer }
+    rooms: { type: integer }
+    condition: { enum: [good, fair, poor] }
+    monthlyRentEur: { type: integer }
+  required: [id, city, priceEur, surfaceM2, rooms, condition]
+# The listing as given, plus the score and its reason: rentability prices the listing downstream.
+output:
+  type: object
+  properties:
+    id: { type: string }
+    city: { type: string }
+    priceEur: { type: integer }
+    surfaceM2: { type: integer }
+    rooms: { type: integer }
+    condition: { enum: [good, fair, poor] }
+    monthlyRentEur: { type: integer }
+    score: { type: integer, minimum: 0, maximum: 100 }
+    reason: { type: string }
+  required: [id, city, priceEur, surfaceM2, rooms, condition, score, reason]
+runtime:
+  agent:
+    harness: api
+    provider: openai
+    baseUrl: https://models.example.invalid/v1
+    model: fake-scorer-1
+    apiKeySecret: scorerKey
+    network: [models.example.invalid]
+    maxCostUsd: 0.05

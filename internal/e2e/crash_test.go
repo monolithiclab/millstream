@@ -237,7 +237,7 @@ func onlyRun(s snapshot, runID string) snapshot {
 		Runs:      map[string]store.RunState{runID: s.Runs[runID]},
 		Revisions: map[string]store.RevisionID{runID: s.Revisions[runID]},
 		Items:     map[string]item{}, Deliveries: map[string]delivery{}, DeadLetters: map[string]deadLetter{},
-		Refcounts: map[string]int64{},
+		Refcounts: map[string]int64{}, AttemptArtifacts: map[string]int{},
 	}
 	for id, it := range s.Items {
 		if it.RunID != runID {
@@ -253,6 +253,9 @@ func onlyRun(s snapshot, runID string) snapshot {
 	for id, d := range s.Deliveries {
 		if d.RunID == runID {
 			out.Deliveries[id] = d
+			if n, ok := s.AttemptArtifacts[id]; ok {
+				out.AttemptArtifacts[id] = n
+			}
 		}
 	}
 	for id, dl := range s.DeadLetters {

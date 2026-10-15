@@ -38,5 +38,5 @@ test: test-e2e
 
 # Harness recordings are made against a fake model server, never the network.
 .PHONY: recordings
-recordings: ## Rewrite the agent harness recordings under internal/agent/testdata
-	@go test ./internal/agent -run TestRecordings -count=1 -update
+recordings: ## Rewrite the agent harness recordings: internal/agent/testdata and the M2 fixture's
+	@go test ./internal/agent ./examples/m2-fixture -run TestRecordings -count=1 -update

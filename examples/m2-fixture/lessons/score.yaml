@@ -1,0 +1,4 @@
+rules:
+  - text: A listing in poor condition hides renovation costs, so lower its score by 10 points.
+    source: review/r-0001
+    added: 2026-10-01

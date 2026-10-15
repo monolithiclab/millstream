@@ -1,0 +1,27 @@
+# Runs the M1 fixture's report action, built from examples/m1-fixture/actions/report by the end-to-end suite.
+name: m2-fixture/report
+version: 1.0.0
+description: Writes a text report per priced listing and emits its summary
+kind: exec
+effects: none
+input:
+  type: object
+  properties:
+    id: { type: string }
+    marginPct: { type: number }
+  required: [id, marginPct]
+config:
+  type: object
+  properties:
+    minMarginPct: { type: number }
+  required: [minMarginPct]
+  additionalProperties: false
+output:
+  type: object
+  properties:
+    listingId: { type: string }
+    marginPct: { type: number }
+    selected: { type: boolean }
+    artifact: { type: string }
+  required: [listingId, marginPct, selected, artifact]
+runtime: { exec: { command: [report] } }

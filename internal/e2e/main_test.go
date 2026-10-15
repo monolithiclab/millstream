@@ -3,6 +3,11 @@
 // spec section 16, which kills the process at both failpoints of every atomic unit and at seeded random points,
 // reruns it on the same database and checks it reaches exactly the state of a run that never crashed.
 //
+// Behind the e2e build tag, the M2 exit criterion runs the M2 fixture (examples/m2-fixture), whose score step is an
+// agent replayed from committed recordings: a scored day, seven days replayed through a newly inserted dedupe, a day
+// replayed after a lessons edit, and the crash matrix on the agent path (go test -tags e2e). TestLiveScore reaches
+// the real claude CLI on request only.
+//
 // TestMain builds the binary and the fixture's actions once, into a temporary directory: build output never lands
 // in the repository. Every test uses its own database, so the tests run in parallel.
 package e2e
@@ -30,6 +35,10 @@ var (
 	fixtureV2       string
 	fixtureBuiltins string
 )
+
+// extraBuilds are the builds of the fixtures behind the e2e build tag, registered by their files' init functions;
+// TestMain runs them with the others, given the repository root and the build directory.
+var extraBuilds []func(root, dir string) error
 
 func TestMain(m *testing.M) { os.Exit(runTests(m)) }
 
@@ -68,9 +77,18 @@ func build(dir string) error {
 	if raceEnabled {
 		flags = []string{"-race"}
 	}
-	built := make(chan error, 1) // the binary builds while the actions do
-	go func() { built <- goBuild(root, binary, "./cmd/millstream", flags...) }()
-	if err := errors.Join(buildFixture(root, dir), <-built); err != nil {
+	builds := append([]func(string, string) error{buildFixture, func(root, _ string) error {
+		return goBuild(root, binary, "./cmd/millstream", flags...)
+	}}, extraBuilds...)
+	built := make(chan error, len(builds)) // the binary and the fixtures build at once
+	for _, b := range builds {
+		go func() { built <- b(root, dir) }()
+	}
+	var errs []error
+	for range builds {
+		errs = append(errs, <-built)
+	}
+	if err := errors.Join(errs...); err != nil {
 		return err
 	}
 	fixtureBuiltins = filepath.Join(dir, "builtins")
@@ -112,17 +130,24 @@ func goBuild(root, out, pkg string, flags ...string) error {
 	return nil
 }
 
-// fixRentability turns v1 into v2: rentability prices a listing without a rent estimate instead of failing it.
-func fixRentability(path string) error {
-	data, err := os.ReadFile(path)
+// rewrite replaces, in the file at path, each pair's first string, which must appear exactly once, with its second.
+func rewrite(path string, pairs ...[2]string) error {
+	data, err := os.ReadFile(path) // #nosec G304 -- a fixture copy
 	if err != nil {
 		return err
 	}
-	const from, to = "config: { strict: true }", "config: { strict: false }"
-	if bytes.Count(data, []byte(from)) != 1 {
-		return fmt.Errorf("%s: want exactly one %q to turn into the fixed revision", path, from)
+	for _, r := range pairs {
+		if bytes.Count(data, []byte(r[0])) != 1 {
+			return fmt.Errorf("%s: want exactly one %q to rewrite", path, r[0])
+		}
+		data = bytes.Replace(data, []byte(r[0]), []byte(r[1]), 1)
 	}
-	return os.WriteFile(path, bytes.Replace(data, []byte(from), []byte(to), 1), 0o600)
+	return os.WriteFile(path, data, 0o600)
+}
+
+// fixRentability turns v1 into v2: rentability prices a listing without a rent estimate instead of failing it.
+func fixRentability(path string) error {
+	return rewrite(path, [2]string{"config: { strict: true }", "config: { strict: false }"})
 }
 
 // builtinSteps are the steps insertBuiltins puts between crawl and score: a dedupe on the listing id, which lets
@@ -146,17 +171,8 @@ const builtinSteps = `  unique:
 // insertBuiltins turns v1 into the builtins variant: crawl writes listings.crawled, which unique and affordable
 // turn into the listings.raw score reads.
 func insertBuiltins(path string) error {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return err
-	}
-	for _, r := range [][2]string{{"    out: listings.raw\n", "    out: listings.crawled\n"}, {"  score:\n", builtinSteps}} {
-		if bytes.Count(data, []byte(r[0])) != 1 {
-			return fmt.Errorf("%s: want exactly one %q to insert the builtins", path, r[0])
-		}
-		data = bytes.Replace(data, []byte(r[0]), []byte(r[1]), 1)
-	}
-	return os.WriteFile(path, data, 0o600)
+	return rewrite(path, [2]string{"    out: listings.raw\n", "    out: listings.crawled\n"},
+		[2]string{"  score:\n", builtinSteps})
 }
 
 // commandTimeout bounds every millstream invocation, so a hang fails the test instead of the whole suite.

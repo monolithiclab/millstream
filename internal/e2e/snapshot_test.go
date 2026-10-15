@@ -46,8 +46,13 @@ type snapshot struct {
 	Items       map[string]item
 	Deliveries  map[string]delivery
 	DeadLetters map[string]deadLetter
-	// Refcounts is the reference count of each artifact, by hash: an item counted twice after a crash shows here.
+	// Refcounts is the reference count of each artifact items carry, by hash: an item counted twice after a crash
+	// shows here.
 	Refcounts map[string]int64
+	// AttemptArtifacts is the number of attempt artifacts (agent transcripts) of each delivery that has some. Their
+	// content holds timings, so they are compared by count, and each must be referenced exactly once per attempt
+	// that keeps it: a transcript counted twice after a crash shows here or fails readSnapshot.
+	AttemptArtifacts map[string]int
 }
 
 // counts returns the number of items per stream.
@@ -73,6 +78,7 @@ func readSnapshot(t *testing.T, db string) snapshot {
 	s := snapshot{
 		Runs: map[string]store.RunState{}, Revisions: map[string]store.RevisionID{}, Items: map[string]item{},
 		Deliveries: map[string]delivery{}, DeadLetters: map[string]deadLetter{}, Refcounts: map[string]int64{},
+		AttemptArtifacts: map[string]int{},
 	}
 	runs, err := st.Runs(ctx, store.RunFilter{})
 	if err != nil {
@@ -132,6 +138,7 @@ func readSnapshot(t *testing.T, db string) snapshot {
 	if err != nil {
 		t.Fatal(err)
 	}
+	attemptRefs := map[string]int64{}
 	for _, d := range ds {
 		switch d.State {
 		case store.DeliveryDone, store.DeliveryFiltered, store.DeliveryDead, store.DeliveryCancelled:
@@ -139,6 +146,20 @@ func readSnapshot(t *testing.T, db string) snapshot {
 			t.Errorf("delivery %s (%s) is %s, not terminal", d.ID, d.Step, d.State)
 		}
 		s.Deliveries[d.ID] = delivery{RunID: d.RunID, Step: d.Step, State: d.State}
+		arts, err := st.AttemptArtifacts(ctx, d.Pipeline, d.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, a := range arts {
+			s.AttemptArtifacts[d.ID]++
+			attemptRefs[a.SHA256]++
+		}
+	}
+	for sha, n := range attemptRefs {
+		if s.Refcounts[sha] != n {
+			t.Errorf("attempt artifact %s has %d references, %d attempts keep it", sha, s.Refcounts[sha], n)
+		}
+		delete(s.Refcounts, sha)
 	}
 	return s
 }
@@ -171,6 +192,7 @@ func wantSame(t *testing.T, got, want snapshot) {
 		diffMaps("delivery", got.Deliveries, want.Deliveries),
 		diffMaps("dead letter", got.DeadLetters, want.DeadLetters),
 		diffMaps("artifact refcount", got.Refcounts, want.Refcounts),
+		diffMaps("attempt artifacts of delivery", got.AttemptArtifacts, want.AttemptArtifacts),
 	)
 	if len(diff) > 0 {
 		if len(diff) > 20 {

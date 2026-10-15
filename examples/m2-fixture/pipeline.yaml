@@ -1,0 +1,58 @@
+# The M2 fixture: the reference pipeline (spec section 1.3) with an agent scorer, on synthetic listings. Each day's
+# crawl draws 4 listings from a pool of 12, overlapping the previous days', so a dedupe on the listing id sits between
+# crawl and score. The score agent runs through the api harness; tests replay its calls from recordings/ (make
+# recordings rewrites them against a fake model), and lessons/score.yaml is rendered into its prompt.
+#
+# rentability and report run the M1 fixture's actions: the end-to-end suite builds them from
+# examples/m1-fixture/actions into each action's bin/<os>-<arch>/ directory.
+pipeline: m2-fixture
+description: Synthetic real estate sourcing with an agent scorer, the M2 end-to-end fixture
+
+vars:
+  day: 1 # the crawled day: each manual run of the end-to-end suite sets it
+  minScore: 70
+  minMarginPct: 15
+
+secrets: [scorerKey]
+
+triggers:
+  adhoc: { manual: {} }
+  daily: { cron: "0 6 * * *" }
+
+steps:
+  crawl:
+    action: ./actions/crawl
+    in: [trigger.adhoc, trigger.daily]
+    out: listings.raw
+    config: { day: "${vars.day}" }
+
+  dedupe:
+    action: dedupe
+    in: listings.raw
+    out: listings.unique
+    config: { key: item.id, window: 30d }
+
+  score:
+    action: ./actions/score
+    in: listings.unique
+    out: listings.scored
+    concurrency: 4
+
+  keep-good:
+    action: filter
+    in: listings.scored
+    out: listings.shortlist
+    config: { expr: "item.score >= vars.minScore" }
+
+  rentability:
+    action: ./actions/rentability
+    in: listings.shortlist
+    out: listings.priced
+    concurrency: 2
+    config: { strict: false }
+
+  report:
+    action: ./actions/report
+    in: listings.priced
+    out: reports.done
+    config: { minMarginPct: "${vars.minMarginPct}" }

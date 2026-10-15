@@ -30,6 +30,17 @@ below) for the reasoning, and `make help` for every command.
 - `make ci` is the gate: lint (golangci-lint, govulncheck, tidy, pins, shellcheck), tests with `-race`, and the docs
   check, for the main module and the SDK module alike.
 
+## Agent recordings and the live smoke test
+
+- Tests never reach a model: agent calls replay from recordings made against a fake model server. `make recordings`
+  rewrites them (`internal/agent/testdata/recordings`, `examples/m2-fixture/recordings`) after a change to a prompt,
+  a lessons file, an output schema or the fake model.
+- The live smoke test runs the M2 fixture's score action through the `claude-code` harness against the real `claude`
+  CLI (installed, logged in) on two listings, recording into a temporary directory, and spends a few cents:
+  `MILLSTREAM_LIVE=1 go test -tags e2e -count=1 -v -run TestLiveScore ./internal/e2e` (`MILLSTREAM_LIVE_MODEL` picks
+  the model, `haiku` by default). It is never part of `make ci`; never commit what it records.
+- The M2 end-to-end and crash tests sit behind the `e2e` build tag: `go test -tags e2e ./internal/e2e`.
+
 ## Where things go
 
 - Architecture decisions live in `docs/decisions.md`. Until the first public release the log is kept current: edit

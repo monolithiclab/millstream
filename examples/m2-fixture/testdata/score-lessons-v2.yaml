@@ -1,0 +1,6 @@
+# The second version of lessons/score.yaml: the end-to-end suite applies it and replays a day through score, and the
+# recordings hold its answers too.
+rules:
+  - text: A listing in poor condition hides renovation costs, so lower its score by 25 points.
+    source: proposal/p-0002
+    added: 2026-10-08

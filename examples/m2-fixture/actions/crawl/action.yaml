@@ -1,0 +1,24 @@
+name: m2-fixture/crawl
+version: 1.0.0
+description: Emits the day's synthetic listings from a fixed pool, keyed by id
+kind: exec
+effects: none
+input: { type: object }
+config:
+  type: object
+  properties:
+    day: { type: integer, minimum: 1 }
+  required: [day]
+  additionalProperties: false
+output:
+  type: object
+  properties:
+    id: { type: string }
+    city: { type: string }
+    priceEur: { type: integer }
+    surfaceM2: { type: integer }
+    rooms: { type: integer }
+    condition: { enum: [good, fair, poor] }
+    monthlyRentEur: { type: integer }
+  required: [id, city, priceEur, surfaceM2, rooms, condition]
+runtime: { exec: { command: [crawl] } }

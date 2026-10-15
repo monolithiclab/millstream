@@ -1,0 +1,33 @@
+# Runs the M1 fixture's rentability action, built from examples/m1-fixture/actions/rentability by the end-to-end suite.
+name: m2-fixture/rentability
+version: 1.0.0
+description: Computes fees, renovation, resale margin and rental yield
+kind: exec
+effects: none
+input:
+  type: object
+  properties:
+    id: { type: string }
+    city: { type: string }
+    priceEur: { type: integer }
+    surfaceM2: { type: integer }
+    condition: { enum: [good, fair, poor] }
+    monthlyRentEur: { type: integer }
+    score: { type: integer }
+  required: [id, city, priceEur, surfaceM2, condition, score]
+config:
+  type: object
+  properties:
+    strict: { type: boolean }
+  additionalProperties: false
+output:
+  type: object
+  properties:
+    id: { type: string }
+    score: { type: integer }
+    costEur: { type: integer }
+    resaleEur: { type: integer }
+    marginPct: { type: number }
+    grossYieldPct: { type: number }
+  required: [id, score, costEur, resaleEur, marginPct, grossYieldPct]
+runtime: { exec: { command: [rentability] } }

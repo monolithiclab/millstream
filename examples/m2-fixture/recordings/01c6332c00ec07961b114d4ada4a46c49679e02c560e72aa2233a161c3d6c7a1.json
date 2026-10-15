@@ -1,0 +1,40 @@
+{
+  "key": "01c6332c00ec07961b114d4ada4a46c49679e02c560e72aa2233a161c3d6c7a1",
+  "harness": "api",
+  "model": "fake-scorer-1",
+  "response": {
+    "text": "```json\n{\"id\":\"L005\",\"city\":\"Nantes\",\"priceEur\":223000,\"surfaceM2\":92,\"rooms\":4,\"condition\":\"poor\",\"monthlyRentEur\":1196,\"score\":90,\"reason\":\"poor condition at 223000 EUR for 92 m² in Nantes. Lowered by 10 points for hidden renovation costs.\"}\n```",
+    "tokensIn": 275,
+    "tokensOut": 62,
+    "turns": 1,
+    "transcript": [
+      {
+        "role": "user",
+        "text": "You score real estate listings as renovation opportunities, from 0 to 100.\n\nListing L005: 92 m², 4 rooms in Nantes,\ncondition poor, asking 223000 EUR, estimated rent 1196 EUR a month.\n\nScore it from its discount to the city's market price per square metre, and from its condition: a poorer condition\nis a better opportunity. Answer with the listing as given, every field unchanged, plus `score` (an integer) and\n`reason` (one sentence).\n\n\n## Lessons from past runs\n\nRules:\n\n- A listing in poor condition hides renovation costs, so lower its score by 10 points.\n\n\nEnd your answer with a fenced ```json block holding only your result, a JSON value valid against this JSON Schema:\n\n```\n{\"properties\":{\"city\":{\"type\":\"string\"},\"condition\":{\"enum\":[\"good\",\"fair\",\"poor\"]},\"id\":{\"type\":\"string\"},\"monthlyRentEur\":{\"type\":\"integer\"},\"priceEur\":{\"type\":\"integer\"},\"reason\":{\"type\":\"string\"},\"rooms\":{\"type\":\"integer\"},\"score\":{\"maximum\":100,\"minimum\":0,\"type\":\"integer\"},\"surfaceM2\":{\"type\":\"integer\"}},\"required\":[\"id\",\"city\",\"priceEur\",\"surfaceM2\",\"rooms\",\"condition\",\"score\",\"reason\"],\"type\":\"object\"}\n```\n"
+      },
+      {
+        "role": "assistant",
+        "text": "```json\n{\"id\":\"L005\",\"city\":\"Nantes\",\"priceEur\":223000,\"surfaceM2\":92,\"rooms\":4,\"condition\":\"poor\",\"monthlyRentEur\":1196,\"score\":90,\"reason\":\"poor condition at 223000 EUR for 92 m² in Nantes. Lowered by 10 points for hidden renovation costs.\"}\n```",
+        "data": {
+          "choices": [
+            {
+              "finish_reason": "stop",
+              "index": 0,
+              "message": {
+                "content": "```json\n{\"id\":\"L005\",\"city\":\"Nantes\",\"priceEur\":223000,\"surfaceM2\":92,\"rooms\":4,\"condition\":\"poor\",\"monthlyRentEur\":1196,\"score\":90,\"reason\":\"poor condition at 223000 EUR for 92 m² in Nantes. Lowered by 10 points for hidden renovation costs.\"}\n```",
+                "role": "assistant"
+              }
+            }
+          ],
+          "id": "chatcmpl-fake",
+          "model": "fake-scorer-1",
+          "object": "chat.completion",
+          "usage": {
+            "completion_tokens": 62,
+            "prompt_tokens": 275
+          }
+        }
+      }
+    ]
+  }
+}
