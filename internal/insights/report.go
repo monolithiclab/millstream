@@ -391,7 +391,7 @@ func dur(s float64) string {
 	return (time.Duration(s * float64(time.Second))).Round(time.Millisecond).String()
 }
 
-func money(v float64) string { return strconv.FormatFloat(v, 'f', -1, 64) }
+func money(v float64) string { return strconv.FormatFloat(v, 'f', 4, 64) }
 
 func num(v float64) string { return strconv.FormatFloat(v, 'f', -1, 64) }
 

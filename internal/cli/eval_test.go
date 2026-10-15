@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/monolithiclab/millstream/internal/eval"
 	"github.com/monolithiclab/millstream/internal/store/sqlite"
 )
 
@@ -50,7 +51,7 @@ func Test_evalCommand(t *testing.T) {
 	env := map[string]string{"MILLSTREAM_SECRET_JUDGE_KEY": "sk-judge"}
 	db := dbPath(t)
 	code, out, errOut := runCLICtx(t, context.Background(), env, "eval", action, "--harness-mode", "record")
-	if code != 0 || !regexp.MustCompile(`judged\s+1/1\s+0\.50\s+\$0\s+0\.75\nkeyed\s+1/1\s+-\s+\$0\s+1\.00\nTOTAL\s+0\.88\n`).
+	if code != 0 || !regexp.MustCompile(`judged\s+1/1\s+0\.50\s+\$0\.0000\s+0\.75\nkeyed\s+1/1\s+-\s+\$0\.0000\s+1\.00\nTOTAL\s+0\.88\n`).
 		MatchString(out) || !strings.Contains(out, "judged: judge: Two of them.") {
 		t.Fatalf("record: code %d\n%s\n%s", code, out, errOut)
 	}
@@ -58,7 +59,7 @@ func Test_evalCommand(t *testing.T) {
 		t.Fatal("eval without --db created the state database")
 	}
 	srv.Close()
-	for i, want := range []string{`keyed\s+1/1\s+-\s+\$0\s+1\.00\s+-\n`, `keyed\s+1/1\s+-\s+\$0\s+1\.00\s+1\.00\n`} {
+	for i, want := range []string{`keyed\s+1/1\s+-\s+\$0\.0000\s+1\.00\s+-\n`, `keyed\s+1/1\s+-\s+\$0\.0000\s+1\.00\s+1\.00\n`} {
 		out, _ := mustRun(t, 0, "--db", db, "eval", action)
 		if !regexp.MustCompile(want).MatchString(out) {
 			t.Fatalf("replay %d:\n%s", i, out)
@@ -112,5 +113,18 @@ func Test_evalCommandUsage(t *testing.T) {
 		if code != tt.code || !strings.Contains(errOut, tt.want) {
 			t.Errorf("%v: code %d, stderr %q; want %d, %q", tt.argv, code, errOut, tt.code, tt.want)
 		}
+	}
+}
+
+// printEval shows a case's cost to four decimals, not at full float precision.
+func Test_printEvalCost(t *testing.T) {
+	t.Parallel()
+	var out strings.Builder
+	rt := &Runtime{IO: IO{Out: &out}}
+	if err := printEval(rt, []eval.Result{{Case: "c", Passed: 1, Total: 1, CostUSD: 0.1 + 0.2, Score: 1}}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if !regexp.MustCompile(`c\s+1/1\s+-\s+\$0\.3000\s+1\.00\n`).MatchString(out.String()) {
+		t.Fatalf("output:\n%s", out.String())
 	}
 }

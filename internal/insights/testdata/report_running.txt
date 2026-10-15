@@ -1,5 +1,5 @@
 Run running of shop (trigger): running
-Started 2026-10-15T11:59:55Z, not settled, 5s, cost $0
+Started 2026-10-15T11:59:55Z, not settled, 5s, cost $0.0000
 ETA 2026-10-15T11:59:57Z: overdue by 3s
 Items: trigger.adhoc 1
 
@@ -9,14 +9,14 @@ Critical path (5s):
 
 Slowest steps:
   STEP   DELIVERIES  FAILED  P50  P95  MAX  WAIT  WORK  COST
-  crawl  1           0       5s   5s   5s   0s    5s    $0
+  crawl  1           0       5s   5s   5s   0s    5s    $0.0000
 
 Failures by cluster:
   none
 
 Compared with the median of the last 9 runs:
-  FIGURE           THIS RUN  MEDIAN  CHANGE
-  duration         5s        2s      +150%
-  cost             $0        $0.02   -100%
-  items            1         5       -80%
-  failed attempts  0         0       -
+  FIGURE           THIS RUN  MEDIAN   CHANGE
+  duration         5s        2s       +150%
+  cost             $0.0000   $0.0200  -100%
+  items            1         5        -80%
+  failed attempts  0         0        -

@@ -206,7 +206,7 @@ func printEval(rt *Runtime, results []eval.Result, previous map[string]float64) 
 			judge = score(r.Judge.Score)
 		}
 		line := fmt.Sprintf("%s\t%d/%d\t%s\t$%s\t%s", r.Case, r.Passed, r.Total, judge,
-			strconv.FormatFloat(r.CostUSD, 'f', -1, 64), score(r.Score))
+			strconv.FormatFloat(r.CostUSD, 'f', 4, 64), score(r.Score))
 		if previous != nil {
 			prev, ok := previous[r.Case]
 			if ok {
