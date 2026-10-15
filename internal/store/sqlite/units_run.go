@@ -115,7 +115,8 @@ func (w *wtx) replay(pipelineName, runID string, ids []string, migrate bool) (in
 	return count, w.settle(pipelineName, runID)
 }
 
-// migrate moves the run to its pipeline's active revision.
+// migrate moves the run to its pipeline's active revision. It refuses, with ErrConflict, a revision that lacks the
+// step of a delivery still live in the run (spec section 5.7): that delivery would be left with no step to run.
 func (w *wtx) migrate(run *runRow) error {
 	var active int64
 	if err := w.queryRow(`SELECT active_revision FROM pipelines WHERE id = ?`, run.pipeline).Scan(&active); err != nil {
@@ -123,6 +124,24 @@ func (w *wtx) migrate(run *runRow) error {
 	}
 	if store.RevisionID(active) == run.revision {
 		return nil
+	}
+	target, err := w.revision(store.RevisionID(active))
+	if err != nil {
+		return err
+	}
+	live, err := w.liveSteps(run)
+	if err != nil {
+		return err
+	}
+	var missing []string
+	for _, step := range live {
+		if _, ok := target.p.Steps[step]; !ok {
+			missing = append(missing, step)
+		}
+	}
+	if len(missing) > 0 {
+		return fmt.Errorf("revision %d has no step %s, which live deliveries of run %s need: let them settle first: %w",
+			active, strings.Join(missing, ", "), run.id, store.ErrConflict)
 	}
 	if _, err := w.exec(`UPDATE runs SET revision = ? WHERE pipeline = ? AND id = ?`,
 		active, run.pipeline, run.id); err != nil {
@@ -134,6 +153,25 @@ func (w *wtx) migrate(run *runRow) error {
 	}
 	run.revision = store.RevisionID(active)
 	return nil
+}
+
+// liveSteps returns the steps of the run's deliveries that are not terminal, sorted.
+func (w *wtx) liveSteps(run *runRow) ([]string, error) {
+	rows, err := w.query(`SELECT DISTINCT step FROM deliveries WHERE pipeline = ? AND run_id = ? AND `+notTerminal+
+		` ORDER BY step`, append([]any{run.pipeline, run.id}, terminalStates...)...)
+	if err != nil {
+		return nil, err
+	}
+	var steps []string
+	for rows.Next() {
+		var step string
+		if err := rows.Scan(&step); err != nil {
+			_ = rows.Close()
+			return nil, fmt.Errorf("scan live step: %w", err)
+		}
+		steps = append(steps, step)
+	}
+	return steps, closeRows(rows)
 }
 
 // openDeadLetters returns the run's open dead letters, all of them or those named; naming one that is not an open

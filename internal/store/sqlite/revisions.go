@@ -75,6 +75,16 @@ func (r *revision) step(name string) (pipeline.Step, error) {
 	return s, nil
 }
 
+// stepOrOrphan returns a step of the revision and true, or, for a step the revision lacks, an orphan and false: a
+// step with no retries whose dead letters go to the default <step>.dlq. Migrate refuses to create orphans, but a
+// delivery that has one still ends dead rather than staying leased behind an error.
+func (r *revision) stepOrOrphan(name string) (pipeline.Step, bool) {
+	if s, ok := r.p.Steps[name]; ok {
+		return s, true
+	}
+	return pipeline.Step{Name: name, DLQ: pipeline.DefaultDLQ(name)}, false
+}
+
 // routing is where one output goes: the streams it publishes to, or unrouted when route objects matched none.
 type routing struct {
 	streams  []string

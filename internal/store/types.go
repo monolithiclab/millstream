@@ -82,6 +82,9 @@ const (
 	ClassKeyRule = "keyRule"
 	// ClassRoute: a route's when failed to evaluate. Deterministic, so never retried (spec section 4.3).
 	ClassRoute = "route"
+	// ClassMissingStep: a delivery reported done for a step its run's revision does not have, so its outputs have
+	// nowhere to go. Never retried.
+	ClassMissingStep = "missingStep"
 )
 
 // MaxErrorMessage is the most bytes of an error message kept on a delivery (spec section 5.5).

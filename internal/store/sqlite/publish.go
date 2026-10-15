@@ -120,6 +120,12 @@ func (w *wtx) deadLetter(rev *revision, run *runRow, step pipeline.Step, kind st
 	})
 }
 
+// notTerminal is the condition on a delivery's state that it is not terminal (spec section 5.4); its arguments
+// are terminalStates.
+const notTerminal = "state NOT IN (?, ?, ?, ?)"
+
+var terminalStates = []any{store.DeliveryDone, store.DeliveryFiltered, store.DeliveryDead, store.DeliveryCancelled}
+
 // settle settles a run once every delivery it owns is terminal (spec section 5.4): succeeded without open or
 // discarded dead letters, completedWithErrors with some, and a cancelled run stays cancelled.
 func (w *wtx) settle(pipelineName, runID string) error {
@@ -128,9 +134,8 @@ func (w *wtx) settle(pipelineName, runID string) error {
 		return err
 	}
 	var live int
-	if err := w.queryRow(`SELECT COUNT(*) FROM deliveries WHERE pipeline = ? AND run_id = ?
-		AND state NOT IN (?, ?, ?, ?)`, pipelineName, runID,
-		store.DeliveryDone, store.DeliveryFiltered, store.DeliveryDead, store.DeliveryCancelled).Scan(&live); err != nil {
+	if err := w.queryRow(`SELECT COUNT(*) FROM deliveries WHERE pipeline = ? AND run_id = ? AND `+notTerminal,
+		append([]any{pipelineName, runID}, terminalStates...)...).Scan(&live); err != nil {
 		return fmt.Errorf("count live deliveries: %w", err)
 	}
 	if live > 0 {

@@ -31,10 +31,7 @@ func (s *Store) Fail(ctx context.Context, f store.FailRequest) (store.DeliverySt
 		if err != nil {
 			return err
 		}
-		step, err := rev.step(d.step)
-		if err != nil {
-			return err
-		}
+		step, _ := rev.stepOrOrphan(d.step)
 		state, err = w.fail(d, run, rev, step, failure{
 			class: f.Class, message: f.Message, retryable: f.Retryable, cost: f.CostUSD,
 		})

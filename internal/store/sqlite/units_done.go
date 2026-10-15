@@ -48,9 +48,10 @@ func (w *wtx) done(req store.DoneRequest, outputs []payload) (store.DeliveryStat
 	if err != nil {
 		return "", err
 	}
-	step, err := rev.step(d.step)
-	if err != nil {
-		return "", err
+	step, ok := rev.stepOrOrphan(d.step)
+	if !ok {
+		return w.fail(d, run, rev, step, failure{class: store.ClassMissingStep, cost: req.CostUSD,
+			message: fmt.Sprintf("step %q is not in revision %s: its outputs have nowhere to go", d.step, rev.hash)})
 	}
 	if msg := keyRule(req.Outputs); msg != "" {
 		return w.fail(d, run, rev, step, failure{class: store.ClassKeyRule, message: msg, cost: req.CostUSD})

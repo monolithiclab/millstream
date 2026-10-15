@@ -27,10 +27,13 @@ func parseSteps(n *yaml.Node, path string) (map[string]Step, error) {
 	return out, nil
 }
 
+// DefaultDLQ is a step's dead-letter stream when it names none: <step>.dlq (spec section 5.6).
+func DefaultDLQ(step string) string { return step + ".dlq" }
+
 func parseStep(name string, n *yaml.Node, path string) (Step, error) {
 	s := Step{
 		Name:        name,
-		DLQ:         name + ".dlq",
+		DLQ:         DefaultDLQ(name),
 		Config:      map[string]any{},
 		Concurrency: DefaultConcurrency,
 		Retry:       Retry{MaxAttempts: DefaultMaxAttempts, Backoff: DefaultBackoff, MaxBackoff: DefaultMaxBackoff},
