@@ -1,7 +1,6 @@
 package engine
 
 import (
-	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -37,22 +36,14 @@ func agentAssignment(t *testing.T, agents Agents, environ map[string]string) (no
 func agentRun(t *testing.T, agents Agents, environ, extra map[string]string, settings string) (*env, string) {
 	t.Helper()
 	v := newEnv(t, Options{Env: func(k string) (string, bool) { s, ok := environ[k]; return s, ok }, Agents: agents})
-	pkg := writePackage(t, "pipeline: p\nsecrets: [key]\n"+settings+"triggers:\n  adhoc: { manual: {} }\nsteps:\n"+
+	pkg := newPackage(t, "pipeline: p\nsecrets: [key]\n"+settings+"triggers:\n  adhoc: { manual: {} }\nsteps:\n"+
 		"  score: { action: ./actions/score, in: trigger.adhoc, config: { rooms: 2 } }\n")
 	files := map[string]string{"actions/score/action.yaml": agentManifest, "actions/score/prompt.md": "Score {{ .Payload }}.\n"}
 	for name, body := range extra {
 		files[name] = body
 	}
 	for name, body := range files {
-		// On disk as well: the adapter reads the action from the package directory.
 		pkg.Files[name] = []byte(body)
-		p := filepath.Join(pkg.Dir, filepath.FromSlash(name))
-		if err := os.MkdirAll(filepath.Dir(p), 0o750); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
-			t.Fatal(err)
-		}
 	}
 	if _, ok := files["lessons/score.yaml"]; ok {
 		s := pkg.Pipeline.Steps["score"]
@@ -97,11 +88,11 @@ func TestAgentAssignmentSandboxed(t *testing.T) {
 	}, environ)
 	s := a.Spec
 	recordings, _ := filepath.Abs("testdata/recordings")
-	pkgDir := s.Mounts[1].Source
-	wantCmd := []string{AgentBinaryPath, "agent", "--package", pkgDir, "--action", "./actions/score", "--secret", "key",
+	mounted := s.Mounts[1].Source
+	wantCmd := []string{AgentBinaryPath, "agent", "--package", mounted, "--action", "./actions/score", "--secret", "key",
 		"--price-in", "3", "--price-out", "15"}
 	wantMounts := []exec.Mount{{Source: "/opt/millstream-linux", Target: AgentBinaryPath, ReadOnly: true},
-		{Source: pkgDir, Target: pkgDir, ReadOnly: true}, {Source: recordings, Target: recordings, ReadOnly: true}}
+		{Source: mounted, Target: mounted, ReadOnly: true}, {Source: recordings, Target: recordings, ReadOnly: true}}
 	wantEnv := []string{"HOME=/tmp", "MILLSTREAM_SECRET_KEY=sk-0123456789", agent.EnvHarnessDir + "=" + recordings,
 		agent.EnvHarnessMode + "=replay"}
 	if s.Kind != pipeline.KindContainer || s.Image != "agents:1" || !s.Network || s.Lifecycle != pipeline.LifecyclePerItem ||
@@ -109,8 +100,8 @@ func TestAgentAssignmentSandboxed(t *testing.T) {
 		s.Config["rooms"] != int64(2) || s.Action != "lab/score" || !strings.HasPrefix(s.Digest, "sha256:") {
 		t.Fatalf("spec = %+v", s)
 	}
-	if _, err := os.Stat(filepath.Join(pkgDir, "actions", "score", "prompt.md")); err != nil {
-		t.Fatalf("the mounted package: %v", err)
+	if mounted != pkgDir {
+		t.Fatalf("mounted %s, want the package directory %s", mounted, pkgDir)
 	}
 }
 

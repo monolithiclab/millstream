@@ -33,8 +33,8 @@ func runIDs(rs []store.Run) []string {
 	return out
 }
 
-// TestCatchup applies the pipeline on 10 October, stops the engine until 13 October 08:00 (four 06:00 firings
-// missed), then starts a fresh engine: catch-up runs on its first tick.
+// TestCatchup applies a pipeline per catch-up policy on 10 October, stops the engine until 13 October 08:00 (four
+// 06:00 firings missed), then starts a fresh engine: catch-up runs on its first tick.
 func TestCatchup(t *testing.T) {
 	t.Parallel()
 	missed := []string{
@@ -42,7 +42,7 @@ func TestCatchup(t *testing.T) {
 		"run_2026-10-13T06:00Z_daily",
 	}
 	tests := []struct {
-		catchup  string
+		catchup  string // also the pipeline's name
 		wantRuns []string
 		skipped  int
 	}{
@@ -50,49 +50,54 @@ func TestCatchup(t *testing.T) {
 		{"all", missed, 0},
 		{"none", nil, 4},
 	}
+	v := newEnv(t, Options{})
+	v.clock.Set(time.Date(2026, 10, 10, 5, 0, 0, 0, time.UTC))
 	for _, tt := range tests {
-		t.Run(tt.catchup, func(t *testing.T) {
-			t.Parallel()
-			v := newEnv(t, Options{})
-			v.clock.Set(time.Date(2026, 10, 10, 5, 0, 0, 0, time.UTC))
-			pkg := writePackage(t, cronPipeline(tt.catchup, ""), "crawl")
-			v.apply(pkg)
-			v.clock.Set(time.Date(2026, 10, 13, 8, 0, 0, 0, time.UTC))
+		v.apply(newPackage(t, strings.Replace(cronPipeline(tt.catchup, ""), "pipeline: listings",
+			"pipeline: "+tt.catchup, 1), "crawl"))
+	}
+	v.clock.Set(time.Date(2026, 10, 13, 8, 0, 0, 0, time.UTC))
+	check := func(when string) {
+		t.Helper()
+		for _, tt := range tests {
+			if got := runIDs(v.runs(tt.catchup)); !slices.Equal(got, tt.wantRuns) {
+				t.Errorf("%s: runs %s = %v, want %v", tt.catchup, when, got, tt.wantRuns)
+			}
+			skipped := 0
+			for _, ev := range v.events(store.EventFiringSkipped) {
+				if ev.Pipeline == tt.catchup {
+					skipped++
+				}
+			}
+			if skipped != tt.skipped {
+				t.Errorf("%s: %d firingSkipped events %s, want %d", tt.catchup, skipped, when, tt.skipped)
+			}
+		}
+	}
 
-			e2, err := New(Options{Store: v.st, Now: v.clock.Now})
-			if err != nil {
-				t.Fatal(err)
-			}
-			e2.schedule(v.ctx)
-			if got := runIDs(v.runs("listings")); !slices.Equal(got, tt.wantRuns) {
-				t.Fatalf("runs = %v, want %v", got, tt.wantRuns)
-			}
-			if n := len(v.events(store.EventFiringSkipped)); n != tt.skipped {
-				t.Fatalf("%d firingSkipped events, want %d", n, tt.skipped)
-			}
-			// A second tick, and a third engine started later the same morning, fire nothing again.
-			e2.schedule(v.ctx)
-			v.clock.Advance(time.Hour)
-			e3, err := New(Options{Store: v.st, Now: v.clock.Now})
-			if err != nil {
-				t.Fatal(err)
-			}
-			e3.schedule(v.ctx)
-			if got := runIDs(v.runs("listings")); !slices.Equal(got, tt.wantRuns) {
-				t.Fatalf("runs after restart = %v, want %v", got, tt.wantRuns)
-			}
-			if n := len(v.events(store.EventFiringSkipped)); n != tt.skipped {
-				t.Fatalf("%d firingSkipped events after restart, want %d", n, tt.skipped)
-			}
+	e2, err := New(Options{Store: v.st, Now: v.clock.Now})
+	if err != nil {
+		t.Fatal(err)
+	}
+	e2.schedule(v.ctx)
+	check("at start")
+	// A second tick, and a third engine started later the same morning, fire nothing again.
+	e2.schedule(v.ctx)
+	v.clock.Advance(time.Hour)
+	e3, err := New(Options{Store: v.st, Now: v.clock.Now})
+	if err != nil {
+		t.Fatal(err)
+	}
+	e3.schedule(v.ctx)
+	check("after restart")
 
-			// The next firing is on time and fires, whatever the policy.
-			v.clock.Set(time.Date(2026, 10, 14, 6, 0, 20, 0, time.UTC))
-			e3.schedule(v.ctx)
-			r := v.run("listings", "run_2026-10-14T06:00Z_daily")
-			if r.TriggerKey != "2026-10-14T06:00Z" {
-				t.Fatalf("on-time run = %+v", r)
-			}
-		})
+	// The next firing is on time and fires, whatever the policy.
+	v.clock.Set(time.Date(2026, 10, 14, 6, 0, 20, 0, time.UTC))
+	e3.schedule(v.ctx)
+	for _, tt := range tests {
+		if r := v.run(tt.catchup, "run_2026-10-14T06:00Z_daily"); r.TriggerKey != "2026-10-14T06:00Z" {
+			t.Errorf("%s: on-time run = %+v", tt.catchup, r)
+		}
 	}
 }
 
@@ -100,7 +105,7 @@ func TestCronPayloadAndTimezone(t *testing.T) {
 	t.Parallel()
 	v := newEnv(t, Options{})
 	v.clock.Set(time.Date(2026, 10, 15, 3, 0, 0, 0, time.UTC))
-	v.apply(writePackage(t, cronPipeline("latest", `, tz: "Europe/Paris"`), "crawl"))
+	v.apply(newPackage(t, cronPipeline("latest", `, tz: "Europe/Paris"`), "crawl"))
 	v.e.schedule(v.ctx)
 	if rs := v.runs("listings"); len(rs) != 0 {
 		t.Fatalf("runs before 06:00 Paris = %v", runIDs(rs))
@@ -125,7 +130,7 @@ func TestCronPayloadAndTimezone(t *testing.T) {
 func TestScheduleBadCronIsLoggedOnce(t *testing.T) {
 	t.Parallel()
 	v := newEnv(t, Options{})
-	v.apply(writePackage(t, strings.Replace(cronPipeline("latest", ""), "0 6 * * *", "61 6 * * *", 1), "crawl"))
+	v.apply(newPackage(t, strings.Replace(cronPipeline("latest", ""), "0 6 * * *", "61 6 * * *", 1), "crawl"))
 	v.e.schedule(v.ctx)
 	v.e.schedule(v.ctx)
 	if n := strings.Count(v.logs.String(), "scheduler: cron trigger"); n != 1 {
@@ -137,7 +142,7 @@ func TestScheduleFireErrorIsLogged(t *testing.T) {
 	t.Parallel()
 	v := newEnv(t, Options{})
 	src := strings.Replace(cronPipeline("latest", ""), "triggers:", "vars: { required: null }\ntriggers:", 1)
-	v.apply(writePackage(t, src, "crawl"))
+	v.apply(newPackage(t, src, "crawl"))
 	v.clock.Set(time.Date(2026, 10, 16, 6, 0, 5, 0, time.UTC))
 	v.e.schedule(v.ctx)
 	if rs := v.runs("listings"); len(rs) != 0 || !strings.Contains(v.logs.String(), "variable required is required") {
@@ -150,7 +155,7 @@ func TestScheduleDropsOldestBeyondBound(t *testing.T) {
 	v := newEnv(t, Options{})
 	v.e.maxDue = 5 // the bound, small: the production one would write 10000 skipped firings
 	v.clock.Set(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC))
-	v.apply(writePackage(t, strings.Replace(cronPipeline("none", ""), "0 6 * * *", "* * * * *", 1), "crawl"))
+	v.apply(newPackage(t, strings.Replace(cronPipeline("none", ""), "0 6 * * *", "* * * * *", 1), "crawl"))
 	v.clock.Set(time.Date(2026, 1, 1, 0, 10, 30, 0, time.UTC)) // ten minutes of firings: more than the bound
 	v.e.schedule(v.ctx)
 	if n := len(v.events(store.EventFiringSkipped)); n != v.e.maxDue {
@@ -169,7 +174,7 @@ func TestManualFiringOfCronTrigger(t *testing.T) {
 	t.Parallel()
 	v := newEnv(t, Options{})
 	v.clock.Set(time.Date(2026, 10, 15, 5, 0, 0, 0, time.UTC))
-	v.apply(writePackage(t, cronPipeline("latest", ""), "crawl"))
+	v.apply(newPackage(t, cronPipeline("latest", ""), "crawl"))
 	v.e.schedule(v.ctx)
 	v.clock.Set(time.Date(2026, 10, 15, 5, 30, 0, 0, time.UTC))
 	manual := v.fire("listings", "daily", "")
@@ -209,7 +214,7 @@ func TestScheduleRetriesStoreErrors(t *testing.T) {
 	t.Parallel()
 	v := newEnv(t, Options{})
 	v.clock.Set(time.Date(2026, 10, 15, 5, 0, 0, 0, time.UTC))
-	v.apply(writePackage(t, cronPipeline("latest", ""), "crawl"))
+	v.apply(newPackage(t, cronPipeline("latest", ""), "crawl"))
 	e, err := New(Options{Store: &failingFire{Store: v.st, n: 1}, Now: v.clock.Now, Logger: newLogger(v.logs)})
 	if err != nil {
 		t.Fatal(err)

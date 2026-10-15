@@ -3,10 +3,12 @@ package engine
 import (
 	"bytes"
 	"context"
-	"encoding/json"
+	"crypto/sha256"
+	"encoding/hex"
 	"log/slog"
+	"maps"
 	"os"
-	"path/filepath"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -85,39 +87,33 @@ func newEnv(t *testing.T, opts Options) *env {
 	return &env{t: t, ctx: context.Background(), clock: clock, st: st, e: e, logs: logs}
 }
 
-// writePackage writes a package (pipeline.yaml plus the fake manifest under actions/<name> for each name in
-// actions) to a temporary directory and loads it.
-func writePackage(t *testing.T, pipelineYAML string, actions ...string) *pipeline.Package {
+// pkgDir is the directory every test package claims. The engine only joins paths onto it (it reads a package from
+// its Files), and the default build's in-process launcher never runs a command there, so nothing is on disk.
+const pkgDir = "/millstream-test/pkg"
+
+// newPackage builds a package in memory: pipeline.yaml plus the fake manifest under actions/<name> for each name
+// in actions, with its content hash, as pipeline.Load would read it from pkgDir.
+func newPackage(t *testing.T, pipelineYAML string, actions ...string) *pipeline.Package {
 	t.Helper()
-	dir := t.TempDir()
-	files := map[string]string{"pipeline.yaml": pipelineYAML}
+	files := map[string][]byte{pipeline.FileName: []byte(pipelineYAML)}
 	for _, a := range actions {
-		files["actions/"+a+"/action.yaml"] = fakeManifest
-		files["actions/"+a+"/run"] = "#!/bin/sh\n"
+		files["actions/"+a+"/action.yaml"] = []byte(fakeManifest)
+		files["actions/"+a+"/run"] = []byte("#!/bin/sh\n")
 	}
-	for name, body := range files {
-		p := filepath.Join(dir, filepath.FromSlash(name))
-		if err := os.MkdirAll(filepath.Dir(p), 0o750); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
-			t.Fatal(err)
-		}
-	}
-	pkg, err := pipeline.Load(dir)
+	p, err := pipeline.Parse(files[pipeline.FileName])
 	if err != nil {
 		t.Fatalf("load package: %v", err)
 	}
-	return pkg
-}
-
-// linkFakeAction places the fake action in the package directory dir at rel: a stub the in-process launcher
-// ignores in the default build, the built binary in the e2e build.
-func linkFakeAction(t *testing.T, dir, rel string) {
-	t.Helper()
-	if err := fakeexec.Place(filepath.Join(dir, filepath.FromSlash(rel))); err != nil {
-		t.Fatal(err)
+	// The hash as pipeline.Load computes it: SHA-256 over path NUL content NUL for each file in path order.
+	h := sha256.New()
+	for _, name := range slices.Sorted(maps.Keys(files)) {
+		h.Write([]byte(name))
+		h.Write([]byte{0})
+		h.Write(files[name])
+		h.Write([]byte{0})
 	}
+	return &pipeline.Package{Dir: pkgDir, Pipeline: p, Hash: hex.EncodeToString(h.Sum(nil)), Files: files,
+		PipelineFile: pipeline.FileName}
 }
 
 func (v *env) apply(pkg *pipeline.Package) store.RevisionID {
@@ -210,23 +206,6 @@ func (b *syncBuffer) String() string {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	return b.buf.String()
-}
-
-// lines decodes the JSON log lines.
-func (b *syncBuffer) lines(t *testing.T) []map[string]any {
-	t.Helper()
-	var out []map[string]any
-	for _, line := range bytes.Split([]byte(b.String()), []byte("\n")) {
-		if len(line) == 0 {
-			continue
-		}
-		var m map[string]any
-		if err := json.Unmarshal(line, &m); err != nil {
-			t.Fatalf("log line %q: %v", line, err)
-		}
-		out = append(out, m)
-	}
-	return out
 }
 
 func newLogger(b *syncBuffer) *slog.Logger { return slog.New(slog.NewJSONHandler(b, nil)) }

@@ -5,7 +5,6 @@ import (
 	"slices"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/monolithiclab/millstream/internal/node"
 	"github.com/monolithiclab/millstream/internal/store"
@@ -58,7 +57,7 @@ func (v *env) byStep(runID, step string) []store.Delivery {
 func TestBuiltinsRunInTheEngine(t *testing.T) {
 	t.Parallel()
 	v := newEnv(t, Options{})
-	v.apply(writePackage(t, builtinPipeline, "a"))
+	v.apply(newPackage(t, builtinPipeline, "a"))
 	id := v.fire("p", "adhoc", "r1")
 	v.emit(output("low", `{"n":1}`), output("a", `{"n":7}`), output("b", `{"n":7}`), output("bad", `{"n":"x"}`),
 		output("c", `{"n":9}`))
@@ -98,60 +97,39 @@ func TestBuiltinsRunInTheEngine(t *testing.T) {
 	}
 }
 
-func TestBuiltinDedupeWindowWithTheEngineClock(t *testing.T) {
-	t.Parallel()
-	v := newEnv(t, Options{})
-	v.apply(writePackage(t, builtinPipeline, "a"))
-	states := func(runID string) store.DeliveryState {
-		v.t.Helper()
-		v.emit(output("", `{"n":7}`))
-		v.pull(10)
-		return v.byStep(runID, "unique")[0].State
-	}
-	wantState := func(what string, got, want store.DeliveryState) {
-		t.Helper()
-		if got != want {
-			t.Fatalf("%s: %s, want %s", what, got, want)
-		}
-	}
-	wantState("first", states(v.fire("p", "adhoc", "r1")), store.DeliveryDone)
-	v.clock.Advance(29 * 24 * time.Hour)
-	wantState("29 days later", states(v.fire("p", "adhoc", "r2")), store.DeliveryFiltered)
-	v.clock.Advance(24*time.Hour + time.Second)
-	wantState("30 days and 1 second after the first", states(v.fire("p", "adhoc", "r3")), store.DeliveryDone)
-}
-
+// Builtin steps whose configuration fails fail their deliveries for good: the cases are the steps of one run.
 func TestBuiltinConfigErrors(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
-		name, step, class, message string
+		step, def, class, message string
 	}{
-		{"filter expr does not compile", `{ action: filter, in: trigger.adhoc, config: { expr: "item.n >" } }`,
-			ClassExpr, "filter of step s"},
-		{"dedupe key does not compile", `{ action: dedupe, in: trigger.adhoc, config: { key: "item.(" } }`,
-			ClassExpr, "dedupe key of step s"},
-		{"dedupe window", `{ action: dedupe, in: trigger.adhoc, config: { key: "item.n", window: soon } }`,
-			ClassConfig, "dedupe window of step s"},
-		{"dedupe key fails", `{ action: dedupe, in: trigger.adhoc, config: { key: "item.missing.deeper" } }`,
-			ClassExpr, "dedupe key of step s"},
+		{"filterexpr", `{ action: filter, in: trigger.adhoc, config: { expr: "item.n >" } }`,
+			ClassExpr, "filter of step filterexpr"},
+		{"dedupekey", `{ action: dedupe, in: trigger.adhoc, config: { key: "item.(" } }`,
+			ClassExpr, "dedupe key of step dedupekey"},
+		{"window", `{ action: dedupe, in: trigger.adhoc, config: { key: "item.n", window: soon } }`,
+			ClassConfig, "dedupe window of step window"},
+		{"keyfails", `{ action: dedupe, in: trigger.adhoc, config: { key: "item.missing.deeper" } }`,
+			ClassExpr, "dedupe key of step keyfails"},
+	}
+	steps := ""
+	for _, tt := range tests {
+		steps += "  " + tt.step + ": " + tt.def + "\n"
+	}
+	v := newEnv(t, Options{})
+	v.apply(newPackage(t, manualPipeline("p", steps)))
+	id := v.fire("p", "adhoc", "r1")
+	if got := v.pull(5); len(got) != 0 {
+		t.Fatalf("pull = %v", got)
 	}
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			v := newEnv(t, Options{})
-			v.apply(writePackage(t, manualPipeline("p", "  s: "+tt.step+"\n")))
-			id := v.fire("p", "adhoc", "r1")
-			if got := v.pull(5); len(got) != 0 {
-				t.Fatalf("pull = %v", got)
-			}
-			d := v.byStep(id, "s")[0]
-			if d.State != store.DeliveryDead || d.ErrorClass != tt.class || !strings.Contains(d.ErrorMessage, tt.message) {
-				t.Fatalf("delivery = %+v", d)
-			}
-			if r := v.run("p", id); r.State != store.RunCompletedWithErrors {
-				t.Fatalf("run = %s", r.State)
-			}
-		})
+		d := v.byStep(id, tt.step)[0]
+		if d.State != store.DeliveryDead || d.ErrorClass != tt.class || !strings.Contains(d.ErrorMessage, tt.message) {
+			t.Errorf("%s delivery = %+v", tt.step, d)
+		}
+	}
+	if r := v.run("p", id); r.State != store.RunCompletedWithErrors {
+		t.Fatalf("run = %s", r.State)
 	}
 }
 

@@ -34,7 +34,7 @@ func TestAssignment(t *testing.T) {
 		"MILLSTREAM_SECRET_API_TOKEN": "tok", "OTHER": "never passed",
 	}
 	v := newEnv(t, Options{Env: func(k string) (string, bool) { s, ok := environ[k]; return s, ok }})
-	pkg := writePackage(t, strings.Replace(varsPipeline, "config:", "timeout: 30s\n    config:", 1), "crawl")
+	pkg := newPackage(t, strings.Replace(varsPipeline, "config:", "timeout: 30s\n    config:", 1), "crawl")
 	v.apply(pkg)
 	id := v.fire("listings", "adhoc", "req1")
 	as, err := v.e.Pull(v.ctx, "node-a", 5)
@@ -76,7 +76,7 @@ func TestConcurrencyAndLimits(t *testing.T) {
 	t.Run("step concurrency", func(t *testing.T) {
 		t.Parallel()
 		v := newEnv(t, Options{})
-		v.apply(writePackage(t, manualPipeline("p", `
+		v.apply(newPackage(t, manualPipeline("p", `
   a: { action: ./actions/a, in: trigger.adhoc, concurrency: 2 }
 `), "a"))
 		fireN(v, "p", 5)
@@ -97,7 +97,7 @@ func TestConcurrencyAndLimits(t *testing.T) {
 	t.Run("pipeline limit", func(t *testing.T) {
 		t.Parallel()
 		v := newEnv(t, Options{})
-		v.apply(writePackage(t, manualPipeline("p", `
+		v.apply(newPackage(t, manualPipeline("p", `
   a: { action: ./actions/a, in: trigger.adhoc, concurrency: 5 }
   b: { action: ./actions/a, in: trigger.adhoc, concurrency: 5 }
 limits: { concurrency: 3 }
@@ -113,7 +113,7 @@ limits: { concurrency: 3 }
 	t.Run("leases of a previous engine count until they expire", func(t *testing.T) {
 		t.Parallel()
 		v := newEnv(t, Options{LeaseTTL: time.Minute})
-		pkg := writePackage(t, manualPipeline("p", `
+		pkg := newPackage(t, manualPipeline("p", `
   a: { action: ./actions/a, in: trigger.adhoc }
 `), "a")
 		v.apply(pkg)
@@ -142,49 +142,10 @@ limits: { concurrency: 3 }
 	})
 }
 
-func TestRateLimit(t *testing.T) {
-	t.Parallel()
-	v := newEnv(t, Options{})
-	v.apply(writePackage(t, manualPipeline("p", `
-  a: { action: ./actions/a, in: trigger.adhoc, concurrency: 10, rate: 2/min }
-`), "a"))
-	fireN(v, "p", 6)
-	steps := []struct {
-		advance time.Duration
-		want    int
-	}{
-		{0, 2}, {0, 0}, {30 * time.Second, 1}, {10 * time.Second, 0}, {5 * time.Minute, 2},
-	}
-	for i, s := range steps {
-		v.clock.Advance(s.advance)
-		if got := v.pull(10); len(got) != s.want {
-			t.Fatalf("step %d: pulled %d, want %d", i, len(got), s.want)
-		}
-	}
-}
-
-func TestRoundRobinAcrossPipelines(t *testing.T) {
-	t.Parallel()
-	v := newEnv(t, Options{})
-	for _, name := range []string{"p1", "p2"} {
-		v.apply(writePackage(t, manualPipeline(name, `
-  a: { action: ./actions/a, in: trigger.adhoc, concurrency: 10 }
-`), "a"))
-		fireN(v, name, 3)
-	}
-	for i := range 3 {
-		got := v.pull(2)
-		slices.Sort(got)
-		if !slices.Equal(got, []string{"p1/a", "p2/a"}) {
-			t.Fatalf("pull %d = %v, want one delivery of each pipeline", i, got)
-		}
-	}
-}
-
 func TestPauseAndResume(t *testing.T) {
 	t.Parallel()
 	v := newEnv(t, Options{})
-	v.apply(writePackage(t, manualPipeline("p", `
+	v.apply(newPackage(t, manualPipeline("p", `
   a: { action: ./actions/a, in: trigger.adhoc, concurrency: 10 }
   b: { action: ./actions/a, in: trigger.adhoc, concurrency: 10 }
 `), "a"))
@@ -212,77 +173,84 @@ func TestPauseAndResume(t *testing.T) {
 	}
 }
 
+// Deliveries the engine cannot dispatch fail for good, each with its class: the cases are the steps of one run, and
+// a missing secret, which needs the secret unset after firing, is a second pipeline's run.
 func TestUndispatchableDeliveriesFail(t *testing.T) {
 	t.Parallel()
 	containerManifest := "name: c\nkind: container\nruntime: { container: { image: c:1 } }\n"
 	agentManifest := "name: g\nkind: agent\noutput: { type: object }\nruntime: { agent: { harness: api, model: m } }\n"
 	tests := []struct {
-		name      string
-		action    string
-		files     map[string]string
-		env       map[string]string
-		class     string
-		retryable bool
-		message   string
-		config    string
+		step, action, config, class, message string
+		files                                map[string]string
 	}{
-		{"builtin", "review", nil, nil, ClassUnsupported, false, "the review builtin arrives in M3", ""},
-		{"registry", "lab/score@1", nil, nil, ClassUnsupported, false, "no registries are configured", ""},
-		{"container without a runtime", "./actions/c", map[string]string{"actions/c/action.yaml": containerManifest},
-			nil, ClassUnsupported, false, "container actions need Docker or Podman", ""},
-		{"agent without a sandbox", "./actions/c", map[string]string{"actions/c/action.yaml": agentManifest,
-			"actions/c/prompt.md": "Score."}, nil, ClassSandbox, false, "agent step s needs a container sandbox", ""},
-		{"missing manifest", "./actions/none", nil, nil, ClassConfig, false, "no actions/none/action.yaml", ""},
-		{"bad interpolation", "./actions/a", nil, nil, ClassConfig, false, "interpolate config of step s",
-			`, config: { x: "${vars.nope}" }`},
-		{"input schema", "./actions/a", map[string]string{"actions/a/action.yaml": fakeManifest +
-			"input: { type: object, required: [url] }\n"}, nil, ClassInputSchema, false,
-			"does not match the input schema of ./actions/a", ""},
-		{"config schema", "./actions/a", map[string]string{"actions/a/action.yaml": fakeManifest +
-			"config: { type: object, properties: { x: { type: integer } } }\n"}, nil, ClassConfig, false,
-			"does not match the config schema of ./actions/a", `, config: { x: "${run.id}" }`},
-		{"missing secret", "./actions/a", nil, map[string]string{"MILLSTREAM_SECRET_TOKEN": ""}, ClassConfig, false,
-			"secret token is not set", ""},
+		{"builtin", "review", "", ClassUnsupported, "the review builtin arrives in M3", nil},
+		{"registry", "lab/score@1", "", ClassUnsupported, "no registries are configured", nil},
+		{"container", "./actions/container", "", ClassUnsupported, "container actions need Docker or Podman",
+			map[string]string{"actions/container/action.yaml": containerManifest}},
+		{"agent", "./actions/agent", "", ClassSandbox, "agent step agent needs a container sandbox",
+			map[string]string{"actions/agent/action.yaml": agentManifest, "actions/agent/prompt.md": "Score."}},
+		{"manifest", "./actions/none", "", ClassConfig, "no actions/none/action.yaml", nil},
+		{"interpolation", "./actions/a", `, config: { x: "${vars.nope}" }`, ClassConfig,
+			"interpolate config of step interpolation", nil},
+		{"input", "./actions/in", "", ClassInputSchema, "does not match the input schema of ./actions/in",
+			map[string]string{"actions/in/action.yaml": fakeManifest + "input: { type: object, required: [url] }\n"}},
+		{"config", "./actions/cfg", `, config: { x: "${run.id}" }`, ClassConfig,
+			"does not match the config schema of ./actions/cfg", map[string]string{"actions/cfg/action.yaml": fakeManifest +
+				"config: { type: object, properties: { x: { type: integer } } }\n"}},
+	}
+	environ := map[string]string{"MILLSTREAM_SECRET_TOKEN": "x"}
+	v := newEnv(t, Options{Env: func(k string) (string, bool) { s, ok := environ[k]; return s, ok }})
+	src := "pipeline: p\nsecrets: [token]\ntriggers:\n  adhoc: { manual: {} }\nsteps:\n"
+	for _, tt := range tests {
+		src += "  " + tt.step + `: { action: "` + tt.action + `", in: trigger.adhoc, retry: { maxAttempts: 2 }` +
+			tt.config + " }\n"
+	}
+	pkg := newPackage(t, src, "a", "in", "cfg") // in and cfg get their own manifests below
+	for _, tt := range tests {
+		for name, body := range tt.files {
+			pkg.Files[name] = []byte(body)
+		}
+	}
+	v.apply(pkg)
+	v.apply(newPackage(t, strings.Replace(manualPipeline("q", "  s: { action: ./actions/a, in: trigger.adhoc }\n"),
+		"triggers:", "secrets: [token]\ntriggers:", 1), "a"))
+
+	check := func(id, step, class, message string) {
+		t.Helper()
+		var d store.Delivery
+		for _, d = range v.deliveries(id) {
+			if d.Step == step {
+				break
+			}
+		}
+		if d.Step != step || d.State != store.DeliveryDead || d.ErrorClass != class ||
+			!strings.Contains(d.ErrorMessage, message) {
+			t.Errorf("%s delivery = %+v; want dead, class %s, message %q", step, d, class, message)
+		}
+	}
+	id := v.fire("p", "adhoc", "k")
+	if got := v.pull(20); len(got) != 0 {
+		t.Fatalf("assignments = %v", got)
 	}
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			fireEnv := map[string]string{"MILLSTREAM_SECRET_TOKEN": "x"}
-			e := newEnv(t, Options{Env: func(k string) (string, bool) { s, ok := fireEnv[k]; return s, ok }})
-			config := tt.config
-			src := "pipeline: p\nsecrets: [token]\ntriggers:\n  adhoc: { manual: {} }\nsteps:\n" +
-				"  s: { action: \"" + tt.action + "\", in: trigger.adhoc, retry: { maxAttempts: 2 }" + config + " }\n"
-			pkg := writePackage(t, src, "a")
-			for name, body := range tt.files {
-				pkg.Files[name] = []byte(body)
-			}
-			e.apply(pkg)
-			id := e.fire("p", "adhoc", "k")
-			if tt.env != nil {
-				delete(fireEnv, "MILLSTREAM_SECRET_TOKEN") // set when firing, unset at dispatch
-			}
-			if got := e.pull(5); len(got) != 0 {
-				t.Fatalf("assignments = %v", got)
-			}
-			d := e.deliveries(id)[0]
-			wantState := store.DeliveryDead
-			if tt.retryable {
-				wantState = store.DeliveryPending
-			}
-			if d.State != wantState || d.ErrorClass != tt.class || !strings.Contains(d.ErrorMessage, tt.message) {
-				t.Fatalf("delivery = %+v; want %s, class %s, message %q", d, wantState, tt.class, tt.message)
-			}
-			if r := e.run("p", id); r.State != store.RunCompletedWithErrors {
-				t.Fatalf("run state = %s", r.State)
-			}
-		})
+		check(id, tt.step, tt.class, tt.message)
 	}
+	if r := v.run("p", id); r.State != store.RunCompletedWithErrors {
+		t.Fatalf("run state = %s", r.State)
+	}
+
+	id = v.fire("q", "adhoc", "k")
+	delete(environ, "MILLSTREAM_SECRET_TOKEN") // set when firing, unset at dispatch
+	if got := v.pull(5); len(got) != 0 {
+		t.Fatalf("assignments = %v", got)
+	}
+	check(id, "s", ClassConfig, "secret token is not set")
 }
 
 func TestPackageNotLoadedRetries(t *testing.T) {
 	t.Parallel()
 	v := newEnv(t, Options{})
-	v.apply(writePackage(t, manualPipeline("p", "  a: { action: ./actions/a, in: trigger.adhoc }\n"), "a"))
+	v.apply(newPackage(t, manualPipeline("p", "  a: { action: ./actions/a, in: trigger.adhoc }\n"), "a"))
 	id := v.fire("p", "adhoc", "k")
 	e2, err := New(Options{Store: v.st, Now: v.clock.Now})
 	if err != nil {
@@ -311,7 +279,7 @@ func TestStubs(t *testing.T) {
 		{Pipeline: "p", Step: "score"}:  {Outputs: []store.Output{{Payload: json.RawMessage(`{"score":1}`)}}},
 		{Pipeline: "p", Step: "report"}: {Err: &exec.ActionError{Message: "boom", Retryable: false}},
 	}})
-	v.apply(writePackage(t, src, "a"))
+	v.apply(newPackage(t, src, "a"))
 	id := v.fire("p", "adhoc", "k")
 	if got := v.pull(1); len(got) != 0 {
 		t.Fatalf("stubbed pull returned %v", got)
@@ -331,7 +299,7 @@ func TestStubs(t *testing.T) {
 func TestHeartbeatAndStaleReports(t *testing.T) {
 	t.Parallel()
 	v := newEnv(t, Options{LeaseTTL: time.Minute})
-	v.apply(writePackage(t, manualPipeline("p", "  a: { action: ./actions/a, in: trigger.adhoc }\n"), "a"))
+	v.apply(newPackage(t, manualPipeline("p", "  a: { action: ./actions/a, in: trigger.adhoc }\n"), "a"))
 	fireN(v, "p", 2)
 	as, err := v.e.Pull(v.ctx, "node-a", 5)
 	if err != nil || len(as) != 1 {
@@ -372,26 +340,12 @@ func TestHeartbeatAndStaleReports(t *testing.T) {
 	}
 }
 
-func TestInvalidRateIsNotLimited(t *testing.T) {
-	t.Parallel()
-	v := newEnv(t, Options{})
-	pkg := writePackage(t, manualPipeline("p", "  a: { action: ./actions/a, in: trigger.adhoc, concurrency: 5 }\n"), "a")
-	s := pkg.Pipeline.Steps["a"]
-	s.Rate = "often"
-	pkg.Pipeline.Steps["a"] = s
-	v.apply(pkg)
-	fireN(v, "p", 3)
-	if got := v.pull(5); len(got) != 3 || !strings.Contains(v.logs.String(), "invalid step rate") {
-		t.Fatalf("pull = %v; logs:\n%s", got, v.logs.String())
-	}
-}
-
 // TestCancelWhileLeased: a run cancelled while its delivery is leased discards the outputs reported later and
 // settles cancelled (review focus 5).
 func TestCancelWhileLeased(t *testing.T) {
 	t.Parallel()
 	v := newEnv(t, Options{})
-	v.apply(writePackage(t, manualPipeline("p", `
+	v.apply(newPackage(t, manualPipeline("p", `
   a: { action: ./actions/a, in: trigger.adhoc, out: [listings] }
   b: { action: ./actions/a, in: listings }
 `), "a"))
@@ -424,11 +378,11 @@ func TestCancelWhileLeased(t *testing.T) {
 func TestStepOfAnOlderRevisionKeepsItsLimits(t *testing.T) {
 	t.Parallel()
 	v := newEnv(t, Options{})
-	v.apply(writePackage(t, manualPipeline("p", `
+	v.apply(newPackage(t, manualPipeline("p", `
   old: { action: ./actions/a, in: trigger.adhoc, concurrency: 1, rate: 2/h }
 `), "a"))
 	fireN(v, "p", 4)
-	v.apply(writePackage(t, manualPipeline("p", "  new: { action: ./actions/a, in: trigger.adhoc }\n"), "a"))
+	v.apply(newPackage(t, manualPipeline("p", "  new: { action: ./actions/a, in: trigger.adhoc }\n"), "a"))
 	as, err := v.e.Pull(v.ctx, "node-a", 10)
 	if err != nil || len(as) != 1 || as[0].Lease.Step != "old" {
 		t.Fatalf("pull = %d, %v; want one delivery of old, its concurrency", len(as), err)

@@ -31,7 +31,7 @@ func TestContainerAssignment(t *testing.T) {
 		Env:      func(k string) (string, bool) { s, ok := environ[k]; return s, ok },
 		Resolver: pipeline.Resolver{Images: oneImage{}},
 	})
-	pkg := writePackage(t, manualPipeline("p", "\n  r: { action: ./actions/r, in: trigger.adhoc }\n"))
+	pkg := newPackage(t, manualPipeline("p", "\n  r: { action: ./actions/r, in: trigger.adhoc }\n"))
 	pkg.Files["actions/r/action.yaml"] = []byte("name: lab/report\nversion: 1.0.0\nkind: container\n" +
 		"runtime: { container: { image: report:dev, command: [/report], network: [api.example.com] } }\n")
 	v.apply(pkg)

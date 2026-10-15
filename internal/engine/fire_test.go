@@ -32,7 +32,7 @@ func TestFireStoresVarsAndSources(t *testing.T) {
 		Flags: map[string]string{"maxPrice": "300000", "notDeclared": "x"},
 		Env:   func(k string) (string, bool) { s, ok := environ[k]; return s, ok },
 	})
-	v.apply(writePackage(t, varsPipeline, "crawl"))
+	v.apply(newPackage(t, varsPipeline, "crawl"))
 
 	id := v.fire("listings", "adhoc", "")
 	if !regexp.MustCompile(`^run_\d{8}T\d{6}Z-[0-9a-f]{8}_adhoc$`).MatchString(id) {
@@ -91,11 +91,13 @@ func TestFireErrors(t *testing.T) {
 		{"unknown trigger", full, "listings", "weekly", `has no trigger "weekly"`, store.ErrInvalid},
 		{"unknown pipeline", full, "nope", "adhoc", "pipeline nope", store.ErrNotFound},
 	}
+	// One engine for every case: none fires, and each sets the environment it fires in.
+	var environ map[string]string
+	v := newEnv(t, Options{Env: func(k string) (string, bool) { s, ok := environ[k]; return s, ok }})
+	v.apply(newPackage(t, varsPipeline, "crawl"))
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			v := newEnv(t, Options{Env: func(k string) (string, bool) { s, ok := tt.env[k]; return s, ok }})
-			v.apply(writePackage(t, varsPipeline, "crawl"))
+			environ = tt.env
 			_, _, err := v.e.Fire(v.ctx, tt.pipeline, tt.trigger, "", nil)
 			if err == nil || !strings.Contains(err.Error(), tt.want) {
 				t.Fatalf("err = %v, want %q", err, tt.want)
@@ -103,8 +105,8 @@ func TestFireErrors(t *testing.T) {
 			if tt.wantErr != nil && !errors.Is(err, tt.wantErr) {
 				t.Fatalf("err = %v, want %v", err, tt.wantErr)
 			}
-			if rs := v.runs(""); len(rs) != 0 {
-				t.Fatalf("runs = %v, want none", rs)
+			if rs, err := v.st.Runs(v.ctx, store.RunFilter{}); err != nil || len(rs) != 0 {
+				t.Fatalf("runs = %v, %v; want none", rs, err)
 			}
 		})
 	}

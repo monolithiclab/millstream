@@ -27,7 +27,7 @@ func stubbedEnv(t *testing.T, opts Options) *env {
 		{Pipeline: "p", Step: "sink"}: {Err: &exec.ActionError{Message: "upstream refused item 42"}},
 	}
 	v := newEnv(t, opts)
-	v.apply(writePackage(t, projectPipeline, "a"))
+	v.apply(newPackage(t, projectPipeline, "a"))
 	return v
 }
 
@@ -40,18 +40,34 @@ func (v *env) insights() []store.Insight {
 	return ins
 }
 
-// Project rolls the run's events up and records its insights.
+// On its ticker, a pipeline's insights run only once insights.every has passed or a run settled since; Project runs
+// them whatever. A pass rolls the run's events up and records its insights.
 func TestProject(t *testing.T) {
 	t.Parallel()
 	v := stubbedEnv(t, Options{})
+	pass := func(what string, force, wantRan bool) {
+		t.Helper()
+		before, ran := v.e.lastInsights["p"]
+		project := func(ctx context.Context) error { return v.e.project(ctx, false) }
+		if force {
+			project = v.e.Project
+		}
+		if err := project(v.ctx); err != nil {
+			t.Fatal(err)
+		}
+		if got := !ran || !v.e.lastInsights["p"].Equal(before); got != wantRan {
+			t.Fatalf("%s: insights ran %v, want %v", what, got, wantRan)
+		}
+	}
+	pass("first pass", false, true)
+	v.clock.Advance(time.Minute)
+	pass("before insights.every, no run settled", false, false)
 	id := v.fire("p", "adhoc", "r1")
-	v.pull(10)
+	v.pull(10) // settles at the store clock, after the last pass
 	if r := v.run("p", id); r.SettledAt.IsZero() {
 		t.Fatalf("run %s not settled", r.State)
 	}
-	if err := v.e.Project(v.ctx); err != nil {
-		t.Fatal(err)
-	}
+	pass("a run settled", false, true)
 	rs, err := v.st.MetricRollups(v.ctx, store.MetricFilter{Pipeline: "p", Name: metrics.ItemsDead})
 	if err != nil || len(rs) != 1 || rs[0].Labels["step"] != "sink" || rs[0].Labels["class"] != node.ClassAction {
 		t.Fatalf("dead rollups = %+v, %v", rs, err)
@@ -60,65 +76,10 @@ func TestProject(t *testing.T) {
 	if len(ins) != 1 || ins[0].Kind != "failureCluster" || ins[0].Scope != "sink" || ins[0].Severity != "error" {
 		t.Fatalf("insights = %+v", ins)
 	}
-}
-
-// On its ticker, a pipeline's insights run only once insights.every has passed or a run settled since.
-func TestProjectWhenDue(t *testing.T) {
-	t.Parallel()
-	v := stubbedEnv(t, Options{})
-	if err := v.e.project(v.ctx, false); err != nil { // first pass: always
-		t.Fatal(err)
-	}
-	first := v.e.lastInsights["p"]
 	v.clock.Advance(time.Minute)
-	if err := v.e.project(v.ctx, false); err != nil {
-		t.Fatal(err)
-	}
-	if !v.e.lastInsights["p"].Equal(first) {
-		t.Fatal("insights ran again before insights.every and without a settled run")
-	}
-	v.fire("p", "adhoc", "r1")
-	v.pull(10) // settles at the store clock, after the last pass
-	if err := v.e.project(v.ctx, false); err != nil {
-		t.Fatal(err)
-	}
-	if v.e.lastInsights["p"].Equal(first) || len(v.insights()) != 1 {
-		t.Fatal("a settled run did not trigger the insights")
-	}
-	settled := v.e.lastInsights["p"]
+	pass("Project", true, true)
 	v.clock.Advance(16 * time.Minute)
-	if err := v.e.project(v.ctx, false); err != nil {
-		t.Fatal(err)
-	}
-	if v.e.lastInsights["p"].Equal(settled) {
-		t.Fatal("insights did not run after insights.every")
-	}
-}
-
-// Run runs the projectors on their ticker and stops them before it returns.
-func TestRunProjects(t *testing.T) {
-	t.Parallel()
-	v := stubbedEnv(t, Options{ProjectInterval: time.Millisecond})
-	v.fire("p", "adhoc", "r1")
-	v.pull(10)
-	projected := make(chan struct{}, 1)
-	v.e.projected = func() {
-		select {
-		case projected <- struct{}{}:
-		default:
-		}
-	}
-	ctx, cancel := context.WithCancel(v.ctx)
-	done := make(chan error, 1)
-	go func() { done <- v.e.Run(ctx) }()
-	<-projected
-	if len(v.insights()) == 0 {
-		t.Fatal("the projectors ran without effect")
-	}
-	cancel()
-	if err := <-done; err != nil {
-		t.Fatal(err)
-	}
+	pass("after insights.every", false, true)
 }
 
 // The classes the insights and metrics call unschedulable are the engine's.

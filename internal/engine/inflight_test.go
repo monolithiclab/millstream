@@ -72,7 +72,7 @@ func (v *env) pullOne() store.Lease {
 func TestExpiryTickRacingDoneAndPull(t *testing.T) {
 	t.Parallel()
 	v, h := newHookEnv(t)
-	v.apply(writePackage(t, manualPipeline("p", "  a: { action: ./actions/a, in: trigger.adhoc, concurrency: 2 }\n"),
+	v.apply(newPackage(t, manualPipeline("p", "  a: { action: ./actions/a, in: trigger.adhoc, concurrency: 2 }\n"),
 		"a"))
 	v.fire("p", "adhoc", "k1")
 	v.fire("p", "adhoc", "k2")
@@ -107,7 +107,7 @@ func TestExpiryTickRacingDoneAndPull(t *testing.T) {
 func TestReleaseOnlyWhenTheLeaseEnded(t *testing.T) {
 	t.Parallel()
 	v, _ := newHookEnv(t)
-	v.apply(writePackage(t, manualPipeline("p", "  a: { action: ./actions/a, in: trigger.adhoc }\n"), "a"))
+	v.apply(newPackage(t, manualPipeline("p", "  a: { action: ./actions/a, in: trigger.adhoc }\n"), "a"))
 	v.fire("p", "adhoc", "k1")
 	l := v.pullOne()
 
@@ -140,7 +140,7 @@ func TestReleaseOnlyWhenTheLeaseEnded(t *testing.T) {
 func TestStartupResyncRacingPull(t *testing.T) {
 	t.Parallel()
 	v, h := newHookEnv(t)
-	v.apply(writePackage(t, manualPipeline("p", "  a: { action: ./actions/a, in: trigger.adhoc }\n"), "a"))
+	v.apply(newPackage(t, manualPipeline("p", "  a: { action: ./actions/a, in: trigger.adhoc }\n"), "a"))
 	v.fire("p", "adhoc", "k1")
 	pulled := make(chan store.Lease, 1)
 	h.afterDeliveries = func() {
@@ -154,11 +154,10 @@ func TestStartupResyncRacingPull(t *testing.T) {
 			}
 			pulled <- as[0].Lease
 		}()
-		// Give the pull the chance to run before the rebuild swaps its map in: it must wait for the rebuild.
-		select {
-		case <-pulled:
-			t.Error("a pull completed while the rebuild held its read")
-		case <-time.After(50 * time.Millisecond): // a pull not blocked by the rebuild completes well within it
+		// The rebuild holds the engine's lock from its read to the swap, which a pull takes to lease: the pull waits.
+		if v.e.mu.TryLock() {
+			v.e.mu.Unlock()
+			t.Error("the rebuild read the store without holding the engine's lock")
 		}
 	}
 	ctx, cancel := context.WithCancel(v.ctx)

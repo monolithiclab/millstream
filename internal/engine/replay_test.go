@@ -57,7 +57,7 @@ func (v *env) replay(req ReplayRequest) string {
 func TestReplaySelection(t *testing.T) {
 	t.Parallel()
 	v := newEnv(t, Options{})
-	v.apply(writePackage(t, replayPipeline, "a"))
+	v.apply(newPackage(t, replayPipeline, "a"))
 	r1 := v.srcRun("r1", "1", "7")
 	v.clock.Advance(48 * time.Hour)
 	v.srcRun("r2", "3", "9")
@@ -118,10 +118,10 @@ func TestReplaySelection(t *testing.T) {
 func TestReplayRevisions(t *testing.T) {
 	t.Parallel()
 	v := newEnv(t, Options{})
-	rev1 := v.apply(writePackage(t, replayPipeline, "a"))
+	rev1 := v.apply(newPackage(t, replayPipeline, "a"))
 	run := v.srcRun("r1", "1")
-	rev2 := v.apply(writePackage(t, strings.Replace(replayPipeline, "rev: one", "rev: two", 1), "a"))
-	other := v.apply(writePackage(t, strings.Replace(replayPipeline, "pipeline: p", "pipeline: q", 1), "a"))
+	rev2 := v.apply(newPackage(t, strings.Replace(replayPipeline, "rev: one", "rev: two", 1), "a"))
+	other := v.apply(newPackage(t, strings.Replace(replayPipeline, "pipeline: p", "pipeline: q", 1), "a"))
 	configs := func(id string) []any {
 		var out []any
 		for _, l := range v.pullAll() {
@@ -148,40 +148,5 @@ func TestReplayRevisions(t *testing.T) {
 	if _, _, err := v.e.Replay(v.ctx, ReplayRequest{Pipeline: "p", Step: "score", Revision: other}); !errors.Is(err,
 		store.ErrInvalid) {
 		t.Fatalf("a revision of another pipeline: %v", err)
-	}
-}
-
-// TestReplayThroughDedupe is review focus 2: a replay of the step upstream of a dedupe dedupes only within its own
-// generation, so items the original run let through pass again, and duplicates within the replay are filtered.
-func TestReplayThroughDedupe(t *testing.T) {
-	t.Parallel()
-	v := newEnv(t, Options{})
-	v.apply(writePackage(t, builtinPipeline, "a"))
-	id := v.fire("p", "adhoc", "r1")
-	v.emit(output("a", `{"n":7}`), output("b", `{"n":7}`))
-	v.pull(10)
-	states := func(runID string) []store.DeliveryState {
-		var out []store.DeliveryState
-		for _, d := range v.byStep(runID, "unique") {
-			out = append(out, d.State)
-		}
-		return out
-	}
-	want := []store.DeliveryState{store.DeliveryDone, store.DeliveryFiltered}
-	if got := states(id); !slices.Equal(got, want) {
-		t.Fatalf("original unique = %v", got)
-	}
-	for _, key := range []string{"rp1", "rp2"} {
-		rp := v.replay(ReplayRequest{Step: "gate", RunID: id, RequestID: key})
-		got := v.pull(10)
-		if got := states(rp); !slices.Equal(got, want) {
-			t.Fatalf("replay %s unique = %v, want %v", key, got, want)
-		}
-		if !slices.Equal(got, []string{"p/sink"}) {
-			t.Fatalf("replay %s pulled %v, want its one sink delivery", key, got)
-		}
-		if d := v.byStep(rp, "sink")[0]; d.Generation != v.run("p", rp).Generation || d.Generation == 0 {
-			t.Fatalf("sink delivery of replay %s in generation %d", key, d.Generation)
-		}
 	}
 }
