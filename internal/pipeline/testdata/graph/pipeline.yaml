@@ -1,0 +1,32 @@
+pipeline: graph-fixture
+triggers:
+  daily: { cron: "0 6 * * *" }
+  rescore: { manual: {} }
+streams:
+  approved: { pipeline: upstream, stream: listings.approved }
+steps:
+  crawl-a:
+    action: lab/crawl-a@1
+    in: trigger.daily
+    out: listings.raw
+  crawl-b:
+    action: lab/crawl-b@1
+    in: trigger.daily
+    out: listings.raw
+  score:
+    action: lab/score@2
+    in: [listings.raw, trigger.rescore]
+    out: [listings.scored, listings.audit]
+  route:
+    action: filter
+    in: listings.scored
+    out:
+      - { when: "item.city == 'Lyon'", out: listings.lyon }
+      - { when: "true", out: listings.other }
+  report:
+    action: lab/report@1
+    in: [listings.lyon, approved]
+    out: "reports \"pdf\""
+  alert:
+    action: lab/alert@1
+    in: score.dlq

@@ -1,0 +1,25 @@
+flowchart LR
+  n0(["approved"])
+  n1["alert"]
+  n2["crawl-a"]
+  n3["crawl-b"]
+  n4["report"]
+  n5["route"]
+  n6["score"]
+  n7[("listings.audit")]
+  n8[("listings.other")]
+  n9[("reports #quot;pdf#quot;")]
+  n10(["trigger.daily"])
+  n11(["trigger.rescore"])
+  n0 -->|"approved"| n4
+  n2 -->|"listings.raw"| n6
+  n3 -->|"listings.raw"| n6
+  n4 -->|"reports #quot;pdf#quot;"| n9
+  n5 -->|"listings.lyon"| n4
+  n5 -->|"listings.other"| n8
+  n6 -->|"score.dlq"| n1
+  n6 -->|"listings.scored"| n5
+  n6 -->|"listings.audit"| n7
+  n10 -->|"trigger.daily"| n2
+  n10 -->|"trigger.daily"| n3
+  n11 -->|"trigger.rescore"| n6

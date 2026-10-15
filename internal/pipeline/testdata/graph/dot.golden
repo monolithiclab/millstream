@@ -1,0 +1,27 @@
+digraph "graph-fixture" {
+  rankdir=LR;
+  "import:approved" [label="approved", shape=oval];
+  "step:alert" [label="alert", shape=box];
+  "step:crawl-a" [label="crawl-a", shape=box];
+  "step:crawl-b" [label="crawl-b", shape=box];
+  "step:report" [label="report", shape=box];
+  "step:route" [label="route", shape=box];
+  "step:score" [label="score", shape=box];
+  "stream:listings.audit" [label="listings.audit", shape=cylinder];
+  "stream:listings.other" [label="listings.other", shape=cylinder];
+  "stream:reports \"pdf\"" [label="reports \"pdf\"", shape=cylinder];
+  "trigger:trigger.daily" [label="trigger.daily", shape=oval];
+  "trigger:trigger.rescore" [label="trigger.rescore", shape=oval];
+  "import:approved" -> "step:report" [label="approved"];
+  "step:crawl-a" -> "step:score" [label="listings.raw"];
+  "step:crawl-b" -> "step:score" [label="listings.raw"];
+  "step:report" -> "stream:reports \"pdf\"" [label="reports \"pdf\""];
+  "step:route" -> "step:report" [label="listings.lyon"];
+  "step:route" -> "stream:listings.other" [label="listings.other"];
+  "step:score" -> "step:alert" [label="score.dlq"];
+  "step:score" -> "step:route" [label="listings.scored"];
+  "step:score" -> "stream:listings.audit" [label="listings.audit"];
+  "trigger:trigger.daily" -> "step:crawl-a" [label="trigger.daily"];
+  "trigger:trigger.daily" -> "step:crawl-b" [label="trigger.daily"];
+  "trigger:trigger.rescore" -> "step:score" [label="trigger.rescore"];
+}
