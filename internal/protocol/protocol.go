@@ -152,14 +152,18 @@ func decode[T Message](line []byte) (Message, error) {
 
 // Reader reads messages, one per line.
 type Reader struct {
-	sc *bufio.Scanner
+	sc      *bufio.Scanner
+	maxLine int // the longest line: MaxLine, but in tests
 }
 
 // NewReader returns a Reader over r.
-func NewReader(r io.Reader) *Reader {
+func NewReader(r io.Reader) *Reader { return newReader(r, MaxLine) }
+
+func newReader(r io.Reader, maxLine int) *Reader {
 	sc := bufio.NewScanner(r)
-	sc.Buffer(make([]byte, 0, 64<<10), MaxLine+1) // +1: the scanner counts the newline against the limit
-	return &Reader{sc: sc}
+	// +1: the scanner counts the newline against the limit.
+	sc.Buffer(make([]byte, 0, min(64<<10, maxLine+1)), maxLine+1)
+	return &Reader{sc: sc, maxLine: maxLine}
 }
 
 // Read returns the next message as a value (Hello, Item, ...), or io.EOF at the end of input. A line over MaxLine,
@@ -169,7 +173,7 @@ func (r *Reader) Read() (Message, error) {
 	if !r.sc.Scan() {
 		switch err := r.sc.Err(); {
 		case errors.Is(err, bufio.ErrTooLong):
-			return nil, fmt.Errorf("%w: line longer than %d bytes", ErrProtocol, MaxLine)
+			return nil, fmt.Errorf("%w: line longer than %d bytes", ErrProtocol, r.maxLine)
 		case err != nil:
 			return nil, fmt.Errorf("read message: %w", err)
 		default:
@@ -196,12 +200,13 @@ func (r *Reader) Read() (Message, error) {
 
 // Writer writes messages, one per line, each in a single unbuffered write. It is safe for concurrent use.
 type Writer struct {
-	mu sync.Mutex
-	w  io.Writer
+	mu      sync.Mutex
+	w       io.Writer
+	maxLine int // the longest line: MaxLine, but in tests
 }
 
 // NewWriter returns a Writer over w.
-func NewWriter(w io.Writer) *Writer { return &Writer{w: w} }
+func NewWriter(w io.Writer) *Writer { return &Writer{w: w, maxLine: MaxLine} }
 
 // Write encodes m with its type as one line and writes it. A message that would exceed MaxLine is refused with
 // ErrProtocol and nothing is written.
@@ -219,8 +224,8 @@ func (w *Writer) Write(m Message) error {
 	} else {
 		line = append(line, '}')
 	}
-	if len(line) > MaxLine {
-		return fmt.Errorf("%w: %s message of %d bytes exceeds %d", ErrProtocol, m.Type(), len(line), MaxLine)
+	if len(line) > w.maxLine {
+		return fmt.Errorf("%w: %s message of %d bytes exceeds %d", ErrProtocol, m.Type(), len(line), w.maxLine)
 	}
 	w.mu.Lock()
 	defer w.mu.Unlock()

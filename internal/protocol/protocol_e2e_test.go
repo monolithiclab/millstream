@@ -31,3 +31,20 @@ func TestWriteOversizedPayload(t *testing.T) {
 		t.Fatalf("err = %v, want exceeds", err)
 	}
 }
+
+// A line one byte over MaxLine is refused, with or without its newline.
+func TestReadOversizedFullLine(t *testing.T) {
+	t.Parallel()
+	for name, input := range map[string]string{
+		"with newline": `{"type":"emit","payload":"` + strings.Repeat("x", MaxLine) + `"}` + "\n",
+		"last line":    strings.Repeat(" ", MaxLine+1),
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			if _, err := NewReader(strings.NewReader(input)).Read(); err == nil ||
+				!strings.Contains(err.Error(), "line longer than") {
+				t.Fatalf("err = %v, want line longer than", err)
+			}
+		})
+	}
+}
