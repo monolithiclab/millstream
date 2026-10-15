@@ -141,7 +141,9 @@ type Store struct {
 	read  *readDB // the read pool; on write for a Memory store
 	opts  Options
 	uri   string // the database, for Clone
-	mem   bool   // a Memory store, whose database goes back to memoryPool on Close
+	// cookie is the schema version a Memory store's database had as the migrated template, which goes back to
+	// memoryPool on Close; zero for a file store, and for a clone, whose statements the restore expired.
+	cookie int64
 
 	mu     sync.RWMutex // guards closed against sends on reqs
 	closed bool
@@ -199,13 +201,10 @@ func open(path, from string, opts Options) (*Store, error) {
 
 func (s *Store) open(path, from string) error {
 	memory := path == Memory
-	s.mem = memory
-	if memory {
+	template := memory && from == ""
+	if template { // a clone takes a connection of its own: the restore would expire a pooled one's statements
 		if m := takeMemory(); m != nil {
-			s.write, s.read, s.uri, s.stmts = m.write, newReadDB(m.write, m.reads), m.uri, m.stmts
-			if from != "" {
-				return restore(s.write, from)
-			}
+			s.write, s.read, s.uri, s.stmts, s.cookie = m.write, newReadDB(m.write, m.reads), m.uri, m.stmts, m.cookie
 			return nil
 		}
 	}
@@ -224,7 +223,7 @@ func (s *Store) open(path, from string) error {
 	s.write.SetMaxIdleConns(1)
 	s.write.SetConnMaxLifetime(0)
 	if memory {
-		if from == "" {
+		if template {
 			if _, err := memoryTemplate(); err != nil {
 				return fmt.Errorf("open store: migrate template: %w", err)
 			}
@@ -241,6 +240,11 @@ func (s *Store) open(path, from string) error {
 		// The writer's connection serves the reads too: a read waits for the batch in progress, as it would on
 		// memdb's locks, but without a connection of its own to open or busy_timeout to sleep through.
 		s.read = newReadDB(s.write, nil)
+		if template {
+			if s.cookie, err = schemaVersion(s.write); err != nil {
+				return fmt.Errorf("open store: %w", err)
+			}
+		}
 		return nil
 	}
 	read, err := sql.Open("sqlite", path+sep+pragmas+"&_pragma=query_only(1)")
@@ -312,9 +316,9 @@ func (s *Store) Close() error {
 	close(s.reqs)
 	s.mu.Unlock()
 	<-s.done
-	if s.mem {
+	if s.cookie != 0 {
 		s.read.closed.Store(true) // its connection may serve another store from now on
-		if putMemory(&memoryDB{write: s.write, reads: s.read.stmts, uri: s.uri, stmts: s.stmts}) {
+		if putMemory(&memoryDB{write: s.write, reads: s.read.stmts, uri: s.uri, stmts: s.stmts, cookie: s.cookie}) {
 			return nil
 		}
 	}

@@ -98,10 +98,11 @@ func (r *readDB) closeStmts() {
 
 // memoryDB is a Memory store's database, as the pool keeps it between stores.
 type memoryDB struct {
-	write *sql.DB
-	reads *stmtCache // the read statements, on write
-	uri   string
-	stmts map[string]*sql.Stmt // the writer's
+	write  *sql.DB
+	reads  *stmtCache // the read statements, on write
+	uri    string
+	stmts  map[string]*sql.Stmt // the writer's
+	cookie int64                // the schema version (PRAGMA schema_version) as the template restored it
 }
 
 // maxIdleMemory bounds the idle connections the pool keeps.
@@ -126,7 +127,7 @@ func takeMemory() *memoryDB {
 }
 
 // putMemory empties m and keeps it for the next Memory store; it reports false, keeping nothing, when the pool is
-// full or m cannot be emptied back to the migrated template's schema (a test renamed a table, say).
+// full or m's schema changed since the template was restored (a test renamed a table, say).
 func putMemory(m *memoryDB) bool {
 	memoryPool.Lock()
 	full := len(memoryPool.idle) >= maxIdleMemory
@@ -142,10 +143,6 @@ func putMemory(m *memoryDB) bool {
 	memoryPool.idle = append(memoryPool.idle, m)
 	return true
 }
-
-// schemaQuery describes a database's schema, to compare with the template's.
-const schemaQuery = `SELECT group_concat(type || ' ' || name || ' ' || coalesce(sql, ''), ';')
-	FROM (SELECT type, name, sql FROM sqlite_master ORDER BY type, name)`
 
 // templateTables lists the template's tables but schema_version, which every store keeps as migrated, in an order
 // that deletes a row before any it references: emptying with foreign keys deferred instead would expire every
@@ -203,37 +200,20 @@ var templateTables = sync.OnceValues(func() ([]string, error) {
 	return order, nil
 })
 
-var templateSchema = sync.OnceValues(func() (string, error) {
-	db, err := memoryTemplate()
-	if err != nil {
-		return "", err
-	}
-	var schema string
-	err = db.QueryRow(schemaQuery).Scan(&schema)
-	return schema, err
-})
-
-// emptyMemory deletes every row but schema_version's, in one transaction, once it checked the schema is still the
-// template's.
+// emptyMemory deletes every row but schema_version's, in one transaction, once it checked the schema did not change
+// since the template was restored: any change to it, a table renamed and renamed back included, moves the schema
+// version on.
 func emptyMemory(m *memoryDB) error {
 	tables, err := templateTables()
 	if err != nil {
 		return err
 	}
-	want, err := templateSchema()
+	version, err := schemaVersion(m.write)
 	if err != nil {
 		return err
 	}
-	describe, err := m.prepare(schemaQuery)
-	if err != nil {
-		return err
-	}
-	var schema string
-	if err := describe.QueryRow().Scan(&schema); err != nil {
-		return err
-	}
-	if schema != want {
-		return errors.New("empty memory store: the schema is not the template's")
+	if version != m.cookie {
+		return errors.New("empty memory store: the schema changed")
 	}
 	deletes := make([]*sql.Stmt, len(tables))
 	for i, t := range tables { // before the transaction, which holds the only connection
@@ -266,4 +246,11 @@ func (m *memoryDB) prepare(query string) (*sql.Stmt, error) {
 	}
 	m.stmts[query] = st
 	return st, nil
+}
+
+// schemaVersion reads db's schema version: a query pragma, which expires no prepared statement.
+func schemaVersion(db *sql.DB) (int64, error) {
+	var v int64
+	err := db.QueryRow(`PRAGMA schema_version`).Scan(&v)
+	return v, err
 }
