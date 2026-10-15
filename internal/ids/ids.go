@@ -63,10 +63,12 @@ func Idempotency(step, itemID string, generation int64) string {
 	return digest(step, itemID, strconv.FormatInt(generation, 10))
 }
 
-// DeadLetter is the id of a dead-letter item: hash("dlq", dlq stream, origin delivery id, output id or "").
-// outputID is empty for a dead delivery and the unrouted output's id for an unrouted dead letter.
-func DeadLetter(dlqStream, originDelivery, outputID string) string {
-	return itemPrefix + digest("dlq", dlqStream, originDelivery, outputID)
+// DeadLetter is the id of a dead-letter item: hash("dlq", dlq stream, origin delivery id, output id or "",
+// failure sequence). outputID is empty for a dead delivery and the unrouted output's id for an unrouted dead letter;
+// seq counts the origin delivery's earlier dead letters, so a delivery that dies again after a replay publishes a
+// new dead letter rather than landing on the one already replayed.
+func DeadLetter(dlqStream, originDelivery, outputID string, seq int) string {
+	return itemPrefix + digest("dlq", dlqStream, originDelivery, outputID, strconv.Itoa(seq))
 }
 
 // CronKey formats a cron firing's scheduled time as the trigger item key and run id component: RFC 3339 truncated

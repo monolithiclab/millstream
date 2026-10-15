@@ -80,43 +80,41 @@ func (w *wtx) createDeliveries(rev *revision, run *runRow, stream, itemID string
 
 // deadLetter publishes a dead letter (spec section 5.6) on the step's dlq stream: an item whose payload carries
 // the kind, origin and error, with item as the dead input or the unrouted output. outputID is empty for a dead
-// delivery. A dead letter that exists already (the same delivery dead again after a replay) is reopened.
+// delivery. Its id includes the number of the origin delivery's earlier dead letters, so a delivery that fails
+// again after a replay publishes a new dead letter and the replayed one stays replayed.
 func (w *wtx) deadLetter(rev *revision, run *runRow, step pipeline.Step, kind store.DeadLetterKind,
 	deliveryID, outputID, parent, errText string, item any,
 ) error {
 	stream := step.DLQ
-	id := ids.DeadLetter(stream, deliveryID, outputID)
-	n, err := w.affected(`UPDATE dead_letters SET state = ?, error = ? WHERE pipeline = ? AND id = ?`,
-		store.DeadLetterOpen, errText, run.pipeline, id)
+	var seq int
+	if err := w.queryRow(`SELECT COUNT(*) FROM dead_letters WHERE pipeline = ? AND origin_delivery = ?`,
+		run.pipeline, deliveryID).Scan(&seq); err != nil {
+		return fmt.Errorf("count dead letters of %s: %w", deliveryID, err)
+	}
+	id := ids.DeadLetter(stream, deliveryID, outputID, seq)
+	body, err := json.Marshal(map[string]any{
+		"kind": kind, "originStep": step.Name, "originDelivery": deliveryID, "error": errText, "item": item,
+	})
+	if err != nil {
+		return fmt.Errorf("encode dead letter: %w", err)
+	}
+	pl, err := canonical(body)
 	if err != nil {
 		return err
 	}
-	if n == 0 {
-		body, err := json.Marshal(map[string]any{
-			"kind": kind, "originStep": step.Name, "originDelivery": deliveryID, "error": errText, "item": item,
-		})
-		if err != nil {
-			return fmt.Errorf("encode dead letter: %w", err)
-		}
-		pl, err := canonical(body)
-		if err != nil {
-			return err
-		}
-		err = w.publish(rev, run, newItem{id: id, stream: stream, step: step.Name, parents: []string{parent},
-			payload: pl})
-		if err != nil {
-			return err
-		}
-		_, err = w.exec(`INSERT INTO dead_letters
-			(pipeline, id, run_id, origin_delivery, origin_step, kind, state, stream, error, created_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			run.pipeline, id, run.id, deliveryID, step.Name, kind, store.DeadLetterOpen, stream, errText, w.ts())
-		if err != nil {
-			return err
-		}
+	err = w.publish(rev, run, newItem{id: id, stream: stream, step: step.Name, parents: []string{parent}, payload: pl})
+	if err != nil {
+		return err
+	}
+	_, err = w.exec(`INSERT INTO dead_letters
+		(pipeline, id, run_id, origin_delivery, origin_step, kind, state, stream, error, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		run.pipeline, id, run.id, deliveryID, step.Name, kind, store.DeadLetterOpen, stream, errText, w.ts())
+	if err != nil {
+		return err
 	}
 	return w.event(run.pipeline, run.id, store.EventDeadLetter, map[string]any{
-		"deadLetterId": id, "kind": kind, "stream": stream, "originDelivery": deliveryID, "reopened": n > 0,
+		"deadLetterId": id, "kind": kind, "stream": stream, "originDelivery": deliveryID, "seq": seq,
 	})
 }
 

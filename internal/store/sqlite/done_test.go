@@ -148,7 +148,7 @@ func testKeyRule(t *testing.T, outputs []store.Output, message string) {
 	}
 	dls := e.deadLetters("r1")
 	if len(dls) != 1 || dls[0].Kind != store.DeadLetterDead || dls[0].Stream != "crawl.dlq" ||
-		dls[0].ID != ids.DeadLetter("crawl.dlq", l.DeliveryID, "") || dls[0].State != store.DeadLetterOpen {
+		dls[0].ID != ids.DeadLetter("crawl.dlq", l.DeliveryID, "", 0) || dls[0].State != store.DeadLetterOpen {
 		t.Fatalf("dead letters = %+v", dls)
 	}
 	dlItems := e.items("crawl.dlq")
@@ -269,7 +269,7 @@ func TestDoneRouting(t *testing.T) {
 	dls := e.deadLetters("r1")
 	outputID := ids.Item("score", "", score.Item.ID, 0, "neg", 2)
 	if len(dls) != 1 || dls[0].Kind != store.DeadLetterUnrouted || dls[0].Stream != "score.dlq" ||
-		dls[0].ID != ids.DeadLetter("score.dlq", score.DeliveryID, outputID) || dls[0].OriginStep != "score" {
+		dls[0].ID != ids.DeadLetter("score.dlq", score.DeliveryID, outputID, 0) || dls[0].OriginStep != "score" {
 		t.Fatalf("dead letters = %+v", dls)
 	}
 	e.drain()
