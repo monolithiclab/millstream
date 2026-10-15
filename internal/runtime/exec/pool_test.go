@@ -1,12 +1,17 @@
 package exec
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/monolithiclab/millstream/internal/pipeline"
+	"github.com/monolithiclab/millstream/internal/protocol"
 )
 
 func newTestPool(t *testing.T, maxIdle int) *Pool {
@@ -102,25 +107,54 @@ func TestPoolReplacesProcessThatExitedWhileIdle(t *testing.T) {
 	}
 }
 
+// TestPoolConcurrentDeliveriesUseSeparateProcesses: deliveries in flight together run on as many processes. Each
+// in-process action holds its item until all three have one, so the three deliveries overlap.
 func TestPoolConcurrentDeliveriesUseSeparateProcesses(t *testing.T) {
 	t.Parallel()
-	pl := newTestPool(t, 0)
-	spec := fakeSpec("slow", map[string]any{"sleepMs": slowMs})
+	const n = 3
+	var pids atomic.Int64
+	var holding sync.WaitGroup
+	holding.Add(n)
+	opts := funcOpts(func(_ context.Context, _, _ []string, stdin io.Reader, stdout, _ io.Writer) int {
+		r, w := protocol.NewReader(stdin), protocol.NewWriter(stdout)
+		if _, err := r.Read(); err != nil { // hello
+			return 1
+		}
+		_ = w.Write(protocol.Ready{})
+		pid := pids.Add(1)
+		for {
+			m, err := r.Read()
+			if err != nil {
+				return 0
+			}
+			it, ok := m.(protocol.Item)
+			if !ok {
+				return 0 // shutdown
+			}
+			holding.Done()
+			holding.Wait()
+			_ = w.Write(protocol.Emit{Delivery: it.Delivery, Payload: json.RawMessage(fmt.Sprintf(`{"pid":%d}`, pid))})
+			_ = w.Write(protocol.Done{Delivery: it.Delivery})
+		}
+	})
+	pl := NewPool(PoolOptions{Options: opts})
+	t.Cleanup(func() { _ = pl.Close() })
 	var wg sync.WaitGroup
-	pids := make([]int, 3)
-	for i := range pids {
+	got := make([]int, n)
+	for i := range got {
 		wg.Go(func() {
-			res, err := pl.Deliver(t.Context(), spec, delivery("dl_c", `{}`))
+			res, err := pl.Deliver(t.Context(), fakeSpec("echo", nil), delivery("dl_c", `{}`))
 			if err != nil {
 				t.Errorf("Deliver: %v", err)
+				holding.Done() // the others must not wait for it
 				return
 			}
-			pids[i] = decodeEcho(t, res).PID
+			got[i] = decodeEcho(t, res).PID
 		})
 	}
 	wg.Wait()
-	if pids[0] == pids[1] || pids[1] == pids[2] || pids[0] == pids[2] {
-		t.Errorf("pids %v: one process served concurrent deliveries", pids)
+	if got[0] == got[1] || got[1] == got[2] || got[0] == got[2] {
+		t.Errorf("pids %v: one process served concurrent deliveries", got)
 	}
 }
 

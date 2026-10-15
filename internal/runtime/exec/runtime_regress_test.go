@@ -45,7 +45,7 @@ func TestItemWriteHonoursTimeoutAndContext(t *testing.T) {
 		t.Parallel()
 		p := startFake(t, "noRead", nil)
 		d := delivery("dl_1", bigPayload(pipeFill))
-		d.Timeout = 20 * time.Millisecond // the fake never reads the item
+		d.Timeout = answerTimeout // the fake never reads the item
 		_, err := deliverWithin(t, t.Context(), p, d)
 		requireClass(t, err, ClassTimeout)
 		waitExited(t, p)
@@ -53,7 +53,7 @@ func TestItemWriteHonoursTimeoutAndContext(t *testing.T) {
 	t.Run("context", func(t *testing.T) {
 		t.Parallel()
 		p := startFake(t, "noRead", nil)
-		ctx, cancel := context.WithTimeout(t.Context(), 20*time.Millisecond)
+		ctx, cancel := context.WithTimeout(t.Context(), answerTimeout)
 		defer cancel()
 		d := delivery("dl_1", bigPayload(pipeFill))
 		d.Timeout = 0
@@ -100,7 +100,7 @@ func TestHelloWriteHonoursReadyTimeoutInProcess(t *testing.T) {
 		<-ctx.Done()
 		return 1
 	})
-	opts.ReadyTimeout = 20 * time.Millisecond
+	opts.ReadyTimeout = answerTimeout
 	p, err := Start(t.Context(), fakeSpec("echo", nil), opts)
 	if err == nil {
 		_ = p.Close()

@@ -11,7 +11,7 @@ import (
 // The e2e build runs the fake action as the built binary, a real process: the durations leave it time to start and
 // exit under load.
 const (
-	// answerTimeout bounds deliveries that hang while the others answer.
+	// answerTimeout is the timeout of a test that wants it to expire.
 	answerTimeout   = 300 * millisecond
 	shutdownTimeout = 300 * millisecond
 	slowMs          = 200

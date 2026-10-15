@@ -94,7 +94,9 @@ func TestDeliverRuntimeFailures(t *testing.T) {
 			t.Parallel()
 			p := startFake(t, "echo", nil)
 			d := delivery("dl_1", `{"mode":"`+tt.mode+`"}`)
-			d.Timeout = answerTimeout // only hang reaches it
+			if tt.class == ClassTimeout {
+				d.Timeout = answerTimeout
+			}
 			res, err := p.Deliver(t.Context(), d)
 			requireClass(t, err, tt.class)
 			if !strings.Contains(err.Error(), tt.wantMsg) {
@@ -221,13 +223,18 @@ func TestCloseGraceful(t *testing.T) {
 
 func TestCloseKillsAfterTimeout(t *testing.T) {
 	t.Parallel()
-	p := startFake(t, "hang", nil)
+	opts := testOpts
+	opts.ShutdownTimeout = answerTimeout
+	p, err := Start(t.Context(), fakeSpec("hang", nil), opts)
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
 	start := time.Now()
-	err := p.Close()
+	err = p.Close()
 	if err == nil || !strings.Contains(err.Error(), "killed") {
 		t.Fatalf("Close = %v, want a killed error", err)
 	}
-	if elapsed := time.Since(start); elapsed < testOpts.ShutdownTimeout {
+	if elapsed := time.Since(start); elapsed < opts.ShutdownTimeout {
 		t.Errorf("killed after %s, before the shutdown timeout", elapsed)
 	}
 }
@@ -274,7 +281,7 @@ func TestStartFailuresInProcess(t *testing.T) {
 	}
 	exit4 := func(context.Context, []string, []string, io.Reader, io.Writer, io.Writer) int { return 4 }
 	noReady := testOpts
-	noReady.ReadyTimeout = 20 * time.Millisecond // the fake never answers
+	noReady.ReadyTimeout = answerTimeout // the fake never answers
 	tests := []struct {
 		name  string
 		spec  Spec
@@ -320,5 +327,23 @@ func TestStderrOutsideDeliveryInProcess(t *testing.T) {
 	lines := jsonLogs(t, base.String())
 	if len(lines) != 2 || len(lines[0]["msg"].(string)) != maxLogLine || lines[1]["msg"] != "starting" {
 		t.Errorf("got %d lines; second = %v", len(lines), lines[len(lines)-1]["msg"])
+	}
+}
+
+// A context cancelled while the handshake awaits ready ends Start with the context's error, the action killed.
+func TestStartCancelledAwaitingReady(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithCancel(t.Context())
+	opts := funcOpts(func(actx context.Context, _, _ []string, stdin io.Reader, _, _ io.Writer) int {
+		if _, err := protocol.NewReader(stdin).Read(); err != nil { // hello
+			return 1
+		}
+		cancel() // never ready: the handshake is waiting for it
+		<-actx.Done()
+		return 1
+	})
+	p, err := Start(ctx, fakeSpec("echo", nil), opts)
+	if p != nil || !errors.Is(err, context.Canceled) {
+		t.Fatalf("Start = %v, %v; want context.Canceled", p, err)
 	}
 }

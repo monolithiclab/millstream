@@ -2,15 +2,19 @@
 
 package exec
 
-import "github.com/monolithiclab/millstream/internal/runtime/exec/exectest"
+import (
+	"time"
 
-// The default build runs the fake action in-process (exectest.Serve); the e2e build runs the built binary. The
-// durations below only need to outlast an in-process answer.
+	"github.com/monolithiclab/millstream/internal/runtime/exec/exectest"
+)
+
+// The default build runs the fake action in-process (exectest.Serve); the e2e build runs the built binary.
 const (
-	// answerTimeout bounds deliveries that hang while the others answer.
-	answerTimeout   = 20 * millisecond
+	// answerTimeout is the timeout of a test that wants it to expire: at once in-process, where nothing needs time to
+	// start or answer.
+	answerTimeout = time.Nanosecond
+	// shutdownTimeout only needs to outlast an in-process exit: no test waits for it.
 	shutdownTimeout = 20 * millisecond
-	slowMs          = 30
 	// pipeFill is a payload size that blocks a write to an action that does not read: any size on an in-memory pipe.
 	pipeFill = 1 << 10
 )

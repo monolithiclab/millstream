@@ -6,7 +6,6 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/monolithiclab/millstream/internal/pipeline"
 )
@@ -66,7 +65,7 @@ func TestLauncherByKind(t *testing.T) {
 		t.Fatal(err)
 	}
 	d := delivery("dl_2", `{}`)
-	d.Timeout = 20 * time.Millisecond // the fake hangs
+	d.Timeout = answerTimeout // the fake hangs
 	_, err = p.Deliver(t.Context(), d)
 	requireClass(t, err, ClassTimeout)
 	_ = p.Close()

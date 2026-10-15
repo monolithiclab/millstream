@@ -152,7 +152,7 @@ func TestServe(t *testing.T) {
 			status: 1, stderr: "fakeaction: json"},
 		{name: "artifact link exists", config: `{"mode":"artifact"}`, items: []string{`{"links":{"in.txt":"x"}}`},
 			want: "ready", status: 1, stderr: "file exists"},
-		{name: "slow", config: `{"mode":"slow","sleepMs":1}`, items: []string{`{}`}, want: "ready emit done"},
+		{name: "slow", config: `{"mode":"slow","sleepMs":0}`, items: []string{`{}`}, want: "ready emit done"},
 		{name: "slow killed", config: `{"mode":"slow","sleepMs":3600000}`, items: []string{`{}`}, cancel: true,
 			want: "ready", status: 1, stderr: "context canceled"},
 		{name: "garbage", config: `{"mode":"garbage"}`, items: []string{`{}`, `{}`}, want: "ready !"},
@@ -183,9 +183,13 @@ func TestServe(t *testing.T) {
 
 func (tt serveCase) run(t *testing.T) {
 	t.Helper()
-	workdir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(workdir, "in.txt"), []byte("given"), 0o600); err != nil {
-		t.Fatal(err)
+	// Only the artifact mode touches its working directory: the others get a path that does not exist.
+	workdir := "/nonexistent/workdir"
+	if strings.Contains(tt.config, `"artifact"`) {
+		workdir = t.TempDir()
+		if err := os.WriteFile(filepath.Join(workdir, "in.txt"), []byte("given"), 0o600); err != nil {
+			t.Fatal(err)
+		}
 	}
 	in := tt.input
 	if in == "" && tt.config != "" {
