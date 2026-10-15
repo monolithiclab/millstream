@@ -161,7 +161,7 @@ func TestDeliverAttemptArtifacts(t *testing.T) {
 }
 
 // TestDeliverRefusesArtifactPaths: a path outside the working directory, through a symbolic link or to something
-// other than a regular file is a permanent protocol error; the process stays healthy.
+// other than a regular file is a permanent protocol error; the process stays healthy, and takes the next case.
 func TestDeliverRefusesArtifactPaths(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
@@ -196,10 +196,9 @@ func TestDeliverRefusesArtifactPaths(t *testing.T) {
 			"emit":  []protocol.Artifact{{Name: "a", Path: "a.txt"}, {Name: "a", Path: "b.txt"}},
 		}},
 	}
+	p := startFake(t, "echo", nil)
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			p := startFake(t, "echo", nil)
 			mem, _ := newMemArtifacts()
 			_, err := p.Deliver(t.Context(), artifactDelivery(t, "dl_1", tt.payload, mem))
 			requireClass(t, err, ClassProtocol)
@@ -214,7 +213,7 @@ func TestDeliverRefusesArtifactPaths(t *testing.T) {
 }
 
 // TestDeliverArtifactStoreFailures: a store that fails, or none at all, fails the delivery as a retryable artifact
-// error and keeps the process.
+// error and keeps the process, which takes the next case.
 func TestDeliverArtifactStoreFailures(t *testing.T) {
 	t.Parallel()
 	emit := map[string]any{
@@ -253,10 +252,9 @@ func TestDeliverArtifactStoreFailures(t *testing.T) {
 			return m, refs
 		}, false, nil},
 	}
+	p := startFake(t, "echo", nil)
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			p := startFake(t, "echo", nil)
 			a, inputs := tt.build()
 			payload := map[string]any{}
 			if tt.output {

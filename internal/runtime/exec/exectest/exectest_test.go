@@ -173,20 +173,23 @@ func TestServe(t *testing.T) {
 			stderr: "malformed line"},
 		{name: "stdout fails", config: `{}`, stdout: failWriter{}, status: 1, stderr: "broken pipe"},
 	}
+	dir := t.TempDir() // the artifact cases' working directories, under one temporary directory
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			tt.run(t)
+			tt.run(t, dir)
 		})
 	}
 }
 
-func (tt serveCase) run(t *testing.T) {
+func (tt serveCase) run(t *testing.T, dir string) {
 	t.Helper()
 	// Only the artifact mode touches its working directory: the others get a path that does not exist.
 	workdir := "/nonexistent/workdir"
 	if strings.Contains(tt.config, `"artifact"`) {
-		workdir = t.TempDir()
+		var err error
+		if workdir, err = os.MkdirTemp(dir, "work-"); err != nil {
+			t.Fatal(err)
+		}
 		if err := os.WriteFile(filepath.Join(workdir, "in.txt"), []byte("given"), 0o600); err != nil {
 			t.Fatal(err)
 		}
