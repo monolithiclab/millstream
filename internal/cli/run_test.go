@@ -7,7 +7,6 @@ import (
 	"regexp"
 	"strings"
 	"testing"
-	"time"
 )
 
 func Test_runOnce(t *testing.T) {
@@ -50,7 +49,7 @@ func Test_runOnce(t *testing.T) {
 
 func Test_runOnceGeneratesRequestIDAndFailsOnErrors(t *testing.T) {
 	t.Parallel()
-	pkg, db := runPackage(t, "run"), dbPath(t)
+	pkg, db := runPackage(t, "run"), migratedDB(t)
 	out, _ := mustRun(t, 1, "--db", db, "run", "--once", "--var", "scoreMode=error", pkg)
 	if !regexp.MustCompile(`^listings run_\d{8}T\d{6}Z-[0-9a-f]{8}_adhoc completedWithErrors\n`).MatchString(out) ||
 		!strings.Contains(out, "  score.dlq 3\n") {
@@ -60,7 +59,7 @@ func Test_runOnceGeneratesRequestIDAndFailsOnErrors(t *testing.T) {
 
 func Test_runOnceCron(t *testing.T) {
 	t.Parallel()
-	pkg, db := runPackage(t, "cron"), dbPath(t)
+	pkg, db := runPackage(t, "cron"), migratedDB(t)
 	out, _ := mustRun(t, 0, "--db", db, "run", "--once", pkg)
 	if !regexp.MustCompile(`^nightly run_\d{4}-\d\d-\d\dT\d\d:\d\dZ_daily succeeded\n  trigger.daily 1\n$`).
 		MatchString(out) {
@@ -70,22 +69,20 @@ func Test_runOnceCron(t *testing.T) {
 
 func Test_runUntilInterrupted(t *testing.T) {
 	t.Parallel()
-	pkg, db := runPackage(t, "run"), dbPath(t)
+	pkg, db := runPackage(t, "run"), migratedDB(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	var out bytes.Buffer
-	errOut := &syncBuffer{}
+	errOut := newWatchBuffer(func(s string) bool { return strings.Contains(s, "revision applied") })
 	done := make(chan int, 1)
 	go func() {
 		done <- Run(ctx, []string{"--db", db, "run", "--lease-ttl", "3s", pkg},
-			IO{In: strings.NewReader(""), Out: &out, Err: errOut}, "dev", nil)
+			IO{In: strings.NewReader(""), Out: &out, Err: errOut}, "dev", func(rt *Runtime) { rt.Launchers = testLaunchers() })
 	}()
-	deadline := time.Now().Add(30 * time.Second)
-	for !strings.Contains(errOut.String(), "revision applied") {
-		if time.Now().After(deadline) {
-			t.Fatalf("no revision applied:\n%s", errOut.String())
-		}
-		time.Sleep(10 * time.Millisecond)
+	select {
+	case <-errOut.Done:
+	case code := <-done:
+		t.Fatalf("run exited with %d before applying a revision:\n%s", code, errOut.String())
 	}
 	cancel()
 	if code := <-done; code != 0 || out.Len() != 0 {

@@ -19,6 +19,7 @@ func runCLIEnv(t *testing.T, version string, env map[string]string, argv ...stri
 	code = Run(context.Background(), argv, IO{In: strings.NewReader(""), Out: &out, Err: &errb}, version,
 		func(rt *Runtime) {
 			rt.Env = func(k string) (string, bool) { v, ok := env[k]; return v, ok }
+			rt.Launchers = testLaunchers()
 		})
 	return code, out.String(), errb.String()
 }
@@ -50,7 +51,10 @@ func Test_helpExitsZero(t *testing.T) {
 func Test_configureSeamAdjustsRuntime(t *testing.T) {
 	t.Parallel()
 	var out bytes.Buffer
-	code := Run(context.Background(), []string{"version"}, IO{Out: &out, Err: &out}, "dev", func(rt *Runtime) { rt.Version = "x" })
+	code := Run(context.Background(), []string{"version"}, IO{Out: &out, Err: &out}, "dev", func(rt *Runtime) {
+		rt.Version = "x"
+		rt.Launchers = testLaunchers()
+	})
 	if code != 0 || out.String() != "millstream x\n" {
 		t.Fatalf("code=%d out=%q", code, out.String())
 	}

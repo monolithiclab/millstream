@@ -1,27 +1,66 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"testing"
-	"time"
 )
 
-// appliedDB returns a database where the run fixture is applied and one run settled.
+// appliedDB returns a copy of a database where the run fixture is applied and one run settled by run --once with
+// the extra flags, and the package it was applied from, which the test must not modify. The run happens once per
+// set of flags and test process: the tests share its package and copy its database.
 func appliedDB(t *testing.T, extra ...string) (db, pkg string) {
 	t.Helper()
-	pkg, db = runPackage(t, "run"), dbPath(t)
-	argv := append([]string{"--db", db, "run", "--once", "--request-id", "r1"}, extra...)
-	code, _, errOut := runCLICtx(t, context.Background(), nil, append(argv, pkg)...)
-	if code > 1 {
-		t.Fatalf("run: code %d\n%s", code, errOut)
+	f, _ := appliedRuns.LoadOrStore(strings.Join(extra, " "), sync.OnceValues(func() (appliedRun, error) {
+		return applyRun(extra)
+	}))
+	run, err := f.(func() (appliedRun, error))()
+	if err != nil {
+		t.Fatal(err)
 	}
-	return db, pkg
+	return writeDB(t, run.db), run.pkg
+}
+
+// appliedRuns holds a func() (appliedRun, error) per appliedDB flag set.
+var appliedRuns sync.Map
+
+// appliedRun is what appliedDB copies: the database after the run, and the package applied.
+type appliedRun struct {
+	db  []byte
+	pkg string
+}
+
+// applyRun runs the run fixture once with run --once and the extra flags, under testDir.
+func applyRun(extra []string) (appliedRun, error) {
+	dir, err := os.MkdirTemp(testDir, "applied-")
+	if err != nil {
+		return appliedRun{}, err
+	}
+	pkg, db := filepath.Join(dir, "pkg"), filepath.Join(dir, "state", "millstream.db")
+	if err := copyPackage(pkg, "run"); err != nil {
+		return appliedRun{}, err
+	}
+	var errOut bytes.Buffer
+	argv := append(append([]string{"--db", db, "run", "--once", "--request-id", "r1"}, extra...), pkg)
+	code := Run(context.Background(), argv, IO{In: strings.NewReader(""), Out: io.Discard, Err: &errOut}, "dev",
+		func(rt *Runtime) {
+			rt.Env = func(string) (string, bool) { return "", false }
+			rt.Launchers = testLaunchers()
+		})
+	if code > 1 {
+		return appliedRun{}, fmt.Errorf("run: code %d\n%s", code, errOut.String())
+	}
+	data, err := readDB(db)
+	return appliedRun{db: data, pkg: pkg}, err
 }
 
 func Test_triggerCommand(t *testing.T) {
@@ -240,12 +279,16 @@ func Test_tailCommand(t *testing.T) {
 	if len(splitLines(out)) != len(lines)-2 {
 		t.Fatalf("tail --from 2 printed %d lines of %d", len(splitLines(out)), len(lines))
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	// --follow prints the events from --from, then keeps polling until interrupted: the test interrupts it once it
+	// has printed them all.
+	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	code, out, _ := runCLICtx(t, ctx, nil, "--db", db, "tail", "--follow", "--interval", "20ms",
-		"--from", "1")
-	if code != 0 || len(splitLines(out)) != len(lines)-1 {
-		t.Fatalf("tail --follow: code %d, %d lines", code, len(splitLines(out)))
+	follow := newWatchBuffer(func(s string) bool { return len(splitLines(s)) >= len(lines)-1 })
+	go func() { <-follow.Done; cancel() }()
+	code := Run(ctx, []string{"--db", db, "tail", "--follow", "--interval", "20ms", "--from", "1"},
+		IO{In: strings.NewReader(""), Out: follow, Err: io.Discard}, "dev", func(rt *Runtime) { rt.Launchers = testLaunchers() })
+	if code != 0 || len(splitLines(follow.String())) != len(lines)-1 {
+		t.Fatalf("tail --follow: code %d, %d lines", code, len(splitLines(follow.String())))
 	}
 }
 

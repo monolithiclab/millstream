@@ -33,6 +33,9 @@ func resolver(rt *Runtime, env *pipeline.Environment, ignoreLock bool) pipeline.
 // launchers returns the process launchers of the embedded node: exec always, container when the runtime the
 // environment selects is installed.
 func launchers(rt *Runtime, env *pipeline.Environment) map[string]exec.Launcher {
+	if rt.Launchers != nil {
+		return rt.Launchers
+	}
 	l := map[string]exec.Launcher{pipeline.KindExec: exec.ExecLauncher{}}
 	if crt, ok := container.Find(env.ContainerRuntime, rt.Env); ok {
 		l[pipeline.KindContainer] = container.Launcher{Runtime: crt}

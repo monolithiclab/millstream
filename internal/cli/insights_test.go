@@ -10,7 +10,7 @@ import (
 // leaves a failure cluster to list, acknowledge and mute.
 func TestMetricsInsightsAndReport(t *testing.T) {
 	t.Parallel()
-	pkg, db := runPackage(t, "run"), dbPath(t)
+	pkg, db := runPackage(t, "run"), migratedDB(t)
 	mustRun(t, 1, "--db", db, "run", "--once", "--request-id", "r1", "--var", "scoreMode=error", pkg)
 	const runID = "run_r1_adhoc"
 

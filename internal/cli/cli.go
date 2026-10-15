@@ -10,6 +10,8 @@ import (
 	"os"
 
 	"github.com/alecthomas/kong"
+
+	"github.com/monolithiclab/millstream/internal/runtime/exec"
 )
 
 // Exit codes: a closed set, so deferred work always runs before the process exits.
@@ -43,6 +45,8 @@ type Runtime struct {
 	// EnvFile is the environment file named by the global --env-file flag; empty reads ./millstream.yaml when it
 	// exists.
 	EnvFile string
+	// Launchers, when set, replace the launchers the environment selects: tests run actions in-process with them.
+	Launchers map[string]exec.Launcher
 }
 
 // usageError marks an error that exits with the usage status.
