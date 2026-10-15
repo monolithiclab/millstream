@@ -207,8 +207,22 @@ func recordingsSample(t *testing.T, all []listing.Listing) []listing.Listing {
 	return []listing.Listing{*good, *poor}
 }
 
-// fixture is this package, loaded once: every recording run resolves its score action in it.
-var fixture = sync.OnceValues(func() (*pipeline.Package, error) { return pipeline.Load(".") })
+// scoreFiles are the files of this package the score action needs: its pipeline, manifest and prompt.
+var scoreFiles = []string{pipeline.FileName, "actions/score/action.yaml", "actions/score/prompt.md"}
+
+// fixture is this package as far as the score action goes, built once: every recording run resolves the action in
+// it. Reading the whole package would read recordings/ too, which the action never uses.
+var fixture = sync.OnceValues(func() (*pipeline.Package, error) {
+	files := map[string][]byte{}
+	for _, f := range scoreFiles {
+		data, err := os.ReadFile(f) // #nosec G304 -- the package's own files
+		if err != nil {
+			return nil, err
+		}
+		files[f] = data
+	}
+	return pipeline.FromFiles(".", files)
+})
 
 func loadFixture(t *testing.T) *pipeline.Package {
 	t.Helper()
