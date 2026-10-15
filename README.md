@@ -3,8 +3,8 @@
 A pipeline platform for work that mixes code, LLM agents and human decisions. A pipeline is a graph of actions
 connected by persisted streams of items: a crawler streams listings, an agent scores each one, a filter keeps the
 good ones, an analyst approves, and a report is generated. One binary runs it on a laptop, and the same pipeline
-file runs on a VPS or Kubernetes. Every pipeline is instrumented by default: metrics, lineage, logs, agent cost and
-a live view in the browser.
+package runs on a server, with a standby engine and remote nodes. Every pipeline is instrumented by default:
+metrics, lineage, agent cost, insights and a live view in the browser.
 
 ```yaml
 steps:

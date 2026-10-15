@@ -38,8 +38,7 @@ different store behind the same interface.
 **Decision.** An action is any program that reads items on stdin and writes emits, metrics and results on stdout,
 one JSON object per line; stderr is logs.
 
-**Evidence.** Any language works with no SDK. Local processes and `docker run -i` need no network setup, and the same
-protocol is relayed by `millstream worker relay` inside Kubernetes pods.
+**Evidence.** Any language works with no SDK. Local processes and `docker run -i` need no network setup.
 
 **Cost if wrong.** Large payloads go through pipes; artifacts are passed as files to keep that bounded. A gRPC
 transport could be added later as a second protocol binding.
@@ -97,7 +96,8 @@ implementation; one language everywhere means one thing to learn.
 
 **Decision.** `id = hash(producing step, output stream, input item id, generation, key or output index)`. Items are
 immutable and the first commit of an id wins: a re-emit with the same payload is a no-op, a different payload is
-discarded and recorded as nondeterministic. A delivery's second output must carry a `key`.
+discarded and recorded as nondeterministic. A delivery with several outputs must key every one
+of them.
 
 **Evidence.** A retried delivery re-emits the same ids, so downstream steps see each output once. Replay allocates a
 new generation to produce new items. Upserting would let a retry rewrite an item a consumer already processed.
@@ -117,8 +117,7 @@ from it.
 ### D11. Open-source core includes the whole UI (2026-10-14)
 
 **Decision.** Apache-2.0 core: engine, CLI, SDK, builtins, agent adapter and the full web UI for a single user.
-Commercial edition: SSO and RBAC, audit export, the action and connector catalog, a control plane across customer
-deployments, support.
+Commercial edition: SSO and RBAC, audit export, the action and connector catalog, support.
 
 **Evidence.** The UI is what makes engineers adopt the tool and makes it convincing to a customer; organisations
 pay for identity, governance, connectors and someone to call.
@@ -138,6 +137,7 @@ developer and AI space, and `millstream.dev` was free. The candidates are in
 **Cost if wrong.** Small companies in unrelated markets use the name, one of them a UK software firm; if the
 trademark search finds an obstacle, the rename is mechanical while there is no code and no public release.
 
+
 ## Pipeline model
 
 ### D13. The package is the unit of deployment and isolation (2026-10-14)
@@ -148,7 +148,7 @@ the pipeline id scopes data, secret grants, capacity limits, placement and lifec
 
 **Evidence.** One instance must run many pipelines of an organisation without one's backlog, secrets or rollout
 affecting another. Hashing only the pipeline file would let a change to a local action or lesson slip past the
-revision, breaking replay and proposals.
+revision, breaking replay.
 
 **Cost if wrong.** Packages are uploaded as bundles, so large assets make every apply heavier; content addressing
 limits this to changed packages.
@@ -180,18 +180,18 @@ routes visible and replayable; first match keeps classification short, with `whe
 **Cost if wrong.** Conditional multicast (one output to several matching routes) is not expressible; unconditional
 fan-out still is, with a list of streams.
 
-### D16. Collect is one builtin that emits an artifact (2026-10-14)
+### D16. Builtins are only the steps that need engine state (2026-10-14)
 
-**Decision.** `collect` is the only way to gather a run's items. It is a builtin run by the engine: when the run's
-barrier closes, it streams the items into a JSON Lines artifact and emits one item referencing it, read by an
-ordinary map action downstream. The action protocol has no collect mode. Builtins take all their parameters under
-`config`, and outputs only in `out`.
+**Decision.** The builtins are `filter`, `dedupe` and `review`. Routing lives in `out` for every step (D15), and
+writing items out to a file or a webhook is done by stock actions (`millstream/sink-file`, `millstream/sink-webhook`).
+There is no run-wide aggregation in v1. Builtins take all their parameters under `config`.
 
-**Evidence.** A collect mode on any action would duplicate the builtin, let a step pair a mode with an action that
-cannot run in it, and either change the protocol or put a whole run inside one payload, breaking the paging
-guarantee.
+**Evidence.** A builtin runs inside the single active engine: one that does outbound HTTP or writes to the engine's
+disk puts side effects, timeouts and retries in the control plane, which actions already handle. Run-wide aggregation
+needs barriers, empty-input rules and dead-letter blocking, and the reference pipeline never aggregates a run.
 
-**Cost if wrong.** A run's items are copied into the artifact store, and aggregation takes two steps instead of one.
+**Cost if wrong.** A sink step costs an action process start; a daily digest of a whole run waits for aggregation to
+come back from the roadmap.
 
 ### D17. Static schema checking covers a defined subset (2026-10-14)
 
@@ -219,17 +219,21 @@ would mix two styles in every pipeline file. Kubernetes manifests have made came
 
 **Cost if wrong.** Slightly less readable YAML than snake_case; none to change before release.
 
+
 ## Execution
 
-### D19. Outputs publish on done by default (2026-10-14)
+### D19. Outputs publish on done (2026-10-14)
 
-**Decision.** A step's outputs are staged with the attempt and published atomically with `done`. Steps that need
-streaming, such as crawlers, opt into `commit: emit` and accept that outputs of a failed attempt stay published.
+**Decision.** A delivery's outputs are staged with the attempt and published, routed and delivered downstream in the
+transaction that records `done`. An attempt that fails, loses its lease, ends dead or is cancelled publishes nothing.
+There is no streaming publication in v1; a long crawl splits its work into several deliveries.
 
-**Evidence.** Publishing on emit lets a delivery that later dies leave partial outputs flowing downstream. Publishing
-on done gives the simple guarantee by default and keeps streaming where it pays.
+**Evidence.** Publishing as outputs are emitted lets a delivery that later dies leave partial outputs flowing
+downstream, and a second publication mode doubles the paths through the delivery state machine, routing and the crash
+tests, for the benefit of starting downstream work a few minutes earlier in daily pipelines.
 
-**Cost if wrong.** Staging costs a write per output and delays downstream work until each delivery completes.
+**Cost if wrong.** Staging costs a write per output, and a crash redoes a whole delivery; streaming publication is in
+the roadmap.
 
 ### D20. Runs are pinned to their revision (2026-10-14)
 
@@ -246,7 +250,8 @@ explicit replay.
 
 **Decision.** One engine is active per deployment, elected by a Postgres session advisory lock held on its only write
 connection; a second engine on the same store waits as a hot standby and takes over within about 30 seconds.
-Concurrency slots, limits, fair queuing and rate pools live in the active engine's memory; budget reservations are
+Concurrency slots, rates, limits and the round-robin across pipelines live in the active engine's
+memory; budget reservations are
 written on deliveries. An active-active control plane is in the roadmap.
 
 **Evidence.** Several engines sharing one Postgres add no throughput, because the database is the bottleneck, and the
@@ -270,49 +275,52 @@ throughput.
 **Cost if wrong.** The writer loop is a serial bottleneck inside the engine; its batch size and latency are metrics
 and part of the scale benchmark.
 
-### D23. Worker nodes pull deliveries under fenced leases (2026-10-14)
+### D23. Nodes pull deliveries under fenced leases (2026-10-14)
 
-**Decision.** Actions run on worker nodes that join with a token, receive a client certificate, advertise labels
-and runtimes, and pull deliveries from the active engine, following it across a failover. Leases carry fencing
-tokens; nodes never connect to the store. On a laptop, one worker is embedded and pulls over an in-memory transport.
+**Decision.** Actions run on nodes that connect with the deployment's node token, advertise labels and runtimes, and
+pull deliveries from the active engine, following it across a failover. Leases carry fencing tokens; nodes never
+connect to the store. On a laptop, one node is embedded and pulls over an in-memory transport. Nodes run `exec` and
+`container` actions; Kubernetes as a runtime is in the roadmap.
 
-**Evidence.** Pull places work where the engine cannot reach: on-premises nodes behind NAT for data residency, GPU
-machines, several hosts for crawling, more memory for sandboxed agents. It survives node loss by lease expiry, and
-fencing stops a cut-off node from completing a delivery handed to another. One code path from laptop to fleet keeps
-M1 tests meaningful for production.
+**Evidence.** Pull places work where the engine cannot reach: on-premises nodes behind NAT, GPU machines, several
+hosts for crawling, more memory for sandboxed agents. It survives node loss by lease expiry, and fencing stops a
+cut-off node from completing a delivery handed to another. One code path from laptop to server keeps M1 tests
+meaningful for production.
 
 **Cost if wrong.** A pull round trip adds latency per delivery compared with an engine-spawned child process;
 negligible against agent steps, measurable for very short code steps, where nodes pull in batches.
 
-### D24. Worker nodes are authorised per request (2026-10-14)
+### D24. One node token; leases grant access to data (2026-10-14)
 
-**Decision.** A node's certificate carries only its id. Its scope (pipelines, allowed labels) is copied from its join
-token into its record and checked on every request. A node may advertise only allowed labels, leases only deliveries
-of granted pipelines, and fetches packages and artifacts only for deliveries it holds. Revocation expires its leases
-at once.
+**Decision.** Nodes authenticate with one token per deployment, over TLS. A node fetches packages and artifacts only
+for deliveries it holds. Revoking a node id refuses it and expires its leases. Labels route work and are not a
+security boundary. Scoped join tokens and node certificates are in the roadmap.
 
-**Evidence.** Self-reported labels would let a compromised node attract deliveries meant for a restricted site, and
-fetches by hash would otherwise expose any pipeline's packages and artifacts to any certified node.
+**Evidence.** In a single-tenant deployment every node is run by the same operator, so a certificate authority, scoped
+tokens and label-based residency would defend against a threat v1 does not have. The lease check is cheap and still
+stops a node from reading another pipeline's data by guessing a hash.
 
-**Cost if wrong.** Every node request costs a lookup of the node's record, cached in the active engine.
+**Cost if wrong.** A compromised node can pull any pipeline's deliveries that match its labels; residency enforced
+against an insider waits for scoped tokens.
 
-### D25. v1 commits to 2,000 deliveries per second, measured (2026-10-14)
+### D25. v1 publishes a measured throughput ceiling (2026-10-14)
 
-**Decision.** v1 guarantees 2,000 deliveries per second with one active engine on one Postgres, on a documented
-benchmark workload; about 10,000 per second is the design goal, which needs post-v1 work. Every table is keyed by
-pipeline id, so pipelines can later be sharded across stores. Nodes lease in batches, the writer group-commits, and
-events are partitioned by time. A feasibility benchmark opens M5.
+**Decision.** v1 measures its throughput on a documented benchmark workload, keeps it as a regression baseline in CI,
+and publishes the ceiling, instead of committing to a figure. Nodes lease in batches and the writer group-commits.
+Every table is keyed by pipeline id first, so pipelines can later be sharded across stores; event partitioning and
+sharding are in the roadmap.
 
-**Evidence.** A delivery costs about eight row writes (lease, completion, item, consumer delivery, events), so
-10,000 per second means about 80,000 row writes per second before indexes and WAL, and 90 days of events at that rate
-is hundreds of billions of rows. Agent-heavy workloads are bound by model latency far below either rate.
+**Evidence.** A delivery costs about eight row writes (lease, completion, item, consumer delivery, events). Agent-heavy
+workloads are bound by model latency far below any plausible database ceiling, and a release gate on a number would
+force partitioning and tuning work no first customer needs.
 
-**Cost if wrong.** If the benchmark finds a lower ceiling, the commitment drops before release rather than after.
+**Cost if wrong.** No contractual throughput at launch; a customer with a hard requirement gets the measured figure
+and the benchmark to reproduce it.
 
 ### D26. Millstream stores no logs (2026-10-15)
 
 **Decision.** The engine and worker nodes log through Go's `log/slog` as JSON lines on standard error, and the
-environment (journald, Docker, Kubernetes, a log system) keeps them. Every line carries the keys that locate it
+environment (journald, Docker, a log system) keeps them. Every line carries the keys that locate it
 (`pipeline`, `runId`, `step`, `itemId`, `deliveryId`, `attempt`, `node`); nodes re-emit an action's stderr the same
 way. The UI offers a live tail relayed over SSE, never stored. A failed delivery keeps only its error class and a
 message truncated to 4 KB.
@@ -323,24 +331,14 @@ deliveries for write throughput.
 
 **Cost if wrong.** Historical logs are read with the environment's tools rather than in the Millstream UI.
 
-## Self-improvement
 
-### D27. Learnings reach production only through accepted proposals (2026-10-14)
+## Improvement
 
-**Decision.** Lessons, prompt changes, new filters, tuning and code that replaces an agent are proposals that a
-person accepts, each validated by evals and a backtest against past items. Nothing applies on its own, agents do not
-read a live learnings store, and accepted changes reach production through the normal release of the package.
+### D27. Lessons are versioned per step (2026-10-14)
 
-**Evidence.** A pipeline that changes itself unseen breaks revision hashes and replay, and leaves no one accountable
-for a wrong change. A validated diff is cheap to review and keeps git as the source of truth (D7).
-
-**Cost if wrong.** A pipeline improves only as fast as people accept proposals. Auto-applying low-risk classes can
-be added later behind a policy without changing the proposal model.
-
-### D28. Lessons are versioned per step (2026-10-14)
-
-**Decision.** What a pipeline learns for an agent step lives in a lessons file per step, in the package, injected
-into the prompt by the agent adapter, and part of the revision hash.
+**Decision.** What a pipeline learns for an agent step lives in a lessons file per step, in the package, edited by
+engineers, injected into the prompt by the agent adapter, and part of the revision hash. A change is checked by
+replaying a past window and by evals, and reaches production through a normal release.
 
 **Evidence.** Actions may be locked, shared or from the catalog, while what was learned is specific to one
 pipeline's use of them. A file in the revision keeps replay deterministic; a live memory store would not.
@@ -348,72 +346,9 @@ pipeline's use of them. A file in the revision keeps replay deterministic; a liv
 **Cost if wrong.** Static examples use prompt space whether or not they apply to the item; selecting examples by
 similarity is parked in the roadmap.
 
-### D29. Self-improvement is an ordinary pipeline package (2026-10-15)
-
-**Decision.** Insights are computed by the engine without an LLM and published through `insight` triggers. The
-`improve` pipeline is an ordinary package embedded in the binary, whose actions use the public HTTP API (evidence,
-backtest, evals, proposals). There is no shadow mode: a distilled step is validated on the most recent evidence,
-held out by time.
-
-**Evidence.** As an ordinary pipeline, the LLM work gets budgets, transcripts, replay and the UI for free, can be read
-and forked, and leaves the engine with no improvement logic beyond insights, evidence, the backtest endpoint and the
-proposal rules. Deterministic insights work on a laptop with no API key.
-
-**Cost if wrong.** The public API must expose enough (backtests, evidence) for the package to work, which also
-commits that API to stability.
-
-### D30. Learn in production, change in development (2026-10-15)
-
-**Decision.** Deployments declare `environment: production | development`. Production computes insights and exports
-evidence bundles; the `improve` pipeline runs only in development, against imported evidence, and production refuses
-to publish proposals with `apply`. Bundles redact the pointers each stream lists, never carry reviewer identities,
-expire (30 days by default), and are recorded in production so erasure can find them.
-
-**Evidence.** Changes should follow the normal path from development to release, and development needs real evidence
-to draft and validate proposals. Redaction, expiry and an export record bound what production data reaches
-development.
-
-**Cost if wrong.** Production data, though redacted, is copied into development; a customer that forbids it can only
-use insights in production until learning in place is offered.
-
-### D31. Forge integration goes through actions (2026-10-14)
-
-**Decision.** Accepted proposals are published by an action chosen in `improve.publish`: `apply` (a development
-revision), `patch-file`, or `git-pr-gh` and `git-pr-glab`, which wrap the `gh` and `glab` CLIs with the credentials
-they already have.
-
-**Evidence.** Millstream then holds no forge tokens or configuration, and a new forge is a new action, not an engine
-change.
-
-**Cost if wrong.** Pull requests depend on the CLIs being installed and authenticated in the action's environment.
-
-### D32. Proposal patches are confined and published by hash (2026-10-14)
-
-**Decision.** A proposal's patch may touch only the package paths its kind allows. The publish action runs in its
-own container with only forge credentials, never builds or runs candidate code, disables git hooks, and publishes
-only the patch whose hash was validated.
-
-**Evidence.** Patches are drafted by an agent that read crawled, untrusted data; an injected instruction could add
-CI workflows or build files that run with repository secrets as soon as a branch is pushed, or candidate code could
-read forge credentials if they shared an environment.
-
-**Cost if wrong.** Some legitimate improvements (a helper file next to an action, a CI tweak) must be made by hand.
-
-### D33. Acceptance is conditional on the base revision (2026-10-14)
-
-**Decision.** Accepting a proposal succeeds only if its base revision is still active, in one writer transaction
-that also marks overlapping open proposals stale. With the git publish actions, applied revisions are matched to
-proposals by commit trailer, and a proposal merged onto another base triggers evals and a backtest of the new
-revision.
-
-**Evidence.** Two proposals validated on the same base could otherwise be combined without ever being validated
-together, and a pull request may merge after other commits.
-
-**Cost if wrong.** Busy pipelines see more stale proposals and revalidation runs, charged to the improve budget.
-
 ## Build
 
-### D34. The UI builds without a host toolchain (2026-10-15)
+### D28. The UI builds without a host toolchain (2026-10-15)
 
 **Decision.** The UI is installed, built, linted and tested in containers: the official `node` image for `npm ci`,
 the build and Vitest, and the official Playwright image for end-to-end tests, both pinned by digest, locally and in
