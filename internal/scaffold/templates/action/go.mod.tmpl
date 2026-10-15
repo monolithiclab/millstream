@@ -1,0 +1,9 @@
+// The {{.Name}} action, built with the Millstream Go SDK. The SDK module is not published yet: point it at a
+// checkout of the Millstream repository before building, for instance:
+//
+//	go mod edit -replace github.com/monolithiclab/millstream/sdk/go=/path/to/millstream/sdk/go
+module {{.Module}}
+
+go 1.27.0
+
+require github.com/monolithiclab/millstream/sdk/go v0.0.0

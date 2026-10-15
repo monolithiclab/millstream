@@ -1,0 +1,6 @@
+# An eval case of `millstream eval`: an input, the step's config, and CEL assertions over output, input and vars
+# (platform design, section 7.4).
+input: { name: Ada }
+config: { greeting: Bonjour }
+assert:
+  - output.greeting == "Bonjour, Ada!"

@@ -1,8 +1,8 @@
 // Package eval runs the evals of an action (spec section 7.4): the cases under evals/*.yaml in its directory, each an
 // input run through the action and scored by CEL assertions over the output and, optionally, an LLM judge applying a
-// rubric. Agent actions run in-process through the agent adapter and exec actions through the exec runtime, the way
-// a node runs them; harness calls, the judge's included, go through the agent package's record/replay layer, so an
-// eval replays deterministically in CI and never reaches a model there.
+// rubric. Agent actions run in-process through the agent adapter, exec and container actions through the exec
+// runtime, the way a node runs them; harness calls, the judge's included, go through the agent package's
+// record/replay layer, so an eval replays deterministically in CI and never reaches a model there.
 //
 // A case's score is the mean of its parts: the share of its assertions that hold, and the judge's score from 0 to 1.
 // A case whose action fails, or whose judge cannot answer, scores 0 and is reported with its error.
@@ -165,6 +165,8 @@ type Options struct {
 	Price *pipeline.Price
 	// Logger receives the action's logs; nil discards them.
 	Logger *slog.Logger
+	// Launchers start exec and container processes by kind, as exec.Options says; nil runs exec actions only.
+	Launchers map[string]exec.Launcher
 }
 
 // Result is a case's outcome.
@@ -241,24 +243,7 @@ func jsonValue(v any) (any, error) {
 // runAction runs the case's input through the action and returns its output as CEL sees it: the payload of its one
 // output, the list of their payloads when it emitted several, null when none.
 func runAction(ctx context.Context, opts Options, c *Case, res *Result) (any, error) {
-	payload, err := json.Marshal(c.Input)
-	if err != nil {
-		return nil, fmt.Errorf("input: %w", err)
-	}
-	item := protocol.Item{
-		Delivery: "eval", ID: "eval-" + c.Name, Key: c.Name, Payload: payload, Artifacts: []protocol.Artifact{},
-		Run:     protocol.Run{ID: "eval", Trigger: "eval", StartedAt: time.Now().UTC(), Revision: opts.Package.Hash},
-		Attempt: 1, IdempotencyKey: "eval-" + c.Name,
-	}
-	var r exec.Result
-	switch opts.Action.Kind {
-	case pipeline.KindAgent:
-		r, err = runAgent(ctx, opts, c.Config, c.Vars, item)
-	case pipeline.KindExec:
-		r, err = runExec(ctx, opts, c.Config, c.Vars, item)
-	default:
-		return nil, fmt.Errorf("action %s is of kind %s: eval runs agent and exec actions", opts.Ref, opts.Action.Kind)
-	}
+	r, err := Invoke(ctx, opts, c.Name, c.Input, c.Config, c.Vars)
 	if err != nil {
 		return nil, err
 	}
@@ -285,22 +270,59 @@ func runAction(ctx context.Context, opts Options, c *Case, res *Result) (any, er
 	return outs, nil
 }
 
-// runExec runs an exec action as a node would, in its directory with PATH, HOME and TMPDIR only.
-func runExec(ctx context.Context, opts Options, config, vars map[string]any, item protocol.Item) (exec.Result,
+// Invoke runs one input through the action the way a node would, as the item of a delivery named after name, with
+// the hello's config and vars: an agent action in-process through the adapter, an exec or container action as a
+// process started by the launcher of its kind. The result holds the action's outputs and metrics, or its own error;
+// err is a failure around the action (it could not start, it broke the protocol).
+func Invoke(ctx context.Context, opts Options, name string, input any, config, vars map[string]any) (exec.Result,
 	error,
 ) {
+	payload, err := json.Marshal(input)
+	if err != nil {
+		return exec.Result{}, fmt.Errorf("input: %w", err)
+	}
+	item := protocol.Item{
+		Delivery: "eval", ID: "eval-" + name, Key: name, Payload: payload, Artifacts: []protocol.Artifact{},
+		Run:     protocol.Run{ID: "eval", Trigger: "eval", StartedAt: time.Now().UTC(), Revision: opts.Package.Hash},
+		Attempt: 1, IdempotencyKey: "eval-" + name,
+	}
+	switch opts.Action.Kind {
+	case pipeline.KindAgent:
+		return runAgent(ctx, opts, config, vars, item)
+	case pipeline.KindExec, pipeline.KindContainer:
+		return runProcess(ctx, opts, config, vars, item)
+	}
+	return exec.Result{}, fmt.Errorf("action %s is of kind %s: only agent, exec and container actions run here",
+		opts.Ref, opts.Action.Kind)
+}
+
+// ProcessSpec is the process an exec or container action runs as, the way a node runs it: an exec action in its
+// directory with PATH, HOME and TMPDIR only, a container from its pinned image with none of them.
+func ProcessSpec(opts Options, config, vars map[string]any) exec.Spec {
 	a := opts.Action
 	spec := exec.Spec{
 		Action: a.Name, Version: a.Version, Kind: a.Kind, Digest: opts.Package.ActionDigest(a.Dir),
-		Command: slices.Clone(a.Command), Dir: filepath.Join(opts.Package.Dir, filepath.FromSlash(a.Dir)),
-		Lifecycle: a.Lifecycle, Config: config, Vars: vars,
+		Command: slices.Clone(a.Command), Lifecycle: a.Lifecycle, Config: config, Vars: vars,
 	}
+	if a.Kind == pipeline.KindContainer {
+		spec.Image, spec.Network = a.Pin, a.Network
+		return spec
+	}
+	spec.Dir = filepath.Join(opts.Package.Dir, filepath.FromSlash(a.Dir))
 	for _, k := range []string{"PATH", "HOME", "TMPDIR"} {
 		if v, ok := opts.Env(k); ok {
 			spec.Env = append(spec.Env, k+"="+v)
 		}
 	}
-	p, err := exec.Start(ctx, spec, exec.Options{Logger: opts.Logger})
+	return spec
+}
+
+// runProcess runs an exec or container action as a node would.
+func runProcess(ctx context.Context, opts Options, config, vars map[string]any, item protocol.Item) (exec.Result,
+	error,
+) {
+	p, err := exec.Start(ctx, ProcessSpec(opts, config, vars), exec.Options{Logger: opts.Logger,
+		Launchers: opts.Launchers})
 	if err != nil {
 		return exec.Result{}, err
 	}

@@ -1,0 +1,43 @@
+// Command {{.Bin}} is the {{.Name}} action: it greets the name of each item with the greeting of its config. Build
+// it where its manifest's command finds it (go.mod says how to reach the SDK):
+//
+//	go build -o bin/$(go env GOOS)-$(go env GOARCH)/{{.Bin}} .
+//
+// then run its fixtures with `millstream test action .`, the protocol conformance suite with
+// `millstream test action . --conformance`, and its evals with `millstream eval .`.
+package main
+
+import (
+	"errors"
+
+	millstream "github.com/monolithiclab/millstream/sdk/go"
+)
+
+// Input is an item, as the input schema of action.yaml describes it.
+type Input struct {
+	Name string `json:"name"`
+}
+
+// Output is an output, as the output schema describes it.
+type Output struct {
+	Greeting string `json:"greeting"`
+}
+
+// Config is the step's config, as the config schema describes it.
+type Config struct {
+	Greeting string `json:"greeting"`
+}
+
+func main() {
+	millstream.Map(func(c millstream.Context, in Input) ([]Output, error) {
+		cfg := Config{Greeting: "Hello"}
+		if err := c.ConfigInto(&cfg); err != nil {
+			return nil, err // not retryable: the same config fails again
+		}
+		if in.Name == "" {
+			return nil, errors.New("the item has no name")
+		}
+		out := Output{Greeting: cfg.Greeting + ", " + in.Name + "!"}
+		return []Output{out}, nil
+	})
+}

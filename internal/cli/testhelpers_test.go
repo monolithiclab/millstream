@@ -14,8 +14,9 @@ import (
 	"github.com/monolithiclab/millstream/internal/runtime/exec/exectest"
 )
 
-// fakeBin is the fake action, built once by TestMain and linked into fixture packages.
-var fakeBin string
+// fakeBin is the fake action, built once by TestMain and linked into fixture packages; testDir is TestMain's
+// temporary directory, for what tests build once and share.
+var fakeBin, testDir string
 
 func TestMain(m *testing.M) {
 	// The engine runs unsandboxed agents as its own executable's agent subcommand: under test, this binary.
@@ -32,6 +33,7 @@ func runTests(m *testing.M) int {
 		return 1
 	}
 	defer func() { _ = os.RemoveAll(dir) }()
+	testDir = dir
 	if fakeBin, err = exectest.Build(dir); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1

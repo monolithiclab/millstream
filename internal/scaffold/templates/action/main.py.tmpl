@@ -1,0 +1,67 @@
+#!/usr/bin/env python3
+"""The {{.Name}} action: it greets the name of each item with the greeting of its config.
+
+It speaks the Millstream action protocol directly, with the Python standard library only: README.md lists the
+messages. Run its fixtures with `millstream test action .` and the conformance suite with
+`millstream test action . --conformance`.
+"""
+
+import json
+import sys
+
+
+def send(message):
+    """Write one message: one JSON object on one line of stdout, flushed at once."""
+    sys.stdout.write(json.dumps(message, separators=(",", ":")) + "\n")
+    sys.stdout.flush()
+
+
+def fail(delivery, message):
+    """End a delivery with a non-retryable error: the same item would fail again."""
+    send({"type": "error", "delivery": delivery, "message": message, "retryable": False})
+
+
+def handle(config, item):
+    """Answer one item: its output, then done; or an error."""
+    delivery = item.get("delivery")
+    greeting = config.get("greeting", "Hello")
+    payload = item.get("payload")
+    name = payload.get("name") if isinstance(payload, dict) else None
+    if not isinstance(greeting, str):
+        fail(delivery, "config.greeting must be a string")
+        return
+    if not isinstance(name, str) or not name:
+        fail(delivery, "the item has no name")
+        return
+    send({"type": "emit", "delivery": delivery, "payload": {"greeting": greeting + ", " + name + "!"}})
+    send({"type": "done", "delivery": delivery})
+
+
+def main():
+    config = None
+    while True:
+        line = sys.stdin.readline()
+        if not line:
+            return 0  # the end of stdin means shutdown
+        try:
+            message = json.loads(line)
+        except ValueError as err:
+            print("malformed line: %s" % err, file=sys.stderr)
+            return 1
+        kind = message.get("type") if isinstance(message, dict) else None
+        if kind == "hello" and config is None:
+            config = message.get("config")
+            if not isinstance(config, dict):
+                config = {}  # a null config: the defaults apply
+            send({"type": "ready"})
+        elif kind == "item" and config is not None:
+            handle(config, message)
+        elif kind == "shutdown":
+            return 0
+        else:
+            print("unexpected message: %s" % kind, file=sys.stderr)
+            return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

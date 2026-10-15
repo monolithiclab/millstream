@@ -76,39 +76,48 @@ func selectCase(cases []*eval.Case, name string) []*eval.Case {
 
 // options resolves the action in its package and the harness settings.
 func (c EvalCmd) options(rt *Runtime) (eval.Options, error) {
-	pkgDir := c.Package
-	if pkgDir == "" {
-		var err error
-		if pkgDir, err = packageAbove(c.Action); err != nil {
-			return eval.Options{}, err
-		}
-	}
-	rel, err := filepath.Rel(pkgDir, c.Action)
-	if err != nil || !filepath.IsLocal(rel) {
-		return eval.Options{}, usageError(fmt.Sprintf("action %s is not inside the package %s", c.Action, pkgDir))
-	}
-	pkg, err := pipeline.Load(pkgDir)
+	opts, err := actionOptions(rt, c.Action, c.Package, false)
 	if err != nil {
 		return eval.Options{}, err
 	}
+	opts.Mode, opts.Dir = c.HarnessMode, harnessDir(c.HarnessMode, c.HarnessDir, c.Action, eval.RecordingsDir)
+	return opts, nil
+}
+
+// harnessDir is the recordings directory of an agent's harness calls: dir when given, else rel under the action
+// directory; none in live mode.
+func harnessDir(mode, dir, action, rel string) string {
+	switch {
+	case mode == agent.ModeLive:
+		return ""
+	case dir != "":
+		return dir
+	}
+	return filepath.Join(action, filepath.FromSlash(rel))
+}
+
+// actionOptions resolves the action directory dir in its package, pkgDir or else the nearest directory above dir
+// holding a pipeline file, for running it as eval does. With standalone, an action without a package above runs as
+// a lone action (pipeline.LoadAction), which serves exec and container actions; an agent reads its package.
+func actionOptions(rt *Runtime, dir, pkgDir string, standalone bool) (eval.Options, error) {
 	env, err := environment(rt)
 	if err != nil {
 		return eval.Options{}, err
 	}
-	ref := "./" + filepath.ToSlash(rel)
+	pkg, ref, err := actionPackage(dir, pkgDir, standalone)
+	if err != nil {
+		return eval.Options{}, err
+	}
 	act, err := resolver(rt, env, false).Resolve(pkg, ref)
 	if err != nil {
 		return eval.Options{}, err
 	}
+	if act.Kind == pipeline.KindAgent && pkg.PipelineFile == "" {
+		return eval.Options{}, usageError(fmt.Sprintf("agent action %s runs in its package: name it with --package", dir))
+	}
 	opts := eval.Options{
-		Package: pkg, Action: act, Ref: ref, Mode: c.HarnessMode, Dir: c.HarnessDir, Env: rt.Env,
-		Logger: slog.New(slog.NewTextHandler(rt.IO.Err, nil)),
-	}
-	if opts.Dir == "" {
-		opts.Dir = filepath.Join(c.Action, filepath.FromSlash(eval.RecordingsDir))
-	}
-	if opts.Mode == agent.ModeLive {
-		opts.Dir = ""
+		Package: pkg, Action: act, Ref: ref, Env: rt.Env,
+		Logger: slog.New(slog.NewTextHandler(rt.IO.Err, nil)), Launchers: launchers(rt, env),
 	}
 	if act.Agent != nil {
 		if price, ok := env.Prices[act.Agent.Model]; ok {
@@ -116,6 +125,28 @@ func (c EvalCmd) options(rt *Runtime) (eval.Options, error) {
 		}
 	}
 	return opts, nil
+}
+
+// actionPackage loads the package of the action directory dir and returns the reference naming the action in it.
+func actionPackage(dir, pkgDir string, standalone bool) (*pipeline.Package, string, error) {
+	if pkgDir == "" {
+		var err error
+		if pkgDir, err = packageAbove(dir); err != nil {
+			if standalone && errors.As(err, new(usageError)) {
+				return pipeline.LoadAction(dir)
+			}
+			return nil, "", err
+		}
+	}
+	rel, err := filepath.Rel(pkgDir, dir)
+	if err != nil || !filepath.IsLocal(rel) {
+		return nil, "", usageError(fmt.Sprintf("action %s is not inside the package %s", dir, pkgDir))
+	}
+	pkg, err := pipeline.Load(pkgDir)
+	if err != nil {
+		return nil, "", err
+	}
+	return pkg, "./" + filepath.ToSlash(rel), nil
 }
 
 // packageAbove returns the nearest directory above dir holding a pipeline file.

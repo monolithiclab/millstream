@@ -65,6 +65,26 @@ func Load(path string) (*Package, error) {
 	return pkg, nil
 }
 
+// LoadAction reads a lone action directory, outside any package, as a package of that directory alone: Dir is its
+// parent, ref (./<base>) names the action, and the pipeline is empty. Tools that run one action use it.
+func LoadAction(dir string) (pkg *Package, ref string, err error) {
+	abs, err := filepath.Abs(dir)
+	if err != nil {
+		return nil, "", fmt.Errorf("load action: %w", err)
+	}
+	files := map[string][]byte{}
+	if err := readTree(abs, files); err != nil {
+		return nil, "", fmt.Errorf("load action %s: %w", dir, err)
+	}
+	base := filepath.Base(abs)
+	pkg = &Package{Dir: filepath.Dir(abs), Pipeline: &Pipeline{}, Files: map[string][]byte{}}
+	for p, data := range files {
+		pkg.Files[base+"/"+p] = data
+	}
+	pkg.Hash = hashFiles(pkg.Files)
+	return pkg, "./" + base, nil
+}
+
 // readTree reads every regular file under dir into files, keyed by slash-separated relative path. It reads
 // through an os.Root, so a symbolic link swapped in during the walk cannot lead outside the package; symbolic
 // links themselves are not regular files and are skipped.

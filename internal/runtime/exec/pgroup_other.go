@@ -7,8 +7,8 @@ import (
 	osexec "os/exec"
 )
 
-// setProcessGroup is a no-op where process groups are not available.
-func setProcessGroup(*osexec.Cmd) {}
+// SetProcessGroup is a no-op where process groups are not available.
+func SetProcessGroup(*osexec.Cmd) {}
 
-// killProcessGroup kills the process alone where process groups are not available.
-func killProcessGroup(p *os.Process) { _ = p.Kill() }
+// KillProcessGroup kills the process alone where process groups are not available.
+func KillProcessGroup(p *os.Process) { _ = p.Kill() }

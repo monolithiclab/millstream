@@ -243,7 +243,7 @@ func (p *Process) spawn() error {
 	if err != nil {
 		return runtimeErr(ClassCrash, "%w", err)
 	}
-	setProcessGroup(cmd) // so kill reaches the children the action starts
+	SetProcessGroup(cmd) // so kill reaches the children the action starts
 	if p.stdin, err = cmd.StdinPipe(); err != nil {
 		return runtimeErr(ClassCrash, "stdin pipe: %w", err)
 	}
@@ -583,7 +583,7 @@ func (p *Process) shutdown() bool {
 func (p *Process) kill() {
 	p.killOnce.Do(func() {
 		close(p.dead)
-		killProcessGroup(p.cmd.Process)
+		KillProcessGroup(p.cmd.Process)
 		if !p.exitedCleanly() {
 			p.launcher.Kill(p.spec, p.workdir)
 		}

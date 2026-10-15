@@ -13,6 +13,10 @@ import (
 // pipelineName is the grammar of a pipeline identifier (spec section 4.2).
 var pipelineName = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
 
+// ValidName reports whether name is a valid pipeline identifier: lowercase letters and digits, in groups joined by
+// single dashes.
+func ValidName(name string) bool { return pipelineName.MatchString(name) }
+
 // Parse parses one pipeline file. Unknown keys, wrong shapes and missing required keys are errors carrying the
 // key path where they occur.
 func Parse(data []byte) (*Pipeline, error) {

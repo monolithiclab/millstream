@@ -25,6 +25,7 @@ import (
 // TestCmd is "millstream test".
 type TestCmd struct {
 	Pipeline TestPipelineCmd `cmd:"" help:"Run a package's tests/*.yaml against stubbed actions."`
+	Action   TestActionCmd   `cmd:"" help:"Run an action's tests/*.yaml against golden outputs, or the protocol conformance suite."`
 }
 
 // TestPipelineCmd is "millstream test pipeline".

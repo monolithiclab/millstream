@@ -74,7 +74,8 @@ type CLI struct {
 	DLQ      DLQCmd      `cmd:"" name:"dlq" help:"List and discard dead letters."`
 	Pause    PauseCmd    `cmd:"" help:"Pause a pipeline or one of its steps."`
 	Resume   ResumeCmd   `cmd:"" help:"Resume a pipeline or one of its steps."`
-	Test     TestCmd     `cmd:"" help:"Test a package against stubbed actions."`
+	Init     InitCmd     `cmd:"" help:"Scaffold a pipeline package or an action."`
+	Test     TestCmd     `cmd:"" help:"Test a package against stubbed actions, or an action against golden outputs."`
 	Eval     EvalCmd     `cmd:"" help:"Run an action's evals and score them."`
 	Metrics  MetricsCmd  `cmd:"" help:"Print metric rollups, or their Prometheus exposition."`
 	Insights InsightsCmd `cmd:"" help:"List, acknowledge and mute insights."`

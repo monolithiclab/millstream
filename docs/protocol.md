@@ -189,6 +189,27 @@ key-rule error: it is deterministic, so the item is dead-lettered at once instea
 An action that receives something it does not understand should exit with a non-zero status, after logging why on
 stderr.
 
+## Conformance
+
+`millstream test action <dir> --conformance [--timeout 5s]` checks an exec or container action against this document,
+whatever it computes. It starts the action's process itself, with a temporary `MILLSTREAM_WORKDIR`, reads the raw
+lines of its stdout and reports each check as passed, failed (with the reason) or skipped (when a check it needs
+failed). The item's payload, config and vars come from the action's first `tests/*.yaml` fixture, else the payload is
+a minimal value of the input schema: its required properties, each empty, zero or its first enum value.
+
+| Check | Passes when |
+| --- | --- |
+| `ready` | `hello` is answered by `ready`, first, within the timeout |
+| `unknown-keys` | A `hello` and an `item` carrying a key the action cannot know are answered as usual |
+| `framing` | Every line, in every process of the suite, is a JSON object of a type an action writes, under 8 MiB |
+| `item-answer` | An `item` gets `done` or `error` within the timeout, every `emit` and `metric` for its delivery |
+| `keyed-outputs` | Several outputs of a delivery carry distinct keys (skipped with fewer than two) |
+| `idle-silence` | Nothing is written after the answer, over a short window, but a late `metric` of that delivery |
+| `malformed-config` | With a `null` config, then with every config value of an unexpected type, the process takes `hello` and answers the item with `done` or `error`, instead of exiting |
+| `shutdown` | After `shutdown`, the process exits with status 0 within the timeout, writing nothing more |
+
+The command exits 1 when any check fails. Agent actions are the engine's own adapter and are not checked this way.
+
 ## Not in version 1 yet
 
 `abstain` (hand a delivery to the step's fallback) and fallback audits (`audit` on `item`) arrive with

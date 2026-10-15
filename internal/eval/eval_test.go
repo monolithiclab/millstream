@@ -81,7 +81,8 @@ assert:
 	}
 }
 
-// TestRunActionFailure: an action that answers an error, or of a kind eval does not run, scores 0 with the reason.
+// TestRunActionFailure: an action that answers an error, of a kind without a launcher, or of a kind eval does not
+// run, scores 0 with the reason.
 func TestRunActionFailure(t *testing.T) {
 	t.Parallel()
 	dir := writePackage(t, "http://unused", map[string]string{
@@ -92,8 +93,12 @@ func TestRunActionFailure(t *testing.T) {
 	if r := Run(t.Context(), opts, c); r.Passes() || r.Score != 0 || !strings.Contains(r.Err, "portal answered 503") {
 		t.Fatalf("result = %+v", r)
 	}
-	opts.Action.Kind = pipeline.KindContainer
-	if r := Run(t.Context(), opts, c); !strings.Contains(r.Err, "eval runs agent and exec actions") {
+	opts.Action.Kind = pipeline.KindContainer // no launcher for it in opts
+	if r := Run(t.Context(), opts, c); !strings.Contains(r.Err, "of kind container: this node has no runtime for it") {
+		t.Fatalf("result = %+v", r)
+	}
+	opts.Action.Kind = "review"
+	if r := Run(t.Context(), opts, c); !strings.Contains(r.Err, "only agent, exec and container actions run here") {
 		t.Fatalf("result = %+v", r)
 	}
 }

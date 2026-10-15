@@ -1,0 +1,52 @@
+# {{.Name}}
+
+A Millstream action written against the action protocol directly, without an SDK. `main.py` implements it with the
+Python 3 standard library only; any language that reads and writes lines of JSON works the same way. A POSIX shell
+implementation is not offered: parsing JSON robustly in `sh` is not realistic.
+
+The full contract is the [action protocol](https://github.com/monolithiclab/millstream/blob/main/docs/protocol.md).
+In short:
+
+## Framing
+
+- The engine writes to the action's stdin and reads its stdout: one JSON object per line, UTF-8, ending in `\n`, at
+  most 8 MiB per line. Nothing else may be written to stdout.
+- Every object has a `type`; keys are lowerCamelCase. Ignore the keys you do not know.
+- stderr is free-form logging; never write payload values there.
+- `MILLSTREAM_WORKDIR` names a directory for the process: input artifacts are placed in it, output artifacts are
+  written to it.
+
+## Messages
+
+Engine to action:
+
+```json
+{"type":"hello","protocol":1,"action":"{{.Name}}","version":"0.1.0","config":{"greeting":"Hello"},"vars":{}}
+{"type":"item","delivery":"dl_1","id":"it_1","key":"","payload":{"name":"Ada"},"artifacts":[],"run":{"id":"run_1","trigger":"adhoc","startedAt":"2026-10-14T06:00:00Z","revision":"5c1d"},"attempt":1,"idempotencyKey":"7e2b"}
+{"type":"shutdown"}
+```
+
+Action to engine:
+
+```json
+{"type":"ready"}
+{"type":"emit","delivery":"dl_1","payload":{"greeting":"Hello, Ada!"}}
+{"type":"metric","delivery":"dl_1","name":"names_greeted","value":1}
+{"type":"done","delivery":"dl_1"}
+{"type":"error","delivery":"dl_1","message":"the item has no name","retryable":false}
+```
+
+1. Answer `hello` with `ready`, within 10 seconds.
+2. Answer each `item` with any number of `emit` and `metric` messages for its delivery, then exactly one `done` or
+   `error`. Outputs are published on `done` only. Several outputs must each carry a distinct `key`.
+3. Write nothing between deliveries. Exit with status 0 on `shutdown` or at the end of stdin.
+
+An `error` with `retryable: true` is retried with backoff; `false` dead-letters the item at once. A malformed line, an
+unknown `type` or a message for another delivery is a protocol violation: the engine kills the process and retries.
+
+## Checking it
+
+```sh
+millstream test action .                  # the fixtures under tests/
+millstream test action . --conformance    # the protocol conformance suite
+```

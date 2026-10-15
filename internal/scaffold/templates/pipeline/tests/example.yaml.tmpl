@@ -1,0 +1,8 @@
+# A test of `millstream test pipeline`: the trigger's payload, stubbed steps (which complete without running their
+# action, so nothing needs building) and the item count expected per stream once the run settles.
+name: one name greeted
+payload: { name: Ada }
+stubs:
+  {{.Step}}:
+    outputs: [{ payload: { greeting: "Hello, Ada!" } }]
+expect: { greetings: 1 }

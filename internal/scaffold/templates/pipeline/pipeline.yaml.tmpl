@@ -1,0 +1,15 @@
+# The {{.Pipeline}} pipeline, scaffolded by millstream init. Check it with `millstream check`, test it with
+# `millstream test pipeline`, and run it with `millstream run --once` once its action is built (see
+# actions/{{.Step}}/main.go).
+pipeline: {{.Pipeline}}
+description: Greets each name it is given
+
+triggers:
+  adhoc: { manual: {} }
+
+steps:
+  {{.Step}}:
+    action: ./actions/{{.Step}}
+    in: trigger.adhoc
+    out: greetings
+    config: { greeting: Hello }

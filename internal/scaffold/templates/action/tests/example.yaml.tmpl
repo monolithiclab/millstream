@@ -1,0 +1,8 @@
+# A fixture of `millstream test action`: an input, the step's config and vars, and the outputs expected, compared as
+# JSON in emitted order, with their key when one is given. Expect an error instead with error: { retryable: false }.
+name: greets by name
+input: { name: Ada }
+config: { greeting: Hello }
+expect:
+  outputs:
+    - payload: { greeting: "Hello, Ada!" }

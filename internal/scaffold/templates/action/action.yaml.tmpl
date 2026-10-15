@@ -1,0 +1,27 @@
+# The manifest of the {{.Name}} action (platform design, section 6.1).
+name: {{.Name}}
+version: 0.1.0
+description: Greets the name of each item
+kind: exec
+effects: none
+input:
+  type: object
+  properties:
+    name: { type: string, minLength: 1 }
+  required: [name]
+output:
+  type: object
+  properties:
+    greeting: { type: string }
+  required: [greeting]
+config:
+  type: object
+  properties:
+    greeting: { type: string }
+{{- if eq .Lang "raw"}}
+# A program on PATH and its arguments, run in this directory.
+runtime: { exec: { command: [python3, main.py] } }
+{{- else}}
+# A bare name runs bin/<os>-<arch>/{{.Bin}} when it is built there (see main.go), else the program on PATH.
+runtime: { exec: { command: [{{.Bin}}] } }
+{{- end}}
