@@ -105,29 +105,64 @@ type env struct {
 	ctx   context.Context
 }
 
-// newEnv opens a temporary store with a fake clock and a jitter of one half, and applies the given pipelines.
+// newEnv opens a store with a fake clock and a jitter of one half, holding the given pipelines applied. The store
+// is a clone of a template where they were applied once per process, at t0.
 func newEnv(t *testing.T, pipelines ...string) *env {
 	t.Helper()
-	clock := &fakeClock{t: t0}
-	s, err := Open(Memory, Options{Now: clock.Now, Rand: func() float64 { return 0.5 }})
+	tmpl, err := envTemplate(pipelines)
 	if err != nil {
-		t.Fatalf("Open: %v", err)
+		t.Fatal(err)
+	}
+	clock := &fakeClock{t: t0}
+	s, err := tmpl.Clone(Options{Now: clock.Now, Rand: func() float64 { return 0.5 }})
+	if err != nil {
+		t.Fatalf("Clone: %v", err)
 	}
 	t.Cleanup(func() {
 		if err := s.Close(); err != nil {
 			t.Errorf("Close: %v", err)
 		}
 	})
-	e := &env{t: t, s: s, clock: clock, ctx: context.Background()}
-	for _, p := range pipelines {
-		e.apply(p)
-	}
-	return e
+	return &env{t: t, s: s, clock: clock, ctx: context.Background()}
+}
+
+// envTemplates holds a func() (*Store, error) per set of pipelines newEnv applies: stores open for the process.
+var envTemplates sync.Map
+
+func envTemplate(pipelines []string) (*Store, error) {
+	f, _ := envTemplates.LoadOrStore(strings.Join(pipelines, "\x00"), sync.OnceValues(func() (*Store, error) {
+		s, err := Open(Memory, Options{Now: func() time.Time { return t0 }})
+		if err != nil {
+			return nil, err
+		}
+		for _, src := range pipelines {
+			p, err := parsed(src)
+			if err != nil {
+				return nil, err
+			}
+			if _, err := s.ApplyRevision(context.Background(), store.PackageRecord{Hash: hashOf(src),
+				Bundle: []byte(src), Pipeline: p}); err != nil {
+				return nil, err
+			}
+		}
+		return s, nil
+	}))
+	return f.(func() (*Store, error))()
+}
+
+// parsedPipelines caches parse: a parsed pipeline is read-only, so stores and tests share it.
+var parsedPipelines sync.Map
+
+func parsed(src string) (*pipeline.Pipeline, error) {
+	f, _ := parsedPipelines.LoadOrStore(src, sync.OnceValues(func() (*pipeline.Pipeline, error) {
+		return pipeline.Parse([]byte(src))
+	}))
+	return f.(func() (*pipeline.Pipeline, error))()
 }
 
 func parse(t *testing.T, src string) *pipeline.Pipeline {
 	t.Helper()
-	p, err := pipeline.Parse([]byte(src))
+	p, err := parsed(src)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -316,3 +351,19 @@ func wantState[S comparable](t *testing.T, what string, got, want S) {
 
 // otherPipeline is the fixture under another pipeline name.
 var otherPipeline = strings.Replace(fixture, "pipeline: listings", "pipeline: other", 1)
+
+// clone returns an env on a clone of e's store, its clock at e's instant, for t.
+func (e *env) clone(t *testing.T) *env {
+	t.Helper()
+	clock := &fakeClock{t: e.clock.Now()}
+	s, err := e.s.Clone(Options{Now: clock.Now, Rand: func() float64 { return 0.5 }})
+	if err != nil {
+		t.Fatalf("Clone: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := s.Close(); err != nil {
+			t.Errorf("Close: %v", err)
+		}
+	})
+	return &env{t: t, s: s, clock: clock, ctx: e.ctx}
+}

@@ -137,12 +137,14 @@ func TestDedupeWindow(t *testing.T) {
 		{"exactly 30 days ago is a duplicate", window30d, window30d, store.DeliveryFiltered},
 		{"no window holds for ever", 0, 3650 * 24 * time.Hour, store.DeliveryFiltered},
 	}
+	// The first item records the key once; each case clones the store and dedupes a second one later.
+	base := newEnv(t, dedupePipeline)
+	first := base.crawlOne("r1", 0, "x", "unique")
+	wantState(t, "first", base.dedupe(first, "x", window30d), store.DeliveryDone)
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			e := newEnv(t, dedupePipeline)
-			first := e.crawlOne("r1", 0, "x", "unique")
-			wantState(t, "first", e.dedupe(first, "x", tt.window), store.DeliveryDone)
+			e := base.clone(t)
 			e.clock.Advance(tt.after)
 			second := e.crawlOne("r2", 0, "x", "unique")
 			wantState(t, "second", e.dedupe(second, "x", tt.window), tt.want)

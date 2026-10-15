@@ -127,17 +127,18 @@ func TestDoneRefusesInvalidArtifacts(t *testing.T) {
 		"name too long":   ref(strings.Repeat("n", 256), shaA),
 		"nul in the name": ref("a\x00b", shaA),
 	}
+	// A refused Done leaves the lease held: every case reports on the same one.
+	e := newEnv(t, fixture)
+	e.fire("r1")
+	l := e.leaseStep("crawl")
 	for name, a := range tests {
 		t.Run(name, func(t *testing.T) {
-			t.Parallel()
-			e := newEnv(t, fixture)
-			e.fire("r1")
-			l := e.leaseStep("crawl")
 			_, err := e.s.Done(e.ctx, store.DoneRequest{LeaseRef: l.Ref(), Attempt: 1,
 				Outputs: []store.Output{withArtifacts(out("", `{}`), a)}})
 			wantErr(t, err, store.ErrInvalid)
 		})
 	}
+	wantState(t, "delivery", e.deliveries("r1")[0].State, store.DeliveryLeased)
 }
 
 // TestArtifactsTravelWithItems: a dedupe pass republishes the item with its artifacts, a dead input's dead letter

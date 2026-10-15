@@ -70,7 +70,7 @@ func TestFailingUnitsRollBackAlone(t *testing.T) {
 func TestConcurrentDone(t *testing.T) {
 	t.Parallel()
 	e := newEnv(t, fixture)
-	const runs = 16 // enough concurrent Done calls to share batches
+	const runs = concurrentDones
 	for i := range runs {
 		e.fire(fmt.Sprint("r", i))
 	}
