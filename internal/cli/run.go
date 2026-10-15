@@ -49,7 +49,7 @@ func (c RunCmd) Run(rt *Runtime) error {
 		return err
 	}
 	actions := resolver(rt, env, false)
-	pkgs, err := c.load(rt, log, actions)
+	pkgs, err := c.load(rt, log, actions, checkOptions(env))
 	if err != nil {
 		return err
 	}
@@ -113,7 +113,8 @@ func (c RunCmd) Run(rt *Runtime) error {
 
 // load loads and checks each package, logging each diagnostic, and fails on any check error and on a --var no
 // package declares.
-func (c RunCmd) load(rt *Runtime, log *slog.Logger, actions pipeline.ActionResolver) ([]*pipeline.Package, error) {
+func (c RunCmd) load(rt *Runtime, log *slog.Logger, actions pipeline.ActionResolver, opts pipeline.CheckOptions,
+) ([]*pipeline.Package, error) {
 	dirs := c.Dirs
 	if len(dirs) == 0 {
 		dirs = []string{"."}
@@ -129,7 +130,7 @@ func (c RunCmd) load(rt *Runtime, log *slog.Logger, actions pipeline.ActionResol
 		if err != nil {
 			return nil, err
 		}
-		diags := pipeline.Check(pkg, actions, rt.Env)
+		diags := pipeline.Check(pkg, actions, rt.Env, opts)
 		for _, d := range diags {
 			level := slog.LevelWarn
 			if d.Severity == pipeline.SeverityError {

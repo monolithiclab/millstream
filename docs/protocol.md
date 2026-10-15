@@ -38,11 +38,15 @@ receives no other variable of the node's environment.
 
 **`hello`** is the first message a process receives. It names the action and gives the step's config, already
 interpolated for the run, and the run's variables. A process only ever receives items with this same action
-digest, config and vars, so it may prepare once (open clients, load models) and reuse that for every item.
+digest, config, vars and lessons, so it may prepare once (open clients, load models) and reuse that for every item.
 
 ```json
 {"type":"hello","protocol":1,"action":"lab/score-listing","version":"2.1.0","config":{"minRooms":2},"vars":{"city":"Lyon"}}
 ```
+
+An agent step's `hello` may also carry `lessons`, the step's lessons file as JSON: `rules` (each with `text`, and
+optionally `source` and `added`) and `examples` (each with `input` and `output`, and optionally `why` and
+`source`). The engine's agent adapter reads it; any other action may ignore it.
 
 **`item`** hands the process one delivery: one item for one step.
 

@@ -7,14 +7,17 @@ import (
 	"regexp"
 	"strings"
 	"text/template"
+
+	"github.com/monolithiclab/millstream/internal/pipeline"
 )
 
 // PromptData is what a prompt template sees: the item's payload, the step's config and the run's vars, as decoded
-// JSON values.
+// JSON values, and the step's lessons (empty when it has none).
 type PromptData struct {
 	Payload any
 	Config  map[string]any
 	Vars    map[string]any
+	Lessons pipeline.Lessons
 }
 
 // ParsePrompt parses a prompt template (text/template).
@@ -26,13 +29,50 @@ func ParsePrompt(name, text string) (*template.Template, error) {
 	return t, nil
 }
 
-// Render renders the prompt for one item.
+// Render renders the prompt for one item. When the template does not mention .Lessons and there are lessons, a
+// "Lessons from past runs" section is appended, so lessons work with unchanged actions (spec section 11.4).
 func Render(t *template.Template, data PromptData) (string, error) {
 	var b strings.Builder
 	if err := t.Execute(&b, data); err != nil {
 		return "", fmt.Errorf("render prompt: %w", err)
 	}
+	if !data.Lessons.Empty() && !mentionsLessons(t) {
+		b.WriteString(lessonsSection(data.Lessons))
+	}
 	return b.String(), nil
+}
+
+// lessonsHeading heads the section appended to a prompt that does not use its lessons itself.
+const lessonsHeading = "Lessons from past runs"
+
+// mentionsLessons reports whether a prompt template uses .Lessons itself, in which case no section is appended.
+func mentionsLessons(t *template.Template) bool {
+	return t.Tree != nil && strings.Contains(t.Root.String(), ".Lessons")
+}
+
+// lessonsSection renders the lessons as the section appended to a prompt: every rule, then every example with its
+// input, output and why (spec section 11.4: in v1 every example is included).
+func lessonsSection(l pipeline.Lessons) string {
+	var b strings.Builder
+	b.WriteString("\n\n## " + lessonsHeading + "\n")
+	if len(l.Rules) > 0 {
+		b.WriteString("\nRules:\n\n")
+		for _, r := range l.Rules {
+			b.WriteString("- " + r.Text + "\n")
+		}
+	}
+	if len(l.Examples) > 0 {
+		b.WriteString("\nExamples:\n")
+		for _, e := range l.Examples {
+			in, _ := json.Marshal(e.Input) // decoded from YAML: always encodes
+			out, _ := json.Marshal(e.Output)
+			b.WriteString("\n- Input: " + string(in) + "\n  Output: " + string(out) + "\n")
+			if e.Why != "" {
+				b.WriteString("  Why: " + e.Why + "\n")
+			}
+		}
+	}
+	return b.String()
 }
 
 // fence matches a fenced code block tagged json; its group is the block's content.

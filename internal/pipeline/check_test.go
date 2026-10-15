@@ -266,7 +266,7 @@ steps:
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			pkg := checkPackage(t, tt.yaml)
-			got := Check(pkg, Resolver{}, envOf(tt.env))
+			got := Check(pkg, Resolver{}, envOf(tt.env), CheckOptions{})
 			lines := make([]string, len(got))
 			for i, d := range got {
 				lines[i] = d.String()
@@ -293,7 +293,7 @@ func TestCheckBuiltinWarning(t *testing.T) {
   keep: { action: filter, in: trigger.go, out: kept, config: { expr: "true" } }
   gate: { action: review, in: kept }
 `)
-	got := Check(pkg, Resolver{}, envOf(nil))
+	got := Check(pkg, Resolver{}, envOf(nil), CheckOptions{})
 	want := []string{ // filter and dedupe run from M2: only review warns
 		"warning steps.gate.action: the review builtin arrives in M3: check validates it, run cannot execute it yet",
 	}
@@ -373,7 +373,7 @@ func TestCheckConfigSchemaErrors(t *testing.T) {
 				action = "x"
 			}
 			pkg := checkPackage(t, checkHeader+"steps:\n  s: { action: "+action+", in: trigger.go, config: "+tt.config+" }\n")
-			got := Check(pkg, tt.resolver, envOf(nil))
+			got := Check(pkg, tt.resolver, envOf(nil), CheckOptions{})
 			if len(got) != 1 || !matchLines([]string{got[0].String()}, []string{tt.want}) {
 				t.Fatalf("got %v, want %q", got, tt.want)
 			}

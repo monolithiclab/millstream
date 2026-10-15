@@ -46,12 +46,22 @@ var builtinKeys = map[string][]string{
 		"sampleRate"},
 }
 
+// CheckOptions are the environment file's settings Check applies.
+type CheckOptions struct {
+	// LessonsMaxTokens is lessons.maxTokens; zero means DefaultLessonsMaxTokens.
+	LessonsMaxTokens int
+}
+
 // Check validates a parsed package (spec section 4.8) and returns every finding, sorted by path, then severity,
 // then message. Parsing already refused shape errors; Check covers what needs the whole package: references
-// between steps, streams, triggers, secrets and actions, cycles, expressions, configs against action schemas and
-// schema compatibility along every stream. env resolves secrets as `run` would (MILLSTREAM_SECRET_<NAME>).
-func Check(pkg *Package, actions ActionResolver, env func(string) (string, bool)) []Diagnostic {
-	c := &checker{pkg: pkg, p: pkg.Pipeline, env: env, actions: map[string]*Action{}}
+// between steps, streams, triggers, secrets and actions, cycles, expressions, configs against action schemas,
+// schema compatibility along every stream and lessons files. env resolves secrets as `run` would
+// (MILLSTREAM_SECRET_<NAME>).
+func Check(pkg *Package, actions ActionResolver, env func(string) (string, bool), opts CheckOptions) []Diagnostic {
+	if opts.LessonsMaxTokens <= 0 {
+		opts.LessonsMaxTokens = DefaultLessonsMaxTokens
+	}
+	c := &checker{pkg: pkg, p: pkg.Pipeline, env: env, opts: opts, actions: map[string]*Action{}}
 	c.producers, c.consumers = c.p.streamIndex()
 	c.stepNames = slices.Sorted(maps.Keys(c.p.Steps))
 	c.checkSecrets()
@@ -73,6 +83,7 @@ type checker struct {
 	pkg                  *Package
 	p                    *Pipeline
 	env                  func(string) (string, bool)
+	opts                 CheckOptions
 	actions              map[string]*Action // resolved action of each step whose reference resolved
 	producers, consumers map[string][]string
 	stepNames            []string
@@ -163,6 +174,8 @@ func (c *checker) checkStep(name string, actions ActionResolver) {
 		}
 	}
 
+	c.checkLessons(name, s, a)
+
 	cfgAt := joinPath(at, "config")
 	cfg, skipped := c.inferConfig(s.Config, cfgAt)
 	switch {
@@ -189,6 +202,27 @@ func (c *checker) checkAgent(at string, a *Action) {
 	if len(a.Agent.Network) == 0 {
 		c.warnf(at, "action %s declares no runtime.agent.network: in its sandbox it cannot reach its model; list "+
 			"the model's endpoint there (api.anthropic.com)", a.Ref)
+	}
+}
+
+// checkLessons checks a step's lessons file (spec section 11.4): it parses, and stays under lessons.maxTokens,
+// since the adapter never truncates it. Lessons on a step whose action is not an agent are never used.
+func (c *checker) checkLessons(name string, s Step, a *Action) {
+	if s.Lessons == "" {
+		return
+	}
+	at := joinPath(joinPath("steps", name), "lessons")
+	_, data, err := StepLessons(c.pkg, s)
+	if err != nil {
+		c.errorf(at, "%v", err)
+		return
+	}
+	if n := LessonsTokens(data); n > c.opts.LessonsMaxTokens {
+		c.errorf(at, "%s is about %d tokens (characters / 4), over lessons.maxTokens %d: merge or prune its rules "+
+			"and examples, it is never truncated", s.Lessons, n, c.opts.LessonsMaxTokens)
+	}
+	if a != nil && a.Kind != KindAgent {
+		c.warnf(at, "lessons apply to agent steps only: %s is not used by action %s", s.Lessons, a.Ref)
 	}
 }
 

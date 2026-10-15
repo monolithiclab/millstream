@@ -14,6 +14,7 @@ registries: { lab: ghcr.io/monolithiclab/millstream-actions/, local: "localhost:
 runtime: { container: podman }
 prices: { claude-sonnet-5-5: { inPerMtok: 3, outPerMtok: 15.5 } }
 agents: { allowUnsandboxed: true, image: "agents:1", linuxBinary: /opt/millstream-linux }
+lessons: { maxTokens: 500 }
 `))
 	if err != nil {
 		t.Fatal(err)
@@ -21,11 +22,12 @@ agents: { allowUnsandboxed: true, image: "agents:1", linuxBinary: /opt/millstrea
 	if env.Registries["lab"] != "ghcr.io/monolithiclab/millstream-actions" ||
 		env.Registries["local"] != "localhost:5000/actions" || env.ContainerRuntime != RuntimePodman ||
 		env.Prices["claude-sonnet-5-5"] != (Price{InPerMtok: 3, OutPerMtok: 15.5}) || !env.AllowUnsandboxed ||
-		env.AgentImage != "agents:1" || env.AgentBinary != "/opt/millstream-linux" {
+		env.AgentImage != "agents:1" || env.AgentBinary != "/opt/millstream-linux" || env.LessonsMaxTokens != 500 {
 		t.Fatalf("environment %+v", env)
 	}
 	empty, err := ParseEnvironment(nil)
-	if err != nil || empty.ContainerRuntime != RuntimeDocker || empty.Registries != nil {
+	if err != nil || empty.ContainerRuntime != RuntimeDocker || empty.Registries != nil ||
+		empty.LessonsMaxTokens != 0 {
 		t.Fatalf("empty environment %+v, %v", empty, err)
 	}
 }
@@ -54,6 +56,9 @@ func TestParseEnvironmentErrors(t *testing.T) {
 		"agents image":      {"agents: { image: \"\" }\n", "agents.image: must not be empty"},
 		"agents binary":     {"agents: { linuxBinary: [x] }\n", "agents.linuxBinary: must be a string"},
 		"registries scalar": {"registries: x\n", "registries: must be a mapping"},
+		"lessons zero":      {"lessons: { maxTokens: 0 }\n", "lessons.maxTokens: must be a positive integer"},
+		"lessons key":       {"lessons: { max: 3 }\n", "lessons.max: unknown key"},
+		"lessons scalar":    {"lessons: 3\n", "lessons: must be a mapping"},
 		"yaml":              {"registries: [\n", "parse YAML"},
 	}
 	for name, tt := range tests {

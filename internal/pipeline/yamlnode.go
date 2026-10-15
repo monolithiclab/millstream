@@ -196,6 +196,28 @@ func strSeq(n *yaml.Node, path string) ([]string, error) {
 	return out, nil
 }
 
+// eachMapping reads the list at key, when set, calling fn with each entry read as a mapping.
+func eachMapping(f *fields, key string, fn func(*fields) error) error {
+	n := f.get(key)
+	if isNull(n) {
+		return nil
+	}
+	n = deref(n)
+	if n.Kind != yaml.SequenceNode {
+		return errAt(n, f.sub(key), "must be a list")
+	}
+	for i, c := range n.Content {
+		ef, err := mapping(c, indexPath(f.sub(key), i))
+		if err != nil {
+			return err
+		}
+		if err := fn(ef); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // positiveInt reads an integer of at least 1.
 func positiveInt(n *yaml.Node, path string) (int, error) {
 	n = deref(n)

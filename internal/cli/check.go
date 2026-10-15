@@ -22,7 +22,7 @@ func (c CheckCmd) Run(rt *Runtime) error {
 	if err != nil {
 		return err
 	}
-	diags := pipeline.Check(pkg, resolver(rt, env, false), rt.Env)
+	diags := pipeline.Check(pkg, resolver(rt, env, false), rt.Env, checkOptions(env))
 	errs := 0
 	for _, d := range diags {
 		if d.Severity == pipeline.SeverityError {

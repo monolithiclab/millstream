@@ -136,8 +136,8 @@ func (r Resolver) Resolve(pkg *Package, ref string) (*Action, error) {
 
 // local reads the manifest of the action directory ref names inside the package.
 func (r Resolver) local(pkg *Package, ref string) (*Action, error) {
-	dir := path.Clean(strings.TrimPrefix(ref, "./"))
-	if dir == "." || dir == ".." || strings.HasPrefix(dir, "../") {
+	dir, inside := packagePath("", strings.TrimPrefix(ref, "./"))
+	if !inside || dir == "." {
 		return nil, fmt.Errorf("action %s: a local action must be a directory inside the package", ref)
 	}
 	manifest := dir + "/" + ManifestFile
@@ -357,8 +357,8 @@ func (r Resolver) finish(pkg *Package, m *Action, schemas map[string]any) error 
 		}
 		prog = bin
 	}
-	rel := path.Clean(path.Join(m.Dir, prog))
-	if rel == ".." || strings.HasPrefix(rel, "../") {
+	rel, inside := packagePath(m.Dir, prog)
+	if !inside {
 		return fmt.Errorf("runtime.exec.command: %s leaves the package", prog)
 	}
 	if _, ok := pkg.Files[rel]; !ok {
@@ -375,12 +375,25 @@ func (r Resolver) platform() string {
 	return runtime.GOOS + "-" + runtime.GOARCH
 }
 
+// packagePath resolves rel, a slash-separated path relative to base (a directory of the package, "" for its root),
+// to a path of the package. ok is false for an absolute path and for one that leaves the package.
+func packagePath(base, rel string) (p string, ok bool) {
+	if path.IsAbs(rel) {
+		return "", false
+	}
+	p = path.Clean(path.Join(base, rel))
+	return p, p != ".." && !strings.HasPrefix(p, "../")
+}
+
 // schemaDoc returns a schema as a JSON document: an inline schema as written, or {$ref: path} read from the file
 // at path, relative to base. A file may be JSON or YAML.
 func schemaDoc(pkg *Package, base string, v any) ([]byte, error) {
 	m, _ := v.(map[string]any)
 	if ref, ok := m["$ref"].(string); ok && len(m) == 1 && !strings.HasPrefix(ref, "#") {
-		p := path.Clean(path.Join(base, ref))
+		p, inside := packagePath(base, ref)
+		if !inside {
+			p = ref // a path outside the package is not among its files
+		}
 		data, ok := pkg.Files[p]
 		if !ok {
 			return nil, fmt.Errorf("schema file %s is not in the package", p)

@@ -116,6 +116,7 @@ type Engine struct {
 	packages map[string]*pipeline.Package   // by package hash
 	revs     map[store.RevisionID]*revision // decoded revisions, immutable once built
 	actions  map[actionKey]*resolvedAction  // by package hash and reference
+	lessonsC map[actionKey]lessonsEntry     // agent steps' lessons by package hash and step
 	inflight map[string]flight              // leased deliveries by delivery id
 	buckets  map[store.StepRef]*bucket      // step rate limits
 	builtins map[builtinKey]*builtin        // compiled builtin steps by package hash and step
@@ -170,7 +171,8 @@ func New(opts Options) (*Engine, error) {
 	return &Engine{
 		st: opts.Store, opts: opts, log: opts.Logger,
 		packages: map[string]*pipeline.Package{}, revs: map[store.RevisionID]*revision{},
-		actions: map[actionKey]*resolvedAction{}, inflight: map[string]flight{}, buckets: map[store.StepRef]*bucket{},
+		actions:  map[actionKey]*resolvedAction{},
+		lessonsC: map[actionKey]lessonsEntry{}, inflight: map[string]flight{}, buckets: map[store.StepRef]*bucket{},
 		builtins: map[builtinKey]*builtin{},
 		crons:    map[[2]string]*cronState{}, ready: make(chan struct{}),
 		parser: cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor),

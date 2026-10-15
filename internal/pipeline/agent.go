@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"maps"
 	"math"
-	"path"
 	"slices"
 	"strings"
 )
@@ -142,8 +141,8 @@ func agentRuntime(rt map[string]any) (*AgentRuntime, error) {
 // for the api harness) is reported as unavailable.
 func finishAgent(pkg *Package, m *Action) error {
 	a := m.Agent
-	p := path.Clean(path.Join(m.Dir, a.Prompt))
-	if path.IsAbs(a.Prompt) || p == ".." || strings.HasPrefix(p, "../") {
+	p, inside := packagePath(m.Dir, a.Prompt)
+	if !inside {
 		return fmt.Errorf("runtime.agent.prompt: %s leaves the package", a.Prompt)
 	}
 	if _, ok := pkg.Files[p]; !ok {

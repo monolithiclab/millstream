@@ -66,6 +66,7 @@ type session struct {
 	env     map[string]string
 	workdir string
 	config  map[string]any
+	lessons json.RawMessage
 	logs    bytes.Buffer
 	apiKey  string
 }
@@ -94,7 +95,7 @@ func (s *session) run(payloads ...string) []protocol.Message {
 	var in bytes.Buffer
 	w := protocol.NewWriter(&in)
 	msgs := []protocol.Message{protocol.Hello{Protocol: 1, Action: "lab/score", Config: s.config,
-		Vars: map[string]any{"city": "Lyon"}}}
+		Vars: map[string]any{"city": "Lyon"}, Lessons: s.lessons}}
 	for i, p := range payloads {
 		msgs = append(msgs, protocol.Item{Delivery: "dl_" + string(rune('a'+i)), ID: "it_1", Key: "k",
 			Payload: json.RawMessage(p), Attempt: i + 1})
@@ -391,5 +392,47 @@ func TestRunProtocol(t *testing.T) {
 	if err := Run(t.Context(), strings.NewReader(`{"type":"hello","protocol":1}`+"\n"), &bytes.Buffer{},
 		Options{}); err != nil {
 		t.Fatalf("EOF after hello: %v", err)
+	}
+}
+
+const testLessons = `{"rules":[{"text":"Ground-floor flats on a main road score below 40.","source":"review/r-1"}],` +
+	`"examples":[{"input":{"floor":0},"output":{"score":35},"why":"Noise."}]}`
+
+// TestRunLessons: the lessons from hello are appended to a template that does not mention them, rendered by one
+// that does, and change the rendered prompt, hence the recording key.
+func TestRunLessons(t *testing.T) {
+	t.Parallel()
+	prompts := func(prompt string, lessons json.RawMessage) string {
+		t.Helper()
+		h := &fakeHarness{fn: answer(`{"score": 1}`, 1, 1)}
+		s := newSession(t, writePackage(t, testManifest, prompt), h)
+		s.lessons = lessons
+		s.run(`{"url": "u"}`)
+		return h.reqs[0].Prompt
+	}
+	plain := prompts(testPrompt, nil)
+	appended := prompts(testPrompt, json.RawMessage(testLessons))
+	want := plain + "\n\n## Lessons from past runs\n\nRules:\n\n- Ground-floor flats on a main road score below 40.\n" +
+		"\nExamples:\n\n- Input: {\"floor\":0}\n  Output: {\"score\":35}\n  Why: Noise.\n"
+	if appended != want {
+		t.Fatalf("prompt with lessons:\n%s\nwant:\n%s", appended, want)
+	}
+	own := prompts("Rules:{{ range .Lessons.Rules }} {{ .Text }}{{ end }}", json.RawMessage(testLessons))
+	if own != "Rules: Ground-floor flats on a main road score below 40." {
+		t.Fatalf("a template using .Lessons: %q", own)
+	}
+	if empty := prompts("Rules:{{ range .Lessons.Rules }} {{ .Text }}{{ end }}", nil); empty != "Rules:" {
+		t.Fatalf("a template using .Lessons without lessons: %q", empty)
+	}
+	edited := prompts(testPrompt, json.RawMessage(strings.Replace(testLessons, "below 40", "below 30", 1)))
+	key := func(p string) string { return Key(pipeline.HarnessAPI, Request{Model: "m", Prompt: p}) }
+	if edited == appended || key(edited) == key(appended) || key(appended) == key(plain) {
+		t.Fatal("editing the lessons left the prompt or the recording key unchanged")
+	}
+
+	s := newSession(t, writePackage(t, testManifest, testPrompt), &fakeHarness{fn: answer("", 0, 0)})
+	s.lessons = json.RawMessage(`{"rules": 3}`)
+	if msgs := s.run(`{}`); len(msgs) != 1 || !strings.Contains(msgs[0].(protocol.Error).Message, "hello lessons") {
+		t.Fatalf("malformed lessons: %+v", msgs)
 	}
 }

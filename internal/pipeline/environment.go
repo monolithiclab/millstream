@@ -39,6 +39,9 @@ type Environment struct {
 	// AgentBinary is agents.linuxBinary: a Linux build of millstream for the sandbox's platform, mounted into it as
 	// the adapter. Relative to the environment file; empty means the running binary, on Linux only.
 	AgentBinary string
+	// LessonsMaxTokens is lessons.maxTokens: the size limit of a lessons file, in approximate tokens (spec section
+	// 11.4); zero means DefaultLessonsMaxTokens, which Check applies.
+	LessonsMaxTokens int
 }
 
 // Price is a model's price per million tokens, in US dollars.
@@ -49,7 +52,7 @@ type Price struct {
 
 // laterEnvironmentKeys are keys of the environment file in spec section 14 that this build does not read yet.
 var laterEnvironmentKeys = []string{"environment", "store", "artifacts", "listen", "auth", "node", "secrets",
-	"retention", "lessons", "improve"}
+	"retention", "improve"}
 
 // LoadEnvironment reads the environment file at path. A missing file is an empty environment when required is
 // false, an error otherwise.
@@ -91,7 +94,7 @@ func ParseEnvironment(data []byte) (*Environment, error) {
 			return nil, errAt(k, k.Value, "is not supported by this build yet")
 		}
 	}
-	if err := f.allow("registries", "runtime", "prices", "agents"); err != nil {
+	if err := f.allow("registries", "runtime", "prices", "agents", "lessons"); err != nil {
 		return nil, err
 	}
 	for _, err := range []error{
@@ -99,6 +102,7 @@ func ParseEnvironment(data []byte) (*Environment, error) {
 		readRuntime(f, env),
 		optional(f, "prices", &env.Prices, prices),
 		readAgents(f, env),
+		readLessons(f, env),
 	} {
 		if err != nil {
 			return nil, err
@@ -196,4 +200,19 @@ func readAgents(f *fields, env *Environment) error {
 		}
 	}
 	return nil
+}
+
+func readLessons(f *fields, env *Environment) error {
+	n := f.get("lessons")
+	if isNull(n) {
+		return nil
+	}
+	lf, err := mapping(n, f.sub("lessons"))
+	if err != nil {
+		return err
+	}
+	if err := lf.allow("maxTokens"); err != nil {
+		return err
+	}
+	return optional(lf, "maxTokens", &env.LessonsMaxTokens, positiveInt)
 }

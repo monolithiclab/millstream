@@ -24,7 +24,7 @@ type PoolOptions struct {
 }
 
 // Pool runs deliveries on action processes. A long-lived process is reused only for the same action digest,
-// config and vars (spec section 6.5), and serves one delivery at a time: concurrent deliveries of one key run on
+// config, vars and lessons (spec section 6.5), and serves one delivery at a time: concurrent deliveries of one key run on
 // as many processes. A process that fails a delivery in the runtime is dropped, so the next delivery spawns a
 // fresh one. A perItem action gets a fresh process for every delivery, closed after it.
 type Pool struct {
@@ -146,10 +146,10 @@ func (pl *Pool) closeLogged(p *Process) {
 	}
 }
 
-// poolKey is the action digest with hashes of the config and vars: encoding/json sorts map keys, so equal maps
-// encode alike.
+// poolKey is the action digest with a hash of the config, vars and lessons: encoding/json sorts map keys, so equal
+// maps encode alike.
 func poolKey(spec Spec) (string, error) {
-	enc, err := json.Marshal([]any{spec.Config, spec.Vars})
+	enc, err := json.Marshal([]any{spec.Config, spec.Vars, spec.Lessons})
 	if err != nil {
 		return "", fmt.Errorf("action %s: encode config and vars: %w", spec.Action, err)
 	}

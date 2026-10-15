@@ -2,12 +2,12 @@
 // `millstream agent`. It speaks the action protocol (internal/protocol) on its stdin and stdout and drives a
 // harness on the other side, so the engine never knows which model ran.
 //
-// For each item it renders the action's prompt template with the payload, config and vars, runs the harness with
-// the manifest's tools and limits, extracts the structured output (native when the harness has it, else the last
-// fenced JSON block) and validates it against the output schema; a mismatch is a retryable error. It emits the
-// output with the metrics tokens_in, tokens_out, cost_usd, turns and duration_ms (labelled with the model), and
-// keeps the attempt's transcript as the artifact transcript.json, on failure as on success, with every secret value
-// redacted.
+// For each item it renders the action's prompt template with the payload, config, vars and the step's lessons (from
+// hello), runs the harness with the manifest's tools and limits, extracts the structured output (native when the
+// harness has it, else the last fenced JSON block) and validates it against the output schema; a mismatch is a
+// retryable error. It emits the output with the metrics tokens_in, tokens_out, cost_usd, turns and duration_ms
+// (labelled with the model), and keeps the attempt's transcript as the artifact transcript.json, on failure as on
+// success, with every secret value redacted.
 //
 // Harness calls go through a record/replay layer (Recorder), so tests and evals never reach a model. Secret values
 // reach the adapter through its environment (MILLSTREAM_SECRET_<NAME>), for redaction and for the API key the
@@ -121,6 +121,7 @@ type adapter struct {
 	schema  json.RawMessage
 	output  *schema.Schema
 	prompt  *template.Template
+	lessons pipeline.Lessons
 	harness Harness
 	redact  *redact.Redactor
 	workdir string
@@ -154,6 +155,11 @@ func (a *adapter) setup(secrets map[string]string) error {
 		return fmt.Errorf("action %s is of kind %s, not agent", a.opts.Action, act.Kind)
 	}
 	a.agent, a.schema = act.Agent, act.Output
+	if len(a.hello.Lessons) > 0 {
+		if err := json.Unmarshal(a.hello.Lessons, &a.lessons); err != nil {
+			return fmt.Errorf("hello lessons: %w", err)
+		}
+	}
 	if a.output, err = schema.Compile(act.Output); err != nil {
 		return fmt.Errorf("output schema: %w", err)
 	}
@@ -279,7 +285,8 @@ func (a *adapter) attempt(ctx context.Context, it protocol.Item, t *Transcript) 
 	if err := json.Unmarshal(it.Payload, &payload); err != nil {
 		return nil, permanent("decode payload: %v", err)
 	}
-	prompt, err := Render(a.prompt, PromptData{Payload: payload, Config: a.hello.Config, Vars: a.hello.Vars})
+	prompt, err := Render(a.prompt, PromptData{Payload: payload, Config: a.hello.Config, Vars: a.hello.Vars,
+		Lessons: a.lessons})
 	if err != nil {
 		return nil, permanent("%v", err) // a template that fails on this payload fails on every retry
 	}

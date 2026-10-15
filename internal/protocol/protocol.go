@@ -42,14 +42,16 @@ type Message interface {
 	Type() string
 }
 
-// Hello opens a process: the action, its config and the run's vars. A process serves only deliveries with the
-// same action digest, config and vars as its hello.
+// Hello opens a process: the action, its config and the run's vars, and for an agent step its lessons (spec
+// section 11.4) as JSON, rules and examples. A process serves only deliveries with the same action digest, config,
+// vars and lessons as its hello.
 type Hello struct {
-	Protocol int            `json:"protocol"`
-	Action   string         `json:"action"`
-	Version  string         `json:"version"`
-	Config   map[string]any `json:"config"`
-	Vars     map[string]any `json:"vars"`
+	Protocol int             `json:"protocol"`
+	Action   string          `json:"action"`
+	Version  string          `json:"version"`
+	Config   map[string]any  `json:"config"`
+	Vars     map[string]any  `json:"vars"`
+	Lessons  json.RawMessage `json:"lessons,omitempty"`
 }
 
 // Item hands the process one delivery.

@@ -65,7 +65,7 @@ func (c TestPipelineCmd) Run(rt *Runtime) error {
 		return err
 	}
 	actions := resolver(rt, env, false)
-	if diags := pipeline.Check(pkg, actions, rt.Env); pipeline.HasErrors(diags) {
+	if diags := pipeline.Check(pkg, actions, rt.Env, checkOptions(env)); pipeline.HasErrors(diags) {
 		for _, d := range diags {
 			fmt.Fprintf(rt.IO.Err, "%s: %s\n", pkg.Pipeline.Name, d)
 		}

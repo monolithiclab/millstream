@@ -135,6 +135,9 @@ func (e *Engine) assign(ctx context.Context, l store.Lease) (node.Assignment, er
 		// A container gets no variable of the engine's environment: the host's PATH and HOME mean nothing in it.
 		spec.Image, spec.Network = act.a.Pin, act.a.Network
 	case pipeline.KindAgent:
+		if spec.Lessons, err = e.lessons(rev, l.Step, step); err != nil {
+			return node.Assignment{}, err
+		}
 		if err := e.agentSpec(&spec, act, rev.p.Secrets, secrets, l); err != nil {
 			return node.Assignment{}, err
 		}
@@ -261,6 +264,34 @@ func (e *Engine) processEnv() []string {
 		}
 	}
 	return env
+}
+
+// lessonsEntry is a step's lessons as hello carries them, or the dispatch error they resolve to.
+type lessonsEntry struct {
+	raw json.RawMessage
+	err error
+}
+
+// lessons reads the lessons file of an agent step of rev from its package (spec section 11.4), as the JSON hello
+// carries, once per package and step; nil when the step has none. A file that does not read is a config error, not
+// retried. The action resolved, so the package is loaded.
+func (e *Engine) lessons(rev *revision, name string, step pipeline.Step) (json.RawMessage, error) {
+	k := actionKey{rev.hash, name}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if le, ok := e.lessonsC[k]; ok {
+		return le.raw, le.err
+	}
+	var le lessonsEntry
+	l, _, err := pipeline.StepLessons(e.packages[rev.hash], step)
+	switch {
+	case err != nil:
+		le.err = dispatchErr(ClassConfig, false, "step %s: %w", name, err)
+	case l != nil && !l.Empty():
+		le.raw, _ = json.Marshal(l) // decoded from YAML: always encodes
+	}
+	e.lessonsC[k] = le
+	return le.raw, le.err
 }
 
 // agentSpec makes spec run the agent adapter for an agent action (spec section 7.3): millstream agent in the

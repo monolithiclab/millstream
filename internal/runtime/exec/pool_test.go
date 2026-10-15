@@ -1,6 +1,7 @@
 package exec
 
 import (
+	"encoding/json"
 	"errors"
 	"sync"
 	"testing"
@@ -54,15 +55,17 @@ func TestPoolLifecycles(t *testing.T) {
 	}
 }
 
-func TestPoolKeysOnDigestConfigAndVars(t *testing.T) {
+func TestPoolKeysOnDigestConfigVarsAndLessons(t *testing.T) {
 	t.Parallel()
 	pl := newTestPool(t, 0)
 	base := fakeSpec("echo", nil)
 	pid := poolPID(t, pl, base, "dl_0")
-	otherDigest, otherConfig, otherVars := base, fakeSpec("echo", map[string]any{"extra": 1}), base
+	otherDigest, otherConfig, otherVars, otherLessons := base, fakeSpec("echo", map[string]any{"extra": 1}), base, base
 	otherDigest.Digest = "sha256:other"
 	otherVars.Vars = map[string]any{"city": "Paris"}
-	for name, spec := range map[string]Spec{"digest": otherDigest, "config": otherConfig, "vars": otherVars} {
+	otherLessons.Lessons = json.RawMessage(`{"rules":[{"text":"Be strict."}]}`)
+	for name, spec := range map[string]Spec{"digest": otherDigest, "config": otherConfig, "vars": otherVars,
+		"lessons": otherLessons} {
 		if got := poolPID(t, pl, spec, "dl_"+name); got == pid {
 			t.Errorf("another %s reused process %d", name, pid)
 		}

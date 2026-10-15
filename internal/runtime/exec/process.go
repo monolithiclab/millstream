@@ -10,6 +10,7 @@ package exec
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -59,6 +60,8 @@ type Spec struct {
 	// Env is the process's whole environment: the node's own is not inherited, so its secrets do not leak to
 	// actions. MILLSTREAM_WORKDIR is added.
 	Env []string
+	// Lessons is an agent step's lessons, sent in hello; nil when it has none.
+	Lessons json.RawMessage
 }
 
 // Mount is a host path a container sees at Target.
@@ -289,7 +292,7 @@ func (p *Process) readStdout() {
 func (p *Process) handshake(ctx context.Context) error {
 	hello := protocol.Hello{
 		Protocol: protocol.Version, Action: p.spec.Action, Version: p.spec.Version,
-		Config: p.spec.Config, Vars: p.spec.Vars,
+		Config: p.spec.Config, Vars: p.spec.Vars, Lessons: p.spec.Lessons,
 	}
 	// The ready timeout and ctx bound the whole handshake, the hello write included: a process that never reads
 	// stdin must not block it on a full pipe. Killing the process closes stdin and unblocks the write.

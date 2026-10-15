@@ -169,8 +169,8 @@ func echo(w *protocol.Writer, it protocol.Item) error {
 
 func artifacts(w *protocol.Writer, it protocol.Item) error {
 	var in struct {
-		Files map[string]string   `json:"files"`
-		Links map[string]string   `json:"links"`
+		Files   map[string]string   `json:"files"`
+		Links   map[string]string   `json:"links"`
 		Emit    []protocol.Artifact `json:"emit"`
 		Attempt []protocol.Artifact `json:"attempt"`
 		Fail    bool                `json:"fail"`

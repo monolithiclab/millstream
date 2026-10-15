@@ -55,3 +55,8 @@ func agents(rt *Runtime, env *pipeline.Environment) engine.Agents {
 	}
 	return a
 }
+
+// checkOptions are the environment file's settings check applies.
+func checkOptions(env *pipeline.Environment) pipeline.CheckOptions {
+	return pipeline.CheckOptions{LessonsMaxTokens: env.LessonsMaxTokens}
+}

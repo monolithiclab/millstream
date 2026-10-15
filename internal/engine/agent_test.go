@@ -23,26 +23,64 @@ runtime: { agent: { harness: api, model: claude-sonnet-5-5, apiKeySecret: key, n
 // agentAssignment applies a package with the agent step score and returns its assignment.
 func agentAssignment(t *testing.T, agents Agents, environ map[string]string) (node.Assignment, *env) {
 	t.Helper()
-	v := newEnv(t, Options{Env: func(k string) (string, bool) { s, ok := environ[k]; return s, ok }, Agents: agents})
-	pkg := writePackage(t, "pipeline: p\nsecrets: [key]\ntriggers:\n  adhoc: { manual: {} }\nsteps:\n"+
-		"  score: { action: ./actions/score, in: trigger.adhoc, config: { rooms: 2 } }\n")
-	for name, body := range map[string]string{"action.yaml": agentManifest, "prompt.md": "Score {{ .Payload }}.\n"} {
-		// On disk as well: the adapter reads the action from the package directory.
-		pkg.Files["actions/score/"+name] = []byte(body)
-		if err := os.MkdirAll(filepath.Join(pkg.Dir, "actions", "score"), 0o750); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(filepath.Join(pkg.Dir, "actions", "score", name), []byte(body), 0o600); err != nil {
-			t.Fatal(err)
-		}
-	}
-	v.apply(pkg)
-	v.fire("p", "adhoc", "k")
+	v, _ := agentRun(t, agents, environ, nil)
 	as, err := v.e.Pull(v.ctx, "node-a", 1)
 	if err != nil || len(as) != 1 {
 		t.Fatalf("Pull = %v, %v", as, err)
 	}
 	return as[0], v
+}
+
+// agentRun applies a package with the agent step score, its files plus extra under actions/score and lessons, and
+// fires a run.
+func agentRun(t *testing.T, agents Agents, environ, extra map[string]string) (*env, string) {
+	t.Helper()
+	v := newEnv(t, Options{Env: func(k string) (string, bool) { s, ok := environ[k]; return s, ok }, Agents: agents})
+	pkg := writePackage(t, "pipeline: p\nsecrets: [key]\ntriggers:\n  adhoc: { manual: {} }\nsteps:\n"+
+		"  score: { action: ./actions/score, in: trigger.adhoc, config: { rooms: 2 } }\n")
+	files := map[string]string{"actions/score/action.yaml": agentManifest, "actions/score/prompt.md": "Score {{ .Payload }}.\n"}
+	for name, body := range extra {
+		files[name] = body
+	}
+	for name, body := range files {
+		// On disk as well: the adapter reads the action from the package directory.
+		pkg.Files[name] = []byte(body)
+		p := filepath.Join(pkg.Dir, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(p), 0o750); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, ok := files["lessons/score.yaml"]; ok {
+		s := pkg.Pipeline.Steps["score"]
+		s.Lessons = "lessons/score.yaml" // as Load sets it when the file exists
+		pkg.Pipeline.Steps["score"] = s
+	}
+	v.apply(pkg)
+	return v, v.fire("p", "adhoc", "k")
+}
+
+// TestAgentAssignmentLessons: the step's lessons file reaches the adapter in hello, as JSON; one that does not
+// parse fails the delivery as a config error, not retried.
+func TestAgentAssignmentLessons(t *testing.T) {
+	t.Parallel()
+	agents := Agents{AllowUnsandboxed: true, Executable: "/usr/local/bin/millstream"}
+	environ := map[string]string{"MILLSTREAM_SECRET_KEY": "sk-0123456789"}
+	v, _ := agentRun(t, agents, environ, map[string]string{"lessons/score.yaml": "rules: [{ text: Be strict. }]\n"})
+	as, err := v.e.Pull(v.ctx, "node-a", 1)
+	if err != nil || len(as) != 1 || string(as[0].Spec.Lessons) != `{"rules":[{"text":"Be strict."}]}` {
+		t.Fatalf("Pull = %+v, %v", as, err)
+	}
+
+	v, id := agentRun(t, agents, environ, map[string]string{"lessons/score.yaml": "rules: 3\n"})
+	if got := v.pull(1); len(got) != 0 {
+		t.Fatalf("assignments = %v", got)
+	}
+	if d := v.deliveries(id)[0]; d.ErrorClass != ClassConfig || !strings.Contains(d.ErrorMessage, "rules: must be a list") {
+		t.Fatalf("delivery %+v", d)
+	}
 }
 
 // TestAgentAssignmentSandboxed: with a sandbox, the adapter runs in its container with the binary and the package
