@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sync"
 	"testing"
 
 	"github.com/monolithiclab/millstream/examples/m1-fixture/listing"
@@ -41,13 +42,13 @@ type scored struct {
 // fakeModel is an OpenAI-compatible chat completions endpoint that scores the listing a prompt names with
 // pool.Score, lowered by the penalty its lessons ask for, and answers with a fenced JSON block. Token counts are
 // the characters divided by four, so the recordings and their costs are reproducible.
-func fakeModel(t *testing.T) *httptest.Server {
+func fakeModel(t *testing.T) http.Handler {
 	t.Helper()
 	all := map[string]listing.Listing{}
 	for _, l := range pool.All() {
 		all[l.ID] = l
 	}
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
 			Model    string `json:"model"`
 			Messages []struct {
@@ -81,14 +82,23 @@ func fakeModel(t *testing.T) *httptest.Server {
 			"usage": map[string]int{"prompt_tokens": len(prompt) / 4, "completion_tokens": len(text) / 4},
 		})
 		_, _ = w.Write(resp)
-	}))
-	t.Cleanup(srv.Close)
-	return srv
+	})
 }
 
-// record runs the score action over every pool listing with the lessons file, through the agent adapter and the
+// handlerTransport serves requests with a handler, in process.
+type handlerTransport struct{ h http.Handler }
+
+func (ht handlerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	rec := httptest.NewRecorder()
+	ht.h.ServeHTTP(rec, req)
+	resp := rec.Result()
+	resp.Request = req
+	return resp, nil
+}
+
+// record runs the score action over listings with the lessons file, through the agent adapter and the
 // real api harness pointed at the fake model, recording into dir.
-func record(t *testing.T, srv *httptest.Server, lessonsFile, dir string) {
+func record(t *testing.T, model http.Handler, lessonsFile, dir string, listings []listing.Listing) {
 	t.Helper()
 	data, err := os.ReadFile(lessonsFile) // #nosec G304 -- the package's own files
 	if err != nil {
@@ -105,7 +115,7 @@ func record(t *testing.T, srv *httptest.Server, lessonsFile, dir string) {
 	w := protocol.NewWriter(&in)
 	msgs := []protocol.Message{protocol.Hello{Protocol: 1, Action: "m2-fixture/score", Config: map[string]any{},
 		Vars: map[string]any{}, Lessons: lessons}}
-	for i, li := range pool.All() {
+	for i, li := range listings {
 		payload, _ := json.Marshal(li)
 		msgs = append(msgs, protocol.Item{Delivery: fmt.Sprintf("dl_%d", i), ID: "it_" + li.ID, Key: li.ID,
 			Payload: payload, Attempt: 1})
@@ -117,10 +127,11 @@ func record(t *testing.T, srv *httptest.Server, lessonsFile, dir string) {
 	}
 	var out bytes.Buffer
 	err = agent.Run(t.Context(), &in, &out, agent.Options{
-		Package: ".", Action: "./actions/score", Secrets: []string{"scorerKey"},
+		Package: ".", Loaded: loadFixture(t), Action: "./actions/score", Secrets: []string{"scorerKey"},
 		Env: func(k string) (string, bool) { v, ok := env[k]; return v, ok },
 		NewHarness: func(rt *pipeline.AgentRuntime, apiKey string) agent.Harness {
-			return agent.API{Provider: rt.Provider, BaseURL: srv.URL, APIKey: apiKey}
+			return agent.API{Provider: rt.Provider, BaseURL: "http://model.test", APIKey: apiKey,
+				Client: &http.Client{Transport: handlerTransport{model}}}
 		},
 	})
 	if err != nil {
@@ -139,14 +150,16 @@ func record(t *testing.T, srv *httptest.Server, lessonsFile, dir string) {
 			t.Fatalf("%s with %s: %s", m.Delivery, lessonsFile, m.Message)
 		}
 	}
-	if done != pool.Size {
-		t.Fatalf("%s: %d deliveries done, want %d", lessonsFile, done, pool.Size)
+	if done != len(listings) {
+		t.Fatalf("%s: %d deliveries done, want %d", lessonsFile, done, len(listings))
 	}
 }
 
-// TestRecordings records the score action over the whole pool with each lessons version against the fake model,
-// and checks recordings/ holds exactly those recordings: they are reproducible, and -update rewrites them. Nothing
-// reaches the network.
+// TestRecordings records the score action with each lessons version against the fake model, and checks the
+// recordings are reproducible: recordings/ holds the same file for each. In the e2e build (and with -update, which
+// rewrites recordings/) it records the whole pool and checks recordings/ holds exactly those recordings; the default
+// build records a sample, a listing in good condition and one in poor condition, which the lessons versions score
+// differently. Nothing reaches the network.
 func TestRecordings(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
@@ -156,12 +169,17 @@ func TestRecordings(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	srv := fakeModel(t)
+	listings := pool.All()
+	full := fullRecordings || *update
+	if !full {
+		listings = recordingsSample(t, listings)
+	}
+	model := fakeModel(t)
 	t.Run("record", func(t *testing.T) {
 		for _, f := range lessonsVersions {
 			t.Run(filepath.Base(f), func(t *testing.T) {
 				t.Parallel() // the versions record distinct files
-				record(t, srv, f, dir)
+				record(t, model, f, dir, listings)
 			})
 		}
 	})
@@ -170,14 +188,45 @@ func TestRecordings(t *testing.T) {
 	}
 	got, _ := filepath.Glob(filepath.Join(dir, "*.json"))
 	want, _ := filepath.Glob(filepath.Join(recordingsDir, "*.json"))
-	if len(got) != len(want) || len(want) != pool.Size*len(lessonsVersions) {
+	if len(want) != pool.Size*len(lessonsVersions) || len(got) != len(listings)*len(lessonsVersions) {
 		t.Fatalf("recorded %d files, %s has %d: run make recordings", len(got), recordingsDir, len(want))
 	}
-	for _, wf := range want {
-		gb, _ := os.ReadFile(filepath.Join(dir, filepath.Base(wf))) // #nosec G304 -- test files
-		wb, _ := os.ReadFile(wf)                                    // #nosec G304 -- test files
-		if !bytes.Equal(gb, wb) {
-			t.Fatalf("%s differs from a fresh recording: run make recordings", wf)
+	for _, gf := range got {
+		wf := filepath.Join(recordingsDir, filepath.Base(gf))
+		gb, _ := os.ReadFile(gf)   // #nosec G304 -- test files
+		wb, err := os.ReadFile(wf) // #nosec G304 -- test files
+		if err != nil || !bytes.Equal(gb, wb) {
+			t.Fatalf("%s differs from a fresh recording (%v): run make recordings", wf, err)
 		}
 	}
+}
+
+// recordingsSample is the first listing in good condition and the first in poor condition.
+func recordingsSample(t *testing.T, all []listing.Listing) []listing.Listing {
+	t.Helper()
+	var good, poor *listing.Listing
+	for i := range all {
+		switch {
+		case all[i].Condition == listing.ConditionPoor && poor == nil:
+			poor = &all[i]
+		case all[i].Condition != listing.ConditionPoor && good == nil:
+			good = &all[i]
+		}
+	}
+	if good == nil || poor == nil {
+		t.Fatal("the pool lacks a listing in good or in poor condition")
+	}
+	return []listing.Listing{*good, *poor}
+}
+
+// fixture is this package, loaded once: every recording run resolves its score action in it.
+var fixture = sync.OnceValues(func() (*pipeline.Package, error) { return pipeline.Load(".") })
+
+func loadFixture(t *testing.T) *pipeline.Package {
+	t.Helper()
+	pkg, err := fixture()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return pkg
 }
