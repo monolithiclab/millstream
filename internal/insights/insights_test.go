@@ -71,19 +71,8 @@ type sim struct {
 
 func newSim(t *testing.T, src string) *sim {
 	t.Helper()
-	s := openSim(t, sqlite.Memory, src, now.Add(-30*24*time.Hour))
-	if _, err := s.st.ApplyRevision(s.ctx, store.PackageRecord{Hash: fmt.Sprintf("%x", len(src)), Bundle: []byte(src),
-		Pipeline: s.p}); err != nil {
-		t.Fatal(err)
-	}
-	return s
-}
-
-// openSim opens the store at path for src with the clock at start, closing it when the test ends.
-func openSim(t *testing.T, path, src string, start time.Time) *sim {
-	t.Helper()
-	c := &clock{t: start}
-	st, err := sqlite.Open(path, sqlite.Options{Now: c.Now, Rand: func() float64 { return 0.5 }})
+	c := &clock{t: now.Add(-30 * 24 * time.Hour)}
+	st, err := sqlite.Open(sqlite.Memory, sqlite.Options{Now: c.Now, Rand: half})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -92,11 +81,30 @@ func openSim(t *testing.T, path, src string, start time.Time) *sim {
 			t.Error(err)
 		}
 	})
+	s := simOn(t, st, c, src)
+	s.apply(src)
+	return s
+}
+
+func half() float64 { return 0.5 }
+
+// simOn returns a sim of src on st with clock c.
+func simOn(t *testing.T, st *sqlite.Store, c *clock, src string) *sim {
+	t.Helper()
 	p, err := pipeline.Parse([]byte(src))
 	if err != nil {
 		t.Fatal(err)
 	}
 	return &sim{t: t, ctx: context.Background(), st: st, clock: c, p: p}
+}
+
+// apply applies src, the sim's pipeline.
+func (s *sim) apply(src string) {
+	s.t.Helper()
+	if _, err := s.st.ApplyRevision(s.ctx, store.PackageRecord{Hash: fmt.Sprintf("%x", len(src)), Bundle: []byte(src),
+		Pipeline: s.p}); err != nil {
+		s.t.Fatal(err)
+	}
 }
 
 func (s *sim) fire(runID string, at time.Time) {
@@ -205,54 +213,54 @@ func (s *sim) slowRun(id string, at time.Time, failure string) {
 	}
 }
 
-// fixture returns a store holding the fixture's history: six quick runs in the baseline, then three slow ones in
+// fixture returns a sim on a clone of the fixture's history: six quick runs in the baseline, then three slow ones in
 // the window, with a flaky failure, a deterministic one and a step no runtime can take. The history is built once
-// per process and each caller gets its own copy of the database.
+// per process and each caller gets its own clone, its clock at the end of the history.
 func fixture(t *testing.T) *sim {
 	t.Helper()
-	db, end := fixtureDB(t)
-	path := filepath.Join(t.TempDir(), "fixture.db")
-	if err := os.WriteFile(path, db, 0o600); err != nil {
+	base, end := fixtureStore(t)
+	c := &clock{t: end}
+	st, err := base.Clone(sqlite.Options{Now: c.Now, Rand: half})
+	if err != nil {
 		t.Fatal(err)
 	}
-	return openSim(t, path, shop, end)
+	t.Cleanup(func() {
+		if err := st.Close(); err != nil {
+			t.Error(err)
+		}
+	})
+	return simOn(t, st, c, shop)
 }
 
-// built is the fixture's database once built, with its clock at the end of the history.
+// built is the fixture's store once built, open for the process, with its clock at the end of the history.
 var built struct {
 	sync.Mutex
-	db  []byte
+	st  *sqlite.Store
 	end time.Time
 }
 
-func fixtureDB(t *testing.T) ([]byte, time.Time) {
+func fixtureStore(t *testing.T) (*sqlite.Store, time.Time) {
 	t.Helper()
 	built.Lock()
 	defer built.Unlock()
-	if built.db != nil {
-		return built.db, built.end
+	if built.st != nil {
+		return built.st, built.end
 	}
-	path := filepath.Join(t.TempDir(), "build.db")
-	s := openSim(t, path, shop, now.Add(-30*24*time.Hour))
-	if _, err := s.st.ApplyRevision(s.ctx, store.PackageRecord{Hash: fmt.Sprintf("%x", len(shop)), Bundle: []byte(shop),
-		Pipeline: s.p}); err != nil {
+	c := &clock{t: now.Add(-30 * 24 * time.Hour)}
+	st, err := sqlite.Open(sqlite.Memory, sqlite.Options{Now: c.Now, Rand: half})
+	if err != nil {
 		t.Fatal(err)
 	}
+	s := simOn(t, st, c, shop)
+	s.apply(shop)
 	for i := range 6 {
 		s.quickRun(fmt.Sprintf("base%d", i), now.Add(-time.Duration(7-i)*24*time.Hour))
 	}
 	s.slowRun("slow1", now.Add(-3*time.Hour), "flaky")
 	s.slowRun("slow2", now.Add(-2*time.Hour), "deterministic")
 	s.slowRun("slow3", now.Add(-1*time.Hour), "")
-	if err := s.st.Close(); err != nil { // the last connection to close checkpoints the WAL into the file
-		t.Fatal(err)
-	}
-	db, err := os.ReadFile(path) // #nosec G304 -- the test's own temporary file
-	if err != nil {
-		t.Fatal(err)
-	}
-	built.db, built.end = db, s.clock.Now()
-	return built.db, built.end
+	built.st, built.end = st, c.Now()
+	return built.st, built.end
 }
 
 // golden compares got with testdata/name, rewriting it with -update.
