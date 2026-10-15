@@ -223,25 +223,30 @@ func TestUndispatchableDeliveriesFail(t *testing.T) {
 		class     string
 		retryable bool
 		message   string
+		config    string
 	}{
-		{"builtin", "filter", nil, nil, ClassUnsupported, false, "the filter builtin arrives in M2"},
-		{"registry", "lab/score@1", nil, nil, ClassUnsupported, false, "registry actions arrive in M2"},
+		{"builtin", "filter", nil, nil, ClassUnsupported, false, "the filter builtin arrives in M2", ""},
+		{"registry", "lab/score@1", nil, nil, ClassUnsupported, false, "registry actions arrive in M2", ""},
 		{"container", "./actions/c", map[string]string{"actions/c/action.yaml": containerManifest}, nil,
-			ClassUnsupported, false, "this build runs exec actions only"},
-		{"missing manifest", "./actions/none", nil, nil, ClassConfig, false, "no actions/none/action.yaml"},
-		{"bad interpolation", "./actions/a", nil, nil, ClassConfig, false, "interpolate config of step s"},
+			ClassUnsupported, false, "this build runs exec actions only", ""},
+		{"missing manifest", "./actions/none", nil, nil, ClassConfig, false, "no actions/none/action.yaml", ""},
+		{"bad interpolation", "./actions/a", nil, nil, ClassConfig, false, "interpolate config of step s",
+			`, config: { x: "${vars.nope}" }`},
+		{"input schema", "./actions/a", map[string]string{"actions/a/action.yaml": fakeManifest +
+			"input: { type: object, required: [url] }\n"}, nil, ClassInputSchema, false,
+			"does not match the input schema of ./actions/a", ""},
+		{"config schema", "./actions/a", map[string]string{"actions/a/action.yaml": fakeManifest +
+			"config: { type: object, properties: { x: { type: integer } } }\n"}, nil, ClassConfig, false,
+			"does not match the config schema of ./actions/a", `, config: { x: "${run.id}" }`},
 		{"missing secret", "./actions/a", nil, map[string]string{"MILLSTREAM_SECRET_TOKEN": ""}, ClassConfig, false,
-			"secret token is not set"},
+			"secret token is not set", ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			fireEnv := map[string]string{"MILLSTREAM_SECRET_TOKEN": "x"}
 			e := newEnv(t, Options{Env: func(k string) (string, bool) { s, ok := fireEnv[k]; return s, ok }})
-			config := ""
-			if tt.name == "bad interpolation" {
-				config = `, config: { x: "${vars.nope}" }`
-			}
+			config := tt.config
 			src := "pipeline: p\nsecrets: [token]\ntriggers:\n  adhoc: { manual: {} }\nsteps:\n" +
 				"  s: { action: \"" + tt.action + "\", in: trigger.adhoc, retry: { maxAttempts: 2 }" + config + " }\n"
 			pkg := writePackage(t, src, "a")

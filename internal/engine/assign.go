@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
@@ -17,6 +18,7 @@ import (
 	"github.com/monolithiclab/millstream/internal/pipeline"
 	"github.com/monolithiclab/millstream/internal/protocol"
 	"github.com/monolithiclab/millstream/internal/runtime/exec"
+	"github.com/monolithiclab/millstream/internal/schema"
 	"github.com/monolithiclab/millstream/internal/store"
 )
 
@@ -28,6 +30,9 @@ const (
 	// ClassConfig: the step's config does not interpolate, a secret is unset, or the action does not resolve.
 	// Never retried (spec section 5.5).
 	ClassConfig = "config"
+	// ClassInputSchema: the item's payload does not match the action's input schema (spec section 5.5). Never
+	// retried, and no process is started.
+	ClassInputSchema = "inputSchema"
 	// ClassEngine: the engine could not prepare the delivery (its revision's package is not loaded, a store read
 	// failed). Retried.
 	ClassEngine = "engine"
@@ -54,10 +59,11 @@ type actionKey struct{ hash, ref string }
 
 // resolvedAction is an action reference resolved against a package, or the dispatch error it resolves to.
 type resolvedAction struct {
-	a      *pipeline.Action
-	dir    string // the action directory on disk
-	digest string
-	err    error
+	a             *pipeline.Action
+	dir           string // the action directory on disk
+	digest        string
+	input, config *schema.Schema // the action's schemas, nil when it declares none
+	err           error
 }
 
 // assign resolves a lease into what a node runs: the action process of the run's revision, the step's config
@@ -74,6 +80,10 @@ func (e *Engine) assign(ctx context.Context, l store.Lease) (node.Assignment, er
 	act := e.action(rev, step.Action)
 	if act.err != nil {
 		return node.Assignment{}, act.err
+	}
+	if err := validateJSON(act.input, l.Item.Payload); err != nil {
+		return node.Assignment{}, dispatchErr(ClassInputSchema, false, "item %s does not match the input schema of %s: %w",
+			l.Item.ID, step.Action, err)
 	}
 	run, err := e.st.Run(ctx, l.Pipeline, l.RunID)
 	if err != nil {
@@ -92,6 +102,17 @@ func (e *Engine) assign(ctx context.Context, l store.Lease) (node.Assignment, er
 	config, err := expr.Interpolate(step.Config, expr.InterpCtx{Vars: run.Vars, Run: runInfo, Secrets: secrets})
 	if err != nil {
 		return node.Assignment{}, dispatchErr(ClassConfig, false, "interpolate config of step %s: %w", l.Step, err)
+	}
+	if act.config != nil {
+		// Validation sees JSON values, as the action will: the round trip turns Go types (time.Time) into them.
+		raw, err := json.Marshal(config)
+		if err == nil {
+			err = validateJSON(act.config, raw)
+		}
+		if err != nil {
+			return node.Assignment{}, dispatchErr(ClassConfig, false,
+				"config of step %s does not match the config schema of %s: %w", l.Step, step.Action, err)
+		}
 	}
 	return node.Assignment{
 		Lease: l,
@@ -145,7 +166,33 @@ func resolve(r pipeline.ActionResolver, pkg *pipeline.Package, ref string) *reso
 		return &resolvedAction{err: dispatchErr(ClassUnsupported, false,
 			"action %s is of kind %s: this build runs exec actions only", ref, a.Kind)}
 	}
-	return &resolvedAction{a: a, dir: filepath.Join(pkg.Dir, filepath.FromSlash(a.Dir)), digest: digest(pkg, a.Dir)}
+	ra := &resolvedAction{a: a, dir: filepath.Join(pkg.Dir, filepath.FromSlash(a.Dir)), digest: digest(pkg, a.Dir)}
+	for _, sc := range []struct {
+		doc []byte
+		dst **schema.Schema
+	}{{a.Input, &ra.input}, {a.Config, &ra.config}} {
+		if sc.doc == nil {
+			continue
+		}
+		s, err := schema.Compile(sc.doc)
+		if err != nil {
+			return &resolvedAction{err: dispatchErr(ClassConfig, false, "action %s: %w", ref, err)}
+		}
+		*sc.dst = s
+	}
+	return ra
+}
+
+// validateJSON validates a JSON document against s; a nil s accepts anything.
+func validateJSON(s *schema.Schema, doc []byte) error {
+	if s == nil {
+		return nil
+	}
+	var v any
+	if err := json.Unmarshal(doc, &v); err != nil {
+		return err
+	}
+	return s.Validate(v)
 }
 
 // digest is the content hash of an action directory: SHA-256 over path NUL content NUL for each of its files, in
