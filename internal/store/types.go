@@ -78,7 +78,7 @@ const (
 // Error classes the store itself assigns. The engine passes its own (retryable, nonRetryable, protocol, timeout,
 // crash…) to Fail.
 const (
-	// ClassKeyRule: several outputs, not all keyed (spec section 5.2). Never retried.
+	// ClassKeyRule: several outputs, not all keyed or with a key repeated (spec section 5.2). Never retried.
 	ClassKeyRule = "keyRule"
 	// ClassRoute: a route's when failed to evaluate. Deterministic, so never retried (spec section 4.3).
 	ClassRoute = "route"

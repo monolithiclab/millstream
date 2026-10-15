@@ -169,7 +169,10 @@ func TestRunWithIO(t *testing.T) {
 		{
 			name:    "MapKeyed with several outputs",
 			handler: MapKeyedHandler(split),
-			input:   []string{hello, item("dl_1", `{"url":"ab"}`), item("dl_2", `{"url":""}`), item("dl_3", `{"url":"unkeyed"}`)},
+			input: []string{
+				hello, item("dl_1", `{"url":"ab"}`), item("dl_2", `{"url":""}`), item("dl_3", `{"url":"unkeyed"}`),
+				item("dl_4", `{"url":"aba"}`),
+			},
 			want: []string{
 				`{"type":"ready"}`,
 				`{"type":"emit","delivery":"dl_1","key":"a","payload":"A"}`,
@@ -177,6 +180,7 @@ func TestRunWithIO(t *testing.T) {
 				`{"type":"done","delivery":"dl_1"}`,
 				`{"type":"done","delivery":"dl_2"}`,
 				`{"type":"error","delivery":"dl_3","message":"output 0 of 2 has no key: a delivery with several outputs must key them all","retryable":false}`,
+				`{"type":"error","delivery":"dl_4","message":"outputs 0 and 2 share the key \"a\": a delivery's output keys must be distinct","retryable":false}`,
 			},
 		},
 		{

@@ -82,16 +82,23 @@ func (w *wtx) done(req store.DoneRequest, outputs []payload) (store.DeliveryStat
 }
 
 // keyRule returns why the outputs break the key rule (spec section 5.2), or "" when they keep it: several
-// outputs must all be keyed, since an output's index is only stable for a single output.
+// outputs must all be keyed, with distinct keys, since an output's index is only stable for a single output and
+// two outputs under one key would land on one item id.
 func keyRule(outputs []store.Output) string {
 	if len(outputs) < 2 {
 		return ""
 	}
+	seen := make(map[string]int, len(outputs))
 	for i, o := range outputs {
 		if o.Key == "" {
 			return fmt.Sprintf("output %d of %d has no key: a delivery with several outputs must key every one",
 				i, len(outputs))
 		}
+		if j, dup := seen[o.Key]; dup {
+			return fmt.Sprintf("outputs %d and %d share the key %q: the keys of a delivery's outputs must be distinct",
+				j, i, o.Key)
+		}
+		seen[o.Key] = i
 	}
 	return ""
 }

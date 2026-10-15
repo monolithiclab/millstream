@@ -97,7 +97,7 @@ implementation; one language everywhere means one thing to learn.
 **Decision.** `id = hash(producing step, output stream, input item id, generation, key or output index)`. Items are
 immutable and the first commit of an id wins: a re-emit with the same payload is a no-op, a different payload is
 discarded and recorded as nondeterministic. A delivery with several outputs must key every one
-of them.
+of them, with distinct keys.
 
 **Evidence.** A retried delivery re-emits the same ids, so downstream steps see each output once. Replay allocates a
 new generation to produce new items. Upserting would let a retry rewrite an item a consumer already processed.

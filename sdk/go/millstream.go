@@ -55,7 +55,7 @@ type ItemInfo struct {
 	IdempotencyKey string
 }
 
-// Keyed is one keyed output. A delivery with more than one output must key all of them.
+// Keyed is one keyed output. A delivery with more than one output must key all of them, with distinct keys.
 type Keyed[T any] struct {
 	Key   string
 	Value T
@@ -101,13 +101,8 @@ func MapKeyedHandler[In, Out any](fn func(Context, In) ([]Keyed[Out], error)) Ha
 		if err != nil {
 			return nil, err
 		}
-		if len(outs) > 1 {
-			for i, o := range outs {
-				if o.Key == "" {
-					return nil, fmt.Errorf("output %d of %d has no key: a delivery with several outputs must key them all",
-						i, len(outs))
-				}
-			}
+		if err := keyRule(outs); err != nil {
+			return nil, err
 		}
 		encoded := make([]Keyed[json.RawMessage], len(outs))
 		for i, o := range outs {
@@ -123,6 +118,25 @@ func MapKeyedHandler[In, Out any](fn func(Context, In) ([]Keyed[Out], error)) Ha
 		}
 		return encoded, nil
 	}
+}
+
+// keyRule enforces the engine's key rule (docs/protocol.md): several outputs must all be keyed, with distinct
+// keys. The engine dead-letters a delivery that breaks it, so the SDK reports it as a non-retryable error first.
+func keyRule[Out any](outs []Keyed[Out]) error {
+	if len(outs) < 2 {
+		return nil
+	}
+	seen := make(map[string]int, len(outs))
+	for i, o := range outs {
+		if o.Key == "" {
+			return fmt.Errorf("output %d of %d has no key: a delivery with several outputs must key them all", i, len(outs))
+		}
+		if j, dup := seen[o.Key]; dup {
+			return fmt.Errorf("outputs %d and %d share the key %q: a delivery's output keys must be distinct", j, i, o.Key)
+		}
+		seen[o.Key] = i
+	}
+	return nil
 }
 
 func run(h Handler) {

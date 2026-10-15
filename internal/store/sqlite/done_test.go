@@ -112,17 +112,36 @@ func TestDoneInvalidOutput(t *testing.T) {
 	wantErr(t, err, store.ErrInvalid)
 }
 
-// Review focus 2: two outputs where one has no key fail as a non-retryable protocol error, never collide.
+// Review focus 2: two outputs where one has no key, or two with the same key, fail as a non-retryable key-rule
+// error, never collide.
 func TestDoneKeyRule(t *testing.T) {
 	t.Parallel()
+	for _, tc := range []struct {
+		name    string
+		outputs []store.Output
+		message string
+	}{
+		{"missing key", []store.Output{out("a", `{"score":1}`), out("", `{"score":2}`)}, "output 1 of 2 has no key"},
+		{"duplicate key", []store.Output{out("a", `{"score":1}`), out("b", `{}`), out("a", `{"score":1}`)},
+			`outputs 0 and 2 share the key "a"`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			testKeyRule(t, tc.outputs, tc.message)
+		})
+	}
+}
+
+func testKeyRule(t *testing.T, outputs []store.Output, message string) {
 	e := newEnv(t, fixture)
 	e.fire("r1")
 	l := e.leaseStep("crawl")
-	state := e.done(l, out("a", `{"score":1}`), out("", `{"score":2}`))
+	state := e.done(l, outputs...)
 	wantState(t, "state", state, store.DeliveryDead)
 	d := e.deliveries("r1")[0]
-	if d.State != store.DeliveryDead || d.ErrorClass != store.ClassKeyRule || d.Attempt != 1 {
-		t.Fatalf("delivery = %+v; want dead at once with class keyRule", d)
+	if d.State != store.DeliveryDead || d.ErrorClass != store.ClassKeyRule || d.Attempt != 1 ||
+		!strings.Contains(d.ErrorMessage, message) {
+		t.Fatalf("delivery = %+v; want dead at once with class keyRule and %q", d, message)
 	}
 	if n := len(e.items("listings.raw")); n != 0 {
 		t.Fatalf("%d outputs published", n)
@@ -156,14 +175,52 @@ func TestDoneKeyRule(t *testing.T) {
 	wantState(t, "run", e.run("r1").State, store.RunCompletedWithErrors)
 }
 
-// The first commit of an item wins (spec section 5.2). Two outputs with the same key land on the same id.
+// publishAgain publishes payloads, one after the other, as output "a" of run r1's crawl delivery: the same item ids
+// each time, as a delivery run again would.
+func publishAgain(e *env, payloads ...string) {
+	e.t.Helper()
+	err := e.s.submit(e.ctx, "test", func(w *wtx) error {
+		run, err := w.run("listings", "r1")
+		if err != nil {
+			return err
+		}
+		rev, err := w.revision(run.revision)
+		if err != nil {
+			return err
+		}
+		step, err := rev.step("crawl")
+		if err != nil {
+			return err
+		}
+		d, err := w.delivery("listings", ids.Delivery("crawl", ids.TriggerItem("daily", "r1"), 0))
+		if err != nil {
+			return err
+		}
+		for _, body := range payloads {
+			o, err := canonical(json.RawMessage(body))
+			if err != nil {
+				return err
+			}
+			if err := w.publishOutput(rev, run, step, d, "a", 0, o, routing{streams: step.Out.Streams}); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		e.t.Fatalf("publish: %v", err)
+	}
+}
+
+// The first commit of an item wins (spec section 5.2): publishing an existing item id again is a no-op with the same
+// payload and records nondeterministicOutput with another.
 func TestDoneFirstCommit(t *testing.T) {
 	t.Parallel()
 	t.Run("same payload is a no-op", func(t *testing.T) {
 		t.Parallel()
 		e := newEnv(t, fixture)
 		e.fire("r1")
-		e.done(e.leaseStep("crawl"), out("a", `{"score":1, "x":2}`), out("a", `{"x":2,"score":1}`))
+		publishAgain(e, `{"score":1, "x":2}`, `{"x":2,"score":1}`)
 		if n := len(e.items("listings.raw")); n != 1 {
 			t.Fatalf("%d items", n)
 		}
@@ -175,7 +232,7 @@ func TestDoneFirstCommit(t *testing.T) {
 		t.Parallel()
 		e := newEnv(t, fixture)
 		e.fire("r1")
-		e.done(e.leaseStep("crawl"), out("a", `{"score":1}`), out("a", `{"score":2}`))
+		publishAgain(e, `{"score":1}`, `{"score":2}`)
 		items := e.items("listings.raw")
 		if len(items) != 1 || string(items[0].Payload) != `{"score":1}` {
 			t.Fatalf("items = %+v", items)
