@@ -172,12 +172,13 @@ func (s *Store) Deliveries(ctx context.Context, f store.DeliveryFilter) ([]store
 	w.eq("run_id", f.RunID)
 	w.eq("state", string(f.State))
 	ds, err := scan(ctx, s.read, `SELECT pipeline, id, run_id, step, item_id, generation, state, attempt, lease_owner,
-		fencing_token, lease_expires_at, next_attempt_at, error_class, error_message, filter_reason, cost_usd
-		FROM deliveries`+w.String()+` ORDER BY rowid`, w.args, func(rows *sql.Rows) (store.Delivery, error) {
+		fencing_token, lease_expires_at, next_attempt_at, error_class, error_message, filter_reason, cost_usd,
+		reserved_usd FROM deliveries`+w.String()+` ORDER BY rowid`, w.args, func(rows *sql.Rows) (store.Delivery, error) {
 		var d store.Delivery
 		var expires, next string
 		if err := rows.Scan(&d.Pipeline, &d.ID, &d.RunID, &d.Step, &d.ItemID, &d.Generation, &d.State, &d.Attempt,
-			&d.LeaseOwner, &d.FencingToken, &expires, &next, &d.ErrorClass, &d.ErrorMessage, &d.FilterReason, &d.CostUSD); err != nil {
+			&d.LeaseOwner, &d.FencingToken, &expires, &next, &d.ErrorClass, &d.ErrorMessage, &d.FilterReason, &d.CostUSD,
+			&d.ReservedUSD); err != nil {
 			return d, fmt.Errorf("scan delivery: %w", err)
 		}
 		var err error
@@ -289,16 +290,25 @@ func (s *Store) PipelineState(ctx context.Context, pipelineName string) (store.P
 		return ps, notFound(err, "pipeline "+pipelineName)
 	}
 	ps.Paused = state == "paused"
-	steps, err := scan(ctx, s.read, `SELECT step FROM steps_state WHERE pipeline = ? AND paused = 1 ORDER BY step`,
-		[]any{pipelineName}, func(rows *sql.Rows) (string, error) {
-			var step string
-			err := rows.Scan(&step)
-			return step, err
-		})
+	type pausedStep struct{ step, cause string }
+	steps, err := scan(ctx, s.read, `SELECT step, cause FROM steps_state WHERE pipeline = ? AND paused = 1
+		ORDER BY step`, []any{pipelineName}, func(rows *sql.Rows) (pausedStep, error) {
+		var p pausedStep
+		err := rows.Scan(&p.step, &p.cause)
+		return p, err
+	})
 	if err != nil {
 		return ps, fmt.Errorf("pipeline state %s: %w", pipelineName, err)
 	}
-	ps.PausedSteps = steps
+	for _, p := range steps {
+		ps.PausedSteps = append(ps.PausedSteps, p.step)
+		if p.cause != "" {
+			if ps.PauseCauses == nil {
+				ps.PauseCauses = map[string]string{}
+			}
+			ps.PauseCauses[p.step] = p.cause
+		}
+	}
 	return ps, nil
 }
 

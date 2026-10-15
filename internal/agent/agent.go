@@ -41,7 +41,7 @@ const TranscriptFile = "transcript.json"
 const (
 	MetricTokensIn   = "tokens_in"
 	MetricTokensOut  = "tokens_out"
-	MetricCostUSD    = "cost_usd"
+	MetricCostUSD    = protocol.MetricCostUSD
 	MetricTurns      = "turns"
 	MetricDurationMS = "duration_ms"
 )
@@ -297,6 +297,10 @@ func (a *adapter) attempt(ctx context.Context, it protocol.Item, t *Transcript) 
 	})
 	t.Turns, t.TokensIn, t.TokensOut, t.NumTurns = resp.Transcript, resp.TokensIn, resp.TokensOut, resp.Turns
 	t.CostUSD = a.cost(resp)
+	if limit := a.agent.MaxCostUSD; limit > 0 && t.CostUSD > limit {
+		// Whatever the harness answered, the attempt spent more than one delivery may: no retry.
+		return nil, overBudget("the attempt cost $%g, over the action's maxCostUsd of $%g", t.CostUSD, limit)
+	}
 	if err != nil {
 		return nil, err
 	}

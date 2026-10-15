@@ -1,7 +1,7 @@
 // Package node is the embedded node (spec section 5.10): it pulls leased deliveries from the engine through a
 // Transport, runs each on the exec runtime's process pool in its own goroutine, moving its artifacts through the
 // Transport's artifact store, renews every held lease with a heartbeat, and reports the outcome with the lease's
-// fencing token. A lease the engine reports lost cancels its
+// fencing token, and the attempt's cost as its cost_usd metrics add up. A lease the engine reports lost cancels its
 // delivery and drops its result; a report the store refuses as stale is dropped too, since another owner holds
 // the delivery. On context cancellation the node drains: it stops pulling and lets in-flight deliveries finish, up
 // to a drain timeout.
@@ -206,6 +206,7 @@ func (l *loop) execute(ctx context.Context, log *slog.Logger, a Assignment) {
 	rctx, cancel := context.WithTimeout(l.base, reportTimeout)
 	defer cancel()
 	ref, attempt := a.Lease.Ref(), a.Lease.Attempt
+	cost := costOf(res.Metrics)
 	var rerr error
 	switch {
 	case err != nil:
@@ -213,17 +214,17 @@ func (l *loop) execute(ctx context.Context, log *slog.Logger, a Assignment) {
 		log.Warn("delivery failed in the runtime", "class", class, "retryable", retryable, "error", err.Error())
 		rerr = l.t.Fail(rctx, store.FailRequest{
 			LeaseRef: ref, Attempt: attempt, Class: class, Message: a.Redact.String(err.Error()),
-			Retryable: retryable,
+			Retryable: retryable, Unreported: true,
 		})
 	case res.Err != nil:
 		log.Info("delivery failed in the action", "retryable", res.Err.Retryable)
 		rerr = l.t.Fail(rctx, store.FailRequest{
 			LeaseRef: ref, Attempt: attempt, Class: ClassAction, Message: a.Redact.String(res.Err.Message),
-			Retryable: res.Err.Retryable, Artifacts: res.Artifacts,
+			Retryable: res.Err.Retryable, CostUSD: cost, Artifacts: res.Artifacts,
 		})
 	default:
 		rerr = l.t.Done(rctx, store.DoneRequest{LeaseRef: ref, Attempt: attempt, Outputs: res.Outputs,
-			Artifacts: res.Artifacts})
+			CostUSD: cost, Artifacts: res.Artifacts})
 	}
 	switch {
 	case errors.Is(rerr, store.ErrStaleLease):
@@ -231,6 +232,17 @@ func (l *loop) execute(ctx context.Context, log *slog.Logger, a Assignment) {
 	case rerr != nil:
 		log.Error("report delivery", "error", rerr.Error())
 	}
+}
+
+// costOf sums the cost_usd metrics of an attempt.
+func costOf(metrics []protocol.Metric) float64 {
+	var sum float64
+	for _, m := range metrics {
+		if m.Name == protocol.MetricCostUSD {
+			sum += m.Value
+		}
+	}
+	return sum
 }
 
 // pipelineArtifacts binds the transport's artifact store to one pipeline, as the runtime moves a delivery's files.

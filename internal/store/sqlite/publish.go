@@ -184,8 +184,16 @@ func (w *wtx) settle(pipelineName, runID string) error {
 	return w.event(pipelineName, runID, store.EventRunSettled, map[string]any{"state": state})
 }
 
-// addCost adds a delivery's reported cost to the delivery and its run.
+// addCost charges a delivery's attempt its cost, on the delivery, its run and its pipeline's UTC day, and clears
+// the attempt's budget reservation (spec section 5.9).
 func (w *wtx) addCost(d *deliveryRow, cost float64) error {
+	if d.reserved != 0 {
+		if _, err := w.exec(`UPDATE deliveries SET reserved_usd = 0 WHERE pipeline = ? AND id = ?`,
+			d.pipeline, d.id); err != nil {
+			return err
+		}
+		d.reserved = 0
+	}
 	if cost == 0 {
 		return nil
 	}
@@ -193,7 +201,11 @@ func (w *wtx) addCost(d *deliveryRow, cost float64) error {
 		cost, d.pipeline, d.id); err != nil {
 		return err
 	}
-	_, err := w.exec(`UPDATE runs SET cost_usd = cost_usd + ? WHERE pipeline = ? AND id = ?`,
-		cost, d.pipeline, d.runID)
+	if _, err := w.exec(`UPDATE runs SET cost_usd = cost_usd + ? WHERE pipeline = ? AND id = ?`,
+		cost, d.pipeline, d.runID); err != nil {
+		return err
+	}
+	_, err := w.exec(`INSERT INTO budget_days (pipeline, day, spent_usd) VALUES (?, ?, ?)
+		ON CONFLICT DO UPDATE SET spent_usd = spent_usd + excluded.spent_usd`, d.pipeline, w.day(), cost)
 	return err
 }

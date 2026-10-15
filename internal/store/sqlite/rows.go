@@ -20,13 +20,14 @@ type deliveryRow struct {
 	attempt                           int
 	owner                             string
 	token                             int64
+	reserved                          float64 // the budget reservation of a leased agent delivery
 }
 
 func (w *wtx) delivery(pipelineName, id string) (*deliveryRow, error) {
 	d := &deliveryRow{pipeline: pipelineName, id: id}
-	err := w.queryRow(`SELECT run_id, step, item_id, generation, state, attempt, lease_owner, fencing_token
-		FROM deliveries WHERE pipeline = ? AND id = ?`, pipelineName, id).
-		Scan(&d.runID, &d.step, &d.itemID, &d.generation, &d.state, &d.attempt, &d.owner, &d.token)
+	err := w.queryRow(`SELECT run_id, step, item_id, generation, state, attempt, lease_owner, fencing_token,
+		reserved_usd FROM deliveries WHERE pipeline = ? AND id = ?`, pipelineName, id).
+		Scan(&d.runID, &d.step, &d.itemID, &d.generation, &d.state, &d.attempt, &d.owner, &d.token, &d.reserved)
 	if err != nil {
 		return nil, notFound(err, "delivery "+id)
 	}

@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -100,6 +101,30 @@ func Test_pauseAndResumeCommands(t *testing.T) {
 		}
 	}
 	mustRun(t, 1, "--db", db, "pause", "nope")
+
+	// A budget pauses the agent steps with its cause (store tests cover how); status shows it and resume lifts it,
+	// leaving a step a user paused as it is.
+	sqldb, err := sql.Open("sqlite", db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = sqldb.Exec(`INSERT OR REPLACE INTO steps_state (pipeline, step, paused, cause) VALUES ('listings', 'score', 1,
+		'budget.day'), ('listings', 'crawl', 1, '')`)
+	if cerr := sqldb.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	status, _ := mustRun(t, 0, "--db", db, "status")
+	if !regexp.MustCompile(`listings\s+active\s+1\s+crawl,score \(budget\.day\)`).MatchString(status) {
+		t.Fatalf("status:\n%s", status)
+	}
+	mustRun(t, 0, "--db", db, "resume", "listings")
+	status, _ = mustRun(t, 0, "--db", db, "status")
+	if !regexp.MustCompile(`listings\s+active\s+1\s+crawl\n`).MatchString(status) {
+		t.Fatalf("status after resume:\n%s", status)
+	}
 }
 
 func Test_dlqAndReplayCommands(t *testing.T) {

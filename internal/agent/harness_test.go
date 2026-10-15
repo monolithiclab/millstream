@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/monolithiclab/millstream/internal/pipeline"
+	"github.com/monolithiclab/millstream/internal/protocol"
 )
 
 func TestExtract(t *testing.T) {
@@ -340,5 +341,43 @@ func TestDefaultHarness(t *testing.T) {
 	env["PATH"] = "/nonexistent"
 	if c := a.defaultHarness(&pipeline.AgentRuntime{Harness: pipeline.HarnessClaudeCode}, "").(ClaudeCode); c.Bin != "claude" {
 		t.Fatalf("claude-code without claude on PATH: %+v", c)
+	}
+}
+
+// TestAPIMaxCost: an api attempt that costs more than maxCostUsd, priced from its usage, is a non-retryable budget
+// error with its metrics still reported; one within it is emitted.
+func TestAPIMaxCost(t *testing.T) {
+	t.Parallel()
+	srv := newFakeAPI(t, http.StatusOK, anthropicBody) // 120 tokens in, 30 out: $0.00081 at 3 and 15 per Mtok
+	for _, tt := range []struct {
+		limit string
+		over  bool
+	}{{"0.0005", true}, {"0.01", false}} {
+		t.Run(tt.limit, func(t *testing.T) {
+			t.Parallel()
+			manifest := strings.Replace(testManifest, "apiKeySecret: apiToken",
+				"apiKeySecret: apiToken, baseUrl: \""+srv.URL+"\", maxCostUsd: "+tt.limit, 1)
+			s := newSession(t, writePackage(t, manifest, testPrompt), nil)
+			s.opts.Price = &pipeline.Price{InPerMtok: 3, OutPerMtok: 15}
+			msgs := s.run(`{"url":"https://example.com/1"}`)
+			var cost float64
+			for _, m := range msgs {
+				if mt, ok := m.(protocol.Metric); ok && mt.Name == MetricCostUSD {
+					cost = mt.Value
+				}
+			}
+			if cost < 0.00080 || cost > 0.00082 {
+				t.Fatalf("cost_usd = %v, messages %+v", cost, msgs)
+			}
+			last := msgs[len(msgs)-1]
+			e, isErr := last.(protocol.Error)
+			if isErr != tt.over {
+				t.Fatalf("last message = %+v", last)
+			}
+			if tt.over && (e.Retryable || !strings.HasPrefix(e.Message, "budget: ") ||
+				!strings.Contains(e.Message, "maxCostUsd")) {
+				t.Fatalf("error = %+v", e)
+			}
+		})
 	}
 }

@@ -109,7 +109,8 @@ func (c ClaudeCode) Run(ctx context.Context, req Request) (Response, error) {
 	if result.IsError || strings.HasPrefix(result.Subtype, "error") {
 		detail := strings.Join(append(result.Errors, result.Result), "; ")
 		if strings.Contains(result.Subtype, "budget") {
-			return resp, permanent("claude-code stopped at maxCostUsd %g (%s): %s", req.MaxCostUSD, result.Subtype, detail)
+			return resp, overBudget("claude-code stopped at maxCostUsd %g (%s): %s", req.MaxCostUSD, result.Subtype,
+				detail)
 		}
 		return resp, retryable("claude-code failed (%s): %s", result.Subtype, detail)
 	}

@@ -95,6 +95,10 @@ type Emit struct {
 	Artifacts []Artifact      `json:"artifacts,omitempty"`
 }
 
+// MetricCostUSD is the metric an action reports what an attempt spent with, in US dollars: the attempt's cost is
+// the sum of its cost_usd metrics, and it settles the delivery's budget reservation (spec section 5.9).
+const MetricCostUSD = "cost_usd"
+
 // Metric records a measurement for a delivery.
 type Metric struct {
 	Delivery string            `json:"delivery"`

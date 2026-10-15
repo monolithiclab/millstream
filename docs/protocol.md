@@ -90,6 +90,9 @@ output when a delivery has several, each output with its own key. `artifacts` li
 **`metric`** records a measurement for the current delivery. Names are Prometheus snake_case. A metric that
 arrives after the delivery's `done` or `error`, before the next `item` is answered, is ignored rather than treated
 as a violation. The engine accepts metrics but does not store them yet: they are stored later in milestone M2.
+One name has a meaning of its own: the `cost_usd` metrics of an attempt add up to its cost in US dollars, recorded on
+the delivery and its run and counted against the pipeline's budgets (platform design, sections 5.9 and 7.5). A late
+`cost_usd` is ignored like any late metric, so report it before `done` or `error`.
 
 ```json
 {"type":"metric","delivery":"dl_3f…","name":"pages_fetched","value":12,"labels":{"source":"portal"}}

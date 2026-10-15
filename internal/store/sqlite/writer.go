@@ -208,6 +208,9 @@ func (w *wtx) query(query string, args ...any) (*sql.Rows, error) {
 // ts is the batch instant as stored.
 func (w *wtx) ts() string { return formatTime(w.now) }
 
+// day is the batch instant's UTC day, the key of the day budget (spec section 7.5).
+func (w *wtx) day() string { return w.now.UTC().Format(time.DateOnly) }
+
 // event appends an event; its sequence number is the next rowid, in commit order.
 func (w *wtx) event(pipeline, runID, kind string, data map[string]any) error {
 	body, err := json.Marshal(data)

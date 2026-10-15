@@ -151,7 +151,8 @@ func (s *Store) Fire(ctx context.Context, f store.Firing) (bool, error) {
 	return created, err
 }
 
-// SetPaused pauses or resumes a step, or the whole pipeline when step is empty.
+// SetPaused pauses or resumes a step, or the whole pipeline when step is empty. Resuming the pipeline also resumes
+// the steps a budget paused; a step a user paused stays paused until resumed by name.
 func (s *Store) SetPaused(ctx context.Context, pipelineName, step string, paused bool) error {
 	state, kind := "active", store.EventResumed
 	if paused {
@@ -166,11 +167,17 @@ func (s *Store) SetPaused(ctx context.Context, pipelineName, step string, paused
 			return fmt.Errorf("pipeline %s: %w", pipelineName, store.ErrNotFound)
 		}
 		var err error
-		if step == "" {
+		switch {
+		case step != "":
+			_, err = w.exec(`INSERT INTO steps_state (pipeline, step, paused, cause) VALUES (?, ?, ?, '')
+				ON CONFLICT DO UPDATE SET paused = excluded.paused, cause = ''`, pipelineName, step, paused)
+		case paused:
 			_, err = w.exec(`UPDATE pipelines SET state = ? WHERE id = ?`, state, pipelineName)
-		} else {
-			_, err = w.exec(`INSERT INTO steps_state (pipeline, step, paused) VALUES (?, ?, ?)
-				ON CONFLICT DO UPDATE SET paused = excluded.paused`, pipelineName, step, paused)
+		default: // resuming the pipeline also lifts the pauses a budget made (spec section 7.5)
+			if _, err = w.exec(`UPDATE pipelines SET state = ? WHERE id = ?`, state, pipelineName); err == nil {
+				_, err = w.exec(`UPDATE steps_state SET paused = 0, cause = '' WHERE pipeline = ? AND cause != ''`,
+					pipelineName)
+			}
 		}
 		if err != nil {
 			return err

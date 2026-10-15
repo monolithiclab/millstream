@@ -62,6 +62,12 @@ func permanent(format string, args ...any) error {
 	return &Error{Msg: fmt.Sprintf(format, args...)}
 }
 
+// overBudget is the non-retryable Error of an attempt stopped by, or over, the action's maxCostUsd (spec section
+// 7.5): its message starts with "budget:".
+func overBudget(format string, args ...any) error {
+	return &Error{Msg: "budget: " + fmt.Sprintf(format, args...)}
+}
+
 // retryable is a retryable Error.
 func retryable(format string, args ...any) error {
 	return &Error{Msg: fmt.Sprintf(format, args...), Retryable: true}

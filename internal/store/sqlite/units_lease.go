@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"slices"
 	"time"
 
@@ -18,7 +19,8 @@ type candidate struct {
 }
 
 // Lease is the Lease unit (spec section 5.11). The engine's in-memory checks (concurrency, rate, limits) arrive
-// as req.Slots and req.Exclude; paused pipelines and steps are skipped from the store's state.
+// as req.Slots and req.Exclude; paused pipelines and steps are skipped from the store's state. An agent delivery
+// (its step in req.Reserve) is leased with its budget reservation, only while the budgets allow it (budgetAllows).
 func (s *Store) Lease(ctx context.Context, req store.LeaseRequest) ([]store.Lease, error) {
 	if req.Owner == "" || req.TTL <= 0 {
 		return nil, fmt.Errorf("lease: an owner and a positive ttl are required: %w", store.ErrInvalid)
@@ -28,29 +30,9 @@ func (s *Store) Lease(ctx context.Context, req store.LeaseRequest) ([]store.Leas
 	}
 	var leases []store.Lease
 	err := s.submit(ctx, unitLease, func(w *wtx) error {
-		queues, err := w.dueQueues(req)
-		if err != nil {
-			return err
-		}
-		expires := w.now.Add(req.TTL)
-		for _, c := range w.s.roundRobin(queues, req.Max) {
-			l := c.lease
-			if err := w.queryRow(`UPDATE deliveries SET state = ?, lease_owner = ?, fencing_token = fencing_token + 1,
-				lease_expires_at = ? WHERE pipeline = ? AND id = ? RETURNING fencing_token`,
-				store.DeliveryLeased, req.Owner, formatTime(expires), l.Pipeline, l.DeliveryID).
-				Scan(&l.FencingToken); err != nil {
-				return fmt.Errorf("lease %s: %w", l.DeliveryID, err)
-			}
-			l.ExpiresAt = expires
-			if err := w.event(l.Pipeline, l.RunID, store.EventDeliveryLeased, map[string]any{
-				"deliveryId": l.DeliveryID, "step": l.Step, "attempt": l.Attempt, "owner": req.Owner,
-				"fencingToken": l.FencingToken,
-			}); err != nil {
-				return err
-			}
-			leases = append(leases, l)
-		}
-		return nil
+		var err error
+		leases, err = w.lease(req)
+		return err
 	})
 	if err != nil {
 		return nil, err
@@ -58,9 +40,86 @@ func (s *Store) Lease(ctx context.Context, req store.LeaseRequest) ([]store.Leas
 	return leases, nil
 }
 
-// dueQueues returns, per pipeline, the due pending deliveries Lease may pick, oldest first, at most the step's
-// slots and req.Max per step.
-func (w *wtx) dueQueues(req store.LeaseRequest) (map[string][]candidate, error) {
+// leasePass is what one pass of the Lease unit has left to lease, and the deliveries a budget held back.
+type leasePass struct {
+	req     store.LeaseRequest
+	skipped map[store.StepRef]map[string]bool // delivery ids per step
+	paused  map[string]bool                   // pipelines a budget paused during this lease
+}
+
+// lease leases due deliveries in passes: a delivery a budget holds back does not use its step's slot, so the next
+// pass looks past it, until a pass skips nothing or nothing is left to lease.
+func (w *wtx) lease(req store.LeaseRequest) ([]store.Lease, error) {
+	p := &leasePass{req: req, skipped: map[store.StepRef]map[string]bool{}, paused: map[string]bool{}}
+	if req.Slots != nil {
+		p.req.Slots = maps.Clone(req.Slots)
+	}
+	if req.PipelineSlots != nil {
+		p.req.PipelineSlots = maps.Clone(req.PipelineSlots)
+	}
+	var leases []store.Lease
+	expires := w.now.Add(req.TTL)
+	for p.req.Max > 0 {
+		queues, err := w.dueQueues(p)
+		if err != nil {
+			return nil, err
+		}
+		skipped := false
+		for _, c := range w.s.roundRobin(queues, p.req.Max) {
+			l := c.lease
+			ref := store.StepRef{Pipeline: l.Pipeline, Step: l.Step}
+			reserve, agent := req.Reserve[ref]
+			if agent {
+				ok, err := w.budgetAllows(l, reserve, req.Reserve, p.paused)
+				if err != nil {
+					return nil, err
+				}
+				if !ok { // stays pending until the budget allows it, once a user resumed the step
+					if p.skipped[ref] == nil {
+						p.skipped[ref] = map[string]bool{}
+					}
+					p.skipped[ref][l.DeliveryID] = true
+					skipped = true
+					continue
+				}
+			}
+			if err := w.queryRow(`UPDATE deliveries SET state = ?, lease_owner = ?, fencing_token = fencing_token + 1,
+				lease_expires_at = ?, reserved_usd = ? WHERE pipeline = ? AND id = ? RETURNING fencing_token`,
+				store.DeliveryLeased, req.Owner, formatTime(expires), reserve, l.Pipeline, l.DeliveryID).
+				Scan(&l.FencingToken); err != nil {
+				return nil, fmt.Errorf("lease %s: %w", l.DeliveryID, err)
+			}
+			l.ExpiresAt = expires
+			data := map[string]any{
+				"deliveryId": l.DeliveryID, "step": l.Step, "attempt": l.Attempt, "owner": req.Owner,
+				"fencingToken": l.FencingToken,
+			}
+			if reserve > 0 {
+				data["reservedUsd"] = reserve
+			}
+			if err := w.event(l.Pipeline, l.RunID, store.EventDeliveryLeased, data); err != nil {
+				return nil, err
+			}
+			leases = append(leases, l)
+			p.req.Max--
+			if _, ok := p.req.Slots[ref]; ok {
+				p.req.Slots[ref]--
+			}
+			if _, ok := p.req.PipelineSlots[l.Pipeline]; ok {
+				p.req.PipelineSlots[l.Pipeline]--
+			}
+		}
+		if !skipped {
+			break
+		}
+	}
+	return leases, nil
+}
+
+// dueQueues returns, per pipeline, the due pending deliveries the pass may pick, oldest first, at most the step's
+// slots and the pass's Max per step, past the deliveries a budget skipped.
+func (w *wtx) dueQueues(p *leasePass) (map[string][]candidate, error) {
+	req := p.req
 	rows, err := w.query(`SELECT DISTINCT d.pipeline, d.step FROM deliveries d
 		JOIN pipelines p ON p.id = d.pipeline AND p.state = 'active'
 		LEFT JOIN steps_state ss ON ss.pipeline = d.pipeline AND ss.step = d.step
@@ -93,11 +152,13 @@ func (w *wtx) dueQueues(req store.LeaseRequest) (map[string][]candidate, error) 
 		if n <= 0 {
 			continue
 		}
-		cs, err := w.dueDeliveries(ref, n)
+		skipped := p.skipped[ref]
+		cs, err := w.dueDeliveries(ref, n+len(skipped))
 		if err != nil {
 			return nil, err
 		}
-		queues[ref.Pipeline] = append(queues[ref.Pipeline], cs...)
+		cs = slices.DeleteFunc(cs, func(c candidate) bool { return skipped[c.lease.DeliveryID] })
+		queues[ref.Pipeline] = append(queues[ref.Pipeline], cs[:min(len(cs), n)]...)
 	}
 	for name, q := range queues {
 		slices.SortFunc(q, func(a, b candidate) int { return cmp.Compare(a.rowid, b.rowid) })
@@ -256,19 +317,20 @@ func (s *Store) ExpireLeases(ctx context.Context) ([]store.LeaseRef, error) {
 	return expired, nil
 }
 
-// expire ends the expired lease of d as a failed attempt, or cancels d when its run is cancelled.
+// expire ends the expired lease of d as a failed attempt, or cancels d when its run is cancelled. Its budget
+// reservation is charged in full: the owner may have spent it without reporting (spec section 5.9).
 func (w *wtx) expire(d *deliveryRow) error {
 	run, err := w.run(d.pipeline, d.runID)
 	if err != nil {
 		return err
 	}
 	if err := w.event(d.pipeline, d.runID, store.EventLeaseExpired, map[string]any{
-		"deliveryId": d.id, "step": d.step, "attempt": d.attempt, "owner": d.owner,
+		"deliveryId": d.id, "step": d.step, "attempt": d.attempt, "owner": d.owner, "chargedUsd": d.reserved,
 	}); err != nil {
 		return err
 	}
 	if run.state == store.RunCancelled {
-		_, err := w.cancelDelivery(d, 0)
+		_, err := w.cancelDelivery(d, d.reserved)
 		return err
 	}
 	rev, err := w.revision(run.revision)
@@ -277,7 +339,7 @@ func (w *wtx) expire(d *deliveryRow) error {
 	}
 	step, _ := rev.stepOrOrphan(d.step)
 	_, err = w.fail(d, run, rev, step, failure{
-		class: store.ClassLeaseExpired, retryable: true,
+		class: store.ClassLeaseExpired, retryable: true, cost: d.reserved,
 		message: fmt.Sprintf("the lease held by %s expired before it reported", d.owner),
 	})
 	return err

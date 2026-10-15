@@ -16,6 +16,8 @@
 //   - noRead: answers ready, then never reads stdin again and hangs
 //   - secret: writes config "secret" to stderr, then answers a non-retryable error whose message contains it
 //   - lateMetric: answers done, then sends a metric for the same delivery
+//   - cost: sends a cost_usd metric for each number of config "costs" and a metric of another name, then answers
+//     done, or a non-retryable error when config "fail" is true
 //   - artifact: writes the payload's "files" (path to content) in MILLSTREAM_WORKDIR, creates its "links" (path to
 //     target) as symbolic links, then emits, with the payload's "emit" list as artifacts, an output mapping each
 //     input artifact's name to its content, and answers done with the payload's "attempt" list as the attempt's
@@ -145,6 +147,21 @@ func handle(w *protocol.Writer, config map[string]any, mode string, it protocol.
 			return err
 		}
 		return w.Write(protocol.Metric{Delivery: it.Delivery, Name: "late", Value: 1})
+	case "cost":
+		costs, _ := config["costs"].([]any)
+		for _, c := range costs {
+			v, _ := c.(float64)
+			if err := w.Write(protocol.Metric{Delivery: it.Delivery, Name: protocol.MetricCostUSD, Value: v}); err != nil {
+				return err
+			}
+		}
+		if err := w.Write(protocol.Metric{Delivery: it.Delivery, Name: "tokens_in", Value: 100}); err != nil {
+			return err
+		}
+		if fail, _ := config["fail"].(bool); fail {
+			return w.Write(protocol.Error{Delivery: it.Delivery, Message: "over"})
+		}
+		return w.Write(protocol.Done{Delivery: it.Delivery})
 	case "artifact":
 		return artifacts(w, it)
 	case "slow":

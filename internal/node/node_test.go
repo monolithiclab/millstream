@@ -338,3 +338,47 @@ func TestOversizedItemFailsNonRetryable(t *testing.T) {
 		t.Fatalf("fails = %+v; want one non-retryable protocol failure", tr.fails)
 	}
 }
+
+// The node reports an attempt's cost as the sum of its cost_usd metrics, on done and on an action's error; a
+// failure in the runtime reports none, so its reservation is charged in full.
+func TestReportsCostMetrics(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name       string
+		mode       string
+		config     map[string]any
+		cost       float64
+		unreported bool
+	}{
+		{"done", "cost", map[string]any{"costs": []any{0.25, 0.5}}, 0.75, false},
+		{"error", "cost", map[string]any{"costs": []any{0.125}, "fail": true}, 0.125, false},
+		{"no cost metric", "cost", nil, 0, false},
+		{"crash", "crash", nil, 0, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			tr := newFakeTransport(assignment("dl_1", tt.mode, tt.config))
+			stop := startNode(t, tr, Options{})
+			await(t, tr.reported, 1)
+			if err := stop(); err != nil {
+				t.Fatalf("Run: %v", err)
+			}
+			tr.mu.Lock()
+			defer tr.mu.Unlock()
+			var cost float64
+			var unreported bool
+			switch {
+			case len(tr.dones) == 1:
+				cost = tr.dones[0].CostUSD
+			case len(tr.fails) == 1:
+				cost, unreported = tr.fails[0].CostUSD, tr.fails[0].Unreported
+			default:
+				t.Fatalf("dones = %+v, fails = %+v", tr.dones, tr.fails)
+			}
+			if cost != tt.cost || unreported != tt.unreported {
+				t.Fatalf("cost = %v unreported %v, want %v %v", cost, unreported, tt.cost, tt.unreported)
+			}
+		})
+	}
+}

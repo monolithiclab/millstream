@@ -133,7 +133,19 @@ const (
 	EventPaused                 = "paused"
 	EventResumed                = "resumed"
 	EventFiringSkipped          = "firingSkipped"
+	EventBudgetReached          = "budgetReached"
 )
+
+// Budget scopes (spec section 7.5): budget.runUsd bounds the spend of one run, budget.dayUsd the spend of the
+// pipeline over a UTC day of the store clock.
+const (
+	BudgetRun = "run"
+	BudgetDay = "day"
+)
+
+// PauseCauseBudget prefixes the cause of a step paused by a budget: budget.run or budget.day. A pause a user asked
+// for has no cause.
+const PauseCauseBudget = "budget."
 
 // PackageRecord is a package to apply: its content hash, an opaque bundle of its files, and its pipeline as
 // pipeline.Parse returns it, with step defaults (dlq, retry) filled in. The store keeps the pipeline as JSON with
@@ -169,6 +181,9 @@ type PipelineState struct {
 	ActiveRevision RevisionID
 	Paused         bool
 	PausedSteps    []string
+	// PauseCauses says why a paused step was paused when a user did not ask for it (budget.run, budget.day), by
+	// step; nil when no step is.
+	PauseCauses map[string]string
 }
 
 // Firing is one trigger firing (spec section 4.6).
@@ -213,6 +228,11 @@ type LeaseRequest struct {
 	// PipelineSlots caps the deliveries leased per pipeline in this call, across its steps (free limits.concurrency),
 	// with the same nil and absent rules as Slots.
 	PipelineSlots map[string]int
+	// Reserve names the agent steps, with the reservation each delivery of them takes when leased: the action's
+	// maxCostUsd, zero when it sets none (spec section 5.9). A delivery of a step in Reserve is leased only while its
+	// run's spend and reservations plus its own stay within budget.runUsd, and the pipeline's for the day within
+	// budget.dayUsd; the first delivery a budget stops pauses every agent step of its pipeline named here.
+	Reserve map[StepRef]float64
 }
 
 // Lease is a leased delivery with what a node needs to run it.
@@ -322,7 +342,10 @@ type FailRequest struct {
 	Message   string
 	Retryable bool
 	CostUSD   float64
-	Artifacts []ArtifactRef
+	// Unreported means the attempt ended without reporting its cost (the runtime killed or lost the action): its
+	// budget reservation is charged in full, as for an expired lease, when it exceeds CostUSD.
+	Unreported bool
+	Artifacts  []ArtifactRef
 }
 
 // AttemptArtifact is an artifact an attempt of a delivery kept for itself, such as an agent's transcript.
@@ -419,6 +442,8 @@ type Delivery struct {
 	// FilterReason is why a builtin filtered the delivery, empty unless it is filtered.
 	FilterReason string
 	CostUSD      float64
+	// ReservedUSD is the budget reservation of a leased agent delivery (spec section 5.9), zero otherwise.
+	ReservedUSD float64
 }
 
 // DeadLetter is a dead-letter record; its ID is the dead-letter item's id on Stream.

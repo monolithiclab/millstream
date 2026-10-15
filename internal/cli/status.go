@@ -20,7 +20,8 @@ type StatusCmd struct {
 	Limit    int    `default:"10" help:"Most recent runs to show."`
 }
 
-// Run prints the pipelines with their state and active revision, then the most recent runs with their state, item
+// Run prints the pipelines with their state, active revision and paused steps (with the budget that paused one,
+// when a budget did), then the most recent runs with their state, item
 // count and open dead letters.
 func (c StatusCmd) Run(rt *Runtime) error {
 	return withStore(rt, func(st *sqlite.Store) error {
@@ -39,7 +40,14 @@ func (c StatusCmd) Run(rt *Runtime) error {
 				state = "paused"
 			}
 			if len(ps.PausedSteps) > 0 {
-				paused = strings.Join(ps.PausedSteps, ",")
+				steps := make([]string, len(ps.PausedSteps))
+				for i, step := range ps.PausedSteps {
+					steps[i] = step
+					if cause := ps.PauseCauses[step]; cause != "" {
+						steps[i] += " (" + cause + ")"
+					}
+				}
+				paused = strings.Join(steps, ",")
 			}
 			fmt.Fprintf(tw, "%s\t%s\t%d\t%s\n", ps.Name, state, ps.ActiveRevision, paused)
 		}

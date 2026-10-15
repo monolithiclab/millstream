@@ -58,7 +58,7 @@ func (e *Engine) Pull(ctx context.Context, owner string, maxN int) ([]node.Assig
 
 // lease leases up to maxN deliveries under the in-memory limits and records them in flight.
 func (e *Engine) lease(ctx context.Context, owner string, maxN int) ([]store.Lease, error) {
-	active, steps, err := e.limitSources(ctx)
+	active, steps, reserve, err := e.limitSources(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("pull: %w", err)
 	}
@@ -68,7 +68,7 @@ func (e *Engine) lease(ctx context.Context, owner string, maxN int) ([]store.Lea
 	now := e.opts.Now()
 	req := store.LeaseRequest{
 		Owner: owner, Max: maxN, TTL: e.opts.LeaseTTL,
-		Slots: map[store.StepRef]int{}, PipelineSlots: map[string]int{},
+		Slots: map[store.StepRef]int{}, PipelineSlots: map[string]int{}, Reserve: reserve,
 	}
 	perStep, perPipeline := e.countInflight()
 	for _, rev := range active {
@@ -105,32 +105,40 @@ func (e *Engine) lease(ctx context.Context, owner string, maxN int) ([]store.Lea
 	return leases, nil
 }
 
-// limitSources returns each pipeline's active revision, whose limits apply, and the definition each step's
-// concurrency and rate come from: the active revision's, or, for a step only older revisions have, that of the
-// newest revision with unsettled runs that has it, so its remaining deliveries are still limited.
-func (e *Engine) limitSources(ctx context.Context) ([]*revision, map[store.StepRef]pipeline.Step, error) {
+// limitSources returns each pipeline's active revision, whose limits apply, the definition each step's concurrency
+// and rate come from, and the agent steps with the budget reservation of each delivery (its action's maxCostUsd).
+// A step's definition is the active revision's, or, for a step only older revisions have, that of the newest
+// revision with unsettled runs that has it, so its remaining deliveries are still limited.
+func (e *Engine) limitSources(ctx context.Context) ([]*revision, map[store.StepRef]pipeline.Step,
+	map[store.StepRef]float64, error,
+) {
 	pipelines, err := e.st.Pipelines(ctx)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	open, err := e.st.OpenRevisions(ctx)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	active := make([]*revision, 0, len(pipelines))
 	steps := map[store.StepRef]pipeline.Step{}
+	reserve := map[store.StepRef]float64{}
 	add := func(rev *revision) {
 		for name, step := range rev.p.Steps {
 			ref := store.StepRef{Pipeline: rev.p.Name, Step: name}
-			if _, ok := steps[ref]; !ok {
-				steps[ref] = step
+			if _, ok := steps[ref]; ok {
+				continue
+			}
+			steps[ref] = step
+			if ra := e.action(rev, step.Action); ra.err == nil && ra.a.Kind == pipeline.KindAgent {
+				reserve[ref] = ra.a.Agent.MaxCostUSD
 			}
 		}
 	}
 	for _, ps := range pipelines {
 		rev, err := e.revision(ctx, ps.ActiveRevision)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		active = append(active, rev)
 		add(rev)
@@ -138,11 +146,11 @@ func (e *Engine) limitSources(ctx context.Context) ([]*revision, map[store.StepR
 	for _, id := range slices.Backward(open) { // newest first
 		rev, err := e.revision(ctx, id)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		add(rev)
 	}
-	return active, steps, nil
+	return active, steps, reserve, nil
 }
 
 // countInflight counts the deliveries in flight per step and per pipeline. The caller holds e.mu.

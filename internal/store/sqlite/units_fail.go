@@ -30,8 +30,12 @@ func (s *Store) Fail(ctx context.Context, f store.FailRequest) (store.DeliverySt
 		if err != nil {
 			return err
 		}
+		cost := f.CostUSD
+		if f.Unreported {
+			cost = max(cost, d.reserved) // unreported spend is charged in full (spec section 5.9)
+		}
 		if run.state == store.RunCancelled {
-			state, err = w.cancelDelivery(d, f.CostUSD)
+			state, err = w.cancelDelivery(d, cost)
 			return err
 		}
 		rev, err := w.revision(run.revision)
@@ -40,7 +44,7 @@ func (s *Store) Fail(ctx context.Context, f store.FailRequest) (store.DeliverySt
 		}
 		step, _ := rev.stepOrOrphan(d.step)
 		state, err = w.fail(d, run, rev, step, failure{
-			class: f.Class, message: f.Message, retryable: f.Retryable, cost: f.CostUSD,
+			class: f.Class, message: f.Message, retryable: f.Retryable, cost: cost,
 		})
 		return err
 	})
