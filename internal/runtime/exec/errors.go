@@ -5,7 +5,8 @@ import (
 	"fmt"
 )
 
-// Runtime error classes, stored on the delivery by the Fail unit (spec section 5.5). All of them are retryable.
+// Runtime error classes, stored on the delivery by the Fail unit (spec section 5.5). They are retryable unless the
+// error is Permanent.
 const (
 	// ClassTimeout: no ready within the ready timeout, or no done or error within the delivery's timeout.
 	ClassTimeout = "timeout"
@@ -15,11 +16,13 @@ const (
 	ClassProtocol = "protocol"
 )
 
-// RuntimeError is a delivery that failed in the runtime rather than in the action: the process is gone (killed or
-// exited) and the delivery is retried.
+// RuntimeError is a delivery that failed in the runtime rather than in the action. Usually the process is gone
+// (killed or exited) and the delivery is retried. A Permanent one is deterministic, such as an item too large for a
+// protocol line: the process is left healthy, and retrying would fail the same way.
 type RuntimeError struct {
-	Class string
-	Err   error
+	Class     string
+	Permanent bool
+	Err       error
 }
 
 func (e *RuntimeError) Error() string { return fmt.Sprintf("%s: %v", e.Class, e.Err) }
@@ -32,6 +35,12 @@ func ClassOf(err error) string {
 		return re.Class
 	}
 	return ClassCrash
+}
+
+// Permanent reports whether err is a RuntimeError that retrying cannot fix.
+func Permanent(err error) bool {
+	re, ok := errors.AsType[*RuntimeError](err)
+	return ok && re.Permanent
 }
 
 func runtimeErr(class, format string, args ...any) *RuntimeError {

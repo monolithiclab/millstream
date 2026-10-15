@@ -113,6 +113,8 @@ type Process struct {
 
 	logMu sync.Mutex
 	log   *slog.Logger // the latest delivery's logger, else opts.Logger
+
+	prev string // the delivery answered last, whose late metrics are ignored
 }
 
 // Start spawns the process, sends hello and waits for ready. ctx bounds only the handshake: the process outlives
@@ -145,6 +147,7 @@ func (p *Process) spawn() error {
 	// #nosec G204 -- the command comes from the operator's package manifest: running it is the runtime's job.
 	cmd := osexec.Command(p.spec.Command[0], p.spec.Command[1:]...)
 	cmd.Dir = p.spec.Dir
+	setProcessGroup(cmd) // so kill reaches the children the action starts
 	cmd.Env = append(append(make([]string, 0, len(p.spec.Env)+1), p.spec.Env...), "MILLSTREAM_WORKDIR="+p.workdir)
 	var err error
 	if p.stdin, err = cmd.StdinPipe(); err != nil {
@@ -197,12 +200,19 @@ func (p *Process) handshake(ctx context.Context) error {
 		Protocol: protocol.Version, Action: p.spec.Action, Version: p.spec.Version,
 		Config: p.spec.Config, Vars: p.spec.Vars,
 	}
+	// The ready timeout and ctx bound the whole handshake, the hello write included: a process that never reads
+	// stdin must not block it on a full pipe. Killing the process closes stdin and unblocks the write.
+	hctx, cancel := context.WithTimeoutCause(ctx, p.opts.ReadyTimeout, errReadyTimeout)
+	defer cancel()
+	stop := context.AfterFunc(hctx, p.kill)
+	defer stop()
 	if err := p.w.Write(hello); err != nil {
+		if hctx.Err() != nil {
+			return p.handshakeErr(hctx)
+		}
 		p.kill()
 		return p.exitErr(ctx, "send hello: %w", err)
 	}
-	timer := time.NewTimer(p.opts.ReadyTimeout)
-	defer timer.Stop()
 	select {
 	case m, ok := <-p.msgs:
 		if !ok {
@@ -213,28 +223,34 @@ func (p *Process) handshake(ctx context.Context) error {
 			return runtimeErr(ClassProtocol, "%w: %s before ready", protocol.ErrProtocol, m.Type())
 		}
 		return nil
-	case <-timer.C:
-		p.kill()
-		return runtimeErr(ClassTimeout, "no ready within %s", p.opts.ReadyTimeout)
-	case <-ctx.Done():
-		p.kill()
-		return fmt.Errorf("await ready: %w", ctx.Err())
+	case <-hctx.Done():
+		return p.handshakeErr(hctx)
 	}
 }
 
-// Deliver hands the process one item and collects its answer. A RuntimeError means the process is gone; a
-// cancelled ctx kills it too and returns ctx's error. Outputs are returned only on done, so a failed delivery
-// publishes nothing.
+// errReadyTimeout and errDeliveryTimeout are the causes of a handshake or delivery context ending at its timeout.
+var (
+	errReadyTimeout    = errors.New("ready timeout")
+	errDeliveryTimeout = errors.New("delivery timeout")
+)
+
+// handshakeErr explains a handshake whose context ended; the process is killed.
+func (p *Process) handshakeErr(hctx context.Context) error {
+	p.kill()
+	if errors.Is(context.Cause(hctx), errReadyTimeout) {
+		return runtimeErr(ClassTimeout, "no ready within %s", p.opts.ReadyTimeout)
+	}
+	return fmt.Errorf("await ready: %w", hctx.Err())
+}
+
+// Deliver hands the process one item and collects its answer. A RuntimeError means the process is gone, unless it
+// is Permanent: an item too large for a protocol line is refused before anything is written, and the process stays
+// healthy. A cancelled ctx kills the process and returns ctx's error. Outputs are returned only on done, so a failed
+// delivery publishes nothing.
 func (p *Process) Deliver(ctx context.Context, d Delivery) (Result, error) {
 	id := d.Item.Delivery
-	select {
-	case m, ok := <-p.msgs:
-		if !ok {
-			return Result{}, p.exitErr(ctx, "exited while idle")
-		}
-		p.kill()
-		return Result{}, runtimeErr(ClassProtocol, "%w: %s while idle", protocol.ErrProtocol, m.Type())
-	default:
+	if err := p.drainIdle(ctx); err != nil {
+		return Result{}, err
 	}
 	if err := clearDir(p.workdir); err != nil {
 		p.kill()
@@ -247,28 +263,36 @@ func (p *Process) Deliver(ctx context.Context, d Delivery) (Result, error) {
 	} else {
 		p.setLog(p.opts.Logger)
 	}
+	// ctx and the timeout bound the whole delivery, the item write included: a process that stops reading stdin
+	// must not block it on a full pipe. Killing the process closes stdin and unblocks the write.
+	dctx, cancel := ctx, context.CancelFunc(func() {})
+	if d.Timeout > 0 {
+		dctx, cancel = context.WithTimeoutCause(ctx, d.Timeout, errDeliveryTimeout)
+	}
+	defer cancel()
+	stop := context.AfterFunc(dctx, p.kill)
+	defer stop()
 	if err := p.w.Write(d.Item); err != nil {
+		switch {
+		case errors.Is(err, protocol.ErrProtocol): // refused whole: nothing was written
+			return Result{}, &RuntimeError{Class: ClassProtocol, Permanent: true, Err: fmt.Errorf("item %s: %w", id, err)}
+		case dctx.Err() != nil:
+			return Result{}, p.deliveryErr(dctx, d)
+		}
 		p.kill()
 		return Result{}, p.exitErr(ctx, "send item %s: %w", id, err)
-	}
-	var timeout <-chan time.Time
-	if d.Timeout > 0 {
-		timer := time.NewTimer(d.Timeout)
-		defer timer.Stop()
-		timeout = timer.C
 	}
 	var res Result
 	for {
 		select {
-		case <-ctx.Done():
-			p.kill()
-			return Result{}, fmt.Errorf("delivery %s: %w", id, ctx.Err())
-		case <-timeout:
-			p.kill()
-			return Result{}, runtimeErr(ClassTimeout, "delivery %s: no answer within %s", id, d.Timeout)
+		case <-dctx.Done():
+			return Result{}, p.deliveryErr(dctx, d)
 		case m, ok := <-p.msgs:
 			if !ok {
 				return Result{}, p.exitErr(ctx, "exited during delivery %s", id)
+			}
+			if p.lateMetric(m) {
+				continue
 			}
 			done, err := collect(&res, id, m)
 			if err != nil {
@@ -276,10 +300,52 @@ func (p *Process) Deliver(ctx context.Context, d Delivery) (Result, error) {
 				return Result{}, runtimeErr(ClassProtocol, "delivery %s: %w", id, err)
 			}
 			if done {
+				p.prev = id
 				return res, nil
 			}
 		}
 	}
+}
+
+// deliveryErr explains a delivery whose context ended; the process is killed.
+func (p *Process) deliveryErr(dctx context.Context, d Delivery) error {
+	p.kill()
+	if errors.Is(context.Cause(dctx), errDeliveryTimeout) {
+		return runtimeErr(ClassTimeout, "delivery %s: no answer within %s", d.Item.Delivery, d.Timeout)
+	}
+	return fmt.Errorf("delivery %s: %w", d.Item.Delivery, dctx.Err())
+}
+
+// drainIdle reads what the process wrote since its last delivery. A late metric of that delivery is ignored; any
+// other message between deliveries is a protocol violation, and the process is killed.
+func (p *Process) drainIdle(ctx context.Context) error {
+	for {
+		select {
+		case m, ok := <-p.msgs:
+			if !ok {
+				return p.exitErr(ctx, "exited while idle")
+			}
+			if p.lateMetric(m) {
+				continue
+			}
+			p.kill()
+			return runtimeErr(ClassProtocol, "%w: %s while idle", protocol.ErrProtocol, m.Type())
+		default:
+			return nil
+		}
+	}
+}
+
+// lateMetric reports whether m is a metric for the delivery answered last, sent after its done or error. Metrics
+// are informative and an SDK may flush one late, so it is logged at debug level and dropped rather than killing a
+// healthy process.
+func (p *Process) lateMetric(m protocol.Message) bool {
+	mt, ok := m.(protocol.Metric)
+	if !ok || p.prev == "" || mt.Delivery != p.prev {
+		return false
+	}
+	p.logger().Debug("late metric ignored", "metric", mt.Name, "deliveryId", mt.Delivery)
+	return true
 }
 
 // collect adds m to res and reports whether it ended the delivery.
@@ -379,12 +445,13 @@ func (p *Process) Close() error {
 	return err
 }
 
-// shutdown asks the process to exit and reports whether it did within the shutdown timeout.
+// shutdown asks the process to exit and reports whether it did within the shutdown timeout. The timeout bounds the
+// write too, a process that stopped reading stdin would block it on a full pipe: at the timeout the process is
+// killed, which closes stdin.
 func (p *Process) shutdown() bool {
+	killer := time.AfterFunc(p.opts.ShutdownTimeout, p.kill)
 	_ = p.w.Write(protocol.Shutdown{})
 	_ = p.stdin.Close()
-	timer := time.NewTimer(p.opts.ShutdownTimeout)
-	defer timer.Stop()
 	msgs := p.msgs
 	for {
 		select {
@@ -393,18 +460,17 @@ func (p *Process) shutdown() bool {
 				msgs = nil
 			}
 		case <-p.exited:
-			return true
-		case <-timer.C:
-			return false
+			return killer.Stop() // false when the timeout killed it
 		}
 	}
 }
 
-// kill ends the process and closes its pipes, so readers return even if a grandchild holds them open.
+// kill ends the process and every process of its group with SIGKILL, and closes its pipes, so readers return even
+// if a grandchild that escaped the group holds them open.
 func (p *Process) kill() {
 	p.killOnce.Do(func() {
 		close(p.dead)
-		_ = p.cmd.Process.Kill()
+		killProcessGroup(p.cmd.Process)
 		_ = p.stdin.Close()
 		_ = p.stdout.Close()
 		_ = p.stderr.Close()

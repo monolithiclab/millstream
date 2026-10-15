@@ -190,10 +190,10 @@ func (l *loop) execute(ctx context.Context, log *slog.Logger, a Assignment) {
 	var rerr error
 	switch {
 	case err != nil:
-		class := exec.ClassOf(err)
-		log.Warn("delivery failed in the runtime", "class", class, "error", err.Error())
+		class, retryable := exec.ClassOf(err), !exec.Permanent(err)
+		log.Warn("delivery failed in the runtime", "class", class, "retryable", retryable, "error", err.Error())
 		rerr = l.t.Fail(rctx, store.FailRequest{
-			LeaseRef: ref, Attempt: attempt, Class: class, Message: err.Error(), Retryable: true,
+			LeaseRef: ref, Attempt: attempt, Class: class, Message: err.Error(), Retryable: retryable,
 		})
 	case res.Err != nil:
 		log.Info("delivery failed in the action", "retryable", res.Err.Retryable)

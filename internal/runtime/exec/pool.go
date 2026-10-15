@@ -73,12 +73,12 @@ func (pl *Pool) Deliver(ctx context.Context, spec Spec, d Delivery) (Result, err
 		return Result{}, err
 	}
 	res, err := p.Deliver(ctx, d)
-	if err != nil {
+	if healthy := err == nil || Permanent(err) && p.Alive(); !healthy {
 		pl.closeLogged(p)
 		return res, err
 	}
-	pl.release(key, p)
-	return res, nil
+	pl.release(key, p) // a permanent error left the process healthy: it serves the next delivery
+	return res, err
 }
 
 func (pl *Pool) acquire(ctx context.Context, key string, spec Spec) (*Process, error) {

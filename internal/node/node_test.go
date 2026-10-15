@@ -1,12 +1,15 @@
 package node
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/monolithiclab/millstream/internal/protocol"
 	"github.com/monolithiclab/millstream/internal/runtime/exec"
 	"github.com/monolithiclab/millstream/internal/store"
 )
@@ -316,4 +319,22 @@ func hasLog(t *testing.T, b *syncBuffer, msg, id string) bool {
 		}
 	}
 	return false
+}
+
+// An item too large for a protocol line fails non-retryably, class protocol: retrying cannot make it fit.
+func TestOversizedItemFailsNonRetryable(t *testing.T) {
+	t.Parallel()
+	a := assignment("dl_1", "echo", nil)
+	a.ItemMsg.Payload = json.RawMessage(`"` + strings.Repeat("x", protocol.MaxLine) + `"`)
+	tr := newFakeTransport(a)
+	stop := startNode(t, tr, Options{})
+	await(t, tr.reported, 1)
+	if err := stop(); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	if len(tr.fails) != 1 || tr.fails[0].Class != exec.ClassProtocol || tr.fails[0].Retryable {
+		t.Fatalf("fails = %+v; want one non-retryable protocol failure", tr.fails)
+	}
 }

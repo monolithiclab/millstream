@@ -80,7 +80,10 @@ output when a delivery has several, each output with its own key. `artifacts` li
 {"type":"emit","delivery":"dl_3f…","key":"listing-42","payload":{"url":"https://example.com/42","score":81},"artifacts":[{"name":"report.pdf","path":"out/report.pdf"}]}
 ```
 
-**`metric`** records a measurement for the current delivery. Names are Prometheus snake_case.
+**`metric`** records a measurement for the current delivery. Names are Prometheus snake_case. A metric that
+arrives after the delivery's `done` or `error`, before the next `item` is answered, is ignored rather than treated
+as a violation. In version 1 the engine accepts metrics, and the `artifacts` of `emit`, but does not store them yet:
+they are stored from milestone M2.
 
 ```json
 {"type":"metric","delivery":"dl_3f…","name":"pages_fetched","value":12,"labels":{"source":"portal"}}
@@ -143,7 +146,14 @@ The engine kills the process and retries the delivery when it receives:
 
 - a line that is not a JSON object, or longer than 8 MiB;
 - a `type` it does not know, or a message out of order (an `emit` before `ready`, a second `done`);
-- a message for a delivery other than the current one, or any message between deliveries.
+- a message for a delivery other than the current one, or any message between deliveries other than a late
+  `metric` of the delivery just answered.
+
+On a violation, a timeout or a lost lease, the node kills the action's whole process group, so children the action
+started go with it.
+
+An `item` the engine cannot fit in one line (a payload over 8 MiB) is never sent: the delivery fails at once, not
+retryable, and the process is kept for the next item.
 
 Several outputs for one delivery where any has no key, or two share a key, is not a protocol violation but a
 key-rule error: it is deterministic, so the item is dead-lettered at once instead of retried.

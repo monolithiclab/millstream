@@ -12,6 +12,10 @@
 //   - emitAfterDone: answers done, then emits for the same delivery
 //   - slow: sleeps config "sleepMs" milliseconds, then echoes
 //   - noReady: never answers hello
+//   - child: starts a child process sleeping for a minute, logs "child <pid>" on stderr, then hangs
+//   - noRead: answers ready, then never reads stdin again and hangs
+//   - secret: writes config "secret" to stderr, then answers a non-retryable error whose message contains it
+//   - lateMetric: answers done, then sends a metric for the same delivery
 //
 // It lives under testdata so the module's ./... patterns skip it; exectest builds it.
 package main
@@ -22,6 +26,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"time"
 
 	"github.com/monolithiclab/millstream/internal/protocol"
@@ -51,6 +56,9 @@ func run() error {
 	}
 	if err := w.Write(protocol.Ready{}); err != nil {
 		return err
+	}
+	if mode == "noRead" {
+		hang()
 	}
 	for {
 		m, err := r.Read()
@@ -116,6 +124,22 @@ func handle(w *protocol.Writer, config map[string]any, mode string, it protocol.
 			return err
 		}
 		return w.Write(protocol.Emit{Delivery: it.Delivery, Payload: it.Payload})
+	case "child":
+		child := exec.Command("/bin/sleep", "60")
+		if err := child.Start(); err != nil {
+			return err
+		}
+		fmt.Fprintf(os.Stderr, "child %d\n", child.Process.Pid)
+		hang()
+	case "secret":
+		secret, _ := config["secret"].(string)
+		fmt.Fprintln(os.Stderr, "calling the portal with "+secret)
+		return w.Write(protocol.Error{Delivery: it.Delivery, Message: "portal refused token " + secret})
+	case "lateMetric":
+		if err := w.Write(protocol.Done{Delivery: it.Delivery}); err != nil {
+			return err
+		}
+		return w.Write(protocol.Metric{Delivery: it.Delivery, Name: "late", Value: 1})
 	case "slow":
 		ms, _ := config["sleepMs"].(float64)
 		time.Sleep(time.Duration(ms) * time.Millisecond)
