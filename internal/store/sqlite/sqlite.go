@@ -66,10 +66,9 @@ const (
 )
 
 // Memory opens a store on a fresh in-memory database, freed by Close: a database of SQLite's memdb VFS under a
-// name of its own, so the writer and the read pool share it (each connection to plain :memory: is a database of its
-// own). It starts as a copy of a database migrated once per process, so opening many (tests, millstream test) does
-// not migrate each. memdb has no write-ahead log: a read waits for the writer's transaction to end, and a commit for
-// the reads in progress (busy_timeout), where a file store lets them run alongside.
+// name of its own, which Clone copies from. It starts as a copy of a database migrated once per process, so opening
+// many (tests, millstream test) does not migrate each. It has no read pool: memdb has no write-ahead log, so its
+// reads run on the writer's connection, between batches, where a file store's read pool runs them alongside.
 const Memory = ":memory:"
 
 // memoryTemplateURI names the migrated database Memory stores start as a copy of.
@@ -95,11 +94,8 @@ var memoryTemplate = sync.OnceValues(func() (*sql.DB, error) {
 	return db, nil
 })
 
-// restoreTemplate copies the template database, with SQLite's backup API, into the database db is open on.
-func restoreTemplate(db *sql.DB) error {
-	if _, err := memoryTemplate(); err != nil {
-		return fmt.Errorf("migrate template: %w", err)
-	}
+// restore copies the database at srcURI, with SQLite's backup API, into the database db is open on.
+func restore(db *sql.DB, srcURI string) error {
 	conn, err := db.Conn(context.Background())
 	if err != nil {
 		return err
@@ -110,18 +106,18 @@ func restoreTemplate(db *sql.DB) error {
 			NewRestore(srcURI string) (*msqlite.Backup, error)
 		})
 		if !ok {
-			return fmt.Errorf("restore template: %T has no backup API", dc)
+			return fmt.Errorf("restore: %T has no backup API", dc)
 		}
-		b, err := r.NewRestore(memoryTemplateURI)
+		b, err := r.NewRestore(srcURI)
 		if err != nil {
-			return fmt.Errorf("restore template: %w", err)
+			return fmt.Errorf("restore: %w", err)
 		}
 		_, err = b.Step(-1)
 		if ferr := b.Finish(); err == nil {
 			err = ferr
 		}
 		if err != nil {
-			return fmt.Errorf("restore template: %w", err)
+			return fmt.Errorf("restore: %w", err)
 		}
 		return nil
 	})
@@ -141,9 +137,10 @@ type Options struct {
 
 // Store is the SQLite log store. It is safe for concurrent use.
 type Store struct {
-	write *sql.DB // one connection, used only by the writer goroutine
-	read  *sql.DB
+	write *sql.DB // one connection, the writer goroutine's (and a Memory store's reads, between batches)
+	read  *sql.DB // the read pool; write for a Memory store
 	opts  Options
+	uri   string // the database, for Clone
 
 	mu     sync.RWMutex // guards closed against sends on reqs
 	closed bool
@@ -151,8 +148,10 @@ type Store struct {
 	done   chan struct{} // closed when the writer exits
 
 	// Writer goroutine only.
-	revs map[string]*revision // revisions by package hash; see revision
-	rr   int                  // round-robin offset across pipelines
+	revs   map[string]*revision // revisions by package hash; see revision
+	rr     int                  // round-robin offset across pipelines
+	stmts  map[string]*sql.Stmt // prepared write statements by query; see wtx.stmt
+	unseen map[string]bool      // queries of the last batch to prepare once it ends
 }
 
 var _ store.Store = (*Store)(nil)
@@ -163,7 +162,20 @@ var migrations embed.FS
 // Open opens (creating if needed) the store at path, or a temporary one for Memory, and applies pending
 // migrations.
 func Open(path string, opts Options) (*Store, error) {
-	s := &Store{opts: opts, reqs: make(chan *request), done: make(chan struct{}), revs: map[string]*revision{}}
+	return open(path, "", opts)
+}
+
+// Clone opens a Memory store holding a copy of s's database as committed when it is called: a store to try
+// something on without touching s, or a test's copy of a history built once.
+func (s *Store) Clone(opts Options) (*Store, error) {
+	return open(Memory, s.uri, opts)
+}
+
+// open opens the store at path; a Memory store starts as a copy of the database at from, or of the migrated
+// template when from is empty.
+func open(path, from string, opts Options) (*Store, error) {
+	s := &Store{opts: opts, reqs: make(chan *request), done: make(chan struct{}), revs: map[string]*revision{},
+		stmts: map[string]*sql.Stmt{}, unseen: map[string]bool{}}
 	if s.opts.BusyTimeout == 0 {
 		s.opts.BusyTimeout = 5 * time.Second
 	}
@@ -173,11 +185,7 @@ func Open(path string, opts Options) (*Store, error) {
 	if s.opts.Rand == nil {
 		s.opts.Rand = rand.Float64 // #nosec G404 -- retry jitter, not a secret
 	}
-	memory := path == Memory
-	if memory {
-		path = fmt.Sprintf("file:/millstream-%d?vfs=memdb", memorySeq.Add(1))
-	}
-	if err := s.open(path, memory); err != nil {
+	if err := s.open(path, from); err != nil {
 		_ = s.closeDBs() // the open error is the one to report
 		return nil, err
 	}
@@ -185,13 +193,15 @@ func Open(path string, opts Options) (*Store, error) {
 	return s, nil
 }
 
-func (s *Store) open(path string, memory bool) error {
+func (s *Store) open(path, from string) error {
+	memory := path == Memory
 	sep := "?"
 	if memory {
-		sep = "&" // the memdb URI has a query already
+		path, sep = fmt.Sprintf("file:/millstream-%d?vfs=memdb", memorySeq.Add(1)), "&"
 	}
-	pragmas := "_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)&_pragma=synchronous(NORMAL)" +
-		"&_pragma=busy_timeout(" + strconv.FormatInt(s.opts.BusyTimeout.Milliseconds(), 10) + ")"
+	busy := "_pragma=busy_timeout(" + strconv.FormatInt(s.opts.BusyTimeout.Milliseconds(), 10) + ")"
+	pragmas := "_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)&_pragma=synchronous(NORMAL)&" + busy
+	s.uri = path + sep + busy
 	var err error
 	if s.write, err = sql.Open("sqlite", path+sep+pragmas+"&_txlock=immediate"); err != nil {
 		return fmt.Errorf("open store %s: %w", path, err)
@@ -200,12 +210,24 @@ func (s *Store) open(path string, memory bool) error {
 	s.write.SetMaxIdleConns(1)
 	s.write.SetConnMaxLifetime(0)
 	if memory {
-		if err := restoreTemplate(s.write); err != nil {
+		if from == "" {
+			if _, err := memoryTemplate(); err != nil {
+				return fmt.Errorf("open store: migrate template: %w", err)
+			}
+			from = memoryTemplateURI
+		}
+		if err := restore(s.write, from); err != nil {
 			return fmt.Errorf("open store: %w", err)
 		}
 	}
 	if err := migrate(s.write); err != nil {
 		return fmt.Errorf("open store %s: %w", path, err)
+	}
+	if memory {
+		// The writer's connection serves the reads too: a read waits for the batch in progress, as it would on
+		// memdb's locks, but without a connection of its own to open or busy_timeout to sleep through.
+		s.read = s.write
+		return nil
 	}
 	if s.read, err = sql.Open("sqlite", path+sep+pragmas+"&_pragma=query_only(1)"); err != nil {
 		return fmt.Errorf("open store %s: %w", path, err)
@@ -279,7 +301,11 @@ func (s *Store) Close() error {
 
 func (s *Store) closeDBs() error {
 	var errs []error
-	for _, db := range []*sql.DB{s.read, s.write} {
+	dbs := []*sql.DB{s.write}
+	if s.read != s.write { // a Memory store reads on its write connection
+		dbs = append(dbs, s.read)
+	}
+	for _, db := range dbs {
 		if db != nil {
 			errs = append(errs, db.Close())
 		}

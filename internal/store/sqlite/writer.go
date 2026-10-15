@@ -61,6 +61,7 @@ func (s *Store) submit(ctx context.Context, unit string, fn func(*wtx) error) er
 // writer is the single writer loop. It exits when Close closes reqs, after applying what was queued.
 func (s *Store) writer() {
 	defer close(s.done)
+	defer s.closeStmts()
 	for first := range s.reqs {
 		batch := []*request{first}
 		deadline := time.Now().Add(batchWindow)
@@ -80,7 +81,48 @@ func (s *Store) writer() {
 		for i, r := range batch {
 			r.done <- results[i]
 		}
+		s.prepareUnseen()
 	}
+}
+
+// maxStmts bounds the prepared statements: the queries are constants, but nothing stops a unit from building one.
+const maxStmts = 256
+
+// prepareUnseen prepares the queries the last batch ran unprepared. It runs between batches: the write connection
+// belongs to the batch transaction while it lasts. A query that cannot be prepared runs unprepared again next time.
+func (s *Store) prepareUnseen() {
+	for q := range s.unseen {
+		if st, err := s.write.Prepare(q); err == nil {
+			s.stmts[q] = st
+		}
+	}
+	clear(s.unseen)
+}
+
+func (s *Store) closeStmts() {
+	for _, st := range s.stmts {
+		_ = st.Close()
+	}
+}
+
+// stmt returns query prepared for the batch transaction, or nil when it is not prepared yet: the writer prepares it
+// after the batch, so SQLite parses a unit's statements once per store rather than once per run.
+func (w *wtx) stmt(query string) *sql.Stmt {
+	if st, ok := w.s.stmts[query]; ok {
+		return w.tx.StmtContext(w.ctx, st)
+	}
+	if len(w.s.stmts)+len(w.s.unseen) < maxStmts {
+		w.s.unseen[query] = true
+	}
+	return nil
+}
+
+// execTx runs a statement in the batch transaction, prepared once it can be.
+func (w *wtx) execTx(query string, args ...any) (sql.Result, error) {
+	if st := w.stmt(query); st != nil {
+		return st.ExecContext(w.ctx, args...)
+	}
+	return w.tx.ExecContext(w.ctx, query, args...)
 }
 
 // commit applies a batch in one transaction and returns each unit's outcome.
@@ -154,26 +196,26 @@ func (s *Store) commitBatch(batch []*request, results []error) (err error) {
 // When the savepoint itself cannot be set, rolled back to or released, the transaction's state is unknown: abort is
 // set, and the caller must roll the whole batch back.
 func applyUnit(w *wtx, fn func(*wtx) error) (err, abort error) {
-	if _, err := w.tx.ExecContext(w.ctx, `SAVEPOINT unit`); err != nil {
+	if _, err := w.execTx(`SAVEPOINT unit`); err != nil {
 		return nil, fmt.Errorf("savepoint: %w", err)
 	}
 	if err := fn(w); err != nil {
-		if _, rbErr := w.tx.ExecContext(w.ctx, `ROLLBACK TO unit`); rbErr != nil {
+		if _, rbErr := w.execTx(`ROLLBACK TO unit`); rbErr != nil {
 			return err, fmt.Errorf("roll back a failed unit (%w): %w", err, rbErr)
 		}
-		if _, rbErr := w.tx.ExecContext(w.ctx, `RELEASE unit`); rbErr != nil {
+		if _, rbErr := w.execTx(`RELEASE unit`); rbErr != nil {
 			return err, fmt.Errorf("release a failed unit (%w): %w", err, rbErr)
 		}
 		return err, nil
 	}
-	if _, err := w.tx.ExecContext(w.ctx, `RELEASE unit`); err != nil {
+	if _, err := w.execTx(`RELEASE unit`); err != nil {
 		return nil, fmt.Errorf("release savepoint: %w", err)
 	}
 	return nil, nil
 }
 
 func (w *wtx) exec(query string, args ...any) (sql.Result, error) {
-	res, err := w.tx.ExecContext(w.ctx, query, args...)
+	res, err := w.execTx(query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("exec: %w", err)
 	}
@@ -194,11 +236,20 @@ func (w *wtx) affected(query string, args ...any) (int64, error) {
 }
 
 func (w *wtx) queryRow(query string, args ...any) *sql.Row {
+	if st := w.stmt(query); st != nil {
+		return st.QueryRowContext(w.ctx, args...)
+	}
 	return w.tx.QueryRowContext(w.ctx, query, args...)
 }
 
 func (w *wtx) query(query string, args ...any) (*sql.Rows, error) {
-	rows, err := w.tx.QueryContext(w.ctx, query, args...)
+	var rows *sql.Rows
+	var err error
+	if st := w.stmt(query); st != nil {
+		rows, err = st.QueryContext(w.ctx, args...)
+	} else {
+		rows, err = w.tx.QueryContext(w.ctx, query, args...)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("query: %w", err)
 	}

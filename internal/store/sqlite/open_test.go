@@ -2,6 +2,7 @@ package sqlite
 
 import (
 	"context"
+	"errors"
 	"io/fs"
 	"path/filepath"
 	"reflect"
@@ -60,20 +61,41 @@ func TestOpenFileAndReopen(t *testing.T) {
 		t.Fatal(err)
 	}
 	wantState(t, "journal mode", mode, "wal")
+	// The read pool is query-only.
+	if _, err := s.read.Exec(`INSERT INTO events (ts, pipeline, run_id, kind, data) VALUES ('', '', '', '', '')`); err == nil {
+		t.Fatal("a write through the read pool succeeded")
+	}
+}
+
+// A clone holds the database as committed when it was taken, and goes its own way from there.
+func TestClone(t *testing.T) {
+	t.Parallel()
+	e := newEnv(t, fixture)
+	e.fire("r1")
+	c, err := e.s.Clone(Options{Now: e.clock.Now})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = c.Close() }()
+	e.fire("r2")
+	if _, err := c.Run(e.ctx, "listings", "r1"); err != nil {
+		t.Fatalf("the clone lacks r1: %v", err)
+	}
+	if _, err := c.Run(e.ctx, "listings", "r2"); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("the clone has r2: %v", err)
+	}
+	if created, err := c.Fire(e.ctx, store.Firing{Pipeline: "listings", Trigger: "daily", Key: "r3", RunID: "r3"}); err != nil || !created {
+		t.Fatalf("Fire on the clone: %v, %v", created, err)
+	}
+	if _, err := e.s.Run(e.ctx, "listings", "r3"); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("the clone's run reached the original: %v", err)
+	}
 }
 
 func TestOpenErrors(t *testing.T) {
 	t.Parallel()
 	if _, err := Open(filepath.Join(t.TempDir(), "missing", "dir", "m.db"), Options{}); err == nil {
 		t.Fatal("Open in a missing directory succeeded")
-	}
-}
-
-func TestReadPoolIsQueryOnly(t *testing.T) {
-	t.Parallel()
-	e := newEnv(t)
-	if _, err := e.s.read.Exec(`INSERT INTO events (ts, pipeline, run_id, kind, data) VALUES ('', '', '', '', '')`); err == nil {
-		t.Fatal("a write through the read pool succeeded")
 	}
 }
 
