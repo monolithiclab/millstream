@@ -90,6 +90,7 @@ type Engine struct {
 	actions  map[actionKey]*resolvedAction  // by package hash and reference
 	inflight map[string]flight              // leased deliveries by delivery id
 	buckets  map[store.StepRef]*bucket      // step rate limits
+	builtins map[builtinKey]*builtin        // compiled builtin steps by package hash and step
 
 	crons map[[2]string]*cronState // cron triggers by pipeline and name; the scheduler's goroutine only
 
@@ -142,7 +143,8 @@ func New(opts Options) (*Engine, error) {
 		st: opts.Store, opts: opts, log: opts.Logger,
 		packages: map[string]*pipeline.Package{}, revs: map[store.RevisionID]*revision{},
 		actions: map[actionKey]*resolvedAction{}, inflight: map[string]flight{}, buckets: map[store.StepRef]*bucket{},
-		crons: map[[2]string]*cronState{}, ready: make(chan struct{}),
+		builtins: map[builtinKey]*builtin{},
+		crons:    map[[2]string]*cronState{}, ready: make(chan struct{}),
 		parser: cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor),
 	}, nil
 }

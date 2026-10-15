@@ -25,8 +25,8 @@ import (
 
 // Error classes of deliveries the engine fails at dispatch.
 const (
-	// ClassUnsupported: the step's action is a builtin, a registry action or a kind this build cannot run (M1
-	// runs exec actions only). Never retried.
+	// ClassUnsupported: the step's action is a builtin, a registry action or a kind this build cannot run (review
+	// arrives in M3; exec actions are the only kind run on nodes). Never retried.
 	ClassUnsupported = "unsupported"
 	// ClassConfig: the step's config does not interpolate, a secret is unset, or the action does not resolve.
 	// Never retried (spec section 5.5).
@@ -174,9 +174,9 @@ func resolve(r pipeline.ActionResolver, pkg *pipeline.Package, ref string) *reso
 		return &resolvedAction{err: dispatchErr(ClassUnsupported, false, "%w", err)}
 	case err != nil:
 		return &resolvedAction{err: dispatchErr(ClassConfig, false, "%w", err)}
-	case a.Builtin:
+	case a.Builtin: // runBuiltin runs builtins before assign is reached; a resolver may still return one
 		return &resolvedAction{err: dispatchErr(ClassUnsupported, false,
-			"the %s builtin arrives in M2: this build cannot run it", a.Name)}
+			"the %s builtin runs in the engine, never on a node", a.Name)}
 	case a.Kind != pipeline.KindExec:
 		return &resolvedAction{err: dispatchErr(ClassUnsupported, false,
 			"action %s is of kind %s: this build runs exec actions only", ref, a.Kind)}

@@ -26,8 +26,13 @@ const (
 // shortlisted listing is priced and reported except the one without a rent estimate, which dead-letters while
 // rentability is strict.
 func expectedCounts(fixed bool) map[string]int {
+	return countsFor(listing.Generate(fixtureSeed, fixtureListings), fixed)
+}
+
+// countsFor computes the items per stream from score on, for the listings that reach listings.raw.
+func countsFor(raw []listing.Listing, fixed bool) map[string]int {
 	shortlist := 0
-	for _, l := range listing.Generate(fixtureSeed, fixtureListings) {
+	for _, l := range raw {
 		if listing.Score(l) >= minScore {
 			shortlist++
 		}
@@ -37,9 +42,47 @@ func expectedCounts(fixed bool) map[string]int {
 		priced = shortlist
 	}
 	return map[string]int{
-		"trigger.adhoc": 1, "listings.raw": fixtureListings, "listings.shortlist": shortlist,
-		"listings.rejected": fixtureListings - shortlist, "listings.priced": priced, "reports.done": priced,
+		"trigger.adhoc": 1, "listings.raw": len(raw), "listings.shortlist": shortlist,
+		"listings.rejected": len(raw) - shortlist, "listings.priced": priced, "reports.done": priced,
 		"listings.failed": 1,
+	}
+}
+
+// expectedBuiltinCounts computes the items per stream of a run of the builtins fixture: every listing passes the
+// dedupe on its id, and the filter keeps those not in good condition.
+func expectedBuiltinCounts() map[string]int {
+	all := listing.Generate(fixtureSeed, fixtureListings)
+	var raw []listing.Listing
+	for _, l := range all {
+		if l.Condition != listing.ConditionGood {
+			raw = append(raw, l)
+		}
+	}
+	counts := countsFor(raw, false)
+	counts["listings.crawled"], counts["listings.unique"] = len(all), len(all)
+	return counts
+}
+
+// TestBuiltinsFixture runs the builtins fixture once: the dedupe and filter steps run in the engine, and the counts
+// per stream follow from the generator. The filtered deliveries are the good listings.
+func TestBuiltinsFixture(t *testing.T) {
+	t.Parallel()
+	snap := cleanBuiltinsRun(t)
+	want := expectedBuiltinCounts()
+	if got := snap.counts(); !maps.Equal(got, want) {
+		t.Fatalf("counts = %v, want %v", got, want)
+	}
+	filtered := 0
+	for _, d := range snap.Deliveries {
+		if d.State == store.DeliveryFiltered {
+			if d.Step != "affordable" {
+				t.Errorf("a delivery of %s is filtered", d.Step)
+			}
+			filtered++
+		}
+	}
+	if filtered != want["listings.unique"]-want["listings.raw"] || filtered == 0 {
+		t.Fatalf("%d deliveries filtered, want %d", filtered, want["listings.unique"]-want["listings.raw"])
 	}
 }
 

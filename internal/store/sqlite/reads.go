@@ -160,12 +160,12 @@ func (s *Store) Deliveries(ctx context.Context, f store.DeliveryFilter) ([]store
 	w.eq("run_id", f.RunID)
 	w.eq("state", string(f.State))
 	ds, err := scan(ctx, s.read, `SELECT pipeline, id, run_id, step, item_id, generation, state, attempt, lease_owner,
-		fencing_token, lease_expires_at, next_attempt_at, error_class, error_message, cost_usd
+		fencing_token, lease_expires_at, next_attempt_at, error_class, error_message, filter_reason, cost_usd
 		FROM deliveries`+w.String()+` ORDER BY rowid`, w.args, func(rows *sql.Rows) (store.Delivery, error) {
 		var d store.Delivery
 		var expires, next string
 		if err := rows.Scan(&d.Pipeline, &d.ID, &d.RunID, &d.Step, &d.ItemID, &d.Generation, &d.State, &d.Attempt,
-			&d.LeaseOwner, &d.FencingToken, &expires, &next, &d.ErrorClass, &d.ErrorMessage, &d.CostUSD); err != nil {
+			&d.LeaseOwner, &d.FencingToken, &expires, &next, &d.ErrorClass, &d.ErrorMessage, &d.FilterReason, &d.CostUSD); err != nil {
 			return d, fmt.Errorf("scan delivery: %w", err)
 		}
 		var err error

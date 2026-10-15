@@ -42,6 +42,11 @@ const (
 	BuiltinReview = "review"
 )
 
+// IsBuiltin reports whether an action reference names a builtin.
+func IsBuiltin(ref string) bool {
+	return ref == BuiltinFilter || ref == BuiltinDedupe || ref == BuiltinReview
+}
+
 // ManifestFile is the manifest at the root of an action directory.
 const ManifestFile = "action.yaml"
 
@@ -90,7 +95,7 @@ var registryRef = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*/[a-z0-9]+(-[a-z0-9
 // Resolve implements ActionResolver.
 func (r Resolver) Resolve(pkg *Package, ref string) (*Action, error) {
 	switch {
-	case ref == BuiltinFilter || ref == BuiltinDedupe || ref == BuiltinReview:
+	case IsBuiltin(ref):
 		return &Action{Ref: ref, Builtin: true, Name: ref}, nil
 	case strings.HasPrefix(ref, "./"):
 		return r.local(pkg, ref)

@@ -225,7 +225,7 @@ func TestUndispatchableDeliveriesFail(t *testing.T) {
 		message   string
 		config    string
 	}{
-		{"builtin", "filter", nil, nil, ClassUnsupported, false, "the filter builtin arrives in M2", ""},
+		{"builtin", "review", nil, nil, ClassUnsupported, false, "the review builtin arrives in M3", ""},
 		{"registry", "lab/score@1", nil, nil, ClassUnsupported, false, "registry actions arrive in M2", ""},
 		{"container", "./actions/c", map[string]string{"actions/c/action.yaml": containerManifest}, nil,
 			ClassUnsupported, false, "this build runs exec actions only", ""},

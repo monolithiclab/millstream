@@ -48,6 +48,13 @@ type Store interface {
 	// Fail is the Fail unit. It returns the state the delivery ended in: pending (retry scheduled), dead or
 	// cancelled.
 	Fail(ctx context.Context, f FailRequest) (DeliveryState, error)
+	// Filter is the Filter unit: a builtin decided not to pass the leased delivery on (spec section 4.7). It
+	// returns filtered, or cancelled for a delivery of a cancelled run.
+	Filter(ctx context.Context, f FilterRequest) (DeliveryState, error)
+	// Dedupe is the Dedupe unit (spec section 5.11): the leased delivery's item passes, published unchanged as by
+	// Done, when its key was not let through by the step in the same generation within the window; otherwise the
+	// delivery is filtered with FilterReasonDuplicate. It returns the state the delivery ended in, as Done does.
+	Dedupe(ctx context.Context, d DedupeRequest) (DeliveryState, error)
 	// Cancel is the Cancel unit.
 	Cancel(ctx context.Context, pipeline, runID string) error
 	// ReplayDeadLetters is the Dead-letter replay unit for the open dead letters of a run (all of them when ids is

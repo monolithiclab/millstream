@@ -2,6 +2,7 @@ package sqlite
 
 import (
 	"context"
+	"io/fs"
 	"path/filepath"
 	"reflect"
 	"testing"
@@ -46,7 +47,11 @@ func TestOpenFileAndReopen(t *testing.T) {
 	if err := s.read.QueryRow(`SELECT COUNT(*) FROM schema_version`).Scan(&versions); err != nil {
 		t.Fatal(err)
 	}
-	wantState(t, "schema versions", versions, 1)
+	files, err := fs.Glob(migrations, "migrations/*.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantState(t, "schema versions", versions, len(files)) // each migration applied once
 	if id, err := s.ActiveRevision(ctx, "listings"); err != nil || id != 1 {
 		t.Fatalf("active revision after reopen = %d, %v", id, err)
 	}

@@ -22,11 +22,13 @@ import (
 )
 
 // The fixture's package directories, built by TestMain: v1 is examples/m1-fixture as committed; v2 is the same
-// package with the rentability fix (strict: false), the revision a dead-letter replay migrates to.
+// package with the rentability fix (strict: false), the revision a dead-letter replay migrates to; builtins is v1
+// with a dedupe and a filter step between crawl and score, so the crash suite reaches the builtin units.
 var (
-	binary    string
-	fixtureV1 string
-	fixtureV2 string
+	binary          string
+	fixtureV1       string
+	fixtureV2       string
+	fixtureBuiltins string
 )
 
 func TestMain(m *testing.M) { os.Exit(runTests(m)) }
@@ -71,7 +73,12 @@ func build(dir string) error {
 	if err := errors.Join(buildFixture(root, dir), <-built); err != nil {
 		return err
 	}
-	return fixRentability(filepath.Join(fixtureV2, "pipeline.yaml"))
+	fixtureBuiltins = filepath.Join(dir, "builtins")
+	if err := os.CopyFS(fixtureBuiltins, os.DirFS(fixtureV1)); err != nil {
+		return err
+	}
+	return errors.Join(fixRentability(filepath.Join(fixtureV2, "pipeline.yaml")),
+		insertBuiltins(filepath.Join(fixtureBuiltins, "pipeline.yaml")))
 }
 
 // buildFixture copies the fixture into dir/v1 with its actions compiled, and v1 into dir/v2.
@@ -116,6 +123,40 @@ func fixRentability(path string) error {
 		return fmt.Errorf("%s: want exactly one %q to turn into the fixed revision", path, from)
 	}
 	return os.WriteFile(path, bytes.Replace(data, []byte(from), []byte(to), 1), 0o600)
+}
+
+// builtinSteps are the steps insertBuiltins puts between crawl and score: a dedupe on the listing id, which lets
+// every listing through since ids are unique (a key that repeated would make which item passes depend on delivery
+// order, and so differ after a crash), and a filter dropping the listings in good condition.
+const builtinSteps = `  unique:
+    action: dedupe
+    in: listings.crawled
+    out: listings.unique
+    config: { key: item.id, window: 30d }
+
+  affordable:
+    action: filter
+    in: listings.unique
+    out: listings.raw
+    config: { expr: "item.condition != 'good'" }
+
+  score:
+`
+
+// insertBuiltins turns v1 into the builtins variant: crawl writes listings.crawled, which unique and affordable
+// turn into the listings.raw score reads.
+func insertBuiltins(path string) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	for _, r := range [][2]string{{"    out: listings.raw\n", "    out: listings.crawled\n"}, {"  score:\n", builtinSteps}} {
+		if bytes.Count(data, []byte(r[0])) != 1 {
+			return fmt.Errorf("%s: want exactly one %q to insert the builtins", path, r[0])
+		}
+		data = bytes.Replace(data, []byte(r[0]), []byte(r[1]), 1)
+	}
+	return os.WriteFile(path, data, 0o600)
 }
 
 // commandTimeout bounds every millstream invocation, so a hang fails the test instead of the whole suite.

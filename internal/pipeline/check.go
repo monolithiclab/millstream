@@ -35,8 +35,8 @@ func HasErrors(diags []Diagnostic) bool {
 	return slices.ContainsFunc(diags, func(d Diagnostic) bool { return d.Severity == SeverityError })
 }
 
-// builtinMilestone is the milestone in which the engine starts running each builtin.
-var builtinMilestone = map[string]string{BuiltinFilter: "M2", BuiltinDedupe: "M2", BuiltinReview: "M3"}
+// builtinMilestone is the milestone in which the engine starts running each builtin it cannot run yet.
+var builtinMilestone = map[string]string{BuiltinReview: "M3"}
 
 // builtinKeys are the config keys each builtin accepts (spec sections 4.7 and 8).
 var builtinKeys = map[string][]string{
@@ -161,8 +161,10 @@ func (c *checker) checkStep(name string, actions ActionResolver) {
 	switch {
 	case a == nil:
 	case a.Builtin:
-		c.warnf(joinPath(at, "action"), "the %s builtin arrives in %s: check validates it, run cannot execute it yet",
-			a.Name, builtinMilestone[a.Name])
+		if m, later := builtinMilestone[a.Name]; later {
+			c.warnf(joinPath(at, "action"), "the %s builtin arrives in %s: check validates it, run cannot execute it yet",
+				a.Name, m)
+		}
 		c.checkBuiltinConfig(a.Name, s.Config, cfgAt)
 	case a.Config != nil:
 		c.checkConfigSchema(a, cfg, skipped, cfgAt)

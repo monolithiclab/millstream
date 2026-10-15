@@ -15,7 +15,7 @@ type RevisionID int64
 // NextAttemptAt in the future.
 type DeliveryState string
 
-// Delivery states. Filtered and AwaitingReview belong to builtins and review (later milestones).
+// Delivery states. Filtered belongs to the filter and dedupe builtins; AwaitingReview to review (M3).
 const (
 	DeliveryPending        DeliveryState = "pending"
 	DeliveryLeased         DeliveryState = "leased"
@@ -98,6 +98,14 @@ const (
 	ClassLeaseExpired = "leaseExpired"
 )
 
+// Reasons a builtin filters a delivery, recorded on it (Delivery.FilterReason) and in its deliveryFiltered event.
+const (
+	// FilterReasonExpr: the filter builtin's expr was false for the item.
+	FilterReasonExpr = "exprFalse"
+	// FilterReasonDuplicate: the dedupe builtin already let the item's key through (spec section 5.11).
+	FilterReasonDuplicate = "duplicate"
+)
+
 // MaxErrorMessage is the most bytes of an error message kept on a delivery (spec section 5.5).
 const MaxErrorMessage = 4096
 
@@ -112,6 +120,7 @@ const (
 	EventDeliveryRetry          = "deliveryRetry"
 	EventDeliveryDead           = "deliveryDead"
 	EventDeliveryCancelled      = "deliveryCancelled"
+	EventDeliveryFiltered       = "deliveryFiltered"
 	EventLeaseExpired           = "leaseExpired"
 	EventDeadLetter             = "deadLetter"
 	EventDeadLetterReplayed     = "deadLetterReplayed"
@@ -257,6 +266,23 @@ type FailRequest struct {
 	CostUSD   float64
 }
 
+// FilterRequest filters a leased delivery: a builtin decided not to pass it on.
+type FilterRequest struct {
+	LeaseRef
+	Attempt int
+	Reason  string
+}
+
+// DedupeRequest applies the Dedupe unit to a leased delivery of a dedupe step: Key is the item's key as the step's
+// config.key computed it, and Window how long a key let through holds back the next item with the same key (zero:
+// for ever).
+type DedupeRequest struct {
+	LeaseRef
+	Attempt int
+	Key     string
+	Window  time.Duration
+}
+
 // Run is a run record.
 type Run struct {
 	ID            string
@@ -308,7 +334,9 @@ type Delivery struct {
 	NextAttemptAt  time.Time
 	ErrorClass     string
 	ErrorMessage   string
-	CostUSD        float64
+	// FilterReason is why a builtin filtered the delivery, empty unless it is filtered.
+	FilterReason string
+	CostUSD      float64
 }
 
 // DeadLetter is a dead-letter record; its ID is the dead-letter item's id on Stream.

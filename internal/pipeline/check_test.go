@@ -277,9 +277,8 @@ func TestCheckBuiltinWarning(t *testing.T) {
   gate: { action: review, in: kept }
 `)
 	got := Check(pkg, Resolver{}, envOf(nil))
-	want := []string{
+	want := []string{ // filter and dedupe run from M2: only review warns
 		"warning steps.gate.action: the review builtin arrives in M3: check validates it, run cannot execute it yet",
-		"warning steps.keep.action: the filter builtin arrives in M2: check validates it, run cannot execute it yet",
 	}
 	if len(got) != len(want) {
 		t.Fatalf("got %v", got)

@@ -16,9 +16,10 @@ import (
 var _ node.Transport = (*Engine)(nil)
 
 // Pull implements node.Transport: it leases up to maxN deliveries within the steps' concurrency, the pipelines'
-// limits and the steps' rates, and resolves each into an assignment. Stubbed deliveries are completed on the spot
-// and leasing continues, so a fully stubbed pipeline runs to the end in one call; deliveries that cannot be
-// dispatched (an unsupported action kind, a config that fails to interpolate) are failed instead of returned.
+// limits and the steps' rates, and resolves each into an assignment. Stubbed deliveries and builtin deliveries
+// (filter, dedupe) are completed on the spot by the engine and leasing continues, so a node never receives a builtin
+// and a fully stubbed pipeline runs to the end in one call; deliveries that cannot be dispatched (an unsupported
+// action kind, a config that fails to interpolate) are failed instead of returned.
 func (e *Engine) Pull(ctx context.Context, owner string, maxN int) ([]node.Assignment, error) {
 	var out []node.Assignment
 	for len(out) < maxN {
@@ -33,6 +34,10 @@ func (e *Engine) Pull(ctx context.Context, owner string, maxN int) ([]node.Assig
 		for _, l := range leases {
 			if stub, ok := e.opts.Stubs[store.StepRef{Pipeline: l.Pipeline, Step: l.Step}]; ok {
 				e.completeStub(ctx, l, stub)
+				completed = true
+				continue
+			}
+			if e.runBuiltin(ctx, l) {
 				completed = true
 				continue
 			}

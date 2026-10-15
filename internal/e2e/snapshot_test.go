@@ -205,6 +205,8 @@ type reference struct {
 var (
 	// clean is the fixture run once on v1, without a crash: its designed dead letter left open.
 	clean reference
+	// cleanBuiltins is the builtins fixture run once, without a crash.
+	cleanBuiltins reference
 	// replayed is clean followed by the dead-letter replay onto v2, without a crash.
 	replayed reference
 )
@@ -212,16 +214,28 @@ var (
 // cleanRun returns the clean reference.
 func cleanRun(t *testing.T) snapshot {
 	t.Helper()
-	clean.once.Do(func() {
-		clean.failed = true
+	return clean.get(t, fixtureV1)
+}
+
+// cleanBuiltinsRun returns the clean reference of the builtins fixture.
+func cleanBuiltinsRun(t *testing.T) snapshot {
+	t.Helper()
+	return cleanBuiltins.get(t, fixtureBuiltins)
+}
+
+// get runs dir once, the first time it is asked for, and returns its outcome.
+func (r *reference) get(t *testing.T, dir string) snapshot {
+	t.Helper()
+	r.once.Do(func() {
+		r.failed = true
 		db := dbPath(t)
-		mustExit(t, 1, db, nil, runOnce(fixtureV1)...)
-		clean.snap, clean.failed = readSnapshot(t, db), t.Failed()
+		mustExit(t, 1, db, nil, runOnce(dir)...)
+		r.snap, r.failed = readSnapshot(t, db), t.Failed()
 	})
-	if clean.failed {
+	if r.failed {
 		t.Fatal("the clean reference run failed")
 	}
-	return clean.snap
+	return r.snap
 }
 
 // replayedRun returns the replayed reference.

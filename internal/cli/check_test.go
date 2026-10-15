@@ -60,20 +60,17 @@ func Test_checkCommand(t *testing.T) {
 			"error steps.a.config.maxPrice: does not match the config schema of ./actions/a: got string, want integer",
 		}, "p: 3 errors, 0 warnings\n"},
 		{"builtin-cel", nil, 1, []string{
-			"warning steps.dedupe.action: the dedupe builtin arrives in M2: check validates it, run cannot execute it yet",
 			`error steps.dedupe.config.key: compile "item.address +": ERROR: <input>:1:15: ` + syntaxError + "...",
-			"warning steps.keep.action: the filter builtin arrives in M2: check validates it, run cannot execute it yet",
 			`error steps.keep.config.expr: compile "secrets.token == ''": secrets are only available in config interpolation`,
-		}, "p: 2 errors, 2 warnings\n"},
+		}, "p: 2 errors, 0 warnings\n"},
 		{"schema-compat", nil, 1, []string{
-			"warning steps.keep.action: the filter builtin arrives in M2: check validates it, run cannot execute it yet",
 			"error steps.score.in[0]: output of step crawl on stream kept against the input schema of ./actions/score at " +
 				`/properties/city: the consumer requires property "city", which the producer does not declare`,
 			"error steps.score.in[0]: output of step crawl on stream kept against the input schema of ./actions/score at " +
 				"/properties/price: the producer may emit null, which the consumer does not allow",
 			"warning steps.score.in[0]: output of step crawl on stream kept against the input schema of ./actions/score at " +
 				`/properties/kind: cannot prove the value is one of the consumer's enum ["flat", "house"]: the producer does not constrain it`,
-		}, "p: 2 errors, 2 warnings\n"},
+		}, "p: 2 errors, 1 warning\n"},
 		{"agent-external", nil, 0, []string{
 			"warning steps.agent: agent output can reach step send, whose action has external effects, without a review " +
 				"step that has no autoApprove in between",
