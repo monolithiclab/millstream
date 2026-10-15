@@ -12,28 +12,13 @@ import (
 	"testing"
 
 	"github.com/monolithiclab/millstream/internal/pipeline"
-	"github.com/monolithiclab/millstream/internal/runtime/exec/exectest"
+	"github.com/monolithiclab/millstream/internal/runtime/exec/exectest/fakeexec"
 )
 
-// fakeBin is the fake action, built once by TestMain.
-var fakeBin string
-
 func TestMain(m *testing.M) {
-	os.Exit(runTests(m))
-}
-
-func runTests(m *testing.M) int {
-	dir, err := os.MkdirTemp("", "eval-test-")
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	defer func() { _ = os.RemoveAll(dir) }()
-	if fakeBin, err = exectest.Build(dir); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	return m.Run()
+	code := m.Run()
+	fakeexec.Cleanup()
+	os.Exit(code)
 }
 
 const (
@@ -72,15 +57,17 @@ func writePackage(t *testing.T, baseURL string, files map[string]string) string 
 	return dir
 }
 
-// placeFake places the fake action binary as the echo action's command.
+// placeFake places the fake action as the echo action's command: a stub the in-process launcher ignores in the
+// default build, the built binary in the e2e build.
 func placeFake(t *testing.T, dir string) {
 	t.Helper()
-	if err := exectest.Place(fakeBin, filepath.Join(dir, "actions", "echo", "fakeaction")); err != nil {
+	if err := fakeexec.Place(filepath.Join(dir, "actions", "echo", "fakeaction")); err != nil {
 		t.Fatal(err)
 	}
 }
 
-// options loads the package and resolves the action ref for a harness mode.
+// options loads the package and resolves the action ref for a harness mode; exec actions run the fake action
+// in-process in the default build, as a process in the e2e build.
 func options(t *testing.T, dir, ref, mode, recordings string) Options {
 	t.Helper()
 	if ref == "./actions/echo" {
@@ -96,7 +83,7 @@ func options(t *testing.T, dir, ref, mode, recordings string) Options {
 	}
 	env := map[string]string{"PATH": os.Getenv("PATH"), "MILLSTREAM_SECRET_API_TOKEN": "sk-test"}
 	return Options{Package: pkg, Action: act, Ref: ref, Mode: mode, Dir: recordings,
-		Env: func(k string) (string, bool) { v, ok := env[k]; return v, ok }}
+		Env: func(k string) (string, bool) { v, ok := env[k]; return v, ok }, Launchers: fakeexec.Launchers()}
 }
 
 // loadOne loads the only case of the action directory.

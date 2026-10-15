@@ -13,6 +13,7 @@ import (
 
 	"github.com/monolithiclab/millstream/internal/protocol"
 	"github.com/monolithiclab/millstream/internal/runtime/exec"
+	"github.com/monolithiclab/millstream/internal/runtime/exec/exectest/fakeexec"
 	"github.com/monolithiclab/millstream/internal/store"
 )
 
@@ -77,7 +78,7 @@ func TestRunRespectsSlots(t *testing.T) {
 	t.Parallel()
 	var as []Assignment
 	for i := range 5 {
-		as = append(as, assignment(fmt.Sprintf("dl_%d", i), "slow", map[string]any{"sleepMs": 100}))
+		as = append(as, assignment(fmt.Sprintf("dl_%d", i), "slow", map[string]any{"sleepMs": 20}))
 	}
 	tr := newFakeTransport(as...)
 	stop := startNode(t, tr, Options{Slots: 2})
@@ -119,7 +120,7 @@ func TestDoneFailMapping(t *testing.T) {
 		t.Run(fmt.Sprint(tt.mode, tt.config), func(t *testing.T) {
 			t.Parallel()
 			a := assignment("dl_1", tt.mode, tt.config)
-			a.Timeout = 300 * time.Millisecond
+			a.Timeout = 50 * time.Millisecond // only hang reaches it
 			tr := newFakeTransport(a)
 			stop := startNode(t, tr, Options{})
 			await(t, tr.reported, 1)
@@ -148,8 +149,8 @@ func TestDoneFailMapping(t *testing.T) {
 
 func TestHeartbeatRenewsHeldLeases(t *testing.T) {
 	t.Parallel()
-	tr := newFakeTransport(assignment("dl_1", "slow", map[string]any{"sleepMs": 300}))
-	stop := startNode(t, tr, Options{HeartbeatInterval: 30 * time.Millisecond})
+	tr := newFakeTransport(assignment("dl_1", "slow", map[string]any{"sleepMs": 60}))
+	stop := startNode(t, tr, Options{HeartbeatInterval: 5 * time.Millisecond})
 	await(t, tr.reported, 1)
 	if err := stop(); err != nil {
 		t.Fatalf("Run: %v", err)
@@ -157,7 +158,7 @@ func TestHeartbeatRenewsHeldLeases(t *testing.T) {
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
 	if len(tr.heartbeats) < 2 {
-		t.Fatalf("heartbeats = %d, want several during a 300 ms delivery", len(tr.heartbeats))
+		t.Fatalf("heartbeats = %d, want several during a 60 ms delivery", len(tr.heartbeats))
 	}
 	want := store.LeaseRef{Pipeline: "listings", DeliveryID: "dl_1", Step: "score", FencingToken: 7}
 	for _, refs := range tr.heartbeats {
@@ -173,7 +174,7 @@ func TestLostLeaseDropsResult(t *testing.T) {
 	tr := newFakeTransport(assignment("dl_1", "slow", map[string]any{"sleepMs": 3000}))
 	tr.lose["dl_1"] = true
 	start := time.Now()
-	stop := startNode(t, tr, Options{HeartbeatInterval: 30 * time.Millisecond, Logger: newJSONLogger(&logs)})
+	stop := startNode(t, tr, Options{HeartbeatInterval: 5 * time.Millisecond, Logger: newJSONLogger(&logs)})
 	await(t, tr.lost, 1)
 	if err := stop(); err != nil { // drains: returns once the cancelled delivery is gone
 		t.Fatalf("Run: %v", err)
@@ -226,10 +227,10 @@ func TestReportErrorLogged(t *testing.T) {
 func TestPullAndHeartbeatErrorsAreRetried(t *testing.T) {
 	t.Parallel()
 	var logs syncBuffer
-	tr := newFakeTransport(assignment("dl_1", "slow", map[string]any{"sleepMs": 200}))
+	tr := newFakeTransport(assignment("dl_1", "slow", map[string]any{"sleepMs": 40}))
 	tr.pullErr = errors.New("engine busy")
 	tr.hbErr = errors.New("engine busy")
-	stop := startNode(t, tr, Options{HeartbeatInterval: 30 * time.Millisecond, Logger: newJSONLogger(&logs)})
+	stop := startNode(t, tr, Options{HeartbeatInterval: 5 * time.Millisecond, Logger: newJSONLogger(&logs)})
 	await(t, tr.reported, 1)
 	if err := stop(); err != nil {
 		t.Fatalf("Run: %v", err)
@@ -248,7 +249,7 @@ func TestPullAndHeartbeatErrorsAreRetried(t *testing.T) {
 
 func TestDrainWaitsForInFlight(t *testing.T) {
 	t.Parallel()
-	tr := newFakeTransport(assignment("dl_1", "slow", map[string]any{"sleepMs": 300}),
+	tr := newFakeTransport(assignment("dl_1", "slow", map[string]any{"sleepMs": 100}),
 		assignment("dl_2", "echo", nil))
 	stop := startNode(t, tr, Options{Slots: 1})
 	await(t, tr.pulled, 1)
@@ -268,7 +269,7 @@ func TestDrainWaitsForInFlight(t *testing.T) {
 func TestDrainTimeoutAbandons(t *testing.T) {
 	t.Parallel()
 	tr := newFakeTransport(assignment("dl_1", "hang", nil))
-	stop := startNode(t, tr, Options{DrainTimeout: 100 * time.Millisecond, HeartbeatInterval: 20 * time.Millisecond})
+	stop := startNode(t, tr, Options{DrainTimeout: 20 * time.Millisecond, HeartbeatInterval: 5 * time.Millisecond})
 	await(t, tr.pulled, 1)
 	err := stop()
 	if !errors.Is(err, ErrDrainTimeout) {
@@ -286,7 +287,7 @@ func TestNodeLogsCarryKeys(t *testing.T) {
 	var logs syncBuffer
 	a := assignment("dl_1", "stderr", nil)
 	tr := newFakeTransport(a)
-	pool := exec.NewPool(exec.PoolOptions{})
+	pool := fakeexec.NewPool(t, exec.Options{})
 	stop := startNode(t, tr, Options{Logger: newJSONLogger(&logs), Pool: pool})
 	await(t, tr.reported, 1)
 	if err := stop(); err != nil {

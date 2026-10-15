@@ -17,11 +17,11 @@ import (
 
 	"github.com/monolithiclab/millstream/internal/protocol"
 	"github.com/monolithiclab/millstream/internal/runtime/exec"
-	"github.com/monolithiclab/millstream/internal/runtime/exec/exectest"
+	"github.com/monolithiclab/millstream/internal/runtime/exec/exectest/fakeexec"
 	"github.com/monolithiclab/millstream/internal/store"
 )
 
-// fakeBin is the fake action, built once by TestMain.
+// fakeBin is the fake action's command: in-process in the default build, the built binary in the e2e build.
 var fakeBin string
 
 func TestMain(m *testing.M) {
@@ -29,13 +29,9 @@ func TestMain(m *testing.M) {
 }
 
 func runTests(m *testing.M) int {
-	dir, err := os.MkdirTemp("", "node-test-")
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	defer func() { _ = os.RemoveAll(dir) }()
-	if fakeBin, err = exectest.Build(dir); err != nil {
+	defer fakeexec.Cleanup()
+	var err error
+	if fakeBin, err = fakeexec.Command(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
@@ -205,12 +201,10 @@ func startNode(t *testing.T, tr Transport, opts Options) (stop func() error) {
 		opts.Owner = "node-a"
 	}
 	if opts.Pool == nil {
-		pool := exec.NewPool(exec.PoolOptions{Options: exec.Options{ShutdownTimeout: 300 * time.Millisecond}})
-		t.Cleanup(func() { _ = pool.Close() })
-		opts.Pool = pool
+		opts.Pool = fakeexec.NewPool(t, exec.Options{ShutdownTimeout: 300 * time.Millisecond})
 	}
 	if opts.PullInterval == 0 {
-		opts.PullInterval = 20 * time.Millisecond
+		opts.PullInterval = 5 * time.Millisecond
 	}
 	n, err := New(tr, opts)
 	if err != nil {

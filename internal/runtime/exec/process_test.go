@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"os"
 	"strings"
 	"testing"
@@ -23,7 +24,7 @@ func TestDeliverEcho(t *testing.T) {
 		t.Fatalf("action error: %+v", res.Err)
 	}
 	out := decodeEcho(t, res)
-	if res.Outputs[0].Key != "key-dl_1" || string(out.In) != `{"url":"u"}` || out.PID != p.cmd.Process.Pid {
+	if res.Outputs[0].Key != "key-dl_1" || string(out.In) != `{"url":"u"}` || out.PID == 0 {
 		t.Errorf("output = %+v / %+v", res.Outputs[0], out)
 	}
 	if out.Workdir != p.workdir {
@@ -93,7 +94,7 @@ func TestDeliverRuntimeFailures(t *testing.T) {
 			t.Parallel()
 			p := startFake(t, "echo", nil)
 			d := delivery("dl_1", `{"mode":"`+tt.mode+`"}`)
-			d.Timeout = 300 * time.Millisecond
+			d.Timeout = answerTimeout // only hang reaches it
 			res, err := p.Deliver(t.Context(), d)
 			requireClass(t, err, tt.class)
 			if !strings.Contains(err.Error(), tt.wantMsg) {
@@ -131,7 +132,7 @@ func TestEmitAfterDoneIsAViolation(t *testing.T) {
 func TestDeliverAfterIdleExit(t *testing.T) {
 	t.Parallel()
 	p := startFake(t, "echo", nil)
-	_ = p.cmd.Process.Kill()
+	p.terminate()
 	waitExited(t, p)
 	_, err := p.Deliver(t.Context(), delivery("dl_1", `{}`))
 	requireClass(t, err, ClassCrash)
@@ -147,37 +148,6 @@ func TestDeliverCancelledKills(t *testing.T) {
 		t.Fatalf("err = %v, want context.Canceled", err)
 	}
 	waitExited(t, p)
-}
-
-func TestStartFailures(t *testing.T) {
-	t.Parallel()
-	ctx := t.Context()
-	noCommand := fakeSpec("echo", nil)
-	noCommand.Command = nil
-	missing := fakeSpec("echo", nil)
-	missing.Command = []string{"/nonexistent/action"}
-	tests := []struct {
-		name  string
-		spec  Spec
-		opts  Options
-		class string
-	}{
-		{"no command", noCommand, testOpts, ClassCrash},
-		{"missing binary", missing, testOpts, ClassCrash},
-		{"no ready", fakeSpec("noReady", nil), Options{ReadyTimeout: 200 * time.Millisecond, ShutdownTimeout: 100 * time.Millisecond}, ClassTimeout},
-		{"exits before ready", Spec{Action: "lab/false", Command: []string{"/bin/sh", "-c", "exit 4"}}, testOpts, ClassCrash},
-		{"message before ready", Spec{Action: "lab/early", Command: []string{"/bin/sh", "-c", `echo '{"type":"done","delivery":"x"}'; exec sleep 5`}}, testOpts, ClassProtocol},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			p, err := Start(ctx, tt.spec, tt.opts)
-			if p != nil {
-				t.Fatal("Start returned a process on failure")
-			}
-			requireClass(t, err, tt.class)
-		})
-	}
 }
 
 func TestStartCancelled(t *testing.T) {
@@ -229,26 +199,6 @@ func TestStderrReemittedWithKeys(t *testing.T) {
 	}
 	if all := dl.String() + base.String(); strings.Contains(all, "hunter2") || strings.Contains(all, "secretPayloadValue") {
 		t.Error("a payload value reached the logs")
-	}
-}
-
-func TestStderrOutsideDeliveryAndLongLines(t *testing.T) {
-	t.Parallel()
-	var base syncBuffer
-	opts := testOpts
-	opts.Logger = newJSONLogger(&base)
-	long := strings.Repeat("x", maxLogLine+100)
-	script := `printf '%s\n' "$1" >&2; echo starting >&2; echo '{"type":"ready"}'; read -r hello; exit 0`
-	p, err := Start(t.Context(), Spec{Action: "lab/sh", Command: []string{"/bin/sh", "-c", script, "sh", long}}, opts)
-	if err != nil {
-		t.Fatalf("Start: %v", err)
-	}
-	if err := p.Close(); err != nil {
-		t.Fatalf("Close: %v", err)
-	}
-	lines := jsonLogs(t, base.String())
-	if len(lines) != 2 || len(lines[0]["msg"].(string)) != maxLogLine || lines[1]["msg"] != "starting" {
-		t.Errorf("got %d lines; second = %v", len(lines), lines[len(lines)-1]["msg"])
 	}
 }
 
@@ -305,5 +255,70 @@ func TestClassOf(t *testing.T) {
 	wrapped := errors.Join(runtimeErr(ClassTimeout, "late"))
 	if got := ClassOf(wrapped); got != ClassTimeout {
 		t.Errorf("ClassOf(wrapped) = %s", got)
+	}
+}
+
+// TestStartFailuresInProcess: the start failures of TestStartFailures (process_e2e_test.go) that do not need a
+// real command, with in-process actions.
+func TestStartFailuresInProcess(t *testing.T) {
+	t.Parallel()
+	noCommand := fakeSpec("echo", nil)
+	noCommand.Command = nil
+	early := func(ctx context.Context, _, _ []string, stdin io.Reader, stdout, _ io.Writer) int {
+		if _, err := protocol.NewReader(stdin).Read(); err != nil { // hello
+			return 1
+		}
+		_, _ = io.WriteString(stdout, `{"type":"done","delivery":"x"}`+"\n")
+		<-ctx.Done()
+		return 1
+	}
+	exit4 := func(context.Context, []string, []string, io.Reader, io.Writer, io.Writer) int { return 4 }
+	noReady := testOpts
+	noReady.ReadyTimeout = 20 * time.Millisecond // the fake never answers
+	tests := []struct {
+		name  string
+		spec  Spec
+		opts  Options
+		class string
+	}{
+		{"no command", noCommand, Options{}, ClassCrash},
+		{"no ready", fakeSpec("noReady", nil), noReady, ClassTimeout},
+		{"exits before ready", fakeSpec("echo", nil), funcOpts(exit4), ClassCrash},
+		{"message before ready", fakeSpec("echo", nil), funcOpts(early), ClassProtocol},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			p, err := Start(t.Context(), tt.spec, tt.opts)
+			if p != nil {
+				t.Fatal("Start returned a process on failure")
+			}
+			requireClass(t, err, tt.class)
+		})
+	}
+}
+
+// TestStderrOutsideDeliveryInProcess: TestStderrOutsideDeliveryAndLongLines (process_e2e_test.go) in-process.
+func TestStderrOutsideDeliveryInProcess(t *testing.T) {
+	t.Parallel()
+	var base syncBuffer
+	long := strings.Repeat("x", maxLogLine+100)
+	opts := funcOpts(func(_ context.Context, _, _ []string, stdin io.Reader, stdout, stderr io.Writer) int {
+		_, _ = io.WriteString(stderr, long+"\nstarting\n")
+		_, _ = io.WriteString(stdout, `{"type":"ready"}`+"\n")
+		_, _ = io.Copy(io.Discard, stdin) // hello, then shutdown until stdin closes
+		return 0
+	})
+	opts.Logger = newJSONLogger(&base)
+	p, err := Start(t.Context(), fakeSpec("echo", nil), opts)
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	if err := p.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	lines := jsonLogs(t, base.String())
+	if len(lines) != 2 || len(lines[0]["msg"].(string)) != maxLogLine || lines[1]["msg"] != "starting" {
+		t.Errorf("got %d lines; second = %v", len(lines), lines[len(lines)-1]["msg"])
 	}
 }

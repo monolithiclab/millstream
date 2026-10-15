@@ -81,6 +81,24 @@ type Launcher interface {
 	Kill(spec Spec, workdir string)
 }
 
+// Starter is a Launcher that starts the action itself rather than as a command: the tests' in-process actions
+// implement it. The runtime then uses the Proc's pipes and functions in place of a child process's.
+type Starter interface {
+	// Start starts the action for spec, with workdir as its MILLSTREAM_WORKDIR.
+	Start(spec Spec, workdir string) (*Proc, error)
+}
+
+// Proc is an action a Starter started.
+type Proc struct {
+	Stdin  io.WriteCloser
+	Stdout io.ReadCloser
+	Stderr io.ReadCloser
+	// Wait blocks until the action has ended, once Stdout and Stderr are drained, and returns its exit error.
+	Wait func() error
+	// Kill ends the action. The runtime calls it once, then closes its ends of the pipes.
+	Kill func()
+}
+
 // LookPath finds an executable named name in the directories of path, a PATH value: the first regular file with an
 // execute bit. ok is false when there is none.
 func LookPath(name, path string) (string, bool) {
@@ -188,12 +206,13 @@ type Process struct {
 	spec     Spec
 	opts     Options
 	launcher Launcher
-	cmd      *osexec.Cmd
 	stdin    io.WriteCloser
 	stdout   io.ReadCloser
 	stderr   io.ReadCloser
 	w        *protocol.Writer
 	workdir  string
+	// terminate kills the process (its whole group) or ends a Starter's action.
+	terminate func()
 
 	// msgs carries stdout's messages; it is closed when stdout ends, after readErr is set.
 	msgs    chan protocol.Message
@@ -239,24 +258,20 @@ func Start(ctx context.Context, spec Spec, opts Options) (*Process, error) {
 }
 
 func (p *Process) spawn() error {
-	cmd, err := p.launcher.Command(p.spec, p.workdir)
-	if err != nil {
-		return runtimeErr(ClassCrash, "%w", err)
+	var wait func() error
+	if starter, ok := p.launcher.(Starter); ok {
+		proc, err := starter.Start(p.spec, p.workdir)
+		if err != nil {
+			return runtimeErr(ClassCrash, "%w", err)
+		}
+		p.stdin, p.stdout, p.stderr, p.terminate, wait = proc.Stdin, proc.Stdout, proc.Stderr, proc.Kill, proc.Wait
+	} else {
+		cmd, err := p.startCommand()
+		if err != nil {
+			return err
+		}
+		p.terminate, wait = func() { KillProcessGroup(cmd.Process) }, cmd.Wait
 	}
-	SetProcessGroup(cmd) // so kill reaches the children the action starts
-	if p.stdin, err = cmd.StdinPipe(); err != nil {
-		return runtimeErr(ClassCrash, "stdin pipe: %w", err)
-	}
-	if p.stdout, err = cmd.StdoutPipe(); err != nil {
-		return runtimeErr(ClassCrash, "stdout pipe: %w", err)
-	}
-	if p.stderr, err = cmd.StderrPipe(); err != nil {
-		return runtimeErr(ClassCrash, "stderr pipe: %w", err)
-	}
-	if err := cmd.Start(); err != nil {
-		return runtimeErr(ClassCrash, "start %s: %w", cmd.Path, err)
-	}
-	p.cmd = cmd
 	p.w = protocol.NewWriter(p.stdin)
 	var readers sync.WaitGroup
 	readers.Go(p.readStdout)
@@ -264,10 +279,32 @@ func (p *Process) spawn() error {
 	go func() {
 		// Wait only once both pipes are drained, so the last lines are not lost.
 		readers.Wait()
-		p.waitErr = cmd.Wait()
+		p.waitErr = wait()
 		close(p.exited)
 	}()
 	return nil
+}
+
+// startCommand starts the launcher's command in its own process group, with its pipes.
+func (p *Process) startCommand() (*osexec.Cmd, error) {
+	cmd, err := p.launcher.Command(p.spec, p.workdir)
+	if err != nil {
+		return nil, runtimeErr(ClassCrash, "%w", err)
+	}
+	SetProcessGroup(cmd) // so kill reaches the children the action starts
+	if p.stdin, err = cmd.StdinPipe(); err != nil {
+		return nil, runtimeErr(ClassCrash, "stdin pipe: %w", err)
+	}
+	if p.stdout, err = cmd.StdoutPipe(); err != nil {
+		return nil, runtimeErr(ClassCrash, "stdout pipe: %w", err)
+	}
+	if p.stderr, err = cmd.StderrPipe(); err != nil {
+		return nil, runtimeErr(ClassCrash, "stderr pipe: %w", err)
+	}
+	if err := cmd.Start(); err != nil {
+		return nil, runtimeErr(ClassCrash, "start %s: %w", cmd.Path, err)
+	}
+	return cmd, nil
 }
 
 func (p *Process) readStdout() {
@@ -310,6 +347,9 @@ func (p *Process) handshake(ctx context.Context) error {
 	select {
 	case m, ok := <-p.msgs:
 		if !ok {
+			if hctx.Err() != nil { // killed for the timeout or ctx: that is the cause, not the exit
+				return p.handshakeErr(hctx)
+			}
 			return p.exitErr(ctx, "exited before ready")
 		}
 		if _, ready := m.(protocol.Ready); !ready {
@@ -391,6 +431,9 @@ func (p *Process) Deliver(ctx context.Context, d Delivery) (Result, error) {
 			return Result{}, p.deliveryErr(dctx, d)
 		case m, ok := <-p.msgs:
 			if !ok {
+				if dctx.Err() != nil { // killed for the context: its end is the cause, not the exit
+					return Result{}, p.deliveryErr(dctx, d)
+				}
 				return Result{}, p.exitErr(ctx, "exited during delivery %s", id)
 			}
 			if p.lateMetric(m) {
@@ -583,7 +626,7 @@ func (p *Process) shutdown() bool {
 func (p *Process) kill() {
 	p.killOnce.Do(func() {
 		close(p.dead)
-		KillProcessGroup(p.cmd.Process)
+		p.terminate()
 		if !p.exitedCleanly() {
 			p.launcher.Kill(p.spec, p.workdir)
 		}

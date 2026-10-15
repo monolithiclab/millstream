@@ -1,4 +1,4 @@
-//go:build unix
+//go:build unix && e2e
 
 package exec
 

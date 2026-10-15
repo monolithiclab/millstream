@@ -95,7 +95,7 @@ func TestPoolReplacesProcessThatExitedWhileIdle(t *testing.T) {
 	pl.mu.Lock()
 	p := pl.idle[0].p
 	pl.mu.Unlock()
-	_ = p.cmd.Process.Kill()
+	p.terminate()
 	waitExited(t, p)
 	if got := poolPID(t, pl, spec, "dl_2"); got == pid {
 		t.Errorf("dead process %d reused", pid)
@@ -105,7 +105,7 @@ func TestPoolReplacesProcessThatExitedWhileIdle(t *testing.T) {
 func TestPoolConcurrentDeliveriesUseSeparateProcesses(t *testing.T) {
 	t.Parallel()
 	pl := newTestPool(t, 0)
-	spec := fakeSpec("slow", map[string]any{"sleepMs": 200})
+	spec := fakeSpec("slow", map[string]any{"sleepMs": slowMs})
 	var wg sync.WaitGroup
 	pids := make([]int, 3)
 	for i := range pids {
@@ -188,10 +188,11 @@ func TestPoolKeyEncodeError(t *testing.T) {
 
 func TestPoolPerItemStartFailure(t *testing.T) {
 	t.Parallel()
-	pl := newTestPool(t, 0)
+	pl := NewPool(PoolOptions{}) // the exec launcher, which refuses a spec without a command
+	t.Cleanup(func() { _ = pl.Close() })
 	spec := fakeSpec("echo", nil)
 	spec.Lifecycle = pipeline.LifecyclePerItem
-	spec.Command = []string{"/nonexistent/action"}
+	spec.Command = nil
 	_, err := pl.Deliver(t.Context(), spec, delivery("dl_1", `{}`))
 	requireClass(t, err, ClassCrash)
 }

@@ -2,6 +2,8 @@ package exec
 
 import (
 	"context"
+	"encoding/json"
+	"io"
 	"log/slog"
 	"strings"
 	"testing"
@@ -42,8 +44,8 @@ func TestItemWriteHonoursTimeoutAndContext(t *testing.T) {
 	t.Run("timeout", func(t *testing.T) {
 		t.Parallel()
 		p := startFake(t, "noRead", nil)
-		d := delivery("dl_1", bigPayload(4<<20))
-		d.Timeout = 300 * time.Millisecond
+		d := delivery("dl_1", bigPayload(pipeFill))
+		d.Timeout = 20 * time.Millisecond // the fake never reads the item
 		_, err := deliverWithin(t, t.Context(), p, d)
 		requireClass(t, err, ClassTimeout)
 		waitExited(t, p)
@@ -51,9 +53,9 @@ func TestItemWriteHonoursTimeoutAndContext(t *testing.T) {
 	t.Run("context", func(t *testing.T) {
 		t.Parallel()
 		p := startFake(t, "noRead", nil)
-		ctx, cancel := context.WithTimeout(t.Context(), 300*time.Millisecond)
+		ctx, cancel := context.WithTimeout(t.Context(), 20*time.Millisecond)
 		defer cancel()
-		d := delivery("dl_1", bigPayload(4<<20))
+		d := delivery("dl_1", bigPayload(pipeFill))
 		d.Timeout = 0
 		_, err := deliverWithin(t, ctx, p, d)
 		if err == nil || !strings.Contains(err.Error(), context.DeadlineExceeded.Error()) {
@@ -63,33 +65,17 @@ func TestItemWriteHonoursTimeoutAndContext(t *testing.T) {
 	})
 }
 
-// The hello write honours the ready timeout: a process that never reads stdin does not block Start.
-func TestHelloWriteHonoursReadyTimeout(t *testing.T) {
-	t.Parallel()
-	spec := Spec{Action: "lab/sleep", Command: []string{"sleep", "60"}, Dir: t.TempDir(),
-		Config: map[string]any{"big": strings.Repeat("x", 4<<20)}}
-	done := make(chan error, 1)
-	go func() {
-		p, err := Start(t.Context(), spec, Options{ReadyTimeout: 300 * time.Millisecond})
-		if err == nil {
-			_ = p.Close()
-		}
-		done <- err
-	}()
-	select {
-	case err := <-done:
-		requireClass(t, err, ClassTimeout)
-	case <-time.After(10 * time.Second):
-		t.Fatal("Start did not return")
-	}
-}
-
 // An item larger than a protocol line fails the delivery as a permanent protocol error and leaves the process
 // healthy for the next delivery.
 func TestOversizedItemIsPermanentAndKeepsProcess(t *testing.T) {
 	t.Parallel()
 	p := startFake(t, "echo", nil)
-	_, err := deliverWithin(t, t.Context(), p, delivery("dl_1", bigPayload(protocol.MaxLine)))
+	res, err := p.Deliver(t.Context(), delivery("dl_0", `{}`))
+	if err != nil {
+		t.Fatalf("first delivery: %v", err)
+	}
+	pid := decodeEcho(t, res).PID
+	_, err = deliverWithin(t, t.Context(), p, delivery("dl_1", bigPayload(protocol.MaxLine)))
 	requireClass(t, err, ClassProtocol)
 	if !Permanent(err) {
 		t.Fatalf("err = %v, want a permanent error", err)
@@ -97,22 +83,63 @@ func TestOversizedItemIsPermanentAndKeepsProcess(t *testing.T) {
 	if !p.Alive() {
 		t.Fatal("process killed for an item it never received")
 	}
-	res, err := p.Deliver(t.Context(), delivery("dl_2", `{}`))
+	res, err = p.Deliver(t.Context(), delivery("dl_2", `{}`))
 	if err != nil {
 		t.Fatalf("next delivery: %v", err)
 	}
-	if out := decodeEcho(t, res); out.PID != p.cmd.Process.Pid {
-		t.Fatalf("next delivery ran on pid %d, want %d", out.PID, p.cmd.Process.Pid)
+	if out := decodeEcho(t, res); out.PID != pid {
+		t.Fatalf("next delivery ran on pid %d, want %d", out.PID, pid)
 	}
 }
 
-// A metric sent after done is ignored, whether it arrives while idle or ahead of the next delivery's answer.
-func TestLateMetricIsIgnored(t *testing.T) {
+// TestHelloWriteHonoursReadyTimeoutInProcess: TestHelloWriteHonoursReadyTimeout (runtime_e2e_test.go) with an
+// in-process action that never reads stdin: on an in-memory pipe, the hello write blocks at once.
+func TestHelloWriteHonoursReadyTimeoutInProcess(t *testing.T) {
 	t.Parallel()
+	opts := funcOpts(func(ctx context.Context, _, _ []string, _ io.Reader, _, _ io.Writer) int {
+		<-ctx.Done()
+		return 1
+	})
+	opts.ReadyTimeout = 20 * time.Millisecond
+	p, err := Start(t.Context(), fakeSpec("echo", nil), opts)
+	if err == nil {
+		_ = p.Close()
+	}
+	requireClass(t, err, ClassTimeout)
+}
+
+// TestLateMetricIsIgnoredInProcess: TestLateMetricIsIgnored (runtime_e2e_test.go) without its sleep. The action
+// signals once its late metric is written: the runtime's reader has taken it, so the next delivery finds it
+// waiting while idle.
+func TestLateMetricIsIgnoredInProcess(t *testing.T) {
+	t.Parallel()
+	sent := make(chan struct{})
+	opts := funcOpts(func(_ context.Context, _, _ []string, stdin io.Reader, stdout, _ io.Writer) int {
+		r, w := protocol.NewReader(stdin), protocol.NewWriter(stdout)
+		if _, err := r.Read(); err != nil { // hello
+			return 1
+		}
+		_ = w.Write(protocol.Ready{})
+		for n := 0; ; n++ {
+			m, err := r.Read()
+			if err != nil {
+				return 0
+			}
+			it, ok := m.(protocol.Item)
+			if !ok {
+				return 0
+			}
+			_ = w.Write(protocol.Emit{Delivery: it.Delivery, Payload: json.RawMessage(`{}`)})
+			_ = w.Write(protocol.Done{Delivery: it.Delivery})
+			if n == 0 {
+				_ = w.Write(protocol.Metric{Delivery: it.Delivery, Name: "late", Value: 1})
+				close(sent)
+			}
+		}
+	})
 	logs := &syncBuffer{}
-	opts := testOpts
 	opts.Logger = slog.New(slog.NewJSONHandler(logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
-	p, err := Start(t.Context(), fakeSpec("lateMetric", nil), opts)
+	p, err := Start(t.Context(), fakeSpec("echo", nil), opts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -120,12 +147,10 @@ func TestLateMetricIsIgnored(t *testing.T) {
 	if _, err := p.Deliver(t.Context(), delivery("dl_1", `{}`)); err != nil {
 		t.Fatalf("first delivery: %v", err)
 	}
-	time.Sleep(50 * time.Millisecond) // let the late metric arrive while idle, most of the time
-	res, err := p.Deliver(t.Context(), delivery("dl_2", `{"mode":"echo"}`))
-	if err != nil {
+	<-sent
+	if _, err := p.Deliver(t.Context(), delivery("dl_2", `{}`)); err != nil {
 		t.Fatalf("delivery after a late metric: %v", err)
 	}
-	decodeEcho(t, res)
 	if !strings.Contains(logs.String(), "late metric ignored") {
 		t.Errorf("late metric not logged:\n%s", logs.String())
 	}

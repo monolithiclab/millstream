@@ -17,18 +17,18 @@ type fakeLauncher struct {
 	calls []string
 }
 
-func (f *fakeLauncher) Command(spec Spec, workdir string) (*osexec.Cmd, error) {
+func (f *fakeLauncher) record(call string) {
 	f.mu.Lock()
-	f.calls = append(f.calls, "command "+spec.Image)
+	f.calls = append(f.calls, call)
 	f.mu.Unlock()
+}
+
+func (f *fakeLauncher) Command(spec Spec, workdir string) (*osexec.Cmd, error) {
+	f.record("command " + spec.Image)
 	return ExecLauncher{}.Command(Spec{Action: spec.Action, Command: []string{fakeBin}, Dir: spec.Dir}, workdir)
 }
 
-func (f *fakeLauncher) Kill(spec Spec, _ string) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.calls = append(f.calls, "kill "+spec.Image)
-}
+func (f *fakeLauncher) Kill(spec Spec, _ string) { f.record("kill " + spec.Image) }
 
 func (f *fakeLauncher) recorded() []string {
 	f.mu.Lock()
@@ -66,7 +66,7 @@ func TestLauncherByKind(t *testing.T) {
 		t.Fatal(err)
 	}
 	d := delivery("dl_2", `{}`)
-	d.Timeout = 100 * time.Millisecond
+	d.Timeout = 20 * time.Millisecond // the fake hangs
 	_, err = p.Deliver(t.Context(), d)
 	requireClass(t, err, ClassTimeout)
 	_ = p.Close()
@@ -84,7 +84,7 @@ func TestStartWithoutLauncher(t *testing.T) {
 	}
 	s := fakeSpec("echo", nil)
 	s.Command = nil
-	_, err = Start(t.Context(), s, testOpts)
+	_, err = Start(t.Context(), s, Options{}) // the exec launcher refuses it before starting anything
 	requireClass(t, err, ClassCrash)
 	if !strings.Contains(err.Error(), "has no command") {
 		t.Fatalf("err = %v", err)

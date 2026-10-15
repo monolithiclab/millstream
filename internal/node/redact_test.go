@@ -6,6 +6,7 @@ import (
 
 	"github.com/monolithiclab/millstream/internal/redact"
 	"github.com/monolithiclab/millstream/internal/runtime/exec"
+	"github.com/monolithiclab/millstream/internal/runtime/exec/exectest/fakeexec"
 )
 
 // The node redacts the delivery's secrets from the action's stderr, its own logs and the error it reports.
@@ -16,7 +17,7 @@ func TestNodeRedactsSecrets(t *testing.T) {
 	a := assignment("dl_1", "secret", map[string]any{"secret": secret})
 	a.Redact = redact.New(map[string]string{"apiToken": secret})
 	tr := newFakeTransport(a)
-	pool := exec.NewPool(exec.PoolOptions{})
+	pool := fakeexec.NewPool(t, exec.Options{})
 	stop := startNode(t, tr, Options{Logger: newJSONLogger(&logs), Pool: pool})
 	await(t, tr.reported, 1)
 	if err := stop(); err != nil {

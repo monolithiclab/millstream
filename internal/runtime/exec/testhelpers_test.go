@@ -2,8 +2,10 @@ package exec
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"sync"
@@ -11,32 +13,38 @@ import (
 	"time"
 
 	"github.com/monolithiclab/millstream/internal/protocol"
-	"github.com/monolithiclab/millstream/internal/runtime/exec/exectest"
 )
 
-// fakeBin is the fake action, built once by TestMain.
+// fakeBin is the fake action's command, and testOpts the options that run it: in-process in the default build, the
+// built binary in the e2e build (fake_test.go, fake_e2e_test.go).
 var fakeBin string
+
+const millisecond = time.Millisecond
 
 func TestMain(m *testing.M) {
 	os.Exit(runTests(m))
 }
 
 func runTests(m *testing.M) int {
-	dir, err := os.MkdirTemp("", "exec-test-")
-	if err != nil {
+	defer cleanupFake()
+	var err error
+	if fakeBin, err = fakeCommand(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	defer func() { _ = os.RemoveAll(dir) }()
-	if fakeBin, err = exectest.Build(dir); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
+	testOpts.Launchers = fakeLaunchers()
 	return m.Run()
 }
 
-// testOpts keep the failure paths fast.
-var testOpts = Options{ReadyTimeout: 2 * time.Second, ShutdownTimeout: 300 * time.Millisecond}
+// testOpts keep the failure paths fast. The ready timeout is only a safety bound.
+var testOpts = Options{ReadyTimeout: 2 * time.Second, ShutdownTimeout: shutdownTimeout}
+
+// funcOpts are testOpts running every exec action as f, in-process.
+func funcOpts(f func(ctx context.Context, args, env []string, stdin io.Reader, stdout, stderr io.Writer) int) Options {
+	opts := testOpts
+	opts.Launchers = map[string]Launcher{"exec": FuncLauncher{F: f}}
+	return opts
+}
 
 // fakeSpec runs the fake action in mode, with extra config keys.
 func fakeSpec(mode string, config map[string]any) Spec {
