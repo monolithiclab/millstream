@@ -1,13 +1,9 @@
 package pipeline
 
 import (
-	"encoding/json"
-	"errors"
 	"fmt"
-	"io"
 	"maps"
 	"slices"
-	"strconv"
 	"strings"
 
 	"github.com/monolithiclab/millstream/internal/ids"
@@ -91,7 +87,7 @@ func convertVar(raw string, def any) (any, error) {
 	if _, ok := def.(string); ok {
 		return raw, nil
 	}
-	v, err := decodeJSON(raw)
+	v, err := DecodeValue(raw)
 	if err != nil {
 		if def == nil {
 			return raw, nil
@@ -109,51 +105,6 @@ func convertVar(raw string, def any) (any, error) {
 	}
 	if got := typeName(v); got != want {
 		return nil, fmt.Errorf("want %s like the default, got %s", want, got)
-	}
-	return v, nil
-}
-
-// decodeJSON decodes exactly one JSON value, numbers as int64 when integral and float64 otherwise, matching how
-// defaults are read from YAML.
-func decodeJSON(raw string) (any, error) {
-	dec := json.NewDecoder(strings.NewReader(raw))
-	dec.UseNumber()
-	var v any
-	if err := dec.Decode(&v); err != nil {
-		return nil, err
-	}
-	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
-		return nil, errors.New("trailing data after the JSON value")
-	}
-	return normalizeNumbers(v)
-}
-
-func normalizeNumbers(v any) (any, error) {
-	var err error
-	switch t := v.(type) {
-	case json.Number:
-		if !strings.ContainsAny(string(t), ".eE") {
-			if i, err := strconv.ParseInt(string(t), 10, 64); err == nil {
-				return i, nil
-			}
-		}
-		f, err := t.Float64()
-		if err != nil {
-			return nil, fmt.Errorf("number %s out of range", t)
-		}
-		return f, nil
-	case []any:
-		for i := range t {
-			if t[i], err = normalizeNumbers(t[i]); err != nil {
-				return nil, err
-			}
-		}
-	case map[string]any:
-		for k := range t {
-			if t[k], err = normalizeNumbers(t[k]); err != nil {
-				return nil, err
-			}
-		}
 	}
 	return v, nil
 }

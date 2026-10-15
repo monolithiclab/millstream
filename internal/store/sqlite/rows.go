@@ -1,0 +1,114 @@
+package sqlite
+
+import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"time"
+
+	"github.com/monolithiclab/millstream/internal/expr"
+	"github.com/monolithiclab/millstream/internal/pipeline"
+	"github.com/monolithiclab/millstream/internal/store"
+)
+
+// deliveryRow is the part of a delivery the units read.
+type deliveryRow struct {
+	pipeline, id, runID, step, itemID string
+	generation                        int64
+	state                             store.DeliveryState
+	attempt                           int
+	owner                             string
+	token                             int64
+}
+
+func (w *wtx) delivery(pipelineName, id string) (*deliveryRow, error) {
+	d := &deliveryRow{pipeline: pipelineName, id: id}
+	err := w.queryRow(`SELECT run_id, step, item_id, generation, state, attempt, lease_owner, fencing_token
+		FROM deliveries WHERE pipeline = ? AND id = ?`, pipelineName, id).
+		Scan(&d.runID, &d.step, &d.itemID, &d.generation, &d.state, &d.attempt, &d.owner, &d.token)
+	if err != nil {
+		return nil, notFound(err, "delivery "+id)
+	}
+	return d, nil
+}
+
+// leased returns the delivery a Done or Fail names, refusing it unless it is still leased under the same fencing
+// token and attempt.
+func (w *wtx) leased(ref store.LeaseRef, attempt int) (*deliveryRow, error) {
+	d, err := w.delivery(ref.Pipeline, ref.DeliveryID)
+	if err != nil {
+		return nil, err
+	}
+	if d.state != store.DeliveryLeased || d.token != ref.FencingToken || d.attempt != attempt {
+		return nil, fmt.Errorf("delivery %s is %s with token %d attempt %d, not token %d attempt %d: %w",
+			d.id, d.state, d.token, d.attempt, ref.FencingToken, attempt, store.ErrStaleLease)
+	}
+	return d, nil
+}
+
+// runRow is the part of a run the units read.
+type runRow struct {
+	pipeline, id, trigger string
+	revision              store.RevisionID
+	generation            int64
+	state                 store.RunState
+	startedAt             time.Time
+	settled               bool
+	vars                  map[string]any
+}
+
+func (w *wtx) run(pipelineName, id string) (*runRow, error) {
+	r := &runRow{pipeline: pipelineName, id: id}
+	var startedAt, vars string
+	var settledAt *string
+	err := w.queryRow(`SELECT trigger, revision, generation, state, started_at, settled_at, vars
+		FROM runs WHERE pipeline = ? AND id = ?`, pipelineName, id).
+		Scan(&r.trigger, &r.revision, &r.generation, &r.state, &startedAt, &settledAt, &vars)
+	if err != nil {
+		return nil, notFound(err, "run "+id)
+	}
+	r.settled = settledAt != nil
+	if r.startedAt, err = parseTime(startedAt); err != nil {
+		return nil, err
+	}
+	v, err := pipeline.DecodeValue(vars)
+	if err != nil {
+		return nil, fmt.Errorf("run %s vars: %w", id, err)
+	}
+	r.vars, _ = v.(map[string]any)
+	return r, nil
+}
+
+// exprRun is the run as route expressions see it; the revision is the package hash, as actions see it.
+func (r *runRow) exprRun(rev *revision) expr.Run {
+	return expr.Run{ID: r.id, Trigger: r.trigger, StartedAt: r.startedAt, Revision: rev.hash}
+}
+
+// payload is a JSON document in canonical form, with its decoded value for expressions.
+type payload struct {
+	raw   []byte
+	value any
+}
+
+// canonical decodes a JSON document and re-encodes it with sorted keys, no insignificant space and normalised
+// numbers, so two encodings of one value store and hash the same. nil means an empty object.
+func canonical(raw json.RawMessage) (payload, error) {
+	if raw == nil {
+		raw = json.RawMessage("{}")
+	}
+	v, err := pipeline.DecodeValue(string(raw))
+	if err != nil {
+		return payload{}, fmt.Errorf("payload is not JSON: %w: %w", store.ErrInvalid, err)
+	}
+	b, err := json.Marshal(v)
+	if err != nil {
+		return payload{}, fmt.Errorf("encode payload: %w", err)
+	}
+	return payload{raw: b, value: v}, nil
+}
+
+func hashPayload(b []byte) string {
+	sum := sha256.Sum256(b)
+	return hex.EncodeToString(sum[:])
+}
