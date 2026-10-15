@@ -1,7 +1,9 @@
 package engine
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"slices"
 	"strings"
 	"testing"
@@ -159,4 +161,64 @@ func TestScheduleDropsOldestBeyondBound(t *testing.T) {
 	if rs := v.runs("listings"); len(rs) != 1 || rs[0].TriggerKey != "2026-01-08T00:00Z" {
 		t.Fatalf("on-time runs = %v", runIDs(rs))
 	}
+}
+
+// Firing a cron trigger by hand is recorded as manual and leaves catch-up alone: the next scheduled time fires.
+func TestManualFiringOfCronTrigger(t *testing.T) {
+	t.Parallel()
+	v := newEnv(t, Options{})
+	v.clock.Set(time.Date(2026, 10, 15, 5, 0, 0, 0, time.UTC))
+	v.apply(writePackage(t, cronPipeline("latest", ""), "crawl"))
+	v.e.schedule(v.ctx)
+	v.clock.Set(time.Date(2026, 10, 15, 5, 30, 0, 0, time.UTC))
+	manual := v.fire("listings", "daily", "")
+	if r := v.run("listings", manual); r.TriggerSource != store.SourceManual || !r.ScheduledAt.IsZero() {
+		t.Fatalf("manual run = %+v; want trigger source manual", r)
+	}
+	// A fresh engine reads where catch-up starts from the store: the manual firing must not count.
+	e2, err := New(Options{Store: v.st, Now: v.clock.Now})
+	if err != nil {
+		t.Fatal(err)
+	}
+	v.clock.Set(time.Date(2026, 10, 15, 6, 0, 20, 0, time.UTC))
+	e2.schedule(v.ctx)
+	v.e.schedule(v.ctx)
+	r := v.run("listings", "run_2026-10-15T06:00Z_daily")
+	if r.TriggerSource != store.SourceCron || !r.ScheduledAt.Equal(time.Date(2026, 10, 15, 6, 0, 0, 0, time.UTC)) {
+		t.Fatalf("cron run = %+v", r)
+	}
+}
+
+// failingFire fails the first n Fire calls with a store error.
+type failingFire struct {
+	store.Store
+	n int
+}
+
+func (f *failingFire) Fire(ctx context.Context, fi store.Firing) (bool, error) {
+	if f.n > 0 {
+		f.n--
+		return false, errors.New("database is locked")
+	}
+	return f.Store.Fire(ctx, fi)
+}
+
+// A firing that fails in the store is retried at the next tick rather than lost.
+func TestScheduleRetriesStoreErrors(t *testing.T) {
+	t.Parallel()
+	v := newEnv(t, Options{})
+	v.clock.Set(time.Date(2026, 10, 15, 5, 0, 0, 0, time.UTC))
+	v.apply(writePackage(t, cronPipeline("latest", ""), "crawl"))
+	e, err := New(Options{Store: &failingFire{Store: v.st, n: 1}, Now: v.clock.Now, Logger: newLogger(v.logs)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	v.clock.Set(time.Date(2026, 10, 15, 6, 0, 5, 0, time.UTC))
+	e.schedule(v.ctx)
+	if rs := v.runs("listings"); len(rs) != 0 || !strings.Contains(v.logs.String(), "database is locked") {
+		t.Fatalf("runs = %v; logs:\n%s", runIDs(rs), v.logs.String())
+	}
+	v.clock.Advance(time.Second)
+	e.schedule(v.ctx)
+	v.run("listings", "run_2026-10-15T06:00Z_daily")
 }

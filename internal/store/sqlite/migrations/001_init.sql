@@ -36,6 +36,8 @@ CREATE TABLE runs (
     revision    INTEGER NOT NULL REFERENCES revisions (id),
     trigger     TEXT NOT NULL,
     trigger_key TEXT NOT NULL,
+    trigger_source TEXT NOT NULL, -- cron | manual
+    scheduled_at   TEXT,          -- the scheduled time of a cron firing
     kind        TEXT NOT NULL, -- trigger | replay
     generation  INTEGER NOT NULL,
     vars        TEXT NOT NULL,
@@ -45,6 +47,16 @@ CREATE TABLE runs (
     settled_at  TEXT,
     cost_usd    REAL NOT NULL DEFAULT 0,
     PRIMARY KEY (pipeline, id)
+);
+
+CREATE INDEX runs_cron ON runs (pipeline, trigger, trigger_source, scheduled_at);
+
+-- Cron firings that catch-up none passed over (spec section 4.6): with the cron runs, where catch-up resumes.
+CREATE TABLE skipped_firings (
+    pipeline     TEXT NOT NULL,
+    trigger      TEXT NOT NULL,
+    scheduled_at TEXT NOT NULL,
+    PRIMARY KEY (pipeline, trigger, scheduled_at)
 );
 
 CREATE TABLE items (

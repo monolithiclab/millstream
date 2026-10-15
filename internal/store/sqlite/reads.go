@@ -62,16 +62,17 @@ func closeRows(rows *sql.Rows) error {
 	return nil
 }
 
-const runColumns = `pipeline, id, revision, trigger, trigger_key, kind, generation, vars, var_sources, state,
-	started_at, COALESCE(settled_at, ''), cost_usd`
+const runColumns = `pipeline, id, revision, trigger, trigger_key, trigger_source, COALESCE(scheduled_at, ''), kind,
+	generation, vars, var_sources, state, started_at, COALESCE(settled_at, ''), cost_usd`
 
 func scanRun(rows interface{ Scan(...any) error }) (store.Run, error) {
 	var (
 		r                                 store.Run
 		vars, sources, started, settledAt string
+		scheduledAt                       string
 	)
-	if err := rows.Scan(&r.Pipeline, &r.ID, &r.Revision, &r.Trigger, &r.TriggerKey, &r.Kind, &r.Generation, &vars,
-		&sources, &r.State, &started, &settledAt, &r.CostUSD); err != nil {
+	if err := rows.Scan(&r.Pipeline, &r.ID, &r.Revision, &r.Trigger, &r.TriggerKey, &r.TriggerSource, &scheduledAt,
+		&r.Kind, &r.Generation, &vars, &sources, &r.State, &started, &settledAt, &r.CostUSD); err != nil {
 		return r, fmt.Errorf("scan run: %w", err)
 	}
 	v, err := pipeline.DecodeValue(vars)
@@ -83,6 +84,9 @@ func scanRun(rows interface{ Scan(...any) error }) (store.Run, error) {
 		return r, fmt.Errorf("run %s var sources: %w", r.ID, err)
 	}
 	if r.StartedAt, err = parseTime(started); err != nil {
+		return r, err
+	}
+	if r.ScheduledAt, err = parseTime(scheduledAt); err != nil {
 		return r, err
 	}
 	r.SettledAt, err = parseTime(settledAt)

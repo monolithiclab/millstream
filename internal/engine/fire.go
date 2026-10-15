@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -13,44 +14,28 @@ import (
 	"github.com/monolithiclab/millstream/internal/store"
 )
 
-// Fire fires a trigger of the pipeline's active revision under key: the scheduled time of a cron firing
-// (ids.CronKey) or the request id of a manual one, generated when key is empty. The run id is a function of the
-// key and the trigger, so firing the same key again returns the existing run with created false. The run's
-// variables are resolved now, from Options.Flags, the environment and the defaults, and stored on the run with
-// their sources; the pipeline's secrets must resolve too, or nothing is fired (spec section 5.5, config errors).
-// Secrets themselves are never stored: they are read again at each dispatch.
+// ErrFiringConfig is returned, wrapped, by Fire when the firing cannot happen as configured: a variable or secret
+// that does not resolve, or a trigger the pipeline does not have. Firing again changes nothing until the
+// configuration does, unlike a store error, which the scheduler retries.
+var ErrFiringConfig = errors.New("firing configuration")
+
+// Fire fires a trigger of the pipeline's active revision by hand under key, the request id of the firing, generated
+// when key is empty. The run id is a function of the key and the trigger, so firing the same key again returns the
+// existing run with created false. A cron trigger may be fired this way too: the run is recorded as manual and does
+// not move where catch-up resumes. The run's variables are resolved now, from Options.Flags, the environment and
+// the defaults, and stored on the run with their sources; the pipeline's secrets must resolve too, or nothing is
+// fired (spec section 5.5, config errors). Secrets themselves are never stored: they are read again at each
+// dispatch.
 func (e *Engine) Fire(ctx context.Context, pipelineName, trigger, key string, payload json.RawMessage) (string, bool,
 	error,
 ) {
-	revID, err := e.st.ActiveRevision(ctx, pipelineName)
-	if err != nil {
-		return "", false, fmt.Errorf("fire %s.%s: %w", pipelineName, trigger, err)
-	}
-	rev, err := e.revision(ctx, revID)
-	if err != nil {
-		return "", false, fmt.Errorf("fire %s.%s: %w", pipelineName, trigger, err)
-	}
-	if _, ok := rev.p.Triggers[trigger]; !ok {
-		return "", false, fmt.Errorf("fire %s.%s: pipeline %s has no trigger %q: %w", pipelineName, trigger,
-			pipelineName, trigger, store.ErrInvalid)
-	}
-	res, err := pipeline.ResolveVars(rev.p, e.declaredFlags(rev.p), e.opts.Env)
-	if err != nil {
-		return "", false, fmt.Errorf("fire %s.%s: %w", pipelineName, trigger, err)
-	}
 	if key == "" {
 		key = NewRequestID(e.opts.Now())
 	}
-	runID := ids.ManualRun(key, trigger)
-	created, err := e.st.Fire(ctx, store.Firing{
-		Pipeline: pipelineName, Trigger: trigger, Key: key, RunID: runID, Revision: revID,
-		Vars: res.Vars, VarSources: res.Sources, Payload: payload,
+	return e.fire(ctx, store.Firing{
+		Pipeline: pipelineName, Trigger: trigger, Key: key, RunID: ids.ManualRun(key, trigger),
+		Source: store.SourceManual, Payload: payload,
 	})
-	if err != nil {
-		return "", false, fmt.Errorf("fire %s.%s: %w", pipelineName, trigger, err)
-	}
-	e.log.Info("trigger fired", "pipeline", pipelineName, "runId", runID, "trigger", trigger, "created", created)
-	return runID, created, nil
 }
 
 // FireCron fires a cron trigger for its scheduled time, with the cron run input {trigger, scheduledAt}, under the
@@ -60,7 +45,41 @@ func (e *Engine) FireCron(ctx context.Context, pipelineName, trigger string, at 
 	if err != nil {
 		return "", false, fmt.Errorf("fire %s.%s: %w", pipelineName, trigger, err)
 	}
-	return e.Fire(ctx, pipelineName, trigger, ids.CronKey(at), payload)
+	return e.fire(ctx, store.Firing{
+		Pipeline: pipelineName, Trigger: trigger, Key: ids.CronKey(at), RunID: ids.CronRun(at, trigger),
+		Source: store.SourceCron, ScheduledAt: at, Payload: payload,
+	})
+}
+
+// fire resolves the run's variables against the active revision and applies the Trigger unit.
+func (e *Engine) fire(ctx context.Context, f store.Firing) (string, bool, error) {
+	fail := func(err error) (string, bool, error) {
+		return "", false, fmt.Errorf("fire %s.%s: %w", f.Pipeline, f.Trigger, err)
+	}
+	revID, err := e.st.ActiveRevision(ctx, f.Pipeline)
+	if err != nil {
+		return fail(err)
+	}
+	rev, err := e.revision(ctx, revID)
+	if err != nil {
+		return fail(err)
+	}
+	if _, ok := rev.p.Triggers[f.Trigger]; !ok {
+		return fail(fmt.Errorf("%w: pipeline %s has no trigger %q: %w", ErrFiringConfig, f.Pipeline, f.Trigger,
+			store.ErrInvalid))
+	}
+	res, err := pipeline.ResolveVars(rev.p, e.declaredFlags(rev.p), e.opts.Env)
+	if err != nil {
+		return fail(fmt.Errorf("%w: %w", ErrFiringConfig, err))
+	}
+	f.Revision, f.Vars, f.VarSources = revID, res.Vars, res.Sources
+	created, err := e.st.Fire(ctx, f)
+	if err != nil {
+		return fail(err)
+	}
+	e.log.Info("trigger fired", "pipeline", f.Pipeline, "runId", f.RunID, "trigger", f.Trigger,
+		"source", string(f.Source), "created", created)
+	return f.RunID, created, nil
 }
 
 // declaredFlags returns the flags naming variables p declares.

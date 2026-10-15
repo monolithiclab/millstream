@@ -56,6 +56,15 @@ const (
 	RunKindReplay  RunKind = "replay"
 )
 
+// TriggerSource says how a trigger fired.
+type TriggerSource string
+
+// Trigger sources. A cron trigger fired by hand is a manual firing: it does not move where catch-up resumes.
+const (
+	SourceCron   TriggerSource = "cron"
+	SourceManual TriggerSource = "manual"
+)
+
 // DeadLetterKind is why a dead letter exists (spec section 5.6).
 type DeadLetterKind string
 
@@ -159,6 +168,9 @@ type Firing struct {
 	// Key is the scheduled time of a cron firing (ids.CronKey) or the request id of a manual one.
 	Key   string
 	RunID string
+	// Source defaults to SourceManual. A cron firing carries its ScheduledAt.
+	Source      TriggerSource
+	ScheduledAt time.Time
 	// Kind defaults to RunKindTrigger.
 	Kind RunKind
 	// Revision pins the run; zero means the pipeline's active revision.
@@ -247,17 +259,20 @@ type FailRequest struct {
 
 // Run is a run record.
 type Run struct {
-	ID         string
-	Pipeline   string
-	Revision   RevisionID
-	Trigger    string
-	TriggerKey string
-	Kind       RunKind
-	Generation int64
-	Vars       map[string]any
-	VarSources map[string]string
-	State      RunState
-	StartedAt  time.Time
+	ID            string
+	Pipeline      string
+	Revision      RevisionID
+	Trigger       string
+	TriggerKey    string
+	TriggerSource TriggerSource
+	// ScheduledAt is a cron firing's scheduled time, zero for other runs.
+	ScheduledAt time.Time
+	Kind        RunKind
+	Generation  int64
+	Vars        map[string]any
+	VarSources  map[string]string
+	State       RunState
+	StartedAt   time.Time
 	// SettledAt is zero while the run is not settled.
 	SettledAt time.Time
 	CostUSD   float64

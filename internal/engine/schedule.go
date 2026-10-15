@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"maps"
 	"slices"
@@ -98,15 +99,11 @@ func (e *Engine) scheduleTrigger(ctx context.Context, rev *revision, name string
 		fire = due
 	case pipeline.CatchupNone:
 		if len(missed) > 0 {
-			keys := make([]string, len(missed))
-			for i, t := range missed {
-				keys[i] = ids.CronKey(t)
-			}
-			if err := e.st.SkipFirings(ctx, rev.p.Name, name, keys); err != nil {
+			if err := e.st.SkipFirings(ctx, rev.p.Name, name, missed); err != nil {
 				log.Error("scheduler: record skipped firings", "error", err.Error())
 				return // retried at the next tick
 			}
-			log.Info("missed cron firings skipped", "count", len(keys))
+			log.Info("missed cron firings skipped", "count", len(missed))
 		}
 	default: // latest: the most recent time, on time or else missed, fires once
 		if len(onTime) == 0 {
@@ -115,16 +112,20 @@ func (e *Engine) scheduleTrigger(ctx context.Context, rev *revision, name string
 	}
 	for _, t := range fire {
 		if _, _, err := e.FireCron(ctx, rev.p.Name, name, t); err != nil {
-			// A firing that fails to resolve its variables is not retried every tick: the error is logged and the
-			// time is handled.
 			log.Error("scheduler: fire", "scheduledAt", ids.CronKey(t), "error", err.Error())
+			if !errors.Is(err, ErrFiringConfig) {
+				// A store error: the time is not handled, and the next tick fires it again. Firings already made
+				// by this tick are no-ops then, since run ids are deterministic.
+				return
+			}
+			// A configuration error is not retried every tick: the time is handled.
 		}
 	}
 	st.last = due[len(due)-1]
 }
 
-// newCronState builds the state of a cron trigger. Catch-up starts after the last time the trigger fired or
-// skipped, or after the revision was applied when it never did.
+// newCronState builds the state of a cron trigger. Catch-up starts after the last scheduled time the trigger fired
+// a cron run for or skipped, or after the revision was applied when it never did; manual firings do not count.
 func (e *Engine) newCronState(ctx context.Context, rev *revision, name string, spec pipeline.CronSpec) (*cronState,
 	error,
 ) {
@@ -138,18 +139,13 @@ func (e *Engine) newCronState(ctx context.Context, rev *revision, name string, s
 		return st, fmt.Errorf("parse %q: %w", src, err) // kept without a schedule: the error is logged once
 	}
 	st.sched = sched
-	key, err := e.st.LastFiring(ctx, rev.p.Name, name)
+	last, err := e.st.LastFiring(ctx, rev.p.Name, name)
 	if err != nil {
 		return nil, err
 	}
 	st.last = rev.appliedAt
-	if key != "" {
-		if st.last, err = time.Parse(cronKeyLayout, key); err != nil {
-			return nil, fmt.Errorf("last firing key %q: %w", key, err)
-		}
+	if !last.IsZero() {
+		st.last = last
 	}
 	return st, nil
 }
-
-// cronKeyLayout parses ids.CronKey.
-const cronKeyLayout = "2006-01-02T15:04Z"

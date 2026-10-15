@@ -62,9 +62,9 @@ type Store interface {
 	ExpireLeases(ctx context.Context) ([]LeaseRef, error)
 	// SetPaused pauses or resumes a step, or the whole pipeline when step is empty.
 	SetPaused(ctx context.Context, pipeline, step string, paused bool) error
-	// SkipFirings records a firingSkipped event for each cron firing key of the trigger that catch-up none passed
-	// over (spec section 4.6), all in one unit.
-	SkipFirings(ctx context.Context, pipeline, trigger string, keys []string) error
+	// SkipFirings records each scheduled time of the cron trigger that catch-up none passed over (spec section
+	// 4.6), with a firingSkipped event, all in one unit. A time already recorded is a no-op.
+	SkipFirings(ctx context.Context, pipeline, trigger string, times []time.Time) error
 
 	Runs(ctx context.Context, f RunFilter) ([]Run, error)
 	Run(ctx context.Context, pipeline, id string) (Run, error)
@@ -78,7 +78,7 @@ type Store interface {
 	PipelineState(ctx context.Context, pipeline string) (PipelineState, error)
 	// Pipelines returns every pipeline's state, by name.
 	Pipelines(ctx context.Context) ([]PipelineState, error)
-	// LastFiring returns the greatest key the trigger fired a run under or skipped, or "" when it never did. Cron
-	// keys sort as their times, so for a cron trigger it is the last scheduled time handled.
-	LastFiring(ctx context.Context, pipeline, trigger string) (string, error)
+	// LastFiring returns the latest scheduled time the cron trigger fired a cron run for or skipped, zero when it
+	// never did: where catch-up resumes. Manual firings of the trigger do not count.
+	LastFiring(ctx context.Context, pipeline, trigger string) (time.Time, error)
 }

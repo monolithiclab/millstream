@@ -55,7 +55,7 @@ func TestUnitsSurfaceStoreErrors(t *testing.T) {
 			count(err)
 			count(e.s.SetPaused(ctx, "listings", "crawl", true))
 			count(e.s.Cancel(ctx, "listings", "r2"))
-			count(e.s.SkipFirings(ctx, "listings", "daily", []string{"k"}))
+			count(e.s.SkipFirings(ctx, "listings", "daily", []time.Time{t0}))
 			e.clock.Advance(time.Hour)
 			_, err = e.s.ExpireLeases(ctx)
 			count(err)

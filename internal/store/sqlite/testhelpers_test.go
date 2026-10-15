@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/monolithiclab/millstream/internal/ids"
 	"github.com/monolithiclab/millstream/internal/pipeline"
 	"github.com/monolithiclab/millstream/internal/store"
 )
@@ -161,6 +162,19 @@ func (e *env) firePipeline(pipelineName, trigger, runID string) {
 	})
 	if err != nil || !created {
 		e.t.Fatalf("Fire %s: created %v, %v", runID, created, err)
+	}
+}
+
+// fireCron fires a cron trigger of listings for its scheduled time at.
+func (e *env) fireCron(trigger string, at time.Time) {
+	e.t.Helper()
+	key := ids.CronKey(at)
+	created, err := e.s.Fire(e.ctx, store.Firing{
+		Pipeline: "listings", Trigger: trigger, Key: key, RunID: ids.CronRun(at, trigger), Source: store.SourceCron,
+		ScheduledAt: at,
+	})
+	if err != nil || !created {
+		e.t.Fatalf("Fire %s at %s: created %v, %v", trigger, key, created, err)
 	}
 }
 

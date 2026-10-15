@@ -4,17 +4,19 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"time"
 
+	"github.com/monolithiclab/millstream/internal/ids"
 	"github.com/monolithiclab/millstream/internal/store"
 )
 
-// SkipFirings records a firingSkipped event per key, in one unit. The trigger must exist in the pipeline's active
-// revision.
-func (s *Store) SkipFirings(ctx context.Context, pipelineName, trigger string, keys []string) error {
+// SkipFirings records the skipped scheduled times, each with a firingSkipped event, in one unit. The trigger must
+// exist in the pipeline's active revision; a time already recorded is a no-op.
+func (s *Store) SkipFirings(ctx context.Context, pipelineName, trigger string, times []time.Time) error {
 	if pipelineName == "" || trigger == "" {
 		return fmt.Errorf("skip firings: pipeline and trigger are required: %w", store.ErrInvalid)
 	}
-	if len(keys) == 0 {
+	if len(times) == 0 {
 		return nil
 	}
 	return s.submit(ctx, unitSkipFirings, func(w *wtx) error {
@@ -29,9 +31,17 @@ func (s *Store) SkipFirings(ctx context.Context, pipelineName, trigger string, k
 		if _, ok := rev.p.Triggers[trigger]; !ok {
 			return fmt.Errorf("pipeline %s has no trigger %q: %w", pipelineName, trigger, store.ErrInvalid)
 		}
-		for _, key := range keys {
+		for _, at := range times {
+			n, err := w.affected(`INSERT INTO skipped_firings (pipeline, trigger, scheduled_at) VALUES (?, ?, ?)
+				ON CONFLICT DO NOTHING`, pipelineName, trigger, formatTime(at))
+			if err != nil {
+				return err
+			}
+			if n == 0 {
+				continue
+			}
 			if err := w.event(pipelineName, "", store.EventFiringSkipped,
-				map[string]any{"trigger": trigger, "key": key}); err != nil {
+				map[string]any{"trigger": trigger, "key": ids.CronKey(at)}); err != nil {
 				return err
 			}
 		}
@@ -39,20 +49,18 @@ func (s *Store) SkipFirings(ctx context.Context, pipelineName, trigger string, k
 	})
 }
 
-// LastFiring returns the greatest key among the trigger's runs and its firingSkipped events. Skipped firings are
-// read from the event log: they are rare (catch-up none) and read once per trigger when an engine starts.
-func (s *Store) LastFiring(ctx context.Context, pipelineName, trigger string) (string, error) {
-	var key sql.NullString
-	err := s.read.QueryRowContext(ctx, `SELECT MAX(k) FROM (
-		SELECT trigger_key AS k FROM runs WHERE pipeline = ? AND trigger = ? AND kind = ?
+// LastFiring returns the latest scheduled time among the trigger's cron runs and skipped firings.
+func (s *Store) LastFiring(ctx context.Context, pipelineName, trigger string) (time.Time, error) {
+	var at sql.NullString
+	err := s.read.QueryRowContext(ctx, `SELECT MAX(t) FROM (
+		SELECT scheduled_at AS t FROM runs WHERE pipeline = ? AND trigger = ? AND trigger_source = ?
 		UNION ALL
-		SELECT json_extract(data, '$.key') FROM events
-			WHERE kind = ? AND pipeline = ? AND json_extract(data, '$.trigger') = ?)`,
-		pipelineName, trigger, store.RunKindTrigger, store.EventFiringSkipped, pipelineName, trigger).Scan(&key)
+		SELECT scheduled_at FROM skipped_firings WHERE pipeline = ? AND trigger = ?)`,
+		pipelineName, trigger, store.SourceCron, pipelineName, trigger).Scan(&at)
 	if err != nil {
-		return "", fmt.Errorf("last firing of %s.%s: %w", pipelineName, trigger, err)
+		return time.Time{}, fmt.Errorf("last firing of %s.%s: %w", pipelineName, trigger, err)
 	}
-	return key.String, nil
+	return parseTime(at.String)
 }
 
 // Pipelines returns every pipeline's state, by name.

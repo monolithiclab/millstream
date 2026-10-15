@@ -89,6 +89,18 @@ func (s *Store) Fire(ctx context.Context, f store.Firing) (bool, error) {
 	if kind == "" {
 		kind = store.RunKindTrigger
 	}
+	source, scheduledAt := f.Source, any(nil)
+	switch source {
+	case "", store.SourceManual:
+		source = store.SourceManual
+	case store.SourceCron:
+		if f.ScheduledAt.IsZero() {
+			return false, fmt.Errorf("fire: a cron firing needs its scheduled time: %w", store.ErrInvalid)
+		}
+		scheduledAt = formatTime(f.ScheduledAt)
+	default:
+		return false, fmt.Errorf("fire: unknown trigger source %q: %w", source, store.ErrInvalid)
+	}
 	var created bool
 	err = s.submit(ctx, unitFire, func(w *wtx) error {
 		var exists int
@@ -112,16 +124,18 @@ func (s *Store) Fire(ctx context.Context, f store.Firing) (bool, error) {
 		if _, ok := rev.p.Triggers[f.Trigger]; !ok {
 			return fmt.Errorf("pipeline %s has no trigger %q: %w", f.Pipeline, f.Trigger, store.ErrInvalid)
 		}
-		if _, err := w.exec(`INSERT INTO runs (pipeline, id, revision, trigger, trigger_key, kind, generation, vars,
-			var_sources, state, started_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			f.Pipeline, f.RunID, revID, f.Trigger, f.Key, kind, f.Generation, string(vars), string(sources),
-			store.RunRunning, w.ts()); err != nil {
+		if _, err := w.exec(`INSERT INTO runs (pipeline, id, revision, trigger, trigger_key, trigger_source,
+			scheduled_at, kind, generation, vars, var_sources, state, started_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			f.Pipeline, f.RunID, revID, f.Trigger, f.Key, source, scheduledAt, kind, f.Generation, string(vars),
+			string(sources), store.RunRunning, w.ts()); err != nil {
 			return err
 		}
 		run := &runRow{pipeline: f.Pipeline, id: f.RunID, generation: f.Generation}
 		stream := pipeline.TriggerStreamPrefix + f.Trigger
 		if err := w.event(f.Pipeline, f.RunID, store.EventRunStarted, map[string]any{
-			"trigger": f.Trigger, "key": f.Key, "revision": revID, "kind": kind, "generation": f.Generation,
+			"trigger": f.Trigger, "key": f.Key, "source": source, "revision": revID, "kind": kind,
+			"generation": f.Generation,
 		}); err != nil {
 			return err
 		}

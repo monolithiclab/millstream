@@ -111,7 +111,8 @@ func TestReads(t *testing.T) {
 	}
 	r := e.run("r1")
 	want := store.Run{
-		ID: "r1", Pipeline: "listings", Revision: 1, Trigger: "daily", TriggerKey: "r1", Kind: store.RunKindTrigger,
+		ID: "r1", Pipeline: "listings", Revision: 1, Trigger: "daily", TriggerKey: "r1", TriggerSource: store.SourceManual,
+		Kind: store.RunKindTrigger,
 		Vars: map[string]any{"minScore": int64(70)}, VarSources: map[string]string{"minScore": "default"},
 		State: store.RunRunning, StartedAt: t0,
 	}

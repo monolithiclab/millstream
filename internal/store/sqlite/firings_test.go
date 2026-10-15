@@ -10,39 +10,59 @@ import (
 func TestSkipFiringsAndLastFiring(t *testing.T) {
 	t.Parallel()
 	e := newEnv(t, fixture)
-	last := func() string {
+	last := func() time.Time {
 		t.Helper()
-		k, err := e.s.LastFiring(e.ctx, "listings", "daily")
+		at, err := e.s.LastFiring(e.ctx, "listings", "daily")
 		if err != nil {
 			t.Fatalf("LastFiring: %v", err)
 		}
-		return k
+		return at
 	}
-	if k := last(); k != "" {
-		t.Fatalf("LastFiring before any firing = %q", k)
+	day := func(d int) time.Time { return time.Date(2026, 10, d, 6, 0, 0, 0, time.UTC) }
+	if at := last(); !at.IsZero() {
+		t.Fatalf("LastFiring before any firing = %v", at)
 	}
-	e.firePipeline("listings", "daily", "2026-10-13T06:00Z")
-	if k := last(); k != "2026-10-13T06:00Z" {
-		t.Fatalf("LastFiring after a run = %q", k)
+	e.fireCron("daily", day(13))
+	if at := last(); !at.Equal(day(13)) {
+		t.Fatalf("LastFiring after a run = %v", at)
 	}
-	if err := e.s.SkipFirings(e.ctx, "listings", "daily", []string{"2026-10-14T06:00Z", "2026-10-15T06:00Z"}); err != nil {
+	// A manual firing of the cron trigger, under a request id that sorts after any cron key, is not a cron firing.
+	if _, err := e.s.Fire(e.ctx, store.Firing{Pipeline: "listings", Trigger: "daily", Key: "20261020T000000Z-ab",
+		RunID: "run_manual", Source: store.SourceManual}); err != nil {
+		t.Fatal(err)
+	}
+	if r := e.run("run_manual"); r.TriggerSource != store.SourceManual || !r.ScheduledAt.IsZero() {
+		t.Fatalf("manual run = %+v", r)
+	}
+	if at := last(); !at.Equal(day(13)) {
+		t.Fatalf("LastFiring after a manual firing = %v, want %v", at, day(13))
+	}
+	skipped := []time.Time{day(14), day(15)}
+	if err := e.s.SkipFirings(e.ctx, "listings", "daily", skipped); err != nil {
 		t.Fatalf("SkipFirings: %v", err)
 	}
-	if k := last(); k != "2026-10-15T06:00Z" {
-		t.Fatalf("LastFiring after skips = %q", k)
+	if err := e.s.SkipFirings(e.ctx, "listings", "daily", skipped[1:]); err != nil { // again: a no-op
+		t.Fatalf("SkipFirings again: %v", err)
+	}
+	if at := last(); !at.Equal(day(15)) {
+		t.Fatalf("LastFiring after skips = %v", at)
 	}
 	if n := len(e.eventKinds(store.EventFiringSkipped)); n != 2 {
 		t.Fatalf("%d firingSkipped events, want 2", n)
 	}
-	if k, err := e.s.LastFiring(e.ctx, "listings", "adhoc"); err != nil || k != "" {
-		t.Fatalf("LastFiring of another trigger = %q, %v", k, err)
+	if at, err := e.s.LastFiring(e.ctx, "listings", "adhoc"); err != nil || !at.IsZero() {
+		t.Fatalf("LastFiring of another trigger = %v, %v", at, err)
 	}
 	if err := e.s.SkipFirings(e.ctx, "listings", "daily", nil); err != nil {
-		t.Fatalf("SkipFirings with no keys: %v", err)
+		t.Fatalf("SkipFirings with no times: %v", err)
 	}
-	wantErr(t, e.s.SkipFirings(e.ctx, "listings", "", []string{"x"}), store.ErrInvalid)
-	wantErr(t, e.s.SkipFirings(e.ctx, "listings", "weekly", []string{"x"}), store.ErrInvalid)
-	wantErr(t, e.s.SkipFirings(e.ctx, "nope", "daily", []string{"x"}), store.ErrNotFound)
+	x := []time.Time{day(1)}
+	wantErr(t, e.s.SkipFirings(e.ctx, "listings", "", x), store.ErrInvalid)
+	wantErr(t, e.s.SkipFirings(e.ctx, "listings", "weekly", x), store.ErrInvalid)
+	wantErr(t, e.s.SkipFirings(e.ctx, "nope", "daily", x), store.ErrNotFound)
+	_, err := e.s.Fire(e.ctx, store.Firing{Pipeline: "listings", Trigger: "daily", Key: "k", RunID: "r",
+		Source: store.SourceCron})
+	wantErr(t, err, store.ErrInvalid) // a cron firing needs its scheduled time
 }
 
 func TestPipelines(t *testing.T) {
