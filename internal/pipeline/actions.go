@@ -236,9 +236,15 @@ func (r Resolver) finish(pkg *Package, m *Action, schemas map[string]any) error 
 	if len(m.Command) == 0 {
 		return nil
 	}
+	// Resolution (spec section 6.2): a bare name runs bin/<os>-<arch>/<name> when the action ships it, else the
+	// program of that name on PATH; a path with a slash is a file of the action directory and must stay inside the
+	// package; an absolute path is refused, since a package must not depend on the machine it runs on.
 	prog := m.Command[0]
-	if !strings.Contains(prog, "/") {
-		// A bare program name is found on PATH, unless a compiled binary for this platform ships under bin/.
+	switch {
+	case path.IsAbs(prog) || filepath.IsAbs(prog):
+		return fmt.Errorf("runtime.exec.command: %s is an absolute path: name a program on PATH or a file of the "+
+			"package", prog)
+	case !strings.Contains(prog, "/"):
 		bin := "bin/" + r.platform() + "/" + prog
 		if _, ok := pkg.Files[m.Dir+"/"+bin]; !ok {
 			return nil
@@ -246,6 +252,9 @@ func (r Resolver) finish(pkg *Package, m *Action, schemas map[string]any) error 
 		prog = bin
 	}
 	rel := path.Clean(path.Join(m.Dir, prog))
+	if rel == ".." || strings.HasPrefix(rel, "../") {
+		return fmt.Errorf("runtime.exec.command: %s leaves the package", prog)
+	}
 	if _, ok := pkg.Files[rel]; !ok {
 		return fmt.Errorf("runtime.exec.command: %s is not in the package", rel)
 	}
