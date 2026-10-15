@@ -3,6 +3,7 @@ package store
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/monolithiclab/millstream/internal/pipeline"
@@ -242,10 +243,65 @@ type LeaseRef struct {
 	FencingToken int64
 }
 
-// Output is one output of a delivery.
+// Output is one output of a delivery: its payload and the artifacts already moved to the artifact store.
 type Output struct {
-	Key     string
-	Payload json.RawMessage
+	Key       string
+	Payload   json.RawMessage
+	Artifacts []ArtifactRef
+}
+
+// ArtifactRef is an artifact an item carries (spec sections 5.2 and 9.2): a file in the pipeline's
+// content-addressed artifact store, under the name the action gave it.
+type ArtifactRef struct {
+	Name string `json:"name"`
+	// SHA256 is the hex SHA-256 of the content: its address in the store.
+	SHA256 string `json:"sha256"`
+	Size   int64  `json:"size"`
+	// Type is the content's media type, sniffed from its first bytes.
+	Type string `json:"type"`
+}
+
+// ValidArtifact checks an artifact reference: a name that is a plain file name (it becomes in/<name> in the
+// working directory of the actions reading the item), a SHA-256 in lowercase hex, a size and a type. Its error wraps
+// ErrInvalid.
+func ValidArtifact(a ArtifactRef) error {
+	switch {
+	case !ValidArtifactName(a.Name):
+		return fmt.Errorf("artifact name %q: want a file name without a path separator: %w", a.Name, ErrInvalid)
+	case !ValidSHA256(a.SHA256):
+		return fmt.Errorf("artifact %s: %q is not a hex SHA-256: %w", a.Name, a.SHA256, ErrInvalid)
+	case a.Size < 0 || a.Type == "":
+		return fmt.Errorf("artifact %s: no size or type: %w", a.Name, ErrInvalid)
+	}
+	return nil
+}
+
+// ValidArtifactName reports whether name can name an artifact: a non-empty file name of at most 255 bytes, not
+// "." or "..", without a slash, a backslash or a NUL byte.
+func ValidArtifactName(name string) bool {
+	return name != "" && len(name) <= 255 && name != "." && name != ".." && !strings.ContainsAny(name, "/\\\x00")
+}
+
+// ValidSHA256 reports whether s is a SHA-256 in lowercase hex.
+func ValidSHA256(s string) bool {
+	if len(s) != 64 {
+		return false
+	}
+	for _, c := range s {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+			return false
+		}
+	}
+	return true
+}
+
+// Artifact is an artifact store entry: its content and how many items reference it.
+type Artifact struct {
+	Pipeline string
+	SHA256   string
+	Size     int64
+	Type     string
+	Refcount int64
 }
 
 // DoneRequest completes a leased delivery with its outputs.
@@ -332,6 +388,7 @@ type Item struct {
 	Generation int64
 	TS         time.Time
 	Payload    json.RawMessage
+	Artifacts  []ArtifactRef
 }
 
 // Delivery is a delivery record (spec section 5.3).

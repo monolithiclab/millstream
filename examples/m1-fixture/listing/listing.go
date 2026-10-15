@@ -56,7 +56,8 @@ type Report struct {
 	ListingID string  `json:"listingId"`
 	MarginPct float64 `json:"marginPct"`
 	Selected  bool    `json:"selected"`
-	// Artifact is the report file's path, relative to the action's working directory.
+	// Artifact is the name of the report file, written in the working directory and attached to the output as an
+	// artifact of that name.
 	Artifact string `json:"artifact"`
 }
 

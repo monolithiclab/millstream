@@ -17,12 +17,13 @@ import (
 
 const pipelineName = "m1-fixture"
 
-// item is what a snapshot keeps of an item: everything but its timestamp.
+// item is what a snapshot keeps of an item: everything but its timestamp. Artifacts is its artifact list as JSON.
 type item struct {
 	RunID, Stream, Step, Key string
 	Generation               int64
 	Parents                  string
 	Payload                  string
+	Artifacts                string
 }
 
 // delivery is what a snapshot keeps of a delivery: its run, step and state.
@@ -45,6 +46,8 @@ type snapshot struct {
 	Items       map[string]item
 	Deliveries  map[string]delivery
 	DeadLetters map[string]deadLetter
+	// Refcounts is the reference count of each artifact, by hash: an item counted twice after a crash shows here.
+	Refcounts map[string]int64
 }
 
 // counts returns the number of items per stream.
@@ -69,7 +72,7 @@ func readSnapshot(t *testing.T, db string) snapshot {
 	ctx := context.Background()
 	s := snapshot{
 		Runs: map[string]store.RunState{}, Revisions: map[string]store.RevisionID{}, Items: map[string]item{},
-		Deliveries: map[string]delivery{}, DeadLetters: map[string]deadLetter{},
+		Deliveries: map[string]delivery{}, DeadLetters: map[string]deadLetter{}, Refcounts: map[string]int64{},
 	}
 	runs, err := st.Runs(ctx, store.RunFilter{})
 	if err != nil {
@@ -101,8 +104,13 @@ func readSnapshot(t *testing.T, db string) snapshot {
 		if _, ok := s.DeadLetters[it.ID]; ok {
 			payload = withoutTimestamp(t, it.Payload)
 		}
+		artifacts, err := json.Marshal(it.Artifacts)
+		if err != nil {
+			t.Fatal(err)
+		}
 		s.Items[it.ID] = item{RunID: it.RunID, Stream: it.Stream, Step: it.Step, Key: it.Key,
-			Generation: it.Generation, Parents: strings.Join(it.Parents, ","), Payload: payload}
+			Generation: it.Generation, Parents: strings.Join(it.Parents, ","), Payload: payload,
+			Artifacts: string(artifacts)}
 		if it.Key == "" {
 			continue
 		}
@@ -112,6 +120,13 @@ func readSnapshot(t *testing.T, db string) snapshot {
 				other, it.ID, k)
 		}
 		keys[k] = it.ID
+	}
+	arts, err := st.Artifacts(ctx, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, a := range arts {
+		s.Refcounts[a.SHA256] = a.Refcount
 	}
 	ds, err := st.Deliveries(ctx, store.DeliveryFilter{})
 	if err != nil {
@@ -155,6 +170,7 @@ func wantSame(t *testing.T, got, want snapshot) {
 		diffMaps("item", got.Items, want.Items),
 		diffMaps("delivery", got.Deliveries, want.Deliveries),
 		diffMaps("dead letter", got.DeadLetters, want.DeadLetters),
+		diffMaps("artifact refcount", got.Refcounts, want.Refcounts),
 	)
 	if len(diff) > 0 {
 		if len(diff) > 20 {

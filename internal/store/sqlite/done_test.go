@@ -201,7 +201,7 @@ func publishAgain(e *env, payloads ...string) {
 			if err != nil {
 				return err
 			}
-			if err := w.publishOutput(rev, run, step, d, "a", 0, o, routing{streams: step.Out.Streams}); err != nil {
+			if err := w.publishOutput(rev, run, step, d, store.Output{Key: "a"}, 0, o, routing{streams: step.Out.Streams}); err != nil {
 				return err
 			}
 		}

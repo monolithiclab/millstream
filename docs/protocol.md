@@ -82,8 +82,7 @@ output when a delivery has several, each output with its own key. `artifacts` li
 
 **`metric`** records a measurement for the current delivery. Names are Prometheus snake_case. A metric that
 arrives after the delivery's `done` or `error`, before the next `item` is answered, is ignored rather than treated
-as a violation. In version 1 the engine accepts metrics, and the `artifacts` of `emit`, but does not store them yet:
-they are stored from milestone M2.
+as a violation. The engine accepts metrics but does not store them yet: they are stored later in milestone M2.
 
 ```json
 {"type":"metric","delivery":"dl_3f…","name":"pages_fetched","value":12,"labels":{"source":"portal"}}
@@ -135,10 +134,22 @@ and not applied twice.
 
 ## Artifacts
 
-Files go through `MILLSTREAM_WORKDIR`, never through the protocol itself. Before an `item`, the node places the
-item's input artifacts in that directory and lists them in `artifacts`. An action writes its output files there
-and names them in `emit`; the node moves them to the artifact store when the delivery is `done`. Paths are relative
-to the working directory and must stay inside it.
+Files go through `MILLSTREAM_WORKDIR`, never through the protocol itself. The directory is emptied before every
+`item`.
+
+- **Inputs.** Before an `item`, the node places each of the item's artifacts at `in/<name>` and lists them in
+  `artifacts` with that path, relative to the working directory.
+- **Outputs.** An action writes its files anywhere under the working directory and names them in the `artifacts`
+  of an `emit`: `name` is how downstream steps see the file, `path` where it is, relative to the working directory.
+  On `done`, the node moves every named file to the artifact store, then reports the outputs with their artifacts;
+  the files of a delivery that ends in `error` are dropped.
+- **Names** are file names: not empty, at most 255 bytes, not `.` or `..`, without `/`, `\` or a NUL byte, and
+  distinct among one output's artifacts.
+- **Paths** must stay inside the working directory, pass through no symbolic link and end at a regular file.
+
+A name or path that breaks these rules fails the delivery at once, not retryable (a protocol error that does not
+kill the process, since retrying would refuse it again). An artifact store that cannot take the file fails it as a
+retryable error. The same content is stored once per pipeline, whatever its name.
 
 ## Protocol violations
 

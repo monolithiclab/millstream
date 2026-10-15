@@ -1,5 +1,6 @@
 // Command report is the M1 fixture's report step: for each priced listing it writes a small text report under
-// MILLSTREAM_WORKDIR and emits a summary naming that file, with whether the margin clears the configured threshold.
+// MILLSTREAM_WORKDIR, attaches it to its output as an artifact, and emits a summary naming that file, with whether
+// the margin clears the configured threshold.
 package main
 
 import (
@@ -21,18 +22,19 @@ func main() {
 			return nil, err
 		}
 		r := listing.Summarize(p, cfg.MinMarginPct)
-		if dir := os.Getenv("MILLSTREAM_WORKDIR"); dir != "" {
-			if err := writeArtifact(dir, r.Artifact, r.Text()); err != nil {
-				return nil, millstream.Retryable(err)
-			}
+		if err := writeReport(os.Getenv("MILLSTREAM_WORKDIR"), r.Artifact, r.Text()); err != nil {
+			return nil, millstream.Retryable(err)
+		}
+		if err := c.Artifact(r.Artifact, r.Artifact); err != nil {
+			return nil, err
 		}
 		return []listing.Report{r}, nil
 	})
 }
 
-// writeArtifact writes the file inside dir only: the name comes from the payload, so it is resolved through an
+// writeReport writes the file inside dir only: the name comes from the payload, so it is resolved through an
 // os.Root, which refuses a path leading outside.
-func writeArtifact(dir, name, text string) error {
+func writeReport(dir, name, text string) error {
 	root, err := os.OpenRoot(dir)
 	if err != nil {
 		return err

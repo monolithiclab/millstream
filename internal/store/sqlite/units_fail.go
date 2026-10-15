@@ -95,16 +95,16 @@ func (w *wtx) fail(d *deliveryRow, run *runRow, rev *revision, step pipeline.Ste
 
 // itemEnvelope reads an item as the envelope a dead letter carries (spec section 5.2).
 func (w *wtx) itemEnvelope(pipelineName, id string) (map[string]any, error) {
-	var stream, step, key, parents, ts, body string
+	var stream, step, key, parents, ts, body, artifacts string
 	var generation int64
-	if err := w.queryRow(`SELECT stream, step, key, parents, generation, ts, payload FROM items
+	if err := w.queryRow(`SELECT stream, step, key, parents, generation, ts, payload, artifacts FROM items
 		WHERE pipeline = ? AND id = ?`, pipelineName, id).
-		Scan(&stream, &step, &key, &parents, &generation, &ts, &body); err != nil {
+		Scan(&stream, &step, &key, &parents, &generation, &ts, &body, &artifacts); err != nil {
 		return nil, notFound(err, "item "+id)
 	}
 	return map[string]any{
 		"id": id, "stream": stream, "step": step, "key": key, "parents": json.RawMessage(parents),
-		"generation": generation, "ts": ts, "payload": json.RawMessage(body),
+		"generation": generation, "ts": ts, "payload": json.RawMessage(body), "artifacts": json.RawMessage(artifacts),
 	}, nil
 }
 

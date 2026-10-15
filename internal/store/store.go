@@ -89,6 +89,8 @@ type Store interface {
 	// may still have deliveries to dispatch.
 	OpenRevisions(ctx context.Context) ([]RevisionID, error)
 	Revision(ctx context.Context, id RevisionID) (Revision, error)
+	// Artifacts returns the artifact store entries of a pipeline (all pipelines when empty), by pipeline and hash.
+	Artifacts(ctx context.Context, pipeline string) ([]Artifact, error)
 	PipelineState(ctx context.Context, pipeline string) (PipelineState, error)
 	// Pipelines returns every pipeline's state, by name.
 	Pipelines(ctx context.Context) ([]PipelineState, error)

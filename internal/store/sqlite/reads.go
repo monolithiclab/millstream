@@ -128,10 +128,13 @@ func (s *Store) Run(ctx context.Context, pipelineName, id string) (store.Run, er
 	return r, nil
 }
 
-// fillItem decodes an item's stored parents and timestamp.
-func fillItem(it *store.Item, parents, ts string) error {
+// fillItem decodes an item's stored parents, timestamp and artifacts.
+func fillItem(it *store.Item, parents, ts, artifacts string) error {
 	if err := json.Unmarshal([]byte(parents), &it.Parents); err != nil {
 		return fmt.Errorf("item %s parents: %w", it.ID, err)
+	}
+	if err := json.Unmarshal([]byte(artifacts), &it.Artifacts); err != nil {
+		return fmt.Errorf("item %s artifacts: %w", it.ID, err)
 	}
 	var err error
 	it.TS, err = parseTime(ts)
@@ -145,16 +148,16 @@ func (s *Store) Items(ctx context.Context, f store.ItemFilter) ([]store.Item, er
 	w.eq("stream", f.Stream)
 	w.eq("run_id", f.RunID)
 	w.since("ts", f.Since)
-	items, err := scan(ctx, s.read, `SELECT pipeline, id, run_id, stream, step, key, parents, generation, ts, payload
-		FROM items`+w.String()+` ORDER BY rowid`, w.args, func(rows *sql.Rows) (store.Item, error) {
+	items, err := scan(ctx, s.read, `SELECT pipeline, id, run_id, stream, step, key, parents, generation, ts, payload,
+		artifacts FROM items`+w.String()+` ORDER BY rowid`, w.args, func(rows *sql.Rows) (store.Item, error) {
 		var it store.Item
-		var parents, ts, body string
+		var parents, ts, body, artifacts string
 		if err := rows.Scan(&it.Pipeline, &it.ID, &it.RunID, &it.Stream, &it.Step, &it.Key, &parents,
-			&it.Generation, &ts, &body); err != nil {
+			&it.Generation, &ts, &body, &artifacts); err != nil {
 			return it, fmt.Errorf("scan item: %w", err)
 		}
 		it.Payload = json.RawMessage(body)
-		return it, fillItem(&it, parents, ts)
+		return it, fillItem(&it, parents, ts, artifacts)
 	})
 	if err != nil {
 		return nil, fmt.Errorf("items: %w", err)
@@ -297,4 +300,20 @@ func (s *Store) PipelineState(ctx context.Context, pipelineName string) (store.P
 	}
 	ps.PausedSteps = steps
 	return ps, nil
+}
+
+// Artifacts returns the artifact store entries of a pipeline, or of every pipeline, by pipeline and hash.
+func (s *Store) Artifacts(ctx context.Context, pipelineName string) ([]store.Artifact, error) {
+	var w where
+	w.eq("pipeline", pipelineName)
+	out, err := scan(ctx, s.read, `SELECT pipeline, sha256, size, type, refcount FROM artifacts`+w.String()+
+		` ORDER BY pipeline, sha256`, w.args, func(rows *sql.Rows) (store.Artifact, error) {
+		var a store.Artifact
+		err := rows.Scan(&a.Pipeline, &a.SHA256, &a.Size, &a.Type, &a.Refcount)
+		return a, err
+	})
+	if err != nil {
+		return nil, fmt.Errorf("artifacts: %w", err)
+	}
+	return out, nil
 }

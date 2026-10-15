@@ -3,6 +3,7 @@ package e2e
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"maps"
@@ -197,16 +198,23 @@ func TestCrashInCommands(t *testing.T) {
 	}
 }
 
-// onlyRun keeps the records of one run.
+// onlyRun keeps the records of one run, and the reference counts, database-wide, of the artifacts its items carry.
 func onlyRun(s snapshot, runID string) snapshot {
 	out := snapshot{
 		Runs:      map[string]store.RunState{runID: s.Runs[runID]},
 		Revisions: map[string]store.RevisionID{runID: s.Revisions[runID]},
 		Items:     map[string]item{}, Deliveries: map[string]delivery{}, DeadLetters: map[string]deadLetter{},
+		Refcounts: map[string]int64{},
 	}
 	for id, it := range s.Items {
-		if it.RunID == runID {
-			out.Items[id] = it
+		if it.RunID != runID {
+			continue
+		}
+		out.Items[id] = it
+		var refs []store.ArtifactRef
+		_ = json.Unmarshal([]byte(it.Artifacts), &refs) // written by readSnapshot from the same type
+		for _, r := range refs {
+			out.Refcounts[r.SHA256] = s.Refcounts[r.SHA256]
 		}
 	}
 	for id, d := range s.Deliveries {

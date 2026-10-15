@@ -1,6 +1,7 @@
 // Package node is the embedded node (spec section 5.10): it pulls leased deliveries from the engine through a
-// Transport, runs each on the exec runtime's process pool in its own goroutine, renews every held lease with a
-// heartbeat, and reports the outcome with the lease's fencing token. A lease the engine reports lost cancels its
+// Transport, runs each on the exec runtime's process pool in its own goroutine, moving its artifacts through the
+// Transport's artifact store, renews every held lease with a heartbeat, and reports the outcome with the lease's
+// fencing token. A lease the engine reports lost cancels its
 // delivery and drops its result; a report the store refuses as stale is dropped too, since another owner holds
 // the delivery. On context cancellation the node drains: it stops pulling and lets in-flight deliveries finish, up
 // to a drain timeout.
@@ -10,6 +11,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"time"
 
@@ -50,8 +52,18 @@ type Assignment struct {
 	Redact *redact.Redactor
 }
 
+// Artifacts is the artifact store as a node reaches it (spec section 5.10): the engine's local store for the
+// embedded node; remote nodes (M4) move contents through signed URLs behind the same calls.
+type Artifacts interface {
+	// PutArtifact stores an output artifact of pipeline and returns its reference under name.
+	PutArtifact(ctx context.Context, pipeline, name string, r io.Reader) (store.ArtifactRef, error)
+	// OpenArtifact opens an input artifact of pipeline.
+	OpenArtifact(ctx context.Context, pipeline string, ref store.ArtifactRef) (io.ReadCloser, error)
+}
+
 // Transport connects a node to the engine: in memory for the embedded node, over HTTP/2 for remote ones.
 type Transport interface {
+	Artifacts
 	// Pull leases up to max deliveries for owner; it returns at most max.
 	Pull(ctx context.Context, owner string, max int) ([]Assignment, error)
 	// Heartbeat renews owner's leases and returns those it no longer holds.
@@ -183,7 +195,10 @@ func (l *loop) start(a Assignment) {
 // execute runs one delivery and reports it, unless its context was cancelled: the lease was lost or the drain
 // timed out, and the delivery belongs to whoever leases it next.
 func (l *loop) execute(ctx context.Context, log *slog.Logger, a Assignment) {
-	res, err := l.opts.Pool.Deliver(ctx, a.Spec, exec.Delivery{Item: a.ItemMsg, Timeout: a.Timeout, Log: log})
+	res, err := l.opts.Pool.Deliver(ctx, a.Spec, exec.Delivery{
+		Item: a.ItemMsg, Inputs: a.Lease.Item.Artifacts, Artifacts: pipelineArtifacts{l.t, a.Lease.Pipeline},
+		Timeout: a.Timeout, Log: log,
+	})
 	if ctx.Err() != nil {
 		log.Warn("delivery abandoned, result dropped")
 		return
@@ -215,6 +230,20 @@ func (l *loop) execute(ctx context.Context, log *slog.Logger, a Assignment) {
 	case rerr != nil:
 		log.Error("report delivery", "error", rerr.Error())
 	}
+}
+
+// pipelineArtifacts binds the transport's artifact store to one pipeline, as the runtime moves a delivery's files.
+type pipelineArtifacts struct {
+	t        Artifacts
+	pipeline string
+}
+
+func (p pipelineArtifacts) Open(ctx context.Context, ref store.ArtifactRef) (io.ReadCloser, error) {
+	return p.t.OpenArtifact(ctx, p.pipeline, ref)
+}
+
+func (p pipelineArtifacts) Put(ctx context.Context, name string, r io.Reader) (store.ArtifactRef, error) {
+	return p.t.PutArtifact(ctx, p.pipeline, name, r)
 }
 
 // heartbeat renews every held lease and cancels the deliveries whose lease is lost.

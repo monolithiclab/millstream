@@ -26,6 +26,7 @@ import (
 
 	"github.com/robfig/cron/v3"
 
+	"github.com/monolithiclab/millstream/internal/artifacts"
 	"github.com/monolithiclab/millstream/internal/pipeline"
 	"github.com/monolithiclab/millstream/internal/redact"
 	"github.com/monolithiclab/millstream/internal/runtime/exec"
@@ -63,6 +64,8 @@ type Options struct {
 	Stubs map[store.StepRef]Stub
 	// Resolver resolves action references; nil means pipeline.Resolver{}.
 	Resolver pipeline.ActionResolver
+	// Artifacts is the artifact store nodes move artifacts through; nil fails every delivery that has any.
+	Artifacts *artifacts.Store
 }
 
 // Stub is the fixed outcome of a stubbed step: its outputs, or an action error when Err is set.

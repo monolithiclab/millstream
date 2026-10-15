@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"maps"
+	"os"
 	"path"
 	"slices"
 	"strings"
@@ -12,6 +13,7 @@ import (
 
 	"go.yaml.in/yaml/v3"
 
+	"github.com/monolithiclab/millstream/internal/artifacts"
 	"github.com/monolithiclab/millstream/internal/engine"
 	"github.com/monolithiclab/millstream/internal/node"
 	"github.com/monolithiclab/millstream/internal/pipeline"
@@ -134,7 +136,13 @@ func (c TestPipelineCmd) runTest(rt *Runtime, pkg *pipeline.Package, tc pipeline
 		return nil, err
 	}
 	defer func() { _ = st.Close() }()
-	e, err := engine.New(engine.Options{Store: st, Env: rt.Env, NoCron: true, Stubs: stubs})
+	dir, err := os.MkdirTemp("", "millstream-test-artifacts-")
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = os.RemoveAll(dir) }()
+	e, err := engine.New(engine.Options{Store: st, Env: rt.Env, NoCron: true, Stubs: stubs,
+		Artifacts: artifacts.New(dir)})
 	if err != nil {
 		return nil, err
 	}

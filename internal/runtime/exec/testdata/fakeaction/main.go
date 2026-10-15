@@ -16,6 +16,9 @@
 //   - noRead: answers ready, then never reads stdin again and hangs
 //   - secret: writes config "secret" to stderr, then answers a non-retryable error whose message contains it
 //   - lateMetric: answers done, then sends a metric for the same delivery
+//   - artifact: writes the payload's "files" (path to content) in MILLSTREAM_WORKDIR, creates its "links" (path to
+//     target) as symbolic links, then emits, with the payload's "emit" list as artifacts, an output mapping each
+//     input artifact's name to its content
 //
 // It lives under testdata so the module's ./... patterns skip it; exectest builds it.
 package main
@@ -27,6 +30,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"time"
 
 	"github.com/monolithiclab/millstream/internal/protocol"
@@ -140,6 +144,8 @@ func handle(w *protocol.Writer, config map[string]any, mode string, it protocol.
 			return err
 		}
 		return w.Write(protocol.Metric{Delivery: it.Delivery, Name: "late", Value: 1})
+	case "artifact":
+		return artifacts(w, it)
 	case "slow":
 		ms, _ := config["sleepMs"].(float64)
 		time.Sleep(time.Duration(ms) * time.Millisecond)
@@ -155,6 +161,48 @@ func echo(w *protocol.Writer, it protocol.Item) error {
 		return err
 	}
 	if err := w.Write(protocol.Emit{Delivery: it.Delivery, Key: it.Key, Payload: out}); err != nil {
+		return err
+	}
+	return w.Write(protocol.Done{Delivery: it.Delivery})
+}
+
+func artifacts(w *protocol.Writer, it protocol.Item) error {
+	var in struct {
+		Files map[string]string   `json:"files"`
+		Links map[string]string   `json:"links"`
+		Emit  []protocol.Artifact `json:"emit"`
+	}
+	if err := json.Unmarshal(it.Payload, &in); err != nil {
+		return err
+	}
+	dir := os.Getenv("MILLSTREAM_WORKDIR")
+	for p, content := range in.Files {
+		full := filepath.Join(dir, filepath.FromSlash(p))
+		if err := os.MkdirAll(filepath.Dir(full), 0o750); err != nil {
+			return err
+		}
+		if err := os.WriteFile(full, []byte(content), 0o600); err != nil {
+			return err
+		}
+	}
+	for p, target := range in.Links {
+		if err := os.Symlink(target, filepath.Join(dir, filepath.FromSlash(p))); err != nil {
+			return err
+		}
+	}
+	inputs := map[string]string{}
+	for _, a := range it.Artifacts {
+		b, err := os.ReadFile(filepath.Join(dir, filepath.FromSlash(a.Path)))
+		if err != nil {
+			return err
+		}
+		inputs[a.Name] = a.Path + "=" + string(b)
+	}
+	out, err := json.Marshal(inputs)
+	if err != nil {
+		return err
+	}
+	if err := w.Write(protocol.Emit{Delivery: it.Delivery, Payload: out, Artifacts: in.Emit}); err != nil {
 		return err
 	}
 	return w.Write(protocol.Done{Delivery: it.Delivery})

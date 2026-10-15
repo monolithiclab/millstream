@@ -12,13 +12,18 @@ const (
 	ClassTimeout = "timeout"
 	// ClassCrash: the process could not start, or exited before answering.
 	ClassCrash = "crash"
-	// ClassProtocol: a protocol violation (malformed line, unknown or out-of-order message, another delivery's id).
+	// ClassProtocol: a protocol violation (malformed line, unknown or out-of-order message, another delivery's id),
+	// or an emitted artifact the node refuses (permanent).
 	ClassProtocol = "protocol"
+	// ClassArtifact: the delivery's artifacts could not be moved between its working directory and the artifact
+	// store. The process is kept.
+	ClassArtifact = "artifact"
 )
 
 // RuntimeError is a delivery that failed in the runtime rather than in the action. Usually the process is gone
 // (killed or exited) and the delivery is retried. A Permanent one is deterministic, such as an item too large for a
-// protocol line: the process is left healthy, and retrying would fail the same way.
+// protocol line: the process is left healthy, and retrying would fail the same way. An artifact error leaves the
+// process healthy too, and is retried.
 type RuntimeError struct {
 	Class     string
 	Permanent bool

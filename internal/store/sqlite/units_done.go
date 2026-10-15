@@ -22,6 +22,11 @@ func (s *Store) Done(ctx context.Context, d store.DoneRequest) (store.DeliverySt
 		if outputs[i], err = canonical(o.Payload); err != nil {
 			return "", fmt.Errorf("done: output %d: %w", i, err)
 		}
+		for _, a := range o.Artifacts {
+			if err := store.ValidArtifact(a); err != nil {
+				return "", fmt.Errorf("done: output %d: %w", i, err)
+			}
+		}
 	}
 	var state store.DeliveryState
 	err := s.submit(ctx, unitDone, func(w *wtx) error {
@@ -63,7 +68,7 @@ func (w *wtx) done(req store.DoneRequest, outputs []payload) (store.DeliveryStat
 		}
 	}
 	for i, o := range outputs {
-		if err := w.publishOutput(rev, run, step, d, req.Outputs[i].Key, i, o, routes[i]); err != nil {
+		if err := w.publishOutput(rev, run, step, d, req.Outputs[i], i, o, routes[i]); err != nil {
 			return "", err
 		}
 	}
@@ -104,19 +109,24 @@ func keyRule(outputs []store.Output) string {
 	return ""
 }
 
-// publishOutput publishes output index of delivery d where its routing sends it, or as an unrouted dead letter.
-func (w *wtx) publishOutput(rev *revision, run *runRow, step pipeline.Step, d *deliveryRow, key string, index int,
-	o payload, r routing,
+// publishOutput publishes output index of delivery d, whose payload is o, where its routing sends it, or as an
+// unrouted dead letter that keeps its artifacts for a replay.
+func (w *wtx) publishOutput(rev *revision, run *runRow, step pipeline.Step, d *deliveryRow, out store.Output,
+	index int, o payload, r routing,
 ) error {
+	key := out.Key
 	if r.unrouted {
 		outputID := ids.Item(step.Name, "", d.itemID, d.generation, key, index)
 		item := map[string]any{"id": outputID, "key": key, "index": index, "payload": o.value}
+		if len(out.Artifacts) > 0 {
+			item["artifacts"] = out.Artifacts
+		}
 		return w.deadLetter(rev, run, step, store.DeadLetterUnrouted, d.id, outputID, d.itemID, unroutedError, item)
 	}
 	for _, stream := range r.streams {
 		err := w.publish(rev, run, newItem{
 			id: ids.Item(step.Name, stream, d.itemID, d.generation, key, index), stream: stream, step: step.Name,
-			key: key, parents: []string{d.itemID}, payload: o,
+			key: key, parents: []string{d.itemID}, payload: o, artifacts: out.Artifacts,
 		})
 		if err != nil {
 			return err

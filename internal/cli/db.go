@@ -5,8 +5,14 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/monolithiclab/millstream/internal/artifacts"
 	"github.com/monolithiclab/millstream/internal/store/sqlite"
 )
+
+// artifactStore is the local artifact store next to the state database: <directory of --db>/artifacts.
+func artifactStore(rt *Runtime) *artifacts.Store {
+	return artifacts.New(filepath.Join(filepath.Dir(rt.DB), "artifacts"))
+}
 
 // openStore opens the state database named by --db, creating its directory.
 func openStore(rt *Runtime) (*sqlite.Store, error) {

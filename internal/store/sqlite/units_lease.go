@@ -119,7 +119,7 @@ func excluded(exclude []store.StepRef, ref store.StepRef) bool {
 
 func (w *wtx) dueDeliveries(ref store.StepRef, n int) ([]candidate, error) {
 	rows, err := w.query(`SELECT d.rowid, d.id, d.run_id, r.revision, d.generation, d.attempt,
-		i.id, i.run_id, i.stream, i.step, i.key, i.parents, i.generation, i.ts, i.payload
+		i.id, i.run_id, i.stream, i.step, i.key, i.parents, i.generation, i.ts, i.payload, i.artifacts
 		FROM deliveries d
 		JOIN runs r ON r.pipeline = d.pipeline AND r.id = d.run_id
 		JOIN items i ON i.pipeline = d.pipeline AND i.id = d.item_id
@@ -132,16 +132,16 @@ func (w *wtx) dueDeliveries(ref store.StepRef, n int) ([]candidate, error) {
 	for rows.Next() {
 		c := candidate{lease: store.Lease{Pipeline: ref.Pipeline, Step: ref.Step}}
 		l := &c.lease
-		var parents, ts, body string
+		var parents, ts, body, artifacts string
 		if err := rows.Scan(&c.rowid, &l.DeliveryID, &l.RunID, &l.Revision, &l.Generation, &l.Attempt,
 			&l.Item.ID, &l.Item.RunID, &l.Item.Stream, &l.Item.Step, &l.Item.Key, &parents, &l.Item.Generation,
-			&ts, &body); err != nil {
+			&ts, &body, &artifacts); err != nil {
 			_ = rows.Close()
 			return nil, fmt.Errorf("scan due delivery: %w", err)
 		}
 		l.Item.Pipeline = ref.Pipeline
 		l.Item.Payload = json.RawMessage(body)
-		if err := fillItem(&l.Item, parents, ts); err != nil {
+		if err := fillItem(&l.Item, parents, ts, artifacts); err != nil {
 			_ = rows.Close()
 			return nil, err
 		}

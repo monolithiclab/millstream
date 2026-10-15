@@ -73,11 +73,11 @@ func (pl *Pool) Deliver(ctx context.Context, spec Spec, d Delivery) (Result, err
 		return Result{}, err
 	}
 	res, err := p.Deliver(ctx, d)
-	if healthy := err == nil || Permanent(err) && p.Alive(); !healthy {
+	if !p.Alive() {
 		pl.closeLogged(p)
 		return res, err
 	}
-	pl.release(key, p) // a permanent error left the process healthy: it serves the next delivery
+	pl.release(key, p) // an error that left the process healthy (permanent, artifact) is the delivery's alone
 	return res, err
 }
 

@@ -3,6 +3,7 @@ package sqlite
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -51,17 +52,21 @@ func (s *Store) Dedupe(ctx context.Context, req store.DedupeRequest) (store.Deli
 			state, err = w.filter(d, store.FilterReasonDuplicate)
 			return err
 		}
-		var key, body string
-		if err := w.queryRow(`SELECT key, payload FROM items WHERE pipeline = ? AND id = ?`, d.pipeline, d.itemID).
-			Scan(&key, &body); err != nil {
+		var key, body, artifacts string
+		if err := w.queryRow(`SELECT key, payload, artifacts FROM items WHERE pipeline = ? AND id = ?`, d.pipeline,
+			d.itemID).Scan(&key, &body, &artifacts); err != nil {
 			return notFound(err, "item "+d.itemID)
 		}
 		o, err := canonical([]byte(body))
 		if err != nil {
 			return err
 		}
+		out := store.Output{Key: key, Payload: o.raw}
+		if err := json.Unmarshal([]byte(artifacts), &out.Artifacts); err != nil {
+			return fmt.Errorf("item %s artifacts: %w", d.itemID, err)
+		}
 		if state, err = w.done(store.DoneRequest{LeaseRef: req.LeaseRef, Attempt: req.Attempt,
-			Outputs: []store.Output{{Key: key, Payload: o.raw}}}, []payload{o}); err != nil || state != store.DeliveryDone {
+			Outputs: []store.Output{out}}, []payload{o}); err != nil || state != store.DeliveryDone {
 			return err
 		}
 		_, err = w.exec(`INSERT INTO dedupe_keys (pipeline, step, generation, key, first_item, seen_at)

@@ -3,8 +3,12 @@ package node
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
+	"io/fs"
 	"log/slog"
 	"os"
 	"sync"
@@ -73,6 +77,8 @@ type fakeTransport struct {
 	reportErr   error
 	pullErr     error
 	hbErr       error
+	putErr      error
+	blobs       map[string][]byte // artifact contents by pipeline/sha256
 
 	pulled   chan string // a delivery id per assignment handed out
 	lost     chan string // a delivery id per lease reported lost
@@ -124,6 +130,37 @@ func (f *fakeTransport) Heartbeat(_ context.Context, _ string, refs []store.Leas
 		}
 	}
 	return lost, nil
+}
+
+// PutArtifact keeps the content in memory, by hash.
+func (f *fakeTransport) PutArtifact(_ context.Context, pipeline, name string, r io.Reader) (store.ArtifactRef, error) {
+	data, err := io.ReadAll(r)
+	if err != nil {
+		return store.ArtifactRef{}, err
+	}
+	sum := sha256.Sum256(data)
+	ref := store.ArtifactRef{Name: name, SHA256: hex.EncodeToString(sum[:]), Size: int64(len(data)), Type: "text/plain"}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.putErr != nil {
+		return store.ArtifactRef{}, f.putErr
+	}
+	if f.blobs == nil {
+		f.blobs = map[string][]byte{}
+	}
+	f.blobs[pipeline+"/"+ref.SHA256] = data
+	return ref, nil
+}
+
+// OpenArtifact reads a content PutArtifact kept.
+func (f *fakeTransport) OpenArtifact(_ context.Context, pipeline string, ref store.ArtifactRef) (io.ReadCloser, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	data, ok := f.blobs[pipeline+"/"+ref.SHA256]
+	if !ok {
+		return nil, fmt.Errorf("artifact %s: %w", ref.SHA256, fs.ErrNotExist)
+	}
+	return io.NopCloser(bytes.NewReader(data)), nil
 }
 
 func (f *fakeTransport) Done(_ context.Context, req store.DoneRequest) error {

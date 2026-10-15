@@ -245,9 +245,10 @@ func (w *wtx) replayOne(rev *revision, run *runRow, dl deadLetterRow) (bool, err
 	}
 	var letter struct {
 		Item struct {
-			Key     string          `json:"key"`
-			Index   int             `json:"index"`
-			Payload json.RawMessage `json:"payload"`
+			Key       string              `json:"key"`
+			Index     int                 `json:"index"`
+			Payload   json.RawMessage     `json:"payload"`
+			Artifacts []store.ArtifactRef `json:"artifacts"`
 		} `json:"item"`
 	}
 	if err := json.Unmarshal([]byte(body), &letter); err != nil {
@@ -264,7 +265,8 @@ func (w *wtx) replayOne(rev *revision, run *runRow, dl deadLetterRow) (bool, err
 	if r.unrouted {
 		return false, nil
 	}
-	return true, w.publishOutput(rev, run, step, d, letter.Item.Key, letter.Item.Index, o, r)
+	out := store.Output{Key: letter.Item.Key, Artifacts: letter.Item.Artifacts}
+	return true, w.publishOutput(rev, run, step, d, out, letter.Item.Index, o, r)
 }
 
 // DiscardDeadLetters is the Dead-letter discard unit (spec section 5.11): the open dead letters named become

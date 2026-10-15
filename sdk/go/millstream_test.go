@@ -24,6 +24,9 @@ func TestMain(m *testing.M) {
 	case "mapKeyed":
 		MapKeyed(split)
 		os.Exit(0)
+	case "artifact":
+		Map(annotate)
+		os.Exit(0)
 	}
 	os.Exit(m.Run())
 }

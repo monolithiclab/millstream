@@ -69,7 +69,12 @@ func (o Options) withDefaults() Options {
 
 // Delivery is one item to hand to a process.
 type Delivery struct {
+	// Item is the message sent; its Artifacts are set from Inputs once they are placed.
 	Item protocol.Item
+	// Inputs are the item's artifacts, placed under in/ in the working directory before the item is sent.
+	Inputs []store.ArtifactRef
+	// Artifacts moves input and output artifacts; nil fails a delivery that has any.
+	Artifacts Artifacts
 	// Timeout bounds the delivery from the item to done or error; zero means no bound.
 	Timeout time.Duration
 	// Log carries the delivery's keys (pipeline, runId, step, itemId, deliveryId, attempt, node): the process's
@@ -77,8 +82,8 @@ type Delivery struct {
 	Log *slog.Logger
 }
 
-// Result is what a delivery produced. Outputs are set only when the action answered done; Err only when it
-// answered error.
+// Result is what a delivery produced. Outputs are set only when the action answered done, with the artifacts they
+// name already in the artifact store; Err only when it answered error.
 type Result struct {
 	Outputs []store.Output
 	Metrics []protocol.Metric
@@ -243,10 +248,11 @@ func (p *Process) handshakeErr(hctx context.Context) error {
 	return fmt.Errorf("await ready: %w", hctx.Err())
 }
 
-// Deliver hands the process one item and collects its answer. A RuntimeError means the process is gone, unless it
-// is Permanent: an item too large for a protocol line is refused before anything is written, and the process stays
-// healthy. A cancelled ctx kills the process and returns ctx's error. Outputs are returned only on done, so a failed
-// delivery publishes nothing.
+// Deliver places the delivery's input artifacts, hands the process the item and collects its answer; on done it
+// moves the artifacts the outputs name to the artifact store before returning. A RuntimeError means the process is
+// gone unless Alive says otherwise: an item too large for a protocol line is refused before anything is written, and
+// an artifact that cannot be moved fails the delivery alone. A cancelled ctx kills the process and returns ctx's
+// error. Outputs are returned only on done, so a failed delivery publishes nothing.
 func (p *Process) Deliver(ctx context.Context, d Delivery) (Result, error) {
 	id := d.Item.Delivery
 	if err := p.drainIdle(ctx); err != nil {
@@ -255,6 +261,9 @@ func (p *Process) Deliver(ctx context.Context, d Delivery) (Result, error) {
 	if err := clearDir(p.workdir); err != nil {
 		p.kill()
 		return Result{}, runtimeErr(ClassCrash, "clear workdir: %w", err)
+	}
+	if err := p.materialise(ctx, &d); err != nil {
+		return Result{}, err
 	}
 	// The logger stays until the next delivery: stderr and stdout are separate pipes, so a line written just
 	// before done may be relayed after it.
@@ -283,6 +292,7 @@ func (p *Process) Deliver(ctx context.Context, d Delivery) (Result, error) {
 		return Result{}, p.exitErr(ctx, "send item %s: %w", id, err)
 	}
 	var res Result
+	var emitted [][]protocol.Artifact // the artifacts each output named, moved once the delivery is done
 	for {
 		select {
 		case <-dctx.Done():
@@ -294,15 +304,20 @@ func (p *Process) Deliver(ctx context.Context, d Delivery) (Result, error) {
 			if p.lateMetric(m) {
 				continue
 			}
-			done, err := collect(&res, id, m)
+			done, err := collect(&res, &emitted, id, m)
 			if err != nil {
 				p.kill()
 				return Result{}, runtimeErr(ClassProtocol, "delivery %s: %w", id, err)
 			}
-			if done {
-				p.prev = id
-				return res, nil
+			if !done {
+				continue
 			}
+			p.prev = id
+			stop() // the action has answered: moving its files is no longer its time to spend
+			if err := p.upload(ctx, d, &res, emitted); err != nil {
+				return Result{}, err
+			}
+			return res, nil
 		}
 	}
 }
@@ -348,13 +363,14 @@ func (p *Process) lateMetric(m protocol.Message) bool {
 	return true
 }
 
-// collect adds m to res and reports whether it ended the delivery.
-func collect(res *Result, id string, m protocol.Message) (bool, error) {
+// collect adds m to res, and an emit's artifacts to emitted, and reports whether m ended the delivery.
+func collect(res *Result, emitted *[][]protocol.Artifact, id string, m protocol.Message) (bool, error) {
 	var got string
 	switch m := m.(type) {
 	case protocol.Emit:
 		got = m.Delivery
 		res.Outputs = append(res.Outputs, store.Output{Key: m.Key, Payload: m.Payload})
+		*emitted = append(*emitted, m.Artifacts)
 	case protocol.Metric:
 		got = m.Delivery
 		res.Metrics = append(res.Metrics, m)
@@ -362,7 +378,7 @@ func collect(res *Result, id string, m protocol.Message) (bool, error) {
 		got = m.Delivery
 	case protocol.Error:
 		got = m.Delivery
-		res.Outputs = nil
+		res.Outputs, *emitted = nil, nil
 		res.Err = &ActionError{Message: m.Message, Retryable: m.Retryable}
 	default:
 		return false, fmt.Errorf("%w: unexpected %s message", protocol.ErrProtocol, m.Type())

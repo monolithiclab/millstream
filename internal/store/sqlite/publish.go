@@ -14,6 +14,7 @@ type newItem struct {
 	id, stream, step, key string
 	parents               []string
 	payload               payload
+	artifacts             []store.ArtifactRef
 }
 
 // publish inserts an item under the first-commit rule (spec section 5.2) and creates the deliveries of every step
@@ -28,16 +29,27 @@ func (w *wtx) publish(rev *revision, run *runRow, it newItem) error {
 	if err != nil {
 		return fmt.Errorf("encode parents: %w", err)
 	}
+	artifacts := it.artifacts
+	if artifacts == nil {
+		artifacts = []store.ArtifactRef{}
+	}
+	artifactsJSON, err := json.Marshal(artifacts)
+	if err != nil {
+		return fmt.Errorf("encode artifacts: %w", err)
+	}
 	hash := hashPayload(it.payload.raw)
 	n, err := w.affected(`INSERT INTO items
-		(pipeline, id, run_id, stream, step, key, parents, generation, ts, payload, payload_hash)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`,
+		(pipeline, id, run_id, stream, step, key, parents, generation, ts, payload, payload_hash, artifacts)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`,
 		run.pipeline, it.id, run.id, it.stream, it.step, it.key, string(parentsJSON), run.generation, w.ts(),
-		string(it.payload.raw), hash)
+		string(it.payload.raw), hash, string(artifactsJSON))
 	if err != nil {
 		return err
 	}
 	if n == 1 {
+		if err := w.countArtifacts(run.pipeline, artifacts); err != nil {
+			return err
+		}
 		err = w.event(run.pipeline, run.id, store.EventItemPublished,
 			map[string]any{"itemId": it.id, "stream": it.stream, "step": it.step})
 	} else {
@@ -47,6 +59,20 @@ func (w *wtx) publish(rev *revision, run *runRow, it newItem) error {
 		return err
 	}
 	return w.createDeliveries(rev, run, it.stream, it.id)
+}
+
+// countArtifacts adds one reference to each artifact a newly inserted item carries, creating its entry on the first.
+// An existing item republished by a retry is not counted again; artifacts are not part of the payload hash, so
+// under the first-commit rule the first attempt's artifacts are the ones kept.
+func (w *wtx) countArtifacts(pipelineName string, refs []store.ArtifactRef) error {
+	for _, a := range refs {
+		if _, err := w.exec(`INSERT INTO artifacts (pipeline, sha256, size, type, refcount, created_at)
+			VALUES (?, ?, ?, ?, 1, ?) ON CONFLICT DO UPDATE SET refcount = refcount + 1`,
+			pipelineName, a.SHA256, a.Size, a.Type, w.ts()); err != nil {
+			return fmt.Errorf("count artifact %s: %w", a.SHA256, err)
+		}
+	}
+	return nil
 }
 
 func (w *wtx) firstCommit(run *runRow, it newItem, hash string) error {

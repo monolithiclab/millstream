@@ -51,6 +51,7 @@ func (c RunCmd) Run(rt *Runtime) error {
 	return withStore(rt, func(st *sqlite.Store) error {
 		e, err := engine.New(engine.Options{
 			Store: st, Logger: log, LeaseTTL: c.LeaseTTL, Env: rt.Env, Flags: c.Var, NoCron: c.Once,
+			Artifacts: artifactStore(rt),
 		})
 		if err != nil {
 			return err

@@ -17,6 +17,13 @@ earlier designs are in the git history of the spec.
 - Evidence bundles pulled directly from a production deployment by a development one, instead of export and import
   files.
 
+## Follow-ups
+
+- Go SDK: per-output artifacts for `MapKeyed` (today `Context.Artifact` attaches a file to every output of the
+  delivery).
+- Artifact files orphaned by a retry whose item already existed (first commit wins) are only reclaimed by a sweep
+  of unreferenced hashes, which arrives with retention (M4).
+
 ## Execution (icebox)
 
 - Streaming publication (`commit: emit`): outputs visible as they are emitted, for long crawls (D20).

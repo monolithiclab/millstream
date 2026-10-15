@@ -1,7 +1,9 @@
 // Package millstream is the Go SDK for Millstream actions: a thin wrapper over the action protocol (JSON objects,
 // one per line, on stdin and stdout; see docs/protocol.md in the Millstream repository). An action's main calls Map
 // or MapKeyed with a function from one input item to its outputs; the SDK answers hello, decodes each item into the
-// function's input type, emits its outputs and reports done or error, one delivery at a time.
+// function's input type, emits its outputs and reports done or error, one delivery at a time. Files travel as
+// artifacts through MILLSTREAM_WORKDIR: Context.InputArtifact finds the input item's, Context.Artifact attaches
+// files the action wrote to its outputs.
 //
 // The SDK has no dependency on the engine: it repeats the few message shapes it needs.
 package millstream
@@ -14,6 +16,8 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 )
 
@@ -43,6 +47,15 @@ type Context interface {
 	Logger() *slog.Logger
 	// Item describes the item being processed.
 	Item() ItemInfo
+	// Artifact attaches the file at path to the delivery's outputs as an artifact called name: with Map, to its
+	// output; with MapKeyed, to every output of the delivery. path is relative to MILLSTREAM_WORKDIR or an
+	// absolute path inside it, and must be a regular file there; names are file names, distinct within a delivery.
+	// The node moves the file to the artifact store when the delivery is done; a delivery without outputs drops
+	// its artifacts.
+	Artifact(name, path string) error
+	// InputArtifact returns the absolute path of the input item's artifact called name, placed in the working
+	// directory before the item arrived.
+	InputArtifact(name string) (string, error)
 }
 
 // ItemInfo describes the item being processed.
@@ -166,6 +179,10 @@ func IsRetryable(err error) bool { return errors.As(err, new(retryable)) }
 
 // Messages. Unknown fields are ignored, so an engine speaking a later minor revision still works.
 type (
+	artifactMsg struct {
+		Name string `json:"name"`
+		Path string `json:"path"`
+	}
 	inMsg struct {
 		Type           string          `json:"type"`
 		Protocol       int             `json:"protocol"`
@@ -177,15 +194,17 @@ type (
 		Payload        json.RawMessage `json:"payload"`
 		Attempt        int             `json:"attempt"`
 		IdempotencyKey string          `json:"idempotencyKey"`
+		Artifacts      []artifactMsg   `json:"artifacts"`
 	}
 	readyMsg struct {
 		Type string `json:"type"`
 	}
 	emitMsg struct {
-		Type     string          `json:"type"`
-		Delivery string          `json:"delivery"`
-		Key      string          `json:"key,omitempty"`
-		Payload  json.RawMessage `json:"payload"`
+		Type      string          `json:"type"`
+		Delivery  string          `json:"delivery"`
+		Key       string          `json:"key,omitempty"`
+		Payload   json.RawMessage `json:"payload"`
+		Artifacts []artifactMsg   `json:"artifacts,omitempty"`
 	}
 	metricMsg struct {
 		Type     string            `json:"type"`
@@ -294,13 +313,14 @@ func read(sc *bufio.Scanner) (inMsg, error) {
 
 // handle processes one item and reports its outcome.
 func handle(out *writer, logger *slog.Logger, hello, item inMsg, h Handler) error {
-	c := &itemContext{hello: hello, item: item, out: out, logger: logger}
+	c := &itemContext{hello: hello, item: item, out: out, logger: logger, workdir: os.Getenv("MILLSTREAM_WORKDIR")}
 	outs, err := h(c, item.Payload)
 	if err != nil {
 		return out.send(errorMsg{Type: "error", Delivery: item.Delivery, Message: err.Error(), Retryable: IsRetryable(err)})
 	}
 	for _, o := range outs {
-		if err := out.send(emitMsg{Type: "emit", Delivery: item.Delivery, Key: o.Key, Payload: o.Value}); err != nil {
+		emit := emitMsg{Type: "emit", Delivery: item.Delivery, Key: o.Key, Payload: o.Value, Artifacts: c.artifacts}
+		if err := out.send(emit); err != nil {
 			return err
 		}
 	}
@@ -314,6 +334,8 @@ type itemContext struct {
 	hello, item inMsg
 	out         *writer
 	logger      *slog.Logger
+	workdir     string        // MILLSTREAM_WORKDIR
+	artifacts   []artifactMsg // attached with Artifact
 }
 
 func (c *itemContext) Config() map[string]any { return orEmpty(c.hello.Config) }
@@ -349,4 +371,46 @@ func orEmpty(m map[string]any) map[string]any {
 		return map[string]any{}
 	}
 	return m
+}
+
+func (c *itemContext) Artifact(name, path string) error {
+	if name == "" || len(name) > 255 || name == "." || name == ".." || strings.ContainsAny(name, "/\\\x00") {
+		return fmt.Errorf("artifact name %q: want a file name of at most 255 bytes without a path separator", name)
+	}
+	for _, a := range c.artifacts {
+		if a.Name == name {
+			return fmt.Errorf("artifact %s is already attached", name)
+		}
+	}
+	if c.workdir == "" {
+		return errors.New("artifact " + name + ": MILLSTREAM_WORKDIR is not set")
+	}
+	rel := path
+	if filepath.IsAbs(path) {
+		var err error
+		if rel, err = filepath.Rel(c.workdir, path); err != nil {
+			return fmt.Errorf("artifact %s: %w", name, err)
+		}
+	}
+	if !filepath.IsLocal(rel) {
+		return fmt.Errorf("artifact %s: %s is not inside MILLSTREAM_WORKDIR", name, path)
+	}
+	fi, err := os.Lstat(filepath.Join(c.workdir, rel))
+	if err != nil {
+		return fmt.Errorf("artifact %s: %w", name, err)
+	}
+	if !fi.Mode().IsRegular() {
+		return fmt.Errorf("artifact %s: %s is not a regular file", name, path)
+	}
+	c.artifacts = append(c.artifacts, artifactMsg{Name: name, Path: filepath.ToSlash(rel)})
+	return nil
+}
+
+func (c *itemContext) InputArtifact(name string) (string, error) {
+	for _, a := range c.item.Artifacts {
+		if a.Name == name {
+			return filepath.Join(c.workdir, filepath.FromSlash(a.Path)), nil
+		}
+	}
+	return "", fmt.Errorf("the item has no artifact %s", name)
 }

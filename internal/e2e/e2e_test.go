@@ -1,9 +1,14 @@
 package e2e
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"maps"
+	"os"
+	"path/filepath"
 	"reflect"
 	"regexp"
 	"slices"
@@ -118,6 +123,7 @@ func TestRunAndReplay(t *testing.T) {
 		t.Fatalf("counts = %v, want %v", got, want)
 	}
 	checkPayloads(t, snap, true)
+	checkReportArtifacts(t, db, snap)
 
 	dls := mustExit(t, 0, db, nil, "dlq", "list", "--pipeline", pipelineName)
 	if !regexp.MustCompile(`(?m)^it_\w+\s+m1-fixture\s+run_e2e_adhoc\s+rentability\s+dead\s+open\s+action: listing L013: no monthlyRentEur$`).
@@ -156,6 +162,38 @@ func TestRunAndReplay(t *testing.T) {
 		t.Fatalf("counts after the replay = %v, want %v", got, want)
 	}
 	checkPayloads(t, snap, false)
+	checkReportArtifacts(t, db, snap)
+}
+
+// checkReportArtifacts checks that every report carries its text report as one artifact, stored under the
+// SHA-256 of that text in the artifact store next to the database, with one reference per report.
+func checkReportArtifacts(t *testing.T, db string, s snapshot) {
+	t.Helper()
+	refs := map[string]int64{}
+	for id, it := range s.Items {
+		if it.Stream != "reports.done" {
+			continue
+		}
+		var r listing.Report
+		var arts []store.ArtifactRef
+		if err := errors.Join(json.Unmarshal([]byte(it.Payload), &r), json.Unmarshal([]byte(it.Artifacts), &arts)); err != nil {
+			t.Fatalf("report %s: %v", id, err)
+		}
+		sum := sha256.Sum256([]byte(r.Text()))
+		want := store.ArtifactRef{Name: r.Artifact, SHA256: hex.EncodeToString(sum[:]), Size: int64(len(r.Text())),
+			Type: "text/plain; charset=utf-8"}
+		if len(arts) != 1 || arts[0] != want {
+			t.Fatalf("report %s artifacts = %+v, want [%+v]", id, arts, want)
+		}
+		content, err := os.ReadFile(filepath.Join(filepath.Dir(db), "artifacts", pipelineName, want.SHA256))
+		if err != nil || string(content) != r.Text() {
+			t.Fatalf("report %s: stored artifact %q (%v), want %q", id, content, err, r.Text())
+		}
+		refs[want.SHA256]++
+	}
+	if len(refs) == 0 || !maps.Equal(refs, s.Refcounts) {
+		t.Fatalf("artifact refcounts = %v, want %v", s.Refcounts, refs)
+	}
 }
 
 // TestReplayStep replays score over a run of the fixture: the replay run re-scores every crawled listing in its own
