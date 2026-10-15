@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Item it_7f3a9c21</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Mono:wght@400;500;700&amp;family=Atkinson+Hyperlegible+Next:wght@400;500;700;800&amp;family=Instrument+Serif:ital@0;1&amp;display=swap">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="width: 100%; min-height: 1360px; box-sizing: border-box; display: flex; background: {{c.bg}}; color: {{c.ink}}; font-family: 'Atkinson Hyperlegible Next', 'Segoe UI', system-ui, sans-serif; font-size: 14px; line-height: 20px; font-variant-numeric: tabular-nums">
+
+<nav aria-label="Main" style="width: 228px; flex: none; box-sizing: border-box; background: {{c.s2}}; border-right: 1px solid {{c.line}}; padding: 18px 12px; display: flex; flex-direction: column; gap: 22px">
+<div style="display: flex; align-items: center; gap: 10px; padding: 0 8px">
+<svg width="22" height="22" viewBox="0 0 22 22" aria-hidden="true"><path d="M1 6C6 3.5 11 8.5 21 5.5M1 16.5C6 14 11 19 21 16" fill="none" stroke="{{c.ink}}" stroke-width="1.5" stroke-linecap="round"></path><circle cx="7" cy="11.2" r="1.9" fill="{{c.acc}}" opacity="0.45"></circle><circle cx="14" cy="11" r="2.3" fill="{{c.acc}}"></circle></svg>
+<span style="font-family: 'Instrument Serif', 'Iowan Old Style', Georgia, serif; font-size: 26px; line-height: 26px; font-weight: 400; letter-spacing: -0.01em">Millstream</span>
+</div>
+<button type="button" aria-label="Switch pipeline, current listings-daily" style="display: flex; align-items: center; gap: 8px; width: 100%; box-sizing: border-box; padding: 8px 10px; background: {{c.s1}}; color: {{c.ink}}; border: 1px solid {{c.line}}; border-radius: 10px; font: inherit; cursor: pointer; text-align: left"><span style="flex: 1 1 auto; font-family: 'Atkinson Hyperlegible Mono', ui-monospace, Menlo, monospace; font-size: 13px; font-weight: 700">listings-daily</span><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5L6 7.5L9 4.5" fill="none" stroke="{{c.ink2}}" stroke-width="1.5"></path></svg></button>
+<div style="display: flex; flex-direction: column; gap: 2px">
+<div style="padding: 0 10px 6px; font-family: 'Instrument Serif', Georgia, serif; font-style: italic; font-size: 17px; color: {{c.ink3}}">Workspace</div>
+<sc-for list="{{nav.g}}" as="n" hint-placeholder-count="4"><a href="#" style="display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: 10px; text-decoration: none; color: {{n.color}}; background: {{n.bg}}; font-weight: {{n.fw}}; box-shadow: {{n.sh}}"><span>{{n.label}}</span><span style="margin-left: auto; font-family: 'Atkinson Hyperlegible Mono', ui-monospace, Menlo, monospace; font-size: 12px; font-weight: 700; color: {{n.cc}}">{{n.count}}</span></a></sc-for>
+</div>
+<div style="display: flex; flex-direction: column; gap: 2px">
+<div style="padding: 0 10px 6px; font-family: 'Instrument Serif', Georgia, serif; font-style: italic; font-size: 17px; color: {{c.ink3}}">Pipeline</div>
+<sc-for list="{{nav.p}}" as="n" hint-placeholder-count="7"><a href="#" style="display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: 10px; text-decoration: none; color: {{n.color}}; background: {{n.bg}}; font-weight: {{n.fw}}; box-shadow: {{n.sh}}"><span>{{n.label}}</span><span style="margin-left: auto; font-family: 'Atkinson Hyperlegible Mono', ui-monospace, Menlo, monospace; font-size: 12px; font-weight: 700; color: {{n.cc}}">{{n.count}}</span></a></sc-for>
+</div>
+<div style="margin-top: auto; display: flex; flex-direction: column; gap: 8px; padding: 12px 10px 0; border-top: 1px solid {{c.line}}; font-size: 12px; color: {{c.ink2}}">
+<div style="display: flex; align-items: center; gap: 8px"><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="{{b.active.d1}}" fill="none" stroke="{{b.active.s1}}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path></svg><span>Engine <strong style="color: {{c.ink}}">mill-01</strong> active</span></div>
+<div style="font-family: 'Atkinson Hyperlegible Mono', ui-monospace, Menlo, monospace; font-size: 11px; color: {{c.ink3}}">v0.9.2 · localhost:7070</div>
+</div>
+</nav>
+
+<main style="flex: 1 1 0; min-width: 0; display: flex; flex-direction: column">
+<header style="height: 56px; flex: none; box-sizing: border-box; display: flex; align-items: center; gap: 16px; padding: 0 24px; border-bottom: 1px solid {{c.line}}; background: {{c.s1}}">
+<div style="display: flex; align-items: center; gap: 8px; font-size: 13px; min-width: 0; font-family: 'Atkinson Hyperlegible Mono', ui-monospace, Menlo, monospace">
+<a href="#" style="color: {{c.ink2}}; text-decoration: none">listings-daily</a><span aria-hidden="true" style="color: {{c.ink3}}">/</span>
+<a href="#" style="color: {{c.ink2}}; text-decoration: none; font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif">Streams and items</a><span aria-hidden="true" style="color: {{c.ink3}}">/</span>
+<span style="color: {{c.ink}}; font-weight: 700">it_7f3a9c21</span>
+</div>
+<div style="flex: 1 1 auto"></div>
+<span role="status" style="display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 700; color: {{c.acc}}"><svg width="10" height="10" viewBox="0 0 12 12" aria-hidden="true"><path d="{{b.running.d1}}" fill="{{c.acc}}"></path></svg>Live</span>
+<button type="button" style="display: inline-flex; align-items: center; gap: 10px; width: 260px; padding: 6px 10px; background: {{c.bg}}; color: {{c.ink3}}; border: 1px solid {{c.line}}; border-radius: 10px; font: inherit; font-size: 13px; cursor: pointer; text-align: left"><span style="flex: 1 1 auto">Search items, runs, steps</span><kbd style="font-family: 'Atkinson Hyperlegible Mono', ui-monospace, Menlo, monospace; font-size: 11px; padding: 0 5px; border: 1px solid {{c.line2}}; border-bottom-width: 2px; border-radius: 6px; color: {{c.ink2}}">⌘K</kbd></button>
+</header>
+
+<div style="padding: 24px 28px 40px; display: flex; flex-direction: column; gap: 24px">
+<section aria-label="Item summary" style="display: flex; flex-wrap: wrap; align-items: flex-end; gap: 16px 32px">
+<div style="display: flex; flex-direction: column; gap: 8px; min-width: 0; flex: 1 1 520px">
+<div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap">
+<span style="font-family: 'Atkinson Hyperlegible Mono', ui-monospace, Menlo, monospace; font-size: 14px; color: {{c.ink2}}">it_7f3a9c21</span>
+<button type="button" aria-label="Copy item id" style="width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid {{c.line}}; background: {{c.s1}}; border-radius: 10px; cursor: pointer"><svg width="13" height="13" viewBox="0 0 14 14" aria-hidden="true"><path d="M4.5 4.5H12.5V12.5H4.5ZM1.5 9.5V1.5H9.5" fill="none" stroke="{{c.ink2}}" stroke-width="1.4"></path></svg></button>
+<span style="display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px; background: {{b.awaitingReview.soft}}; color: {{b.awaitingReview.col}}; border-radius: 10px; font-size: 12px; font-weight: 700"><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="{{b.awaitingReview.d1}}" fill="none" stroke="{{b.awaitingReview.s1}}" stroke-width="1.6"></path><path d="{{b.awaitingReview.d2}}" fill="{{b.awaitingReview.f2}}"></path></svg>Awaiting review at analyst-review · 14 min</span>
+</div>
+<h1 style="margin: 0; font-family: 'Instrument Serif', 'Iowan Old Style', Georgia, serif; font-size: 46px; line-height: 50px; font-weight: 400; letter-spacing: -0.01em">T3 · 68 m² · Paris 19e <em style="color: {{c.ink2}}">€412,000</em></h1>
+<div style="display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 13px; color: {{c.ink2}}">
+<span>Run <a href="#" style="color: {{c.ink}}; font-weight: 700">06:00 today</a></span>
+<span>Revision <a href="#" style="color: {{c.ink}}; font-weight: 700">r14</a></span>
+<span>Stream <span style="font-family: 'Atkinson Hyperlegible Mono', ui-monospace, Menlo, monospace; color: {{c.ink}}">profitable</span></span>
+<span>Total cost <strong style="color: {{c.ink}}">$0.019</strong></span>
+<span>Created 06:04:12 · 2 sources</span>
+</div>
+</div>
+<div style="display: flex; gap: 8px; flex-wrap: wrap">
+<button type="button" style="padding: 8px 14px; background: {{c.s1}}; color: {{c.ink}}; border: 1px solid {{c.line2}}; border-radius: 10px; font: inherit; font-size: 13px; font-weight: 700; cursor: pointer">Replay from a step…</button>
+<a href="#" style="display: inline-flex; align-items: center; gap: 8px; padding: 8px 14px; background: {{c.acc}}; color: {{c.accInk}}; border-radius: 10px; font-size: 13px; font-weight: 700; text-decoration: none">Review now<kbd style="font-family: 'Atkinson Hyperlegible Mono', ui-monospace, Menlo, monospace; font-size: 11px; padding: 0 4px; border: 1px solid {{c.accInk}}; border-radius: 10px; opacity: 0.8">v</kbd></a>
+</div>
+</section>
+
+<div style="display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-start">
+<section aria-label="Attempts" style="flex: 999 1 640px; min-width: 0; background: {{c.s1}}; border: 1px solid {{c.line}}; border-radius: 18px; box-shadow: {{c.card}}">
+<div role="tablist" style="display: flex; gap: 4px; padding: 0 16px; border-bottom: 1px solid {{c.line}}">
+<button type="button" role="tab" aria-selected="true" style="padding: 12px 10px 10px; border: 0; border-bottom: 2px solid {{c.ink}}; background: transparent; color: {{c.ink}}; font: inherit; font-weight: 700; cursor: pointer">Journey · 7 steps</button>
+<button type="button" role="tab" aria-selected="false" style="padding: 12px 10px 10px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: {{c.ink2}}; font: inherit; cursor: pointer">Logs</button>
+<button type="button" role="tab" aria-selected="false" style="padding: 12px 10px 10px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: {{c.ink2}}; font: inherit; cursor: pointer">Raw events</button>
+</div>
+<ol style="list-style: none; margin: 0; padding: 8px 0">
+<sc-for list="{{attempts}}" as="a" hint-placeholder-count="7">
+<li style="display: flex; flex-direction: column">
+<div style="display: grid; grid-template-columns: 22px minmax(0, 150px) minmax(0, 1fr) 72px 64px 72px; gap: 12px; align-items: center; padding: 9px 16px; background: {{a.rowBg}}">
+<svg width="14" height="14" viewBox="0 0 12 12" aria-hidden="true"><path d="{{a.g.d1}}" fill="{{a.g.f1}}" stroke="{{a.g.s1}}" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"></path><path d="{{a.g.d2}}" fill="{{a.g.f2}}" stroke="{{a.g.s2}}" stroke-width="1.4" stroke-linecap="round"></path></svg>
+<span style="font-family: 'Atkinson Hyperlegible Mono', ui-monospace, Menlo, monospace; font-size: 13px; font-weight: 700">{{a.step}}</span>
+<span style="font-size: 13px; color: {{c.ink2}}; min-width: 0"><strong style="color: {{a.g.col}}">{{a.g.label}}</strong> · {{a.note}}</span>
+<span style="font-family: 'Atkinson Hyperlegible Mono', ui-monospace, Menlo, monospace; font-size: 12px; text-align: right">{{a.dur}}</span>
+<span style="font-family: 'Atkinson Hyperlegible Mono', ui-monospace, Menlo, monospace; font-size: 12px; text-align: right; color: {{c.ink2}}">{{a.cost}}</span>
+<span style="font-family: 'Atkinson Hyperlegible Mono', ui-monospace, Menlo, monospace; font-size: 12px; text-align: right; color: {{c.ink3}}">{{a.at}}</span>
+</div>
+<sc-if value="{{a.open}}" hint-placeholder-val="{{false}}">
+<div style="margin: 4px 16px 14px 50px; display: flex; flex-direction: column; gap: 10px">
+<div style="display: flex; align-items: center; gap: 10px; font-size: 12px; color: {{c.ink2}}">
+<span style="display: inline-flex; align-items: center; gap: 5px; padding: 1px 7px; border: 1px solid {{c.line}}; border-radius: 10px"><svg width="11" height="11" viewBox="0 0 12 12" aria-hidden="true"><path d="M6 1.3L11 10.4H1Z" fill="none" stroke="{{c.warn}}" stroke-width="1.6"></path></svg>Attempt 1 · failed · timeout after 30 s · retried</span>
+<span style="padding: 1px 7px; background: {{c.s2}}; border-radius: 10px; font-weight: 700; color: {{c.ink}}">Attempt 2 · transcript</span>
+<span style="margin-left: auto; font-family: 'Atkinson Hyperlegible Mono', ui-monospace, Menlo, monospace">in 2,310 tok · out 184 tok</span>
+</div>
+<details style="border: 1px solid {{c.line}}; border-radius: 14px; padding: 8px 12px; background: {{c.s2}}"><summary style="cursor: pointer; font-size: 12px; font-weight: 700; color: {{c.ink2}}">System prompt · 1,240 tokens · lessons r14 (4 rules)</summary></details>
+<div style="display: flex; flex-direction: column; gap: 4px; max-width: 620px">
+<span style="font-size: 11px; font-weight: 700; letter-spacing: 0.05em; color: {{c.ink3}}">INPUT</span>
+<div style="padding: 10px 12px; border: 1px solid {{c.line}}; border-radius: 14px; font-size: 13px; line-height: 20px">Score this listing for a buy-to-let investor. T3, 68 m², 4th floor without lift, rue de Crimée, Paris 19e. Asking €412,000. Needs kitchen and bathroom renovation. Seller notes: "bright, quiet courtyard".</div>
+</div>
+<div style="display: flex; flex-direction: column; gap: 4px; max-width: 620px">
+<span style="font-size: 11px; font-weight: 700; letter-spacing: 0.05em; color: {{c.ink3}}">TOOL CALL · 0.9 s</span>
+<div style="padding: 10px 12px; border: 1px dashed {{c.line2}}; border-radius: 14px; font-family: 'Atkinson Hyperlegible Mono', ui-monospace, Menlo, monospace; font-size: 12px; line-height: 18px; color: {{c.ink2}}"><span style="color: {{c.acc}}; font-weight: 700">get_comparables</span>({"zip": "75019", "rooms": 3})<br>→ 14 comparables · median €9,120/m² · p25 €8,400/m²</div>
+</div>
+<div style="display: flex; flex-direction: column; gap: 4px; max-width: 620px; align-self: flex-start">
+<span style="font-size: 11px; font-weight: 700; letter-spacing: 0.05em; color: {{c.ink3}}">FINAL OUTPUT · VALID</span>
+<div style="padding: 10px 12px; background: {{c.accSoft}}; border-radius: 14px; font-family: 'Atkinson Hyperlegible Mono', ui-monospace, Menlo, monospace; font-size: 12px; line-height: 18px; color: {{c.ink}}; white-space: pre">{ "score": 82,
+  "reasons": ["€6,059/m² vs €9,120 median (−34 %)",
+              "renovation needed: kitchen, bathroom"],
+  "confidence": 0.74 }</div>
+</div>
+</div>
+</sc-if>
+</li>
+</sc-for>
+</ol>
+</section>
+
+<div style="flex: 1 1 380px; min-width: 0; display: flex; flex-direction: column; gap: 24px">
+<section aria-label="Payload" style="background: {{c.s1}}; border: 1px solid {{c.line}}; border-radius: 18px; box-shadow: {{c.card}}">
+<div style="display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 1px solid {{c.line}}">
+<h2 style="margin: 0; font-size: 14px; font-weight: 700">Payload</h2>
+<span style="font-size: 12px; color: {{c.ink3}}">at analyst-review · 1.8 KB</span>
+<div style="flex: 1 1 auto"></div>
+<button type="button" style="padding: 3px 8px; border: 1px solid {{c.line}}; background: transparent; color: {{c.ink2}}; border-radius: 10px; font: inherit; font-size: 12px; cursor: pointer">Collapse all</button>
+<button type="button" style="padding: 3px 8px; border: 1px solid {{c.line}}; background: transparent; color: {{c.ink2}}; border-radius: 10px; font: inherit; font-size: 12px; cursor: pointer">Copy JSON</button>
+</div>
+<div style="padding: 10px 0; font-family: 'Atkinson Hyperlegible Mono', ui-monospace, Menlo, monospace; font-size: 12px; line-height: 20px">
+<sc-for list="{{json}}" as="j" hint-placeholder-count="14"><div style="display: flex; gap: 0; padding: 0 14px"><span style="width: 26px; flex: none; color: {{c.ink3}}; text-align: right; padding-right: 10px">{{j.n}}</span><span style="width: 14px; flex: none; color: {{c.ink3}}">{{j.caret}}</span><span style="padding-left: {{j.ind}}px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis"><span style="color: {{c.ink2}}">{{j.k}}</span><span style="color: {{j.vc}}">{{j.v}}</span></span></div></sc-for>
+</div>
+</section>
+
+<section aria-label="Artifacts" style="background: {{c.s1}}; border: 1px solid {{c.line}}; border-radius: 18px; box-shadow: {{c.card}}; padding: 12px 14px; display: flex; flex-direction: column; gap: 10px">
+<h2 style="margin: 0; font-size: 14px; font-weight: 700">Artifacts</h2>
+<div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px">
+<div role="img" aria-label="Photo placeholder" style="aspect-ratio: 4 / 3; background: {{c.s2}}; border: 1px solid {{c.line}}; display: flex; align-items: flex-end; padding: 6px; box-sizing: border-box; font-family: 'Atkinson Hyperlegible Mono', ui-monospace, Menlo, monospace; font-size: 11px; color: {{c.ink3}}">[photo 1 · living]</div>
+<div role="img" aria-label="Photo placeholder" style="aspect-ratio: 4 / 3; background: {{c.s2}}; border: 1px solid {{c.line}}; display: flex; align-items: flex-end; padding: 6px; box-sizing: border-box; font-family: 'Atkinson Hyperlegible Mono', ui-monospace, Menlo, monospace; font-size: 11px; color: {{c.ink3}}">[photo 2 · kitchen]</div>
+<div role="img" aria-label="Photo placeholder" style="aspect-ratio: 4 / 3; background: {{c.s2}}; border: 1px solid {{c.line}}; display: flex; align-items: flex-end; padding: 6px; box-sizing: border-box; font-family: 'Atkinson Hyperlegible Mono', ui-monospace, Menlo, monospace; font-size: 11px; color: {{c.ink3}}">+ 6 more</div>
+</div>
+<div style="display: flex; align-items: center; gap: 8px; font-size: 13px; color: {{c.ink2}}"><svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 1.5H10L13 4.5V14.5H3.5ZM10 1.5V4.5H13" fill="none" stroke="{{c.ink3}}" stroke-width="1.4"></path></svg>report.pdf · produced after review</div>
+</section>
+
+<section aria-label="Lineage" style="background: {{c.s1}}; border: 1px solid {{c.line}}; border-radius: 18px; box-shadow: {{c.card}}; padding: 12px 14px; display: flex; flex-direction: column; gap: 10px">
+<h2 style="margin: 0; font-size: 14px; font-weight: 700">Lineage</h2>
+<div style="display: flex; flex-direction: column; gap: 0; font-size: 12px">
+<sc-for list="{{lineage}}" as="l" hint-placeholder-count="5"><div style="display: flex; align-items: center; gap: 8px; padding: 5px 0 5px {{l.ind}}px; border-left: 1px solid {{c.line}}; margin-left: 6px"><span style="width: 10px; height: 1px; background: {{c.line2}}; margin-left: -1px"></span><a href="#" style="font-family: 'Atkinson Hyperlegible Mono', ui-monospace, Menlo, monospace; color: {{l.col}}; font-weight: {{l.fw}}">{{l.id}}</a><span style="color: {{c.ink3}}">{{l.note}}</span></div></sc-for>
+</div>
+</section>
+</div>
+</div>
+</div>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["light","dark"],"default":"light"},"$preview":{"width":1440,"height":1360}}'>
+const PAL = {
+  light: {bg:'#F7F4EE',s1:'#FFFFFF',s2:'#F3EFE8',s3:'#E6E0D5',line:'#E6E0D5',line2:'#D6CEC0',ink:'#1F1C18',ink2:'#4F4A42',ink3:'#6C665C',acc:'#0E6B66',accInk:'#FFFFFF',accSoft:'#E2EEEA',ok:'#2F6E3B',okSoft:'#E6EFE2',warn:'#8A5A0C',warnSoft:'#F7ECD5',bad:'#A8322A',badSoft:'#F8E4DF',rev:'#6A4A9C',revSoft:'#EFE8F6',mute:'#6C665C',muteSoft:'#EEEAE2',grain:'#0E6B66',hatch:'#D9D1C3',card:'0 1px 2px rgba(64,48,24,.05), 0 6px 20px rgba(64,48,24,.07)',shadow:'0 1px 2px rgba(64,48,24,.06), 0 12px 32px rgba(64,48,24,.10)'},
+  dark: {bg:'#0E1112',s1:'#15191B',s2:'#1B2023',s3:'#2A3135',line:'#2A3135',line2:'#3B4449',ink:'#E6EAE8',ink2:'#AEB6B9',ink3:'#8C969A',acc:'#3EC2B4',accInk:'#06201D',accSoft:'#123331',ok:'#6FC77F',okSoft:'#16291A',warn:'#E8AE45',warnSoft:'#2F2510',bad:'#F2806F',badSoft:'#3A1916',rev:'#AE9BF5',revSoft:'#241E3D',mute:'#8C969A',muteSoft:'#20262A',grain:'#3EC2B4',hatch:'#2E373B',shadow:'0 1px 2px rgba(0,0,0,.4), 0 12px 32px rgba(0,0,0,.45)'}
+};
+const SH = {circle:'M6 1.5a4.5 4.5 0 1 1 0 9a4.5 4.5 0 1 1 0-9Z',half:'M6 1.5a4.5 4.5 0 0 0 0 9Z',diamond:'M6 1.2L10.8 6L6 10.8L1.2 6Z',tri:'M6 1.3L11 10.4H1Z',square:'M2 2H10V10H2Z',check:'M1.8 6.4L4.8 9.3L10.2 2.9',slash:'M2.9 9.1L9.1 2.9',pause:'M3.8 2.5V9.5M8.2 2.5V9.5',x:'M4.2 4.2L7.8 7.8M7.8 4.2L4.2 7.8',replay:'M2.3 6a3.7 3.7 0 1 0 1.1-2.6M2.2 1.6V4.3H4.9'};
+function glyphs(c){
+  const N='M0 0';
+  const R=(d1,f1,s1,d2,f2,s2,col,soft,label)=>({d1,f1,s1,d2:d2||N,f2:f2||'none',s2:s2||'none',col,soft,label});
+  return {
+    running:R(SH.circle,c.acc,'none',0,0,0,c.acc,c.accSoft,'Running'),
+    pending:R(SH.circle,'none',c.ink3,0,0,0,c.ink3,c.muteSoft,'Pending'),
+    awaitingReview:R(SH.circle,'none',c.rev,SH.half,c.rev,0,c.rev,c.revSoft,'Awaiting review'),
+    done:R(SH.check,'none',c.ok,0,0,0,c.ok,c.okSoft,'Done'),
+    passed:R(SH.diamond,c.ok,c.ok,0,0,0,c.ok,c.okSoft,'Passed'),
+    active:R(SH.check,'none',c.ok,0,0,0,c.ok,c.okSoft,'Active'),
+    merged:R(SH.check,'none',c.ok,0,0,0,c.ok,c.okSoft,'Done')
+  };
+}
+function nav(c, active){
+  const mk=(id,label,count,tone)=>({label, count: count||'', fw: id===active?700:500, color: id===active?c.ink:c.ink2, bg: id===active?c.s1:'transparent', sh: id===active?('inset 0 0 0 1px '+c.line):'none', cc: tone==='bad'?c.bad:(tone==='rev'?c.rev:(tone==='warn'?c.warn:c.ink3))});
+  return {
+    g:[mk('inbox','Inbox','9','rev'),mk('nodes','Nodes'),mk('metrics','Metrics'),mk('logs','Logs')],
+    p:[mk('graph','Graph'),mk('runs','Runs'),mk('streams','Streams and items'),mk('dead','Dead letters','3','bad'),mk('insights','Insights','2','warn'),mk('lessons','Lessons'),mk('revisions','Revisions')]
+  };
+}
+class Component extends DCLogic {
+  renderVals() {
+    const theme = this.props.theme ?? 'light';
+    const c = PAL[theme] || PAL.light;
+    const b = glyphs(c);
+    const A = (step, g, note, dur, cost, at, open) => ({ step, g: b[g], note, dur, cost, at, open: !!open, rowBg: open ? c.s2 : 'transparent' });
+    const attempts = [
+      A('crawl-homesite','done','fetched homesite.example/annonces/…/2210417','1.2 s','—','06:04:12'),
+      A('dedupe','done','merged with it_c41e0b88 from classifieds','8 ms','—','06:04:13'),
+      A('score','done','2 attempts · score 82','3.4 s','$0.011','06:09:47', true),
+      A('keep-good','passed','score 82 ≥ 70','0 ms','—','06:09:47'),
+      A('rentability','done','marginPct 17.8, rent est. €1,640','410 ms','—','06:10:02'),
+      A('keep-profitable','passed','marginPct 17.8 ≥ 15','0 ms','—','06:10:02'),
+      A('analyst-review','awaitingReview','assigned to the review inbox','14 min','—','06:10:03')
+    ];
+    const S = c.ink, Nm = c.acc;
+    const J = (n, ind, caret, k, v, vc) => ({ n, ind, caret, k, v, vc: vc || S });
+    const json = [
+      J(1,0,'▾','','{',c.ink3),
+      J(2,14,'','"title": ','"T3 lumineux, cour calme"'),
+      J(3,14,'','"price": ','412000',Nm),
+      J(4,14,'','"surfaceM2": ','68',Nm),
+      J(5,14,'','"rooms": ','3',Nm),
+      J(6,14,'','"zip": ','"75019"'),
+      J(7,14,'','"floor": ','4',Nm),
+      J(8,14,'','"lift": ','false',Nm),
+      J(9,14,'','"url": ','"https://www.homesite.example/annonces/achat/appartement/paris-19eme-75/2210417.htm"'),
+      J(10,14,'▸','"photos": ','[ 8 items ]',c.ink3),
+      J(11,14,'','"score": ','82',Nm),
+      J(12,14,'','"rentEstimate": ','1640',Nm),
+      J(13,14,'','"marginPct": ','17.8',Nm),
+      J(14,14,'▸','"sources": ','[ 2 items ]',c.ink3),
+      J(15,0,'','','}',c.ink3)
+    ];
+    const lineage = [
+      {id:'it_1a8d4f02', note:'crawl-homesite · raw', ind:4, col:c.ink2, fw:500},
+      {id:'it_c41e0b88', note:'crawl-classifieds · merged duplicate', ind:4, col:c.ink2, fw:500},
+      {id:'it_7f3a9c21', note:'this item · 7 deliveries', ind:20, col:c.ink, fw:700},
+      {id:'report', note:'pending · after review', ind:36, col:c.ink3, fw:500}
+    ];
+    return { c, b, nav: nav(c, 'streams'), attempts, json, lineage };
+  }
+}
+</script>
+</body>
+</html>

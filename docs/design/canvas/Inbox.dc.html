@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Review inbox</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Mono:wght@400;500;700&amp;family=Atkinson+Hyperlegible+Next:wght@400;500;700;800&amp;family=Instrument+Serif:ital@0;1&amp;display=swap">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="width: 100%; min-height: 920px; box-sizing: border-box; display: flex; background: {{c.bg}}; color: {{c.ink}}; font-family: 'Atkinson Hyperlegible Next', 'Segoe UI', system-ui, sans-serif; font-size: 14px; line-height: 20px; font-variant-numeric: tabular-nums">
+
+<nav aria-label="Main" style="width: 228px; flex: none; box-sizing: border-box; background: {{c.s2}}; border-right: 1px solid {{c.line}}; padding: 18px 12px; display: flex; flex-direction: column; gap: 22px">
+<div style="display: flex; align-items: center; gap: 10px; padding: 0 8px">
+<svg width="22" height="22" viewBox="0 0 22 22" aria-hidden="true"><path d="M1 6C6 3.5 11 8.5 21 5.5M1 16.5C6 14 11 19 21 16" fill="none" stroke="{{c.ink}}" stroke-width="1.5" stroke-linecap="round"></path><circle cx="7" cy="11.2" r="1.9" fill="{{c.acc}}" opacity="0.45"></circle><circle cx="14" cy="11" r="2.3" fill="{{c.acc}}"></circle></svg>
+<span style="font-family: 'Instrument Serif', 'Iowan Old Style', Georgia, serif; font-size: 26px; line-height: 26px; font-weight: 400; letter-spacing: -0.01em">Millstream</span>
+</div>
+<button type="button" aria-label="Switch pipeline, current listings-daily" style="display: flex; align-items: center; gap: 8px; width: 100%; box-sizing: border-box; padding: 8px 10px; background: {{c.s1}}; color: {{c.ink}}; border: 1px solid {{c.line}}; border-radius: 10px; font: inherit; cursor: pointer; text-align: left"><span style="flex: 1 1 auto; font-family: 'Atkinson Hyperlegible Mono', ui-monospace, Menlo, monospace; font-size: 13px; font-weight: 700">listings-daily</span><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5L6 7.5L9 4.5" fill="none" stroke="{{c.ink2}}" stroke-width="1.5"></path></svg></button>
+<div style="display: flex; flex-direction: column; gap: 2px">
+<div style="padding: 0 10px 6px; font-family: 'Instrument Serif', Georgia, serif; font-style: italic; font-size: 17px; color: {{c.ink3}}">Workspace</div>
+<sc-for list="{{nav.g}}" as="n" hint-placeholder-count="4"><a href="#" style="display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: 10px; text-decoration: none; color: {{n.color}}; background: {{n.bg}}; font-weight: {{n.fw}}; box-shadow: {{n.sh}}"><span>{{n.label}}</span><span style="margin-left: auto; font-family: 'Atkinson Hyperlegible Mono', ui-monospace, Menlo, monospace; font-size: 12px; font-weight: 700; color: {{n.cc}}">{{n.count}}</span></a></sc-for>
+</div>
+<div style="display: flex; flex-direction: column; gap: 2px">
+<div style="padding: 0 10px 6px; font-family: 'Instrument Serif', Georgia, serif; font-style: italic; font-size: 17px; color: {{c.ink3}}">Pipeline</div>
+<sc-for list="{{nav.p}}" as="n" hint-placeholder-count="7"><a href="#" style="display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: 10px; text-decoration: none; color: {{n.color}}; background: {{n.bg}}; font-weight: {{n.fw}}; box-shadow: {{n.sh}}"><span>{{n.label}}</span><span style="margin-left: auto; font-family: 'Atkinson Hyperlegible Mono', ui-monospace, Menlo, monospace; font-size: 12px; font-weight: 700; color: {{n.cc}}">{{n.count}}</span></a></sc-for>
+</div>
+<div style="margin-top: auto; display: flex; flex-direction: column; gap: 8px; padding: 12px 10px 0; border-top: 1px solid {{c.line}}; font-size: 12px; color: {{c.ink2}}">
+<div style="display: flex; align-items: center; gap: 8px"><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M1.8 6.4L4.8 9.3L10.2 2.9" fill="none" stroke="{{c.ok}}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path></svg><span>Engine <strong style="color: {{c.ink}}">mill-01</strong> active</span></div>
+<div style="font-family: 'Atkinson Hyperlegible Mono', ui-monospace, Menlo, monospace; font-size: 11px; color: {{c.ink3}}">Signed in as Claire M. · reviewer</div>
+</div>
+</nav>
+
+<main style="flex: 1 1 0; min-width: 0; display: flex; flex-direction: column">
+<header style="height: 56px; flex: none; box-sizing: border-box; display: flex; align-items: center; gap: 14px; padding: 0 24px; border-bottom: 1px solid {{c.line}}; background: {{c.s1}}">
+<h1 style="margin: 0; font-family: 'Instrument Serif', 'Iowan Old Style', Georgia, serif; font-size: 30px; line-height: 32px; font-weight: 400">Inbox</h1>
+<span style="font-size: 13px; color: {{c.ink2}}"><strong style="color: {{c.rev}}">9</strong> to review · <strong style="color: {{c.ink}}">1</strong> sample · oldest 14 min</span>
+<button type="button" style="display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; background: transparent; color: {{c.ink}}; border: 1px solid {{c.line2}}; border-radius: 10px; font: inherit; font-size: 13px; cursor: pointer">All pipelines<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5L6 7.5L9 4.5" fill="none" stroke="{{c.ink2}}" stroke-width="1.5"></path></svg></button>
+<div style="flex: 1 1 auto"></div>
+<span style="display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: {{c.ink2}}"><kbd style="font-family: 'Atkinson Hyperlegible Mono', ui-monospace, Menlo, monospace; font-size: 11px; padding: 0 5px; border: 1px solid {{c.line2}}; border-bottom-width: 2px; border-radius: 6px">?</kbd>All shortcuts</span>
+<button type="button" style="display: inline-flex; align-items: center; gap: 10px; width: 220px; padding: 6px 10px; background: {{c.bg}}; color: {{c.ink3}}; border: 1px solid {{c.line}}; border-radius: 10px; font: inherit; font-size: 13px; cursor: pointer; text-align: left"><span style="flex: 1 1 auto">Search</span><kbd style="font-family: 'Atkinson Hyperlegible Mono', ui-monospace, Menlo, monospace; font-size: 11px; padding: 0 5px; border: 1px solid {{c.line2}}; border-bottom-width: 2px; border-radius: 6px; color: {{c.ink2}}">⌘K</kbd></button>
+</header>
+
+<div style="flex: 1 1 auto; display: flex; flex-wrap: wrap; min-height: 0">
+<section aria-label="Review queue" style="flex: 1 1 340px; max-width: 380px; box-sizing: border-box; border-right: 1px solid {{c.line}}; background: {{c.s1}}; display: flex; flex-direction: column">
+<div style="display: flex; align-items: center; gap: 8px; padding: 10px 16px; border-bottom: 1px solid {{c.line}}; font-size: 12px; color: {{c.ink2}}">
+<span>Oldest first</span><div style="flex: 1 1 auto"></div>
+<kbd style="font-family: 'Atkinson Hyperlegible Mono', ui-monospace, Menlo, monospace; font-size: 11px; padding: 0 5px; border: 1px solid {{c.line2}}; border-bottom-width: 2px; border-radius: 6px">j</kbd><kbd style="font-family: 'Atkinson Hyperlegible Mono', ui-monospace, Menlo, monospace; font-size: 11px; padding: 0 5px; border: 1px solid {{c.line2}}; border-bottom-width: 2px; border-radius: 6px">k</kbd><span>move</span>
+</div>
+<ul role="listbox" aria-label="Items to review" style="list-style: none; margin: 0; padding: 10px; display: flex; flex-direction: column; gap: 4px">
+<sc-for list="{{queue}}" as="q" hint-placeholder-count="9">
+<li role="option" aria-selected="{{q.ariaSel}}">
+<button type="button" onClick="{{q.pick}}" style="width: 100%; display: flex; flex-direction: column; gap: 5px; padding: 12px 14px; background: {{q.bg}}; border: 0; border-radius: 12px; box-shadow: {{q.sh}}; color: {{c.ink}}; font: inherit; text-align: left; cursor: pointer">
+<span style="display: flex; align-items: baseline; gap: 8px"><span style="font-weight: 700; font-size: 14px; flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">{{q.t}}</span><span style="font-family: 'Atkinson Hyperlegible Mono', ui-monospace, Menlo, monospace; font-size: 12px; color: {{c.ink3}}">{{q.w}}</span></span>
+<span style="display: flex; align-items: center; gap: 10px; font-size: 12px; color: {{c.ink2}}"><span>{{q.price}}</span><span>score <strong style="color: {{c.ink}}">{{q.score}}</strong></span><span>margin <strong style="color: {{c.ink}}">{{q.margin}}</strong></span>
+<sc-if value="{{q.sample}}" hint-placeholder-val="{{false}}"><span style="margin-left: auto; display: inline-flex; align-items: center; gap: 4px; padding: 0 6px; color: {{c.rev}}; border: 1px solid {{c.rev}}; border-radius: 10px; font-weight: 700"><svg width="10" height="10" viewBox="0 0 12 12" aria-hidden="true"><path d="M6 1.2L10.8 6L6 10.8L1.2 6Z" fill="none" stroke="{{c.rev}}" stroke-width="1.6"></path></svg>Sample</span></sc-if>
+</span>
+</button>
+</li>
+</sc-for>
+</ul>
+</section>
+
+<section aria-label="Item under review" style="flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column">
+<div style="flex: 1 1 auto; padding: 24px 32px; display: flex; flex-direction: column; gap: 22px; max-width: 860px">
+<div style="display: flex; flex-direction: column; gap: 6px">
+<div style="display: flex; align-items: center; gap: 10px; font-size: 12px; color: {{c.ink3}}"><span>1 of 9 · analyst-review · listings-daily</span><a href="#" style="font-family: 'Atkinson Hyperlegible Mono', ui-monospace, Menlo, monospace; color: {{c.ink2}}">it_7f3a9c21</a><a href="#" style="margin-left: auto; color: {{c.acc}}; font-weight: 700">Open homesite.example listing</a></div>
+<h2 style="margin: 0; font-family: 'Instrument Serif', 'Iowan Old Style', Georgia, serif; font-size: 46px; line-height: 50px; font-weight: 400; letter-spacing: -0.01em">T3 · 68 m² · Paris <em>19e</em></h2>
+<div style="font-size: 15px; color: {{c.ink2}}">Rue de Crimée, 75019 Paris · 4th floor, no lift · posted yesterday</div>
+</div>
+
+<div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px">
+<div role="img" aria-label="Photo placeholder" style="aspect-ratio: 4 / 3; background: {{c.s2}}; border: 1px solid {{c.line}}; display: flex; align-items: flex-end; padding: 8px; box-sizing: border-box; font-family: 'Atkinson Hyperlegible Mono', ui-monospace, Menlo, monospace; font-size: 11px; color: {{c.ink3}}">[living room]</div>
+<div role="img" aria-label="Photo placeholder" style="aspect-ratio: 4 / 3; background: {{c.s2}}; border: 1px solid {{c.line}}; display: flex; align-items: flex-end; padding: 8px; box-sizing: border-box; font-family: 'Atkinson Hyperlegible Mono', ui-monospace, Menlo, monospace; font-size: 11px; color: {{c.ink3}}">[kitchen]</div>
+<div role="img" aria-label="Photo placeholder" style="aspect-ratio: 4 / 3; background: {{c.s2}}; border: 1px solid {{c.line}}; display: flex; align-items: flex-end; padding: 8px; box-sizing: border-box; font-family: 'Atkinson Hyperlegible Mono', ui-monospace, Menlo, monospace; font-size: 11px; color: {{c.ink3}}">[bedroom]</div>
+<div role="img" aria-label="Floor plan placeholder" style="aspect-ratio: 4 / 3; background: {{c.s2}}; border: 1px solid {{c.line}}; display: flex; align-items: flex-end; padding: 8px; box-sizing: border-box; font-family: 'Atkinson Hyperlegible Mono', ui-monospace, Menlo, monospace; font-size: 11px; color: {{c.ink3}}">[plan] + 5</div>
+</div>
+
+<dl style="margin: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px">
+<sc-for list="{{facts}}" as="f" hint-placeholder-count="5"><div style="background: {{c.s1}}; padding: 14px 16px; border-radius: 16px; box-shadow: {{c.card}}; display: flex; flex-direction: column; gap: 2px"><dt style="font-size: 12px; color: {{c.ink3}}">{{f.k}}</dt><dd style="margin: 0; font-family: 'Instrument Serif', 'Iowan Old Style', Georgia, serif; font-size: 32px; line-height: 36px; font-weight: 400">{{f.v}}</dd><dd style="margin: 0; font-size: 12px; color: {{c.ink2}}">{{f.sub}}</dd></div></sc-for>
+</dl>
+
+<div style="display: flex; gap: 16px; align-items: flex-start; padding: 14px 16px; background: {{c.s1}}; border: 1px solid {{c.line}}; border-radius: 16px">
+<div style="display: flex; flex-direction: column; align-items: center; min-width: 64px"><span style="font-family: 'Instrument Serif', 'Iowan Old Style', Georgia, serif; font-size: 56px; line-height: 52px; font-weight: 400; color: {{c.acc}}">82</span><span style="font-size: 11px; color: {{c.ink3}}">score / 100</span></div>
+<div style="display: flex; flex-direction: column; gap: 4px; font-size: 14px; line-height: 21px"><strong>Why the agent rated it 82</strong><span style="color: {{c.ink2}}">€6,059/m², 34 % under the 19e median for 3 rooms (14 comparables). Kitchen and bathroom need renovation. Confidence 0.74.</span><a href="#" style="font-size: 12px; color: {{c.acc}}; font-weight: 700">Read the transcript</a></div>
+</div>
+
+<fieldset style="margin: 0; padding: 16px; border: 1.5px dashed {{c.rev}}; border-radius: 16px; display: flex; flex-direction: column; gap: 14px; background: {{c.s1}}">
+<legend style="padding: 0 6px; display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 700; color: {{c.rev}}"><svg width="12" height="12" viewBox="0 0 14 14" aria-hidden="true"><path d="M9.5 2L12 4.5L5 11.5L2 12L2.5 9Z" fill="none" stroke="{{c.rev}}" stroke-width="1.4" stroke-linejoin="round"></path></svg>You can edit these fields</legend>
+<div style="display: flex; flex-wrap: wrap; gap: 16px">
+<div style="display: flex; flex-direction: column; gap: 6px; width: 180px">
+<label for="margin" style="font-size: 13px; font-weight: 700">Margin <span style="font-family: 'Atkinson Hyperlegible Mono', ui-monospace, Menlo, monospace; font-weight: 400; color: {{c.ink3}}">marginPct</span></label>
+<div style="display: flex; align-items: center; border: 2px solid {{c.acc}}; border-radius: 10px; background: {{c.bg}}"><input id="margin" value="16.5" style="flex: 1 1 auto; min-width: 0; height: 36px; padding: 0 10px; border: 0; background: transparent; color: {{c.ink}}; font-family: 'Atkinson Hyperlegible Mono', ui-monospace, Menlo, monospace; font-size: 15px; outline: none"><span style="padding-right: 10px; color: {{c.ink3}}">%</span></div>
+<span style="font-size: 12px; color: {{c.ink3}}">Was 17.8 · computed by rentability</span>
+</div>
+<div style="display: flex; flex-direction: column; gap: 6px; flex: 1 1 320px">
+<label for="notes" style="font-size: 13px; font-weight: 700">Notes <span style="font-family: 'Atkinson Hyperlegible Mono', ui-monospace, Menlo, monospace; font-weight: 400; color: {{c.ink3}}">notes</span></label>
+<textarea id="notes" rows="2" style="box-sizing: border-box; width: 100%; padding: 8px 10px; border: 1px solid {{c.line2}}; border-radius: 10px; background: {{c.bg}}; color: {{c.ink}}; font: inherit; font-size: 14px; line-height: 20px; resize: vertical">No lift: renovation budget closer to €45k than €30k.</textarea>
+</div>
+</div>
+</fieldset>
+</div>
+
+<div style="position: sticky; bottom: 0; border-top: 1px solid {{c.line}}; background: {{c.s1}}; padding: 12px 32px; display: flex; flex-direction: column; gap: 12px">
+<div aria-label="Your changes" style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; font-size: 13px">
+<strong>2 changes</strong>
+<span style="display: inline-flex; align-items: center; gap: 6px; font-family: 'Atkinson Hyperlegible Mono', ui-monospace, Menlo, monospace; font-size: 12px"><span style="color: {{c.ink2}}">marginPct</span><del style="padding: 0 4px; background: {{c.badSoft}}; color: {{c.bad}}">17.8</del><span aria-hidden="true">→</span><ins style="padding: 0 4px; background: {{c.okSoft}}; color: {{c.ok}}; text-decoration: none">16.5</ins></span>
+<span style="display: inline-flex; align-items: center; gap: 6px; font-family: 'Atkinson Hyperlegible Mono', ui-monospace, Menlo, monospace; font-size: 12px; min-width: 0"><span style="color: {{c.ink2}}">notes</span><del style="padding: 0 4px; background: {{c.badSoft}}; color: {{c.bad}}">empty</del><span aria-hidden="true">→</span><ins style="padding: 0 4px; background: {{c.okSoft}}; color: {{c.ok}}; text-decoration: none">"No lift: renovation budget…"</ins></span>
+</div>
+<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px">
+<button type="button" style="display: inline-flex; align-items: center; gap: 8px; height: 44px; padding: 0 16px; background: transparent; color: {{c.bad}}; border: 1px solid {{c.bad}}; border-radius: 10px; font: inherit; font-size: 14px; font-weight: 700; cursor: pointer">Reject…<kbd style="font-family: 'Atkinson Hyperlegible Mono', ui-monospace, Menlo, monospace; font-size: 11px; padding: 0 5px; border: 1px solid {{c.bad}}; border-radius: 10px">r</kbd></button>
+<button type="button" style="display: inline-flex; align-items: center; gap: 8px; height: 44px; padding: 0 16px; background: transparent; color: {{c.ink}}; border: 1px solid {{c.line2}}; border-radius: 10px; font: inherit; font-size: 14px; font-weight: 700; cursor: pointer">Discard edits<kbd style="font-family: 'Atkinson Hyperlegible Mono', ui-monospace, Menlo, monospace; font-size: 11px; padding: 0 5px; border: 1px solid {{c.line2}}; border-radius: 10px">Esc</kbd></button>
+<div style="flex: 1 1 auto"></div>
+<span style="font-size: 12px; color: {{c.ink3}}">Next item opens after you decide</span>
+<button type="button" style="display: inline-flex; align-items: center; gap: 8px; height: 44px; padding: 0 18px; background: {{c.acc}}; color: {{c.accInk}}; border: 0; border-radius: 10px; font: inherit; font-size: 14px; font-weight: 700; cursor: pointer">Approve with 2 edits<kbd style="font-family: 'Atkinson Hyperlegible Mono', ui-monospace, Menlo, monospace; font-size: 11px; padding: 0 5px; border: 1px solid {{c.accInk}}; border-radius: 10px">a</kbd></button>
+</div>
+</div>
+</section>
+</div>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["light","dark"],"default":"light"},"$preview":{"width":1440,"height":920}}'>
+const PAL = {
+  light: {bg:'#F7F4EE',s1:'#FFFFFF',s2:'#F3EFE8',s3:'#E6E0D5',line:'#E6E0D5',line2:'#D6CEC0',ink:'#1F1C18',ink2:'#4F4A42',ink3:'#6C665C',acc:'#0E6B66',accInk:'#FFFFFF',accSoft:'#E2EEEA',ok:'#2F6E3B',okSoft:'#E6EFE2',warn:'#8A5A0C',warnSoft:'#F7ECD5',bad:'#A8322A',badSoft:'#F8E4DF',rev:'#6A4A9C',revSoft:'#F3EEF8',mute:'#6C665C',muteSoft:'#EEEAE2',card:'0 1px 2px rgba(64,48,24,.05), 0 6px 20px rgba(64,48,24,.07)'},
+  dark: {bg:'#0E1112',s1:'#15191B',s2:'#1B2023',s3:'#2A3135',line:'#2A3135',line2:'#3B4449',ink:'#E6EAE8',ink2:'#AEB6B9',ink3:'#8C969A',acc:'#3EC2B4',accInk:'#06201D',accSoft:'#123331',ok:'#6FC77F',okSoft:'#16291A',warn:'#E8AE45',warnSoft:'#2F2510',bad:'#F2806F',badSoft:'#3A1916',rev:'#AE9BF5',revSoft:'#241E3D',mute:'#8C969A',muteSoft:'#20262A'}
+};
+function nav(c, active){
+  const mk=(id,label,count,tone)=>({label, count: count||'', fw: id===active?700:500, color: id===active?c.ink:c.ink2, bg: id===active?c.s1:'transparent', sh: id===active?('inset 0 0 0 1px '+c.line):'none', cc: tone==='bad'?c.bad:(tone==='rev'?c.rev:(tone==='warn'?c.warn:c.ink3))});
+  return {
+    g:[mk('inbox','Inbox','9','rev'),mk('nodes','Nodes'),mk('metrics','Metrics'),mk('logs','Logs')],
+    p:[mk('graph','Graph'),mk('runs','Runs'),mk('streams','Streams and items'),mk('dead','Dead letters','3','bad'),mk('insights','Insights','2','warn'),mk('lessons','Lessons'),mk('revisions','Revisions')]
+  };
+}
+class Component extends DCLogic {
+  constructor(props){ super(props); this.state = { sel: 0 }; }
+  renderVals() {
+    const theme = this.props.theme ?? 'light';
+    const c = PAL[theme] || PAL.light;
+    const raw = [
+      {t:'T3 · 68 m² · Paris 19e', price:'€412,000', score:'82', margin:'17.8 %', w:'14m'},
+      {t:'T2 · 44 m² · Pantin', price:'€268,000', score:'77', margin:'16.2 %', w:'13m'},
+      {t:'T4 · 91 m² · Montreuil', price:'€489,000', score:'74', margin:'15.4 %', w:'11m'},
+      {t:'Studio · 19 m² · Paris 20e', price:'€159,000', score:'88', margin:'21.0 %', w:'9m'},
+      {t:'T3 · 70 m² · Saint-Denis', price:'€251,000', score:'71', margin:'19.6 %', w:'8m'},
+      {t:'T2 · 39 m² · Paris 18e', price:'€322,000', score:'79', margin:'15.1 %', w:'6m', sample:true},
+      {t:'T3 · 62 m² · Bagnolet', price:'€338,000', score:'73', margin:'16.8 %', w:'4m'},
+      {t:'T2 · 47 m² · Ivry-sur-Seine', price:'€279,000', score:'76', margin:'17.3 %', w:'2m'},
+      {t:'Maison · 104 m² · Aubervilliers', price:'€455,000', score:'70', margin:'15.9 %', w:'1m'}
+    ];
+    const queue = raw.map((q, i) => Object.assign({ sample: false }, q, {
+      ariaSel: i === this.state.sel ? 'true' : 'false',
+      bg: i === this.state.sel ? c.revSoft : c.s1,
+      sh: i === this.state.sel ? ('inset 0 0 0 1.5px ' + c.rev) : 'none',
+      pick: () => this.setState({ sel: i })
+    }));
+    const facts = [
+      {k:'Price', v:'€412,000', sub:'asking'},
+      {k:'Price per m²', v:'€6,059', sub:'−34 % vs area median'},
+      {k:'Rent estimate', v:'€1,640', sub:'per month, unfurnished'},
+      {k:'Gross yield', v:'4.8 %', sub:'before charges'},
+      {k:'Surface', v:'68 m²', sub:'3 rooms · 2 bedrooms'}
+    ];
+    return { c, nav: nav(c, 'inbox'), queue, facts };
+  }
+}
+</script>
+</body>
+</html>

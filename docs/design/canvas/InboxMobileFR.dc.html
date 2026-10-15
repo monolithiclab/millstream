@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Boîte de revue · mobile</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Mono:wght@400;500;700&amp;family=Atkinson+Hyperlegible+Next:wght@400;500;700;800&amp;display=swap">
+<style>
+body{margin:0}
+a{color:#0A7770}a:hover{color:#075A55}
+</style>
+</helmet>
+<div style="width: 375px; min-height: 1240px; box-sizing: border-box; background: #F3F3EF; color: #15191B; font-family: 'Atkinson Hyperlegible Next', 'Segoe UI', system-ui, sans-serif; font-size: 15px; line-height: 22px; font-variant-numeric: tabular-nums; display: flex; flex-direction: column; position: relative">
+
+<header style="flex: none; background: #FFFFFF; border-bottom: 1px solid #D6D6CE">
+<div style="height: 52px; display: flex; align-items: center; gap: 4px; padding: 0 8px">
+<button type="button" aria-label="Liste des items" style="width: 44px; height: 44px; border: 0; background: transparent; cursor: pointer"><svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true"><path d="M3 5H15M3 9H15M3 13H15" stroke="#15191B" stroke-width="1.6"></path></svg></button>
+<span style="flex: 1 1 auto; font-size: 16px; font-weight: 800">Revue</span>
+<span style="font-size: 13px; color: #454D52; padding-right: 4px"><strong style="color: #5B45B0">1</strong> sur 9</span>
+<button type="button" aria-label="Item précédent" style="width: 44px; height: 44px; border: 0; background: transparent; cursor: pointer"><svg width="16" height="16" viewBox="0 0 18 18" aria-hidden="true"><path d="M11 3.5L5.5 9L11 14.5" fill="none" stroke="#B9BAB1" stroke-width="1.8"></path></svg></button>
+<button type="button" aria-label="Item suivant" style="width: 44px; height: 44px; border: 0; background: transparent; cursor: pointer"><svg width="16" height="16" viewBox="0 0 18 18" aria-hidden="true"><path d="M7 3.5L12.5 9L7 14.5" fill="none" stroke="#15191B" stroke-width="1.8"></path></svg></button>
+</div>
+<div aria-hidden="true" style="display: flex; gap: 2px; padding: 0 16px 10px"><span style="flex: 1 1 0; height: 4px; background: #5B45B0"></span><sc-for list="{{rest}}" as="r" hint-placeholder-count="8"><span style="flex: 1 1 0; height: 4px; background: #DEDED7"></span></sc-for></div>
+</header>
+
+<main style="flex: 1 1 auto; padding: 16px; display: flex; flex-direction: column; gap: 16px">
+<div style="display: flex; flex-direction: column; gap: 4px">
+<div style="font-size: 12px; color: #5F676C">listings-daily · analyst-review · attend depuis 14 min</div>
+<h1 style="margin: 0; font-size: 22px; line-height: 29px; font-weight: 800">T3 · 68 m² · Paris 19e</h1>
+<div style="font-size: 14px; color: #454D52">Rue de Crimée · 4e étage sans ascenseur</div>
+</div>
+
+<div style="display: grid; grid-template-columns: 2fr 1fr; gap: 6px">
+<div role="img" aria-label="Photo" style="aspect-ratio: 4 / 3; background: #E9E9E4; border: 1px solid #D6D6CE; display: flex; align-items: flex-end; padding: 8px; box-sizing: border-box; font-family: 'Atkinson Hyperlegible Mono', ui-monospace, Menlo, monospace; font-size: 11px; color: #5F676C">[séjour]</div>
+<div style="display: flex; flex-direction: column; gap: 6px">
+<div role="img" aria-label="Photo" style="flex: 1 1 0; background: #E9E9E4; border: 1px solid #D6D6CE"></div>
+<div style="flex: 1 1 0; background: #E9E9E4; border: 1px solid #D6D6CE; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; color: #454D52">+ 6</div>
+</div>
+</div>
+
+<dl style="margin: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1px; background: #D6D6CE; border: 1px solid #D6D6CE">
+<div style="background: #FFFFFF; padding: 10px 12px"><dt style="font-size: 12px; color: #5F676C">Prix</dt><dd style="margin: 0; font-size: 17px; font-weight: 700">412 000 €</dd></div>
+<div style="background: #FFFFFF; padding: 10px 12px"><dt style="font-size: 12px; color: #5F676C">Prix au m²</dt><dd style="margin: 0; font-size: 17px; font-weight: 700">6 059 €</dd><dd style="margin: 0; font-size: 12px; color: #454D52">−34 % / médiane</dd></div>
+<div style="background: #FFFFFF; padding: 10px 12px"><dt style="font-size: 12px; color: #5F676C">Loyer estimé</dt><dd style="margin: 0; font-size: 17px; font-weight: 700">1 640 €</dd><dd style="margin: 0; font-size: 12px; color: #454D52">par mois</dd></div>
+<div style="background: #FFFFFF; padding: 10px 12px"><dt style="font-size: 12px; color: #5F676C">Rendement brut</dt><dd style="margin: 0; font-size: 17px; font-weight: 700">4,8 %</dd></div>
+</dl>
+
+<div style="display: flex; gap: 12px; padding: 12px; background: #FFFFFF; border: 1px solid #D6D6CE; border-radius: 3px">
+<div style="display: flex; flex-direction: column; align-items: center; min-width: 52px"><span style="font-size: 26px; line-height: 30px; font-weight: 800; color: #0A7770">82</span><span style="font-size: 11px; color: #5F676C">sur 100</span></div>
+<div style="font-size: 14px; line-height: 21px; color: #454D52"><strong style="color: #15191B">Pourquoi 82 :</strong> 34 % sous la médiane du 19e pour un 3 pièces (14 biens comparables). Cuisine et salle de bain à refaire.</div>
+</div>
+
+<fieldset style="margin: 0; padding: 14px; border: 1.5px dashed #5B45B0; border-radius: 3px; background: #FFFFFF; display: flex; flex-direction: column; gap: 14px">
+<legend style="padding: 0 6px; font-size: 13px; font-weight: 700; color: #5B45B0">Champs modifiables</legend>
+<div style="display: flex; flex-direction: column; gap: 6px">
+<label for="m-margin" style="font-size: 14px; font-weight: 700">Marge <span style="font-family: 'Atkinson Hyperlegible Mono', ui-monospace, Menlo, monospace; font-weight: 400; font-size: 12px; color: #5F676C">marginPct</span></label>
+<div style="display: flex; align-items: center; border: 1px solid #B9BAB1; border-radius: 2px; background: #F3F3EF; height: 46px"><input id="m-margin" value="17,8" inputmode="decimal" style="flex: 1 1 auto; min-width: 0; height: 44px; padding: 0 12px; border: 0; background: transparent; color: #15191B; font-family: 'Atkinson Hyperlegible Mono', ui-monospace, Menlo, monospace; font-size: 16px"><span style="padding-right: 12px; color: #5F676C">%</span></div>
+</div>
+<div style="display: flex; flex-direction: column; gap: 6px">
+<label for="m-notes" style="font-size: 14px; font-weight: 700">Notes <span style="font-family: 'Atkinson Hyperlegible Mono', ui-monospace, Menlo, monospace; font-weight: 400; font-size: 12px; color: #5F676C">notes</span></label>
+<textarea id="m-notes" rows="3" placeholder="Ajouter une note pour l'analyste suivant" style="box-sizing: border-box; width: 100%; padding: 10px 12px; border: 1px solid #B9BAB1; border-radius: 2px; background: #F3F3EF; color: #15191B; font: inherit; font-size: 16px"></textarea>
+</div>
+</fieldset>
+</main>
+
+<div style="position: sticky; bottom: 0; background: #FFFFFF; border-top: 1px solid #D6D6CE; padding: 10px 12px 14px; display: grid; grid-template-columns: 1fr 1fr 1.4fr; gap: 8px">
+<button type="button" onClick="{{openReject}}" style="height: 48px; background: transparent; color: #B3261E; border: 1px solid #B3261E; border-radius: 2px; font: inherit; font-size: 15px; font-weight: 700; cursor: pointer">Rejeter</button>
+<button type="button" style="height: 48px; background: transparent; color: #15191B; border: 1px solid #B9BAB1; border-radius: 2px; font: inherit; font-size: 15px; font-weight: 700; cursor: pointer">Modifier</button>
+<button type="button" style="height: 48px; background: #0A7770; color: #FFFFFF; border: 0; border-radius: 2px; font: inherit; font-size: 15px; font-weight: 700; cursor: pointer">Approuver</button>
+</div>
+
+<sc-if value="{{rejectOpen}}" hint-placeholder-val="{{false}}">
+<div style="position: absolute; inset: 0; background: rgba(21, 25, 27, 0.45); display: flex; flex-direction: column; justify-content: flex-end">
+<div role="dialog" aria-modal="true" aria-labelledby="rj" style="background: #FFFFFF; border-radius: 6px 6px 0 0; padding: 18px 16px 16px; display: flex; flex-direction: column; gap: 12px">
+<h2 id="rj" style="margin: 0; font-size: 18px; font-weight: 800">Pourquoi rejeter ?</h2>
+<div style="display: flex; flex-direction: column; gap: 6px">
+<sc-for list="{{reasons}}" as="r" hint-placeholder-count="5"><label style="display: flex; align-items: center; gap: 12px; min-height: 46px; padding: 0 12px; border: 1px solid {{r.bd}}; background: {{r.bg}}; border-radius: 2px; font-size: 15px; cursor: pointer"><input type="radio" name="reason" checked="{{r.on}}" onChange="{{r.pick}}" style="width: 18px; height: 18px; accent-color: #0A7770">{{r.label}}</label></sc-for>
+</div>
+<div style="display: grid; grid-template-columns: 1fr 1.4fr; gap: 8px"><button type="button" onClick="{{closeReject}}" style="height: 48px; background: transparent; border: 1px solid #B9BAB1; border-radius: 2px; font: inherit; font-size: 15px; font-weight: 700; color: #15191B; cursor: pointer">Annuler</button><button type="button" style="height: 48px; background: #B3261E; border: 0; border-radius: 2px; font: inherit; font-size: 15px; font-weight: 700; color: #FFFFFF; cursor: pointer">Rejeter l'item</button></div>
+</div>
+</div>
+</sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":375,"height":1240}}'>
+class Component extends DCLogic {
+  constructor(props){ super(props); this.state = { reject: false, reason: 0 }; }
+  renderVals() {
+    const labels = ['Trop cher pour le secteur', 'Données erronées', 'Doublon', 'Bien hors critères', 'Autre (préciser)'];
+    const reasons = labels.map((label, i) => ({ label, on: i === this.state.reason, bd: i === this.state.reason ? '#0A7770' : '#D6D6CE', bg: i === this.state.reason ? '#DCEEEB' : '#FFFFFF', pick: () => this.setState({ reason: i }) }));
+    return {
+      rest: Array.from({ length: 8 }, () => ({})),
+      reasons,
+      rejectOpen: this.state.reject,
+      openReject: () => this.setState({ reject: true }),
+      closeReject: () => this.setState({ reject: false })
+    };
+  }
+}
+</script>
+</body>
+</html>

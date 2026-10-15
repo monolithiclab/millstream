@@ -33,6 +33,7 @@ reasoning, and `make help` for every command.
 | `docs/specs/20261014.platform-design.md` | The platform design: concepts, file format, execution model, protocol, UI, deployment, milestones |
 | `docs/decisions.md` | Architecture decisions D1 onward |
 | `docs/design/20261015.ui-brief.md` | Design brief for the web UI, written for Claude Design |
+| `docs/design/canvas/` | Snapshot of the Claude Design canvas for the web UI, with its version id |
 | `ROADMAP.md` | Parked ideas and follow-ups |
 
 ## Workflow

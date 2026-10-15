@@ -1,0 +1,303 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Millstream components</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Mono:wght@400;500;700&amp;family=Atkinson+Hyperlegible+Next:wght@400;500;700;800&amp;family=Instrument+Serif:ital@0;1&amp;display=swap">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="width: 1440px; min-height: 2800px; box-sizing: border-box; padding: 56px 64px; background: {{c.bg}}; color: {{c.ink}}; font-family: 'Atkinson Hyperlegible Next', 'Segoe UI', system-ui, sans-serif; font-size: 14px; line-height: 20px; font-variant-numeric: tabular-nums; display: flex; flex-direction: column; gap: 24px">
+<header style="display: flex; align-items: baseline; gap: 16px"><h1 style="margin: 0; font-family: 'Instrument Serif', 'Iowan Old Style', Georgia, serif; font-size: 64px; line-height: 64px; font-weight: 400; letter-spacing: -0.02em">Components</h1><span style="font-size: 14px; color: {{c.ink2}}">{{themeLabel}} theme · every state shown is shape + word + colour</span></header>
+
+<section aria-label="Status badges" style="background: {{c.s1}}; border: 1px solid {{c.line}}; border-radius: 20px; box-shadow: {{c.card}}; padding: 26px 28px; display: flex; flex-direction: column; gap: 14px">
+<h2 style="margin: 0; font-family: 'Instrument Serif', 'Iowan Old Style', Georgia, serif; font-size: 30px; line-height: 34px; font-weight: 400">Status badge</h2>
+<div style="display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 12px 20px; align-items: center">
+<sc-for list="{{concepts}}" as="k" hint-placeholder-count="9">
+<span style="font-size: 13px; font-weight: 700; color: {{c.ink2}}">{{k.name}}</span>
+<span style="display: flex; flex-wrap: wrap; gap: 8px"><sc-for list="{{k.states}}" as="s" hint-placeholder-count="5"><span style="display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px 4px 9px; background: {{s.soft}}; color: {{s.col}}; border-radius: 999px; font-size: 12px; font-weight: 700; white-space: nowrap"><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="{{s.d1}}" fill="{{s.f1}}" stroke="{{s.s1}}" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"></path><path d="{{s.d2}}" fill="{{s.f2}}" stroke="{{s.s2}}" stroke-width="1.4" stroke-linecap="round"></path></svg>{{s.label}}</span></sc-for></span>
+</sc-for>
+</div>
+</section>
+
+<div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px">
+
+<section aria-label="Step nodes" style="background: {{c.s1}}; border: 1px solid {{c.line}}; border-radius: 20px; box-shadow: {{c.card}}; padding: 26px 28px; display: flex; flex-direction: column; gap: 14px">
+<h2 style="margin: 0; font-family: 'Instrument Serif', 'Iowan Old Style', Georgia, serif; font-size: 30px; line-height: 34px; font-weight: 400">Step node</h2>
+<div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 22px 14px; padding-top: 10px">
+<sc-for list="{{nodes}}" as="n" hint-placeholder-count="8">
+<div style="display: flex; flex-direction: column; gap: 6px">
+<div style="position: relative; height: 92px; box-sizing: border-box; padding: 8px 9px; display: flex; flex-direction: column; gap: 6px; background-color: {{n.bg}}; background-image: {{n.img}}; border: {{n.bw}}px {{n.bs}} {{n.bc}}; border-radius: 14px; box-shadow: {{n.shadow}}; opacity: {{n.op}}">
+<span style="display: flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 700; color: {{n.kcol}}"><svg width="13" height="13" viewBox="0 0 16 16" aria-hidden="true"><path d="{{n.kd}}" fill="none" stroke="{{n.kcol}}" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"></path></svg>{{n.kind}}<svg width="11" height="11" viewBox="0 0 12 12" aria-hidden="true" style="margin-left: auto"><path d="{{n.g.d1}}" fill="{{n.g.f1}}" stroke="{{n.g.s1}}" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"></path><path d="{{n.g.d2}}" fill="{{n.g.f2}}" stroke="{{n.g.s2}}" stroke-width="1.4"></path></svg></span>
+<span style="font-size: 13px; font-weight: 700">{{n.name}}</span>
+<span style="font-family: 'Instrument Serif', 'Iowan Old Style', Georgia, serif; font-size: 28px; line-height: 26px; font-weight: 400; color: {{n.bigCol}}">{{n.big}}</span>
+<sc-if value="{{n.tag}}" hint-placeholder-val="{{false}}"><span style="position: absolute; top: -10px; right: 6px; padding: 0 5px; font-size: 10.5px; font-weight: 700; line-height: 16px; background: {{n.tagSoft}}; color: {{n.tagCol}}; border: 1px solid {{n.tagCol}}; border-radius: 10px">{{n.tagText}}</span></sc-if>
+</div>
+<span style="font-size: 12px; color: {{c.ink2}}">{{n.caption}}</span>
+</div>
+</sc-for>
+</div>
+</section>
+
+<section aria-label="Channels and queues" style="background: {{c.s1}}; border: 1px solid {{c.line}}; border-radius: 20px; box-shadow: {{c.card}}; padding: 26px 28px; display: flex; flex-direction: column; gap: 14px">
+<h2 style="margin: 0; font-family: 'Instrument Serif', 'Iowan Old Style', Georgia, serif; font-size: 30px; line-height: 34px; font-weight: 400">Edge (channel) and queue indicator</h2>
+<svg width="100%" height="170" viewBox="0 0 600 170" role="img" aria-label="Channels at three volumes, an idle channel, and a queue of grains packed against a step">
+<path d="M10 20H300" stroke="{{c.bank}}" stroke-width="5"></path><path d="M10 20H300" stroke="{{c.chan}}" stroke-width="3"></path><path d="M16 20H296" stroke="{{c.grain}}" stroke-linecap="round" stroke-width="2" stroke-dasharray="3 22"></path>
+<path d="M10 55H300" stroke="{{c.bank}}" stroke-width="8"></path><path d="M10 55H300" stroke="{{c.chan}}" stroke-width="6"></path><path d="M16 55H296" stroke="{{c.grain}}" stroke-linecap="round" stroke-width="4" stroke-dasharray="4 14"></path>
+<path d="M10 95H300" stroke="{{c.bank}}" stroke-width="12"></path><path d="M10 95H300" stroke="{{c.chan}}" stroke-width="10"></path><path d="M16 95H296" stroke="{{c.grain}}" stroke-linecap="round" stroke-width="5" stroke-dasharray="4 9"></path>
+<path d="M10 135H300" stroke="{{c.bank}}" stroke-width="10"></path><path d="M10 135H300" stroke="{{c.chan}}" stroke-width="8"></path>
+<path d="M340 95H520" stroke="{{c.bank}}" stroke-width="12"></path><path d="M340 95H520" stroke="{{c.chan}}" stroke-width="10"></path>
+<path d="M346 95H440" stroke="{{c.grain}}" stroke-linecap="round" stroke-width="5" stroke-dasharray="4 10"></path>
+<path d="M452 95H519" stroke="{{c.grain}}" stroke-linecap="round" stroke-width="6" stroke-dasharray="4 1.5"></path>
+<rect x="520" y="70" width="70" height="50" rx="3" fill="{{c.s1}}" stroke="{{c.acc}}" stroke-width="2"></rect>
+<text x="530" y="100" font-family="Atkinson Hyperlegible Mono, monospace" font-size="12" fill="{{c.ink}}">score</text>
+<text x="452" y="78" font-family="Atkinson Hyperlegible Mono, monospace" font-size="11" font-weight="700" fill="{{c.acc}}">186</text>
+<text x="310" y="24" font-family="Atkinson Hyperlegible Mono, monospace" font-size="11" fill="{{c.ink3}}">35/day</text>
+<text x="310" y="59" font-family="Atkinson Hyperlegible Mono, monospace" font-size="11" fill="{{c.ink3}}">310/day</text>
+<text x="310" y="99" font-family="Atkinson Hyperlegible Mono, monospace" font-size="11" fill="{{c.ink3}}">1,240/day</text>
+<text x="310" y="139" font-family="Atkinson Hyperlegible Mono, monospace" font-size="11" fill="{{c.ink3}}">idle</text>
+</svg>
+<div style="display: flex; flex-direction: column; gap: 10px">
+<sc-for list="{{queues}}" as="q" hint-placeholder-count="4"><div style="display: flex; align-items: center; gap: 12px"><span style="display: flex; gap: 2px"><sc-for list="{{q.segs}}" as="s" hint-placeholder-count="10"><span style="width: 8px; height: 8px; border-radius: 50%; background: {{s.bg}}"></span></sc-for></span><span style="font-family: 'Atkinson Hyperlegible Mono', ui-monospace, Menlo, monospace; font-size: 12px; font-weight: 700; color: {{q.col}}">{{q.n}}</span><span style="font-size: 12px; color: {{c.ink3}}">{{q.note}}</span></div></sc-for>
+</div>
+</section>
+
+<section aria-label="Run bar" style="background: {{c.s1}}; border: 1px solid {{c.line}}; border-radius: 20px; box-shadow: {{c.card}}; padding: 26px 28px; display: flex; flex-direction: column; gap: 14px">
+<h2 style="margin: 0; font-family: 'Instrument Serif', 'Iowan Old Style', Georgia, serif; font-size: 30px; line-height: 34px; font-weight: 400">Run bar</h2>
+<sc-for list="{{runs}}" as="r" hint-placeholder-count="3">
+<a href="#" style="display: grid; grid-template-columns: 170px minmax(0, 1fr) 110px; gap: 14px; align-items: center; text-decoration: none; color: {{c.ink}}; padding: 8px 0; border-bottom: 1px solid {{c.line}}">
+<span style="display: flex; flex-direction: column; gap: 2px"><strong style="font-size: 13px">{{r.when}}</strong><span style="display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 700; color: {{r.g.col}}"><svg width="11" height="11" viewBox="0 0 12 12" aria-hidden="true"><path d="{{r.g.d1}}" fill="{{r.g.f1}}" stroke="{{r.g.s1}}" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"></path><path d="{{r.g.d2}}" fill="{{r.g.f2}}" stroke="{{r.g.s2}}" stroke-width="1.4"></path></svg>{{r.g.label}}</span></span>
+<span style="display: flex; height: 10px; background: {{c.s2}}"><sc-for list="{{r.segs}}" as="s" hint-placeholder-count="3"><span style="width: {{s.w}}%; background-color: {{s.bg}}; background-image: {{s.img}}; box-sizing: border-box; border: {{s.bd}}"></span></sc-for></span>
+<span style="font-family: 'Atkinson Hyperlegible Mono', ui-monospace, Menlo, monospace; font-size: 12px; color: {{c.ink2}}; text-align: right">{{r.meta}}</span>
+</a>
+</sc-for>
+</section>
+
+<section aria-label="Data table" style="background: {{c.s1}}; border: 1px solid {{c.line}}; border-radius: 20px; box-shadow: {{c.card}}; padding: 26px 28px; display: flex; flex-direction: column; gap: 14px">
+<h2 style="margin: 0; font-family: 'Instrument Serif', 'Iowan Old Style', Georgia, serif; font-size: 30px; line-height: 34px; font-weight: 400">Data table · virtualised, server-filtered</h2>
+<label style="display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 10px; background: {{c.bg}}; border: 1px solid {{c.line}}; border-radius: 10px"><span style="font-family: 'Atkinson Hyperlegible Mono', ui-monospace, Menlo, monospace; font-size: 11px; font-weight: 700; color: {{c.ink3}}">CEL</span><input value="item.marginPct &gt;= 15 &amp;&amp; item.zip.startsWith(&quot;750&quot;)" aria-label="Filter" style="flex: 1 1 auto; min-width: 0; border: 0; background: transparent; color: {{c.ink}}; font-family: 'Atkinson Hyperlegible Mono', ui-monospace, Menlo, monospace; font-size: 12px; outline: none"><span style="font-size: 12px; color: {{c.ink3}}">31 of 50,214</span></label>
+<table style="width: 100%; border-collapse: collapse; font-size: 13px">
+<thead><tr style="text-align: left; font-size: 12px; color: {{c.ink3}}"><th scope="col" style="padding: 6px 8px; font-weight: 700">Item</th><th scope="col" style="padding: 6px 8px; font-weight: 700">Key</th><th scope="col" style="padding: 6px 8px; font-weight: 700">Status</th><th scope="col" style="padding: 6px 8px; font-weight: 700; text-align: right">Cost</th></tr></thead>
+<tbody>
+<sc-for list="{{table}}" as="t" hint-placeholder-count="4"><tr style="border-top: 1px solid {{c.line}}; background: {{t.bg}}; box-shadow: {{t.sh}}"><td style="padding: 8px; font-family: 'Atkinson Hyperlegible Mono', ui-monospace, Menlo, monospace; white-space: nowrap">{{t.id}}</td><td style="padding: 8px; max-width: 200px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-family: 'Atkinson Hyperlegible Mono', ui-monospace, Menlo, monospace; font-size: 12px; color: {{c.ink2}}" title="{{t.key}}">{{t.key}}</td><td style="padding: 8px; font-size: 12px; font-weight: 700; color: {{t.g.col}}; white-space: nowrap"><span style="display: inline-flex; align-items: center; gap: 5px"><svg width="11" height="11" viewBox="0 0 12 12" aria-hidden="true"><path d="{{t.g.d1}}" fill="{{t.g.f1}}" stroke="{{t.g.s1}}" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"></path><path d="{{t.g.d2}}" fill="{{t.g.f2}}" stroke="{{t.g.s2}}" stroke-width="1.4"></path></svg>{{t.label}}</span></td><td style="padding: 8px; text-align: right; font-family: 'Atkinson Hyperlegible Mono', ui-monospace, Menlo, monospace">{{t.cost}}</td></tr></sc-for>
+</tbody>
+</table>
+<span style="font-size: 12px; color: {{c.ink3}}">Rows: default · hover · keyboard focus (j/k) · selected. Ids truncate in the middle; full value on hover and copy.</span>
+</section>
+
+<section aria-label="JSON viewer with diff" style="background: {{c.s1}}; border: 1px solid {{c.line}}; border-radius: 20px; box-shadow: {{c.card}}; padding: 26px 28px; display: flex; flex-direction: column; gap: 14px">
+<h2 style="margin: 0; font-family: 'Instrument Serif', 'Iowan Old Style', Georgia, serif; font-size: 30px; line-height: 34px; font-weight: 400">JSON viewer · diff</h2>
+<div style="border: 1px solid {{c.line}}; border-radius: 10px; padding: 8px 0; font-family: 'Atkinson Hyperlegible Mono', ui-monospace, Menlo, monospace; font-size: 12px; line-height: 20px">
+<sc-for list="{{diff}}" as="d" hint-placeholder-count="8"><div style="display: flex; background: {{d.bg}}"><span style="width: 28px; flex: none; text-align: right; padding-right: 8px; color: {{c.ink3}}">{{d.n}}</span><span style="width: 16px; flex: none; color: {{d.mc}}; font-weight: 700">{{d.m}}</span><span style="padding-left: {{d.ind}}px; color: {{d.col}}; white-space: nowrap">{{d.t}}</span></div></sc-for>
+</div>
+<span style="font-size: 12px; color: {{c.ink3}}">Removed and added lines carry − and + marks, not only colour. Collapse with ▸, copy a value or path from the line menu.</span>
+</section>
+
+<section aria-label="Transcript view" style="background: {{c.s1}}; border: 1px solid {{c.line}}; border-radius: 20px; box-shadow: {{c.card}}; padding: 26px 28px; display: flex; flex-direction: column; gap: 12px">
+<h2 style="margin: 0; font-family: 'Instrument Serif', 'Iowan Old Style', Georgia, serif; font-size: 30px; line-height: 34px; font-weight: 400">Transcript view</h2>
+<details style="border: 1px solid {{c.line}}; border-radius: 14px; padding: 8px 12px; background: {{c.s2}}"><summary style="cursor: pointer; font-size: 12px; font-weight: 700; color: {{c.ink2}}">System · 1,240 tokens · lessons r14</summary></details>
+<div style="display: flex; flex-direction: column; gap: 4px; max-width: 520px"><span style="font-size: 11px; font-weight: 700; letter-spacing: 0.05em; color: {{c.ink3}}">INPUT</span><div style="padding: 10px 12px; border: 1px solid {{c.line}}; border-radius: 14px; font-size: 13px; line-height: 20px">Score this listing for a buy-to-let investor. T3, 68 m², rue de Crimée…</div></div>
+<div style="display: flex; flex-direction: column; gap: 4px; max-width: 520px"><span style="font-size: 11px; font-weight: 700; letter-spacing: 0.05em; color: {{c.ink3}}">TOOL CALL · 0.9 s</span><div style="padding: 10px 12px; border: 1px dashed {{c.line2}}; border-radius: 14px; font-family: 'Atkinson Hyperlegible Mono', ui-monospace, Menlo, monospace; font-size: 12px; color: {{c.ink2}}"><span style="color: {{c.acc}}; font-weight: 700">get_comparables</span>({"zip": "75019"}) → 14 results</div></div>
+<div style="display: flex; flex-direction: column; gap: 4px; max-width: 520px"><span style="font-size: 11px; font-weight: 700; letter-spacing: 0.05em; color: {{c.bad}}">FINAL OUTPUT · INVALID</span><div style="padding: 10px 12px; background: {{c.badSoft}}; border-radius: 14px; font-size: 13px; line-height: 20px">This listing appears undervalued relative to comparable properties…<br><span style="font-family: 'Atkinson Hyperlegible Mono', ui-monospace, Menlo, monospace; font-size: 12px; color: {{c.bad}}">schema: "score" missing</span></div></div>
+</section>
+
+<section aria-label="Live log tail" style="background: {{c.s1}}; border: 1px solid {{c.line}}; border-radius: 20px; box-shadow: {{c.card}}; padding: 26px 28px; display: flex; flex-direction: column; gap: 12px">
+<div style="display: flex; align-items: center; gap: 10px"><h2 style="margin: 0; font-family: 'Instrument Serif', 'Iowan Old Style', Georgia, serif; font-size: 30px; line-height: 34px; font-weight: 400">Live log tail</h2><span style="font-size: 12px; color: {{c.ink3}}">run 06:00 · step score</span><div style="flex: 1 1 auto"></div><button type="button" style="padding: 3px 8px; border: 1px solid {{c.line2}}; background: transparent; color: {{c.ink}}; border-radius: 10px; font: inherit; font-size: 12px; font-weight: 700; cursor: pointer">Pause scroll</button></div>
+<div role="log" aria-live="off" style="background: {{c.logBg}}; border-radius: 10px; padding: 10px 12px; font-family: 'Atkinson Hyperlegible Mono', ui-monospace, Menlo, monospace; font-size: 12px; line-height: 19px; color: {{c.logInk}}">
+<sc-for list="{{logs}}" as="l" hint-placeholder-count="7"><div style="display: flex; gap: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: {{l.col}}; padding: {{l.pad}}; justify-content: {{l.jc}}; border-top: {{l.bd}}; border-bottom: {{l.bd}}"><span style="color: {{l.tcol}}">{{l.t}}</span><span style="font-weight: 700">{{l.lv}}</span><span>{{l.msg}}</span></div></sc-for>
+</div>
+</section>
+
+<section aria-label="Metric chart frame" style="background: {{c.s1}}; border: 1px solid {{c.line}}; border-radius: 20px; box-shadow: {{c.card}}; padding: 26px 28px; display: flex; flex-direction: column; gap: 12px">
+<h2 style="margin: 0; font-family: 'Instrument Serif', 'Iowan Old Style', Georgia, serif; font-size: 30px; line-height: 34px; font-weight: 400">Metric chart frame</h2>
+<div style="border: 1px solid {{c.line}}; border-radius: 10px; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px">
+<div style="display: flex; align-items: baseline; gap: 10px"><strong style="font-size: 14px">Throughput per minute</strong><span style="font-size: 12px; color: {{c.ink3}}">last 30 min · by step</span><div style="flex: 1 1 auto"></div><a href="#" style="font-size: 12px; font-weight: 700; color: {{c.acc}}">Open in explorer</a></div>
+<div style="height: 120px; display: flex; align-items: flex-end; gap: 3px; border-bottom: 1px solid {{c.line2}}; padding-left: 28px; position: relative"><span style="position: absolute; left: 0; top: 0; font-family: 'Atkinson Hyperlegible Mono', ui-monospace, Menlo, monospace; font-size: 11px; color: {{c.ink3}}">60</span><span style="position: absolute; left: 0; bottom: 2px; font-family: 'Atkinson Hyperlegible Mono', ui-monospace, Menlo, monospace; font-size: 11px; color: {{c.ink3}}">0</span><sc-for list="{{bars}}" as="b" hint-placeholder-count="30"><span style="flex: 1 1 0; height: {{b.h}}%; background: {{b.c}}"></span></sc-for></div>
+<div style="display: flex; gap: 14px; font-size: 12px; color: {{c.ink2}}"><span style="display: inline-flex; align-items: center; gap: 6px"><span style="width: 10px; height: 10px; background: {{c.acc}}"></span>score 38/min</span><span style="display: inline-flex; align-items: center; gap: 6px; color: {{c.ink3}}"><span style="width: 10px; height: 0; border-top: 2px dashed {{c.ink3}}"></span>gap: no data 06:21–06:21:19</span></div>
+</div>
+</section>
+
+<section aria-label="Command palette" style="background: {{c.s1}}; border: 1px solid {{c.line}}; border-radius: 20px; box-shadow: {{c.card}}; padding: 26px 28px; display: flex; flex-direction: column; gap: 12px">
+<h2 style="margin: 0; font-family: 'Instrument Serif', 'Iowan Old Style', Georgia, serif; font-size: 30px; line-height: 34px; font-weight: 400">Command palette · ⌘K</h2>
+<div role="dialog" aria-label="Command palette" style="border: 1px solid {{c.line2}}; border-radius: 20px; box-shadow: {{c.shadow}}; background: {{c.s1}}; overflow: hidden">
+<div style="display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-bottom: 1px solid {{c.line}}"><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M6 10.5a4.5 4.5 0 1 0 0-9a4.5 4.5 0 0 0 0 9ZM9.3 9.3L12.5 12.5" fill="none" stroke="{{c.ink2}}" stroke-width="1.5"></path></svg><input value="replay sc" aria-label="Command" style="flex: 1 1 auto; border: 0; background: transparent; color: {{c.ink}}; font: inherit; font-size: 15px; outline: none"></div>
+<ul role="listbox" style="list-style: none; margin: 0; padding: 6px">
+<sc-for list="{{palette}}" as="p" hint-placeholder-count="5"><li role="option" aria-selected="{{p.sel}}" style="display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 10px; background: {{p.bg}}; font-size: 13px"><span style="font-size: 11px; font-weight: 700; color: {{c.ink3}}; width: 64px">{{p.group}}</span><span style="flex: 1 1 auto">{{p.label}}</span><kbd style="font-family: 'Atkinson Hyperlegible Mono', ui-monospace, Menlo, monospace; font-size: 11px; color: {{c.ink2}}">{{p.key}}</kbd></li></sc-for>
+</ul>
+</div>
+</section>
+
+<section aria-label="Toasts and dialog" style="background: {{c.s1}}; border: 1px solid {{c.line}}; border-radius: 20px; box-shadow: {{c.card}}; padding: 26px 28px; display: flex; flex-direction: column; gap: 14px">
+<h2 style="margin: 0; font-family: 'Instrument Serif', 'Iowan Old Style', Georgia, serif; font-size: 30px; line-height: 34px; font-weight: 400">Toast · confirmation dialog</h2>
+<div role="status" style="display: flex; align-items: center; gap: 12px; padding: 10px 14px; background: {{c.ink}}; color: {{c.bg}}; border-radius: 14px; font-size: 13px; box-shadow: {{c.shadow}}"><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M1.8 6.4L4.8 9.3L10.2 2.9" fill="none" stroke="{{c.bg}}" stroke-width="1.8" stroke-linecap="round"></path></svg><span style="flex: 1 1 auto">2 items replayed at score</span><button type="button" style="padding: 0; border: 0; background: transparent; color: {{c.bg}}; font: inherit; font-weight: 700; text-decoration: underline; cursor: pointer">View</button></div>
+<div role="alert" style="display: flex; align-items: flex-start; gap: 12px; padding: 10px 14px; background: {{c.s1}}; color: {{c.ink}}; border: 1px solid {{c.bad}}; border-radius: 14px; font-size: 13px; box-shadow: {{c.shadow}}"><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true" style="margin-top: 4px"><path d="M2 2H10V10H2Z" fill="{{c.bad}}"></path></svg><span style="flex: 1 1 auto">Couldn't pause score: the engine is switching over. Nothing changed. Try again in about 30 s.</span><button type="button" style="padding: 0; border: 0; background: transparent; color: {{c.ink}}; font: inherit; font-weight: 700; text-decoration: underline; cursor: pointer">Retry</button></div>
+<div role="dialog" aria-labelledby="rb" style="border: 1px solid {{c.line2}}; border-radius: 20px; box-shadow: {{c.shadow}}; padding: 18px 20px; display: flex; flex-direction: column; gap: 10px">
+<h3 id="rb" style="margin: 0; font-size: 16px; font-weight: 800">Roll back listings-daily to r13?</h3>
+<p style="margin: 0; font-size: 13px; line-height: 20px; color: {{c.ink2}}">New deliveries use r13 from now on. The running 06:00 run finishes on r14. Nothing is replayed. You can roll forward to r14 at any time.</p>
+<div style="display: flex; justify-content: flex-end; gap: 8px"><button type="button" style="padding: 7px 14px; background: transparent; color: {{c.ink}}; border: 1px solid {{c.line2}}; border-radius: 10px; font: inherit; font-size: 13px; font-weight: 700; cursor: pointer">Cancel</button><button type="button" style="padding: 7px 14px; background: {{c.ink}}; color: {{c.bg}}; border: 0; border-radius: 10px; font: inherit; font-size: 13px; font-weight: 700; cursor: pointer">Roll back to r13</button></div>
+</div>
+</section>
+
+<section aria-label="Reject reasons" style="background: {{c.s1}}; border: 1px solid {{c.line}}; border-radius: 20px; box-shadow: {{c.card}}; padding: 26px 28px; display: flex; flex-direction: column; gap: 12px">
+<h2 style="margin: 0; font-family: 'Instrument Serif', 'Iowan Old Style', Georgia, serif; font-size: 30px; line-height: 34px; font-weight: 400">Reject with a reason · popover</h2>
+<div role="dialog" aria-label="Reject reason" style="width: 320px; border: 1px solid {{c.line2}}; border-radius: 20px; box-shadow: {{c.shadow}}; padding: 10px; display: flex; flex-direction: column; gap: 2px; background: {{c.s1}}">
+<sc-for list="{{reasons}}" as="r" hint-placeholder-count="5"><button type="button" style="display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 0; border-radius: 10px; background: {{r.bg}}; color: {{c.ink}}; font: inherit; font-size: 13px; text-align: left; cursor: pointer"><kbd style="font-family: 'Atkinson Hyperlegible Mono', ui-monospace, Menlo, monospace; font-size: 11px; padding: 0 5px; border: 1px solid {{c.line2}}; border-radius: 10px; color: {{c.ink2}}">{{r.k}}</kbd><span style="flex: 1 1 auto">{{r.l}}</span></button></sc-for>
+<input placeholder="Add a note (optional)" aria-label="Note" style="margin-top: 6px; height: 34px; padding: 0 10px; border: 1px solid {{c.line2}}; border-radius: 10px; background: {{c.bg}}; color: {{c.ink}}; font: inherit; font-size: 13px">
+</div>
+</section>
+
+<section aria-label="Empty states" style="background: {{c.s1}}; border: 1px solid {{c.line}}; border-radius: 20px; box-shadow: {{c.card}}; padding: 26px 28px; display: flex; flex-direction: column; gap: 14px">
+<h2 style="margin: 0; font-family: 'Instrument Serif', 'Iowan Old Style', Georgia, serif; font-size: 30px; line-height: 34px; font-weight: 400">Empty states that teach</h2>
+<div style="display: flex; flex-direction: column; gap: 10px; padding: 18px; border: 1px dashed {{c.line2}}; border-radius: 14px">
+<svg width="64" height="22" viewBox="0 0 64 22" aria-hidden="true"><path d="M1 5.5H63M1 16.5H63" stroke="{{c.bank}}" stroke-width="1.6"></path></svg>
+<strong style="font-size: 15px">No pipelines yet</strong>
+<span style="font-size: 13px; line-height: 20px; color: {{c.ink2}}">Pipelines are files. Put one in <span style="font-family: 'Atkinson Hyperlegible Mono', ui-monospace, Menlo, monospace">./pipelines</span> and apply it; it appears here within a second.</span>
+<code style="display: block; padding: 8px 10px; background: {{c.s2}}; border-radius: 10px; font-family: 'Atkinson Hyperlegible Mono', ui-monospace, Menlo, monospace; font-size: 12px">millstream apply ./pipelines/listings-daily.yaml</code>
+</div>
+<div style="display: flex; flex-direction: column; gap: 6px; padding: 18px; border: 1px dashed {{c.line2}}; border-radius: 14px">
+<svg width="64" height="22" viewBox="0 0 64 22" aria-hidden="true"><path d="M1 5.5H63M1 16.5H63" stroke="{{c.bank}}" stroke-width="1.6"></path><path d="M24 11.4L29 15.5L40 6.5" fill="none" stroke="{{c.ok}}" stroke-width="2" stroke-linecap="round"></path></svg>
+<strong style="font-size: 15px">Inbox zero</strong>
+<span style="font-size: 13px; color: {{c.ink2}}">You decided 35 items today. The next ones arrive with tomorrow's 06:00 run.</span>
+</div>
+</section>
+
+<section aria-label="Connection states" style="background: {{c.s1}}; border: 1px solid {{c.line}}; border-radius: 20px; box-shadow: {{c.card}}; padding: 26px 28px; display: flex; flex-direction: column; gap: 14px">
+<h2 style="margin: 0; font-family: 'Instrument Serif', 'Iowan Old Style', Georgia, serif; font-size: 30px; line-height: 34px; font-weight: 400">Live, reconnecting, read-only</h2>
+<div style="display: flex; flex-wrap: wrap; gap: 14px; align-items: center">
+<span style="display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 700; color: {{c.acc}}"><svg width="10" height="10" viewBox="0 0 12 12" aria-hidden="true"><path d="M6 1.5a4.5 4.5 0 1 1 0 9a4.5 4.5 0 1 1 0-9Z" fill="{{c.acc}}"></path></svg>Live</span>
+<span role="status" style="display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px; border: 1px dashed {{c.warn}}; border-radius: 10px; font-size: 12px; font-weight: 700; color: {{c.warn}}"><svg width="10" height="10" viewBox="0 0 12 12" aria-hidden="true"><path d="M6 1.5a4.5 4.5 0 1 1 0 9a4.5 4.5 0 1 1 0-9Z" fill="none" stroke="{{c.warn}}" stroke-width="1.6" stroke-dasharray="2.4 2"></path></svg>Reconnecting · 4 s</span>
+<span style="display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: {{c.ink3}}">Numbers keep their last value, dimmed to 60 %</span>
+</div>
+<div role="status" style="display: flex; align-items: center; gap: 12px; padding: 10px 14px; background: {{c.warnSoft}}; border: 1px solid {{c.warn}}; border-radius: 14px; font-size: 13px; color: {{c.ink}}"><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M3.8 2.5V9.5M8.2 2.5V9.5" stroke="{{c.warn}}" stroke-width="1.8" stroke-linecap="round"></path></svg><span style="flex: 1 1 auto"><strong>Read-only for a moment.</strong> mill-02 is taking over as engine (about 30 s). Actions are paused; nothing is lost.</span></div>
+</section>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["light","dark"],"default":"light"},"$preview":{"width":1440,"height":2800}}'>
+const PAL = {
+  light: {bg:'#F7F4EE',s1:'#FFFFFF',s2:'#F3EFE8',s3:'#E6E0D5',line:'#E6E0D5',line2:'#D6CEC0',ink:'#1F1C18',ink2:'#4F4A42',ink3:'#6C665C',acc:'#0E6B66',accInk:'#FFFFFF',accSoft:'#E2EEEA',ok:'#2F6E3B',okSoft:'#E6EFE2',warn:'#8A5A0C',warnSoft:'#F7ECD5',bad:'#A8322A',badSoft:'#F8E4DF',rev:'#6A4A9C',revSoft:'#EFE8F6',mute:'#6C665C',muteSoft:'#EEEAE2',grain:'#0E6B66',hatch:'#D9D1C3',chan:'#E6F0EC',bank:'#D2E2DC',logBg:'#24211D',logInk:'#EFEAE2',card:'0 1px 2px rgba(64,48,24,.05), 0 8px 28px rgba(64,48,24,.07)',shadow:'0 2px 6px rgba(64,48,24,.08), 0 24px 48px rgba(64,48,24,.14)'},
+  dark: {bg:'#0E1112',s1:'#15191B',s2:'#1B2023',s3:'#2A3135',line:'#2A3135',line2:'#3B4449',ink:'#E6EAE8',ink2:'#AEB6B9',ink3:'#8C969A',acc:'#3EC2B4',accInk:'#06201D',accSoft:'#123331',ok:'#6FC77F',okSoft:'#16291A',warn:'#E8AE45',warnSoft:'#2F2510',bad:'#F2806F',badSoft:'#3A1916',rev:'#AE9BF5',revSoft:'#241E3D',mute:'#8C969A',muteSoft:'#20262A',grain:'#3EC2B4',hatch:'#4A555A',chan:'#15191B',bank:'#3B4449',logBg:'#0A0C0D',logInk:'#E6EAE8',shadow:'0 2px 4px rgba(0,0,0,.5), 0 16px 40px rgba(0,0,0,.55)'}
+};
+const SH = {circle:'M6 1.5a4.5 4.5 0 1 1 0 9a4.5 4.5 0 1 1 0-9Z',half:'M6 1.5a4.5 4.5 0 0 0 0 9Z',diamond:'M6 1.2L10.8 6L6 10.8L1.2 6Z',tri:'M6 1.3L11 10.4H1Z',square:'M2 2H10V10H2Z',check:'M1.8 6.4L4.8 9.3L10.2 2.9',slash:'M2.9 9.1L9.1 2.9',pause:'M3.8 2.5V9.5M8.2 2.5V9.5',x:'M4.2 4.2L7.8 7.8M7.8 4.2L4.2 7.8',replay:'M2.3 6a3.7 3.7 0 1 0 1.1-2.6M2.2 1.6V4.3H4.9'};
+function glyphs(c){
+  const N='M0 0';
+  const R=(d1,f1,s1,d2,f2,s2,col,soft)=>({d1,f1,s1,d2:d2||N,f2:f2||'none',s2:s2||'none',col,soft});
+  return {
+    run:R(SH.circle,c.acc,'none',0,0,0,c.acc,c.accSoft),
+    pend:R(SH.circle,'none',c.ink3,0,0,0,c.ink3,c.muteSoft),
+    human:R(SH.circle,'none',c.rev,SH.half,c.rev,0,c.rev,c.revSoft),
+    ok:R(SH.check,'none',c.ok,0,0,0,c.ok,c.okSoft),
+    filt:R(SH.diamond,'none',c.mute,0,0,0,c.mute,c.muteSoft),
+    retry:R(SH.tri,'none',c.warn,0,0,0,c.warn,c.warnSoft),
+    warnFill:R(SH.tri,c.warn,c.warn,0,0,0,c.warn,c.warnSoft),
+    dead:R(SH.square,c.bad,'none',SH.x,'none',c.s1,c.bad,c.badSoft),
+    open:R(SH.square,c.bad,'none',0,0,0,c.bad,c.badSoft),
+    stopped:R(SH.circle,'none',c.mute,SH.slash,'none',c.mute,c.mute,c.muteSoft),
+    replayed:R(SH.replay,'none',c.acc,0,0,0,c.acc,c.accSoft),
+    paused:R(SH.pause,'none',c.mute,0,0,0,c.mute,c.muteSoft),
+    draining:R(SH.pause,'none',c.warn,0,0,0,c.warn,c.warnSoft),
+    failing:R(SH.tri,c.bad,c.bad,0,0,0,c.bad,c.badSoft),
+    unsched:R(SH.square,'none',c.bad,0,0,0,c.bad,c.badSoft),
+    unrouted:R(SH.square,'none',c.warn,0,0,0,c.warn,c.warnSoft),
+    revoked:R(SH.square,'none',c.bad,SH.x,'none',c.bad,c.bad,c.badSoft),
+    ack:R(SH.check,'none',c.ink3,0,0,0,c.ink3,c.muteSoft),
+    sample:R(SH.diamond,'none',c.rev,0,0,0,c.rev,c.revSoft)
+  };
+}
+class Component extends DCLogic {
+  renderVals() {
+    const theme = this.props.theme ?? 'light';
+    const c = PAL[theme] || PAL.light;
+    const g = glyphs(c);
+    const S = (k, label) => Object.assign({}, g[k], { label });
+    const concepts = [
+      { name: 'Run', states: [S('run','Running'), S('human','Waiting review'), S('ok','Succeeded'), S('warnFill','Completed with errors'), S('stopped','Cancelled')] },
+      { name: 'Delivery', states: [S('pend','Pending'), S('run','Leased'), S('human','Awaiting review'), S('ok','Done'), S('filt','Filtered'), S('retry','Failed · will retry'), S('dead','Dead'), S('stopped','Cancelled')] },
+      { name: 'Dead letter', states: [S('open','Open · dead'), S('unrouted','Open · unrouted'), S('replayed','Replayed'), S('stopped','Discarded')] },
+      { name: 'Step', states: [S('ok','Active'), S('paused','Paused'), S('failing','Failing'), S('retry','Slow'), S('unsched','Unschedulable')] },
+      { name: 'Pipeline', states: [S('ok','Active'), S('paused','Paused'), S('stopped','Disabled')] },
+      { name: 'Node', states: [S('ok','Active'), S('draining','Draining'), S('revoked','Revoked'), S('unsched','Disconnected')] },
+      { name: 'Engine', states: [S('ok','Active'), S('pend','Standby')] },
+      { name: 'Insight', states: [S('retry','Open'), S('ack','Acknowledged'), S('ok','Resolved'), S('stopped','Muted')] },
+      { name: 'Review sample', states: [S('sample','Sample · open'), S('ok','Decided'), S('pend','Unreviewed')] }
+    ];
+    const K = {
+      code:'M5.5 4L2 8L5.5 12M10.5 4L14 8L10.5 12', agent:'M8 1.5L9.6 6.4L14.5 8L9.6 9.6L8 14.5L6.4 9.6L1.5 8L6.4 6.4Z',
+      human:'M8 7.5a2.75 2.75 0 1 0 0-5.5a2.75 2.75 0 1 0 0 5.5ZM2.5 14.5c.6-3 2.8-4.6 5.5-4.6s4.9 1.6 5.5 4.6', report:'M3.5 1.5H10L13 4.5V14.5H3.5ZM10 1.5V4.5H13M6 8.5H10.5M6 11H10.5'
+    };
+    const hatch = 'repeating-linear-gradient(135deg, ' + c.badSoft + ' 0 4px, transparent 4px 9px)';
+    const N = (o) => Object.assign({ bg: c.s1, img: 'none', bw: 1, bs: 'solid', bc: c.line2, shadow: 'none', op: 1, kcol: c.ink2, bigCol: c.ink, tag: false, tagText: '', tagCol: c.warn, tagSoft: c.warnSoft }, o);
+    const nodes = [
+      N({ kind: 'Code', kd: K.code, g: g.ok, name: 'dedupe', big: '4', caption: 'Code · active' }),
+      N({ kind: 'Agent', kd: K.agent, kcol: c.acc, g: g.ok, name: 'score', big: '12', bw: 2, bc: c.acc, shadow: '0 0 0 4px ' + c.accSoft, caption: 'Agent · selected' }),
+      N({ kind: 'Human', kd: K.human, kcol: c.rev, g: g.human, name: 'analyst-review', big: '9', bigCol: c.rev, bw: 1.5, bs: 'dashed', bc: c.rev, caption: 'Human review' }),
+      N({ kind: 'Report', kd: K.report, g: g.ok, name: 'report', big: '2', caption: 'Report' }),
+      N({ kind: 'Code', kd: K.code, g: g.paused, name: 'rentability', big: '0', op: 0.62, bs: 'dashed', caption: 'Paused · dimmed, dashed' }),
+      N({ kind: 'Code', kd: K.code, g: g.failing, name: 'crawl-classifieds', big: '6', bw: 2, bc: c.bad, tag: true, tagText: '1 dead', tagCol: c.bad, tagSoft: c.badSoft, caption: 'Failing' }),
+      N({ kind: 'Code', kd: K.code, g: g.retry, name: 'rentability', big: '3', tag: true, tagText: 'Slow', caption: 'Slow · insight badge' }),
+      N({ kind: 'Report', kd: K.report, g: g.unsched, name: 'report', big: '2', img: hatch, bc: c.bad, caption: 'Unschedulable · no node' })
+    ];
+    const qseg = (n, col) => Array.from({ length: 10 }, (_, i) => ({ bg: i < n ? col : c.s3 }));
+    const queues = [
+      { segs: qseg(0, c.acc), n: '0', col: c.ink3, note: 'empty' },
+      { segs: qseg(3, c.acc), n: '24', col: c.ink, note: 'normal' },
+      { segs: qseg(8, c.acc), n: '186', col: c.acc, note: 'deep, draining' },
+      { segs: qseg(10, c.warn), n: '2,410', col: c.warn, note: 'growing faster than it drains' }
+    ];
+    const hatchW = 'repeating-linear-gradient(135deg, ' + c.hatch + ' 0 2px, transparent 2px 5px)';
+    const hatchR = 'repeating-linear-gradient(135deg, ' + c.rev + ' 0 1.5px, transparent 1.5px 5px)';
+    const seg = (w, bg, img, bd) => ({ w, bg, img: img || 'none', bd: bd || '0' });
+    const runs = [
+      { when: 'Today 06:00', g: Object.assign({}, g.run, { label: 'Running' }), segs: [seg(40, c.acc), seg(12, c.revSoft, hatchR), seg(45, 'transparent', 'none', '1px dashed ' + c.ink3)], meta: 'ETA 06:58' },
+      { when: 'Yesterday 06:00', g: Object.assign({}, g.ok, { label: 'Succeeded' }), segs: [seg(70, c.acc), seg(30, c.revSoft, hatchR)], meta: '52 min · $13.90' },
+      { when: 'Tue 06:00', g: Object.assign({}, g.warnFill, { label: 'Completed with errors' }), segs: [seg(8, c.s2, hatchW), seg(80, c.acc), seg(12, c.warn)], meta: '61 min · 3 dead' }
+    ];
+    const T = (id, key, k, label, cost, bg, sh) => ({ id, key, g: g[k], label, cost, bg: bg || 'transparent', sh: sh || 'none' });
+    const table = [
+      T('it_7f3a…9c21', 'https://www.homesite.example/annonces/achat/appartement/paris-19eme-75/2210417.htm', 'human', 'Awaiting review', '$0.019'),
+      T('it_2b90…d7e4', 'https://www.classifieds.example/ad/ventes_immobilieres/2487310245', 'run', 'Leased', '$0.011', c.s2),
+      T('it_88a1…c3f0', 'https://www.homesite.example/annonces/achat/appartement/montreuil-93/2209981.htm', 'filt', 'Filtered', '$0.010', c.accSoft, 'inset 3px 0 0 ' + c.acc),
+      T('it_9d02…e6b3', 'https://www.homesite.example/annonces/achat/appartement/paris-18eme-75/2210388.htm', 'dead', 'Dead', '$0.022')
+    ];
+    const D = (n, m, ind, t, kind) => ({ n, m, ind, t, bg: kind === 'del' ? c.badSoft : (kind === 'add' ? c.okSoft : 'transparent'), col: kind === 'del' ? c.bad : (kind === 'add' ? c.ok : c.ink), mc: kind === 'del' ? c.bad : c.ok });
+    const diff = [
+      D(1, '', 0, '{'), D(2, '', 14, '"price": 412000,'), D(3, '', 14, '"rentEstimate": 1640,'),
+      D(4, '−', 14, '"marginPct": 17.8,', 'del'), D(4, '+', 14, '"marginPct": 16.5,', 'add'),
+      D(5, '−', 14, '"notes": null', 'del'), D(5, '+', 14, '"notes": "No lift: renovation budget closer to €45k"', 'add'),
+      D(6, '', 0, '}')
+    ];
+    const L = (t, lv, msg, col, tcol) => ({ t, lv, msg, col: col || c.logInk, tcol: tcol || '#8C969A', pad: '0', jc: 'flex-start', bd: '0' });
+    const logs = [
+      L('06:21:01.204', 'INFO', 'it_2b90d7e4 leased by mill-01 slot 4'),
+      L('06:21:02.881', 'INFO', 'tool get_comparables zip=75018 → 11 results (0.7 s)'),
+      L('06:21:03.950', 'WARN', 'it_9d02e6b3 output.schema failed, retry 2/2', '#E8AE45'),
+      { t: '', lv: '', msg: 'Connection lost 06:21:04 → 06:21:19 · lines from these 15 s may be missing', col: '#E8AE45', tcol: '#8C969A', pad: '4px 0', jc: 'center', bd: '1px dashed #5A4A22' },
+      L('06:21:19.402', 'INFO', 'it_5e7f0a12 done in 2.1 s, $0.009'),
+      L('06:21:20.017', 'ERROR', 'it_9d02e6b3 dead: output.schema "score" missing', '#F2806F'),
+      L('06:21:20.533', 'INFO', 'it_88a1c3f0 leased by gpu-box slot 1')
+    ];
+    const bv = [30,32,35,34,36,38,41,40,39,42,44,41,40,0,0,37,39,40,38,37,35,36,38,40,39,38,37,38,39,38];
+    const bars = bv.map((v) => ({ h: Math.round(v / 60 * 100), c: v === 0 ? 'transparent' : c.acc }));
+    const palette = [
+      { group: 'Action', label: 'Replay 2 dead letters in score', key: '↵', sel: 'true', bg: c.accSoft },
+      { group: 'Action', label: 'Pause step score', key: '', sel: 'false', bg: 'transparent' },
+      { group: 'Go to', label: 'Step score · listings-daily', key: 'g s', sel: 'false', bg: 'transparent' },
+      { group: 'Go to', label: 'Run 06:00 today', key: 'g r', sel: 'false', bg: 'transparent' },
+      { group: 'Item', label: 'it_9d02e6b3 · dead at score', key: '', sel: 'false', bg: 'transparent' }
+    ];
+    const reasons = [
+      { k: '1', l: 'Overpriced for the area', bg: c.s2 }, { k: '2', l: 'Wrong or missing data', bg: 'transparent' },
+      { k: '3', l: 'Duplicate', bg: 'transparent' }, { k: '4', l: 'Outside our criteria', bg: 'transparent' }, { k: '5', l: 'Other (add a note)', bg: 'transparent' }
+    ];
+    return { c, themeLabel: theme === 'dark' ? 'Dark' : 'Light', concepts, nodes, queues, runs, table, diff, logs, bars, palette, reasons };
+  }
+}
+</script>
+</body>
+</html>

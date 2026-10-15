@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Dead letters · listings-daily</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Mono:wght@400;500;700&amp;family=Atkinson+Hyperlegible+Next:wght@400;500;700;800&amp;display=swap">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="width: 100%; min-height: 1000px; box-sizing: border-box; display: flex; position: relative; background: {{c.bg}}; color: {{c.ink}}; font-family: 'Atkinson Hyperlegible Next', 'Segoe UI', system-ui, sans-serif; font-size: 14px; line-height: 20px; font-variant-numeric: tabular-nums">
+
+<nav aria-label="Main" style="width: 228px; flex: none; box-sizing: border-box; background: {{c.s2}}; border-right: 1px solid {{c.line}}; padding: 18px 12px; display: flex; flex-direction: column; gap: 22px">
+<div style="display: flex; align-items: center; gap: 10px; padding: 0 8px">
+<svg width="22" height="22" viewBox="0 0 22 22" aria-hidden="true"><path d="M1 5.5H21M1 16.5H21" stroke="{{c.ink}}" stroke-width="1.6"></path><rect x="4" y="9" width="4" height="4" fill="{{c.acc}}" opacity="0.45"></rect><rect x="13" y="9" width="4" height="4" fill="{{c.acc}}"></rect></svg>
+<span style="font-size: 17px; font-weight: 800; letter-spacing: -0.02em">Millstream</span>
+</div>
+<button type="button" aria-label="Switch pipeline, current listings-daily" style="display: flex; align-items: center; gap: 8px; width: 100%; box-sizing: border-box; padding: 8px 10px; background: {{c.s1}}; color: {{c.ink}}; border: 1px solid {{c.line}}; border-radius: 2px; font: inherit; cursor: pointer; text-align: left"><span style="flex: 1 1 auto; font-family: 'Atkinson Hyperlegible Mono', ui-monospace, Menlo, monospace; font-size: 13px; font-weight: 700">listings-daily</span><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5L6 7.5L9 4.5" fill="none" stroke="{{c.ink2}}" stroke-width="1.5"></path></svg></button>
+<div style="display: flex; flex-direction: column; gap: 2px">
+<div style="padding: 0 10px 6px; font-size: 11px; font-weight: 700; letter-spacing: 0.06em; color: {{c.ink3}}">WORKSPACE</div>
+<sc-for list="{{nav.g}}" as="n" hint-placeholder-count="4"><a href="#" style="display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: 2px; text-decoration: none; color: {{n.color}}; background: {{n.bg}}; font-weight: {{n.fw}}; box-shadow: {{n.sh}}"><span>{{n.label}}</span><span style="margin-left: auto; font-family: 'Atkinson Hyperlegible Mono', ui-monospace, Menlo, monospace; font-size: 12px; font-weight: 700; color: {{n.cc}}">{{n.count}}</span></a></sc-for>
+</div>
+<div style="display: flex; flex-direction: column; gap: 2px">
+<div style="padding: 0 10px 6px; font-size: 11px; font-weight: 700; letter-spacing: 0.06em; color: {{c.ink3}}">PIPELINE</div>
+<sc-for list="{{nav.p}}" as="n" hint-placeholder-count="7"><a href="#" style="display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: 2px; text-decoration: none; color: {{n.color}}; background: {{n.bg}}; font-weight: {{n.fw}}; box-shadow: {{n.sh}}"><span>{{n.label}}</span><span style="margin-left: auto; font-family: 'Atkinson Hyperlegible Mono', ui-monospace, Menlo, monospace; font-size: 12px; font-weight: 700; color: {{n.cc}}">{{n.count}}</span></a></sc-for>
+</div>
+<div style="margin-top: auto; display: flex; flex-direction: column; gap: 8px; padding: 12px 10px 0; border-top: 1px solid {{c.line}}; font-size: 12px; color: {{c.ink2}}">
+<div style="display: flex; align-items: center; gap: 8px"><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M1.8 6.4L4.8 9.3L10.2 2.9" fill="none" stroke="{{c.ok}}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path></svg><span>Engine <strong style="color: {{c.ink}}">mill-01</strong> active</span></div>
+<div style="font-family: 'Atkinson Hyperlegible Mono', ui-monospace, Menlo, monospace; font-size: 11px; color: {{c.ink3}}">v0.9.2 · localhost:7070</div>
+</div>
+</nav>
+
+<main style="flex: 1 1 0; min-width: 0; display: flex; flex-direction: column">
+<header style="flex: none; box-sizing: border-box; display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; padding: 14px 24px; border-bottom: 1px solid {{c.line}}; background: {{c.s1}}">
+<div style="display: flex; align-items: center; gap: 8px; font-size: 13px"><a href="#" style="color: {{c.ink2}}; text-decoration: none; font-family: 'Atkinson Hyperlegible Mono', ui-monospace, Menlo, monospace">listings-daily</a><span aria-hidden="true" style="color: {{c.ink3}}">/</span></div>
+<h1 style="margin: 0; font-size: 18px; font-weight: 800">Dead letters</h1>
+<div role="group" aria-label="State" style="display: flex; border: 1px solid {{c.line2}}; border-radius: 2px; overflow: hidden; font-size: 13px">
+<button type="button" aria-pressed="true" style="padding: 5px 12px; border: 0; border-right: 1px solid {{c.line}}; background: {{c.ink}}; color: {{c.bg}}; font: inherit; font-weight: 700; cursor: pointer">Open 3</button>
+<button type="button" aria-pressed="false" style="padding: 5px 12px; border: 0; border-right: 1px solid {{c.line}}; background: transparent; color: {{c.ink2}}; font: inherit; cursor: pointer">Replayed 12</button>
+<button type="button" aria-pressed="false" style="padding: 5px 12px; border: 0; background: transparent; color: {{c.ink2}}; font: inherit; cursor: pointer">Discarded 4</button>
+</div>
+<div style="flex: 1 1 auto"></div>
+<label style="display: flex; align-items: center; gap: 8px; width: 380px; max-width: 100%; padding: 0 10px; height: 32px; box-sizing: border-box; background: {{c.bg}}; border: 1px solid {{c.line}}; border-radius: 2px"><span style="font-family: 'Atkinson Hyperlegible Mono', ui-monospace, Menlo, monospace; font-size: 11px; font-weight: 700; color: {{c.ink3}}">CEL</span><input value="step == &quot;score&quot; || kind == &quot;unrouted&quot;" aria-label="Filter with a CEL expression" style="flex: 1 1 auto; min-width: 0; border: 0; background: transparent; color: {{c.ink}}; font-family: 'Atkinson Hyperlegible Mono', ui-monospace, Menlo, monospace; font-size: 12px; outline: none"></label>
+</header>
+
+<div style="padding: 20px 24px; display: flex; flex-direction: column; gap: 12px">
+<div style="display: flex; align-items: center; gap: 12px; font-size: 13px; color: {{c.ink2}}"><span>Grouped by error fingerprint · 2 groups · 3 items</span><div style="flex: 1 1 auto"></div><span>Kind</span><span style="display: inline-flex; align-items: center; gap: 5px; color: {{c.ink}}"><svg width="11" height="11" viewBox="0 0 12 12" aria-hidden="true"><path d="M2 2H10V10H2Z" fill="{{c.bad}}"></path></svg>dead 3</span><span style="display: inline-flex; align-items: center; gap: 5px"><svg width="11" height="11" viewBox="0 0 12 12" aria-hidden="true"><path d="M2 2H10V10H2Z" fill="none" stroke="{{c.warn}}" stroke-width="1.6"></path></svg>unrouted 0</span></div>
+
+<section aria-label="Group: score output schema" style="background: {{c.s1}}; border: 1px solid {{c.line}}; border-radius: 3px">
+<div style="display: grid; grid-template-columns: 26px minmax(0, 1fr) auto; gap: 14px; align-items: start; padding: 16px 18px">
+<input type="checkbox" aria-label="Select group" checked="{{true}}" style="width: 16px; height: 16px; margin: 3px 0 0; accent-color: {{c.acc}}">
+<div style="display: flex; flex-direction: column; gap: 8px; min-width: 0">
+<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px">
+<span style="display: inline-flex; align-items: center; gap: 6px; padding: 1px 8px; background: {{c.badSoft}}; color: {{c.bad}}; border-radius: 2px; font-size: 12px; font-weight: 700"><svg width="11" height="11" viewBox="0 0 12 12" aria-hidden="true"><path d="M2 2H10V10H2Z" fill="{{c.bad}}"></path><path d="M4.2 4.2L7.8 7.8M7.8 4.2L4.2 7.8" stroke="{{c.s1}}" stroke-width="1.4" stroke-linecap="round"></path></svg>Dead · 2 items</span>
+<a href="#" style="font-family: 'Atkinson Hyperlegible Mono', ui-monospace, Menlo, monospace; font-size: 13px; font-weight: 700; color: {{c.ink}}">score</a>
+<span style="font-size: 13px; color: {{c.ink2}}">first 06:12 · last 06:27 · fingerprint <span style="font-family: 'Atkinson Hyperlegible Mono', ui-monospace, Menlo, monospace">fp_3c9a</span></span>
+</div>
+<div style="font-size: 15px; line-height: 22px; font-weight: 700">The agent output is missing the required field "score"</div>
+<div style="position: relative; padding: 10px 12px; background: {{c.s2}}; border-radius: 2px; font-family: 'Atkinson Hyperlegible Mono', ui-monospace, Menlo, monospace; font-size: 12px; line-height: 18px; color: {{c.ink2}}; max-height: 72px; overflow: hidden">output.schema: validation failed at $.result: required property "score" missing; got {"assessment": "This listing appears undervalued relative to comparable properties in the 19th arrondissement. The asking price per square metre of €6,059 is well below…" (3.6 KB)</div>
+<div style="display: flex; gap: 14px; font-size: 12px; font-weight: 700"><button type="button" style="padding: 0; border: 0; background: transparent; color: {{c.acc}}; font: inherit; cursor: pointer">Show full error · 3.6 KB</button><button type="button" style="padding: 0; border: 0; background: transparent; color: {{c.acc}}; font: inherit; cursor: pointer">Copy</button><a href="#" style="color: {{c.acc}}">Linked insight: failure cluster</a></div>
+</div>
+<div style="display: flex; gap: 8px">
+<button type="button" onClick="{{openConfirm}}" style="display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; background: {{c.acc}}; color: {{c.accInk}}; border: 0; border-radius: 2px; font: inherit; font-size: 13px; font-weight: 700; cursor: pointer"><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M2.3 6a3.7 3.7 0 1 0 1.1-2.6M2.2 1.6V4.3H4.9" fill="none" stroke="{{c.accInk}}" stroke-width="1.6" stroke-linecap="round"></path></svg>Replay 2</button>
+<button type="button" style="padding: 7px 14px; background: transparent; color: {{c.ink}}; border: 1px solid {{c.line2}}; border-radius: 2px; font: inherit; font-size: 13px; font-weight: 700; cursor: pointer">Discard 2</button>
+</div>
+</div>
+<table style="width: 100%; border-collapse: collapse; font-size: 13px; border-top: 1px solid {{c.line}}">
+<thead><tr style="text-align: left; color: {{c.ink3}}; font-size: 12px"><th scope="col" style="width: 44px; padding: 8px 0 8px 18px; font-weight: 700"><span style="position: absolute; left: -9999px">Select</span></th><th scope="col" style="padding: 8px; font-weight: 700">Item</th><th scope="col" style="padding: 8px; font-weight: 700">Listing</th><th scope="col" style="padding: 8px; font-weight: 700">Attempts</th><th scope="col" style="padding: 8px; font-weight: 700">Died</th><th scope="col" style="padding: 8px 18px 8px 8px; font-weight: 700; text-align: right">Actions</th></tr></thead>
+<tbody>
+<sc-for list="{{items}}" as="i" hint-placeholder-count="2"><tr style="border-top: 1px solid {{c.line}}"><td style="padding: 8px 0 8px 18px"><input type="checkbox" checked="{{true}}" aria-label="Select {{i.id}}" style="width: 16px; height: 16px; accent-color: {{c.acc}}"></td><td style="padding: 8px"><a href="#" style="font-family: 'Atkinson Hyperlegible Mono', ui-monospace, Menlo, monospace; color: {{c.ink}}">{{i.id}}</a></td><td style="padding: 8px; color: {{c.ink2}}">{{i.t}}</td><td style="padding: 8px; font-family: 'Atkinson Hyperlegible Mono', ui-monospace, Menlo, monospace">{{i.a}}</td><td style="padding: 8px; font-family: 'Atkinson Hyperlegible Mono', ui-monospace, Menlo, monospace; color: {{c.ink2}}">{{i.when}}</td><td style="padding: 8px 18px 8px 8px; text-align: right"><span style="display: inline-flex; gap: 12px; font-size: 12px; font-weight: 700"><a href="#" style="color: {{c.acc}}">Transcript</a><a href="#" style="color: {{c.acc}}">Replay</a><a href="#" style="color: {{c.ink2}}">Discard</a></span></td></tr></sc-for>
+</tbody>
+</table>
+</section>
+
+<section aria-label="Group: crawl-classifieds timeout" style="background: {{c.s1}}; border: 1px solid {{c.line}}; border-radius: 3px">
+<div style="display: grid; grid-template-columns: 26px minmax(0, 1fr) auto; gap: 14px; align-items: start; padding: 16px 18px">
+<input type="checkbox" aria-label="Select group" style="width: 16px; height: 16px; margin: 3px 0 0; accent-color: {{c.acc}}">
+<div style="display: flex; flex-direction: column; gap: 8px; min-width: 0">
+<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px">
+<span style="display: inline-flex; align-items: center; gap: 6px; padding: 1px 8px; background: {{c.badSoft}}; color: {{c.bad}}; border-radius: 2px; font-size: 12px; font-weight: 700"><svg width="11" height="11" viewBox="0 0 12 12" aria-hidden="true"><path d="M2 2H10V10H2Z" fill="{{c.bad}}"></path><path d="M4.2 4.2L7.8 7.8M7.8 4.2L4.2 7.8" stroke="{{c.s1}}" stroke-width="1.4" stroke-linecap="round"></path></svg>Dead · 1 item</span>
+<a href="#" style="font-family: 'Atkinson Hyperlegible Mono', ui-monospace, Menlo, monospace; font-size: 13px; font-weight: 700; color: {{c.ink}}">crawl-classifieds</a>
+<span style="font-size: 13px; color: {{c.ink2}}">06:14 · 3 attempts · sample <a href="#" style="font-family: 'Atkinson Hyperlegible Mono', ui-monospace, Menlo, monospace; color: {{c.ink}}">it_e2f81a07</a></span>
+</div>
+<div style="font-size: 15px; line-height: 22px; font-weight: 700">Timed out after 30 s fetching a listing page</div>
+<div style="padding: 10px 12px; background: {{c.s2}}; border-radius: 2px; font-family: 'Atkinson Hyperlegible Mono', ui-monospace, Menlo, monospace; font-size: 12px; line-height: 18px; color: {{c.ink2}}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">context deadline exceeded: GET https://www.classifieds.example/ad/ventes_immobilieres/2487310245 (30.0 s, 3 attempts, backoff 2 s → 8 s)</div>
+</div>
+<div style="display: flex; gap: 8px">
+<button type="button" style="display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; background: transparent; color: {{c.ink}}; border: 1px solid {{c.line2}}; border-radius: 2px; font: inherit; font-size: 13px; font-weight: 700; cursor: pointer">Replay 1</button>
+<button type="button" style="padding: 7px 14px; background: transparent; color: {{c.ink}}; border: 1px solid {{c.line2}}; border-radius: 2px; font: inherit; font-size: 13px; font-weight: 700; cursor: pointer">Discard 1</button>
+</div>
+</div>
+</section>
+</div>
+</main>
+
+<sc-if value="{{confirmOpen}}" hint-placeholder-val="{{true}}">
+<div style="position: absolute; inset: 0; background: {{scrim}}; display: flex; align-items: flex-start; justify-content: center; padding-top: 180px">
+<div role="dialog" aria-modal="true" aria-labelledby="dl-title" style="width: 480px; max-width: calc(100% - 32px); box-sizing: border-box; background: {{c.s1}}; border: 1px solid {{c.line2}}; border-radius: 6px; box-shadow: {{c.shadow}}; padding: 22px 24px 20px; display: flex; flex-direction: column; gap: 14px">
+<h2 id="dl-title" style="margin: 0; font-size: 18px; line-height: 26px; font-weight: 800">Replay 2 items at score?</h2>
+<ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; font-size: 14px; line-height: 21px; color: {{c.ink2}}">
+<li>They re-enter <span style="font-family: 'Atkinson Hyperlegible Mono', ui-monospace, Menlo, monospace; color: {{c.ink}}">score</span>'s queue now, behind 186 items, with revision <strong style="color: {{c.ink}}">r14</strong>.</li>
+<li>Earlier attempts stay in each item's history.</li>
+<li>Expected agent cost about <strong style="color: {{c.ink}}">$0.02</strong>.</li>
+<li>If r14 still produces the same error, they come back here.</li>
+</ul>
+<div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px">
+<button type="button" onClick="{{closeConfirm}}" style="padding: 8px 16px; background: transparent; color: {{c.ink}}; border: 1px solid {{c.line2}}; border-radius: 2px; font: inherit; font-size: 14px; font-weight: 700; cursor: pointer">Cancel</button>
+<button type="button" onClick="{{closeConfirm}}" style="padding: 8px 16px; background: {{c.acc}}; color: {{c.accInk}}; border: 0; border-radius: 2px; font: inherit; font-size: 14px; font-weight: 700; cursor: pointer">Replay 2 items</button>
+</div>
+</div>
+</div>
+</sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["light","dark"],"default":"light"},"$preview":{"width":1440,"height":1000}}'>
+const PAL = {
+  light: {bg:'#F3F3EF',s1:'#FFFFFF',s2:'#E9E9E4',s3:'#DEDED7',line:'#D6D6CE',line2:'#B9BAB1',ink:'#15191B',ink2:'#454D52',ink3:'#5F676C',acc:'#0A7770',accInk:'#FFFFFF',accSoft:'#DCEEEB',ok:'#2B7A3A',okSoft:'#E2EFE2',warn:'#8F5B00',warnSoft:'#F6E9CC',bad:'#B3261E',badSoft:'#F8E0DC',rev:'#5B45B0',revSoft:'#E9E4F7',mute:'#5F676C',muteSoft:'#E6E6E0',shadow:'0 2px 4px rgba(21,25,27,.08), 0 24px 48px rgba(21,25,27,.16)'},
+  dark: {bg:'#0E1112',s1:'#15191B',s2:'#1B2023',s3:'#2A3135',line:'#2A3135',line2:'#3B4449',ink:'#E6EAE8',ink2:'#AEB6B9',ink3:'#8C969A',acc:'#3EC2B4',accInk:'#06201D',accSoft:'#123331',ok:'#6FC77F',okSoft:'#16291A',warn:'#E8AE45',warnSoft:'#2F2510',bad:'#F2806F',badSoft:'#3A1916',rev:'#AE9BF5',revSoft:'#241E3D',mute:'#8C969A',muteSoft:'#20262A',shadow:'0 2px 4px rgba(0,0,0,.5), 0 24px 48px rgba(0,0,0,.6)'}
+};
+function nav(c, active){
+  const mk=(id,label,count,tone)=>({label, count: count||'', fw: id===active?700:500, color: id===active?c.ink:c.ink2, bg: id===active?c.s1:'transparent', sh: id===active?('inset 0 0 0 1px '+c.line):'none', cc: tone==='bad'?c.bad:(tone==='rev'?c.rev:(tone==='warn'?c.warn:c.ink3))});
+  return {
+    g:[mk('inbox','Inbox','9','rev'),mk('nodes','Nodes'),mk('metrics','Metrics'),mk('logs','Logs')],
+    p:[mk('graph','Graph'),mk('runs','Runs'),mk('streams','Streams and items'),mk('dead','Dead letters','3','bad'),mk('insights','Insights','2','warn'),mk('lessons','Lessons'),mk('revisions','Revisions')]
+  };
+}
+class Component extends DCLogic {
+  constructor(props){ super(props); this.state = { confirm: true }; }
+  renderVals() {
+    const theme = this.props.theme ?? 'light';
+    const c = PAL[theme] || PAL.light;
+    const items = [
+      { id: 'it_9d02e6b3', t: 'T2 · 41 m² · Paris 18e', a: '2', when: '06:27' },
+      { id: 'it_c41e0b88', t: 'T3 · 66 m² · Paris 19e', a: '2', when: '06:12' }
+    ];
+    return {
+      c, nav: nav(c, 'dead'), items,
+      scrim: theme === 'dark' ? 'rgba(0,0,0,.6)' : 'rgba(21,25,27,.35)',
+      confirmOpen: this.state.confirm,
+      openConfirm: () => this.setState({ confirm: true }),
+      closeConfirm: () => this.setState({ confirm: false })
+    };
+  }
+}
+</script>
+</body>
+</html>
