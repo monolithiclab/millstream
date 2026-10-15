@@ -15,8 +15,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/monolithiclab/millstream/internal/pipeline"
 	"github.com/monolithiclab/millstream/internal/protocol"
 	"github.com/monolithiclab/millstream/internal/runtime/exec"
+	"github.com/monolithiclab/millstream/internal/runtime/exec/exectest"
 	"github.com/monolithiclab/millstream/internal/runtime/exec/exectest/fakeexec"
 	"github.com/monolithiclab/millstream/internal/store"
 )
@@ -79,12 +81,14 @@ type fakeTransport struct {
 	pulled   chan string // a delivery id per assignment handed out
 	lost     chan string // a delivery id per lease reported lost
 	reported chan string // a delivery id per Done or Fail
+	beats    chan int    // the number of leases per Heartbeat call
 }
 
 func newFakeTransport(as ...Assignment) *fakeTransport {
 	return &fakeTransport{
 		queue: as, lose: map[string]bool{},
 		pulled: make(chan string, 64), lost: make(chan string, 64), reported: make(chan string, 64),
+		beats: make(chan int, 64),
 	}
 }
 
@@ -112,6 +116,7 @@ func (f *fakeTransport) Heartbeat(_ context.Context, _ string, refs []store.Leas
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.heartbeats = append(f.heartbeats, refs)
+	f.beats <- len(refs)
 	if f.hbErr != nil {
 		err := f.hbErr
 		f.hbErr = nil
@@ -129,7 +134,7 @@ func (f *fakeTransport) Heartbeat(_ context.Context, _ string, refs []store.Leas
 }
 
 // PutArtifact keeps the content in memory, by hash.
-func (f *fakeTransport) PutArtifact(_ context.Context, pipeline, name string, r io.Reader) (store.ArtifactRef, error) {
+func (f *fakeTransport) PutArtifact(_ context.Context, pipelineName, name string, r io.Reader) (store.ArtifactRef, error) {
 	data, err := io.ReadAll(r)
 	if err != nil {
 		return store.ArtifactRef{}, err
@@ -144,15 +149,15 @@ func (f *fakeTransport) PutArtifact(_ context.Context, pipeline, name string, r 
 	if f.blobs == nil {
 		f.blobs = map[string][]byte{}
 	}
-	f.blobs[pipeline+"/"+ref.SHA256] = data
+	f.blobs[pipelineName+"/"+ref.SHA256] = data
 	return ref, nil
 }
 
 // OpenArtifact reads a content PutArtifact kept.
-func (f *fakeTransport) OpenArtifact(_ context.Context, pipeline string, ref store.ArtifactRef) (io.ReadCloser, error) {
+func (f *fakeTransport) OpenArtifact(_ context.Context, pipelineName string, ref store.ArtifactRef) (io.ReadCloser, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	data, ok := f.blobs[pipeline+"/"+ref.SHA256]
+	data, ok := f.blobs[pipelineName+"/"+ref.SHA256]
 	if !ok {
 		return nil, fmt.Errorf("artifact %s: %w", ref.SHA256, fs.ErrNotExist)
 	}
@@ -180,9 +185,9 @@ func (f *fakeTransport) report(id string) error {
 }
 
 // await receives n values from ch, failing the test after a timeout.
-func await(t *testing.T, ch <-chan string, n int) []string {
+func await[T any](t *testing.T, ch <-chan T, n int) []T {
 	t.Helper()
-	var got []string
+	var got []T
 	for range n {
 		select {
 		case id := <-ch:
@@ -194,8 +199,21 @@ func await(t *testing.T, ch <-chan string, n int) []string {
 	return got
 }
 
-// startNode runs a node over tr until the returned stop is called; stop returns Run's error.
+// startNode runs a node over tr until the returned stop is called; stop returns Run's error. Its ticks and drain
+// timer are real: the default intervals, which no test waits for, unless opts sets shorter ones (the e2e twins).
 func startNode(t *testing.T, tr Transport, opts Options) (stop func() error) {
+	t.Helper()
+	return startNodeOn(t, tr, opts, nil)
+}
+
+// startNodeClock is startNode on a fake clock, whose ticks and drain timer the test fires.
+func startNodeClock(t *testing.T, tr Transport, opts Options) (stop func() error, clk *fakeClock) {
+	t.Helper()
+	clk = newFakeClock(t)
+	return startNodeOn(t, tr, opts, clk), clk
+}
+
+func startNodeOn(t *testing.T, tr Transport, opts Options, clk *fakeClock) (stop func() error) {
 	t.Helper()
 	if opts.Owner == "" {
 		opts.Owner = "node-a"
@@ -203,12 +221,12 @@ func startNode(t *testing.T, tr Transport, opts Options) (stop func() error) {
 	if opts.Pool == nil {
 		opts.Pool = fakeexec.NewPool(t, exec.Options{ShutdownTimeout: 300 * time.Millisecond})
 	}
-	if opts.PullInterval == 0 {
-		opts.PullInterval = 5 * time.Millisecond
-	}
 	n, err := New(tr, opts)
 	if err != nil {
 		t.Fatalf("New: %v", err)
+	}
+	if clk != nil {
+		n.newTimer = clk.newTimer
 	}
 	ctx, cancel := context.WithCancel(t.Context())
 	errc := make(chan error, 1)
@@ -221,7 +239,7 @@ func startNode(t *testing.T, tr Transport, opts Options) (stop func() error) {
 			select {
 			case runErr = <-errc:
 			case <-time.After(10 * time.Second):
-				t.Fatal("Run did not return")
+				t.Error("Run did not return") // not Fatal: stop may run on another goroutine
 			}
 		})
 		return runErr
@@ -267,3 +285,71 @@ func (b *syncBuffer) logs(t *testing.T) []map[string]any {
 }
 
 func newJSONLogger(w *syncBuffer) *slog.Logger { return slog.New(slog.NewJSONHandler(w, nil)) }
+
+// fakeClock replaces a node's ticks and drain timer: a channel per duration, which fire sends on.
+type fakeClock struct {
+	t      *testing.T
+	mu     sync.Mutex
+	ticks  map[time.Duration]chan time.Time
+	timers chan time.Duration // the duration of each one-shot timer made: the drain timeout, once draining
+}
+
+func newFakeClock(t *testing.T) *fakeClock {
+	return &fakeClock{t: t, ticks: map[time.Duration]chan time.Time{}, timers: make(chan time.Duration, 8)}
+}
+
+func (c *fakeClock) ch(d time.Duration) chan time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.ticks[d] == nil {
+		c.ticks[d] = make(chan time.Time)
+	}
+	return c.ticks[d]
+}
+
+func (c *fakeClock) newTimer(d time.Duration, repeat bool) (<-chan time.Time, func()) {
+	ch := c.ch(d)
+	if !repeat {
+		c.timers <- d
+	}
+	return ch, func() {}
+}
+
+// fire delivers a tick of the timer of duration d, returning once the node has taken it.
+func (c *fakeClock) fire(d time.Duration) {
+	c.t.Helper()
+	select {
+	case c.ch(d) <- time.Time{}:
+	case <-time.After(10 * time.Second):
+		c.t.Fatalf("no timer of %s took the tick", d)
+	}
+}
+
+// draining waits until the node has started its drain timer.
+func (c *fakeClock) draining() {
+	c.t.Helper()
+	if d := await(c.t, c.timers, 1)[0]; d != DefaultDrainTimeout {
+		c.t.Fatalf("timer of %s made, want the drain timeout", d)
+	}
+}
+
+// heldPool runs the fake action in-process, in both builds, and holds every delivery before the action starts
+// until release is called (or the delivery is cancelled, which kills the action).
+func heldPool(t *testing.T) (pool *exec.Pool, release func()) {
+	t.Helper()
+	gate := make(chan struct{})
+	held := func(ctx context.Context, args, env []string, stdin io.Reader, stdout, stderr io.Writer) int {
+		select {
+		case <-gate:
+		case <-ctx.Done():
+			return 1
+		}
+		return exectest.Serve(ctx, args, env, stdin, stdout, stderr)
+	}
+	pool = exec.NewPool(exec.PoolOptions{Options: exec.Options{
+		Launchers: map[string]exec.Launcher{pipeline.KindExec: exec.FuncLauncher{F: held}},
+	}})
+	t.Cleanup(func() { _ = pool.Close() })
+	var once sync.Once
+	return pool, func() { once.Do(func() { close(gate) }) }
+}
