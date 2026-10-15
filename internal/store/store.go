@@ -56,8 +56,10 @@ type Store interface {
 	ReplayDeadLetters(ctx context.Context, pipeline, runID string, ids []string, migrate bool) (int, error)
 	// DiscardDeadLetters is the Dead-letter discard unit; it returns how many open dead letters it discarded.
 	DiscardDeadLetters(ctx context.Context, pipeline string, ids []string) (int, error)
-	// ExpireLeases returns every lease expired by the store clock to pending and returns how many.
-	ExpireLeases(ctx context.Context) (int, error)
+	// ExpireLeases ends every lease expired by the store clock, as a failed attempt (class leaseExpired): pending
+	// after backoff while attempts remain, dead otherwise, cancelled for a cancelled run. It returns the leases it
+	// ended, with the fencing token each was held under.
+	ExpireLeases(ctx context.Context) ([]LeaseRef, error)
 	// SetPaused pauses or resumes a step, or the whole pipeline when step is empty.
 	SetPaused(ctx context.Context, pipeline, step string, paused bool) error
 	// SkipFirings records a firingSkipped event for each cron firing key of the trigger that catch-up none passed

@@ -211,57 +211,74 @@ func (s *Store) Renew(ctx context.Context, owner string, refs []store.LeaseRef, 
 	return lost, nil
 }
 
-// ExpireLeases returns every lease that expired by the store clock to pending, with its attempt unchanged. A
-// delivery of a cancelled run is cancelled instead, since nothing will run it again.
-func (s *Store) ExpireLeases(ctx context.Context) (int, error) {
-	var count int
+// ExpireLeases ends every lease that expired by the store clock and returns them. An expired lease consumes its
+// attempt (spec section 5.3): the delivery is retried after backoff while attempts remain, and is dead with its dead
+// letter (class leaseExpired) once they are exhausted. A delivery of a cancelled run is cancelled instead, since
+// nothing will run it again.
+func (s *Store) ExpireLeases(ctx context.Context) ([]store.LeaseRef, error) {
+	var expired []store.LeaseRef
 	err := s.submit(ctx, unitExpireLeases, func(w *wtx) error {
-		type expired struct {
-			d         deliveryRow
-			cancelled bool
-		}
-		rows, err := w.query(`SELECT d.pipeline, d.id, d.run_id, d.step, d.attempt, d.lease_owner, r.state = ?
-			FROM deliveries d JOIN runs r ON r.pipeline = d.pipeline AND r.id = d.run_id
-			WHERE d.state = ? AND d.lease_expires_at < ? ORDER BY d.rowid`,
-			store.RunCancelled, store.DeliveryLeased, w.ts())
+		expired = nil // a batch retried after a failure starts over
+		rows, err := w.query(`SELECT id, pipeline FROM deliveries WHERE state = ? AND lease_expires_at < ?
+			ORDER BY rowid`, store.DeliveryLeased, w.ts())
 		if err != nil {
 			return err
 		}
-		var list []expired
+		var refs []store.LeaseRef
 		for rows.Next() {
-			var e expired
-			if err := rows.Scan(&e.d.pipeline, &e.d.id, &e.d.runID, &e.d.step, &e.d.attempt, &e.d.owner,
-				&e.cancelled); err != nil {
+			var ref store.LeaseRef
+			if err := rows.Scan(&ref.DeliveryID, &ref.Pipeline); err != nil {
 				_ = rows.Close()
 				return fmt.Errorf("scan expired lease: %w", err)
 			}
-			list = append(list, e)
+			refs = append(refs, ref)
 		}
 		if err := closeRows(rows); err != nil {
 			return err
 		}
-		for _, e := range list {
-			state := store.DeliveryPending
-			if e.cancelled {
-				state = store.DeliveryCancelled
-			}
-			if _, err := w.exec(`UPDATE deliveries SET state = ?, lease_owner = '', lease_expires_at = '',
-				next_attempt_at = ? WHERE pipeline = ? AND id = ?`, state, w.ts(), e.d.pipeline, e.d.id); err != nil {
+		for _, ref := range refs {
+			d, err := w.delivery(ref.Pipeline, ref.DeliveryID)
+			if err != nil {
 				return err
 			}
-			if err := w.event(e.d.pipeline, e.d.runID, store.EventLeaseExpired, map[string]any{
-				"deliveryId": e.d.id, "step": e.d.step, "attempt": e.d.attempt, "owner": e.d.owner, "state": state,
-			}); err != nil {
+			if err := w.expire(d); err != nil {
 				return err
 			}
-			if e.cancelled {
-				if err := w.settle(e.d.pipeline, e.d.runID); err != nil {
-					return err
-				}
-			}
+			expired = append(expired, store.LeaseRef{
+				Pipeline: d.pipeline, DeliveryID: d.id, Step: d.step, FencingToken: d.token,
+			})
 		}
-		count = len(list)
 		return nil
 	})
-	return count, err
+	if err != nil {
+		return nil, err
+	}
+	return expired, nil
+}
+
+// expire ends the expired lease of d as a failed attempt, or cancels d when its run is cancelled.
+func (w *wtx) expire(d *deliveryRow) error {
+	run, err := w.run(d.pipeline, d.runID)
+	if err != nil {
+		return err
+	}
+	if err := w.event(d.pipeline, d.runID, store.EventLeaseExpired, map[string]any{
+		"deliveryId": d.id, "step": d.step, "attempt": d.attempt, "owner": d.owner,
+	}); err != nil {
+		return err
+	}
+	if run.state == store.RunCancelled {
+		_, err := w.cancelDelivery(d, 0)
+		return err
+	}
+	rev, err := w.revision(run.revision)
+	if err != nil {
+		return err
+	}
+	step, _ := rev.stepOrOrphan(d.step)
+	_, err = w.fail(d, run, rev, step, failure{
+		class: store.ClassLeaseExpired, retryable: true,
+		message: fmt.Sprintf("the lease held by %s expired before it reported", d.owner),
+	})
+	return err
 }

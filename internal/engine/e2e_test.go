@@ -89,6 +89,7 @@ func TestEndToEnd(t *testing.T) {
 	runCtx, stop := context.WithCancel(ctx)
 	engineDone, nodeDone := make(chan error, 1), make(chan error, 1)
 	go func() { engineDone <- e.Run(runCtx) }()
+	<-e.Ready()
 	go func() { nodeDone <- n.Run(runCtx) }()
 
 	if err := e.WaitSettled(ctx, []RunRef{{Pipeline: "listings", ID: runID}}); err != nil {
@@ -139,8 +140,8 @@ func TestWaitSettledHonoursContext(t *testing.T) {
 	}
 }
 
-// TestRunExpiresLeases runs the engine loop: a lease that expires by the store clock returns to pending and is
-// leased again.
+// TestRunExpiresLeases runs the engine loop: a lease that expires by the store clock consumes its attempt, returns
+// to pending and is leased again after its backoff.
 func TestRunExpiresLeases(t *testing.T) {
 	t.Parallel()
 	v := newEnv(t, Options{LeaseTTL: time.Minute, TickInterval: 5 * time.Millisecond})
@@ -164,6 +165,10 @@ func TestRunExpiresLeases(t *testing.T) {
 	if err := <-done; err != nil {
 		t.Fatal(err)
 	}
+	if d := v.deliveries(id)[0]; d.Attempt != 2 || d.ErrorClass != store.ClassLeaseExpired {
+		t.Fatalf("expired delivery = %+v; want attempt 2, class leaseExpired", d)
+	}
+	v.clock.Advance(time.Hour) // past the backoff
 	if got := v.pull(1); len(got) != 1 {
 		t.Fatalf("pull after expiry = %v", got)
 	}

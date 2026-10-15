@@ -58,7 +58,7 @@ func TestRunCompletesAssignments(t *testing.T) {
 		t.Fatalf("dones %d, fails %d", len(tr.dones), len(tr.fails))
 	}
 	for _, d := range tr.dones {
-		want := store.LeaseRef{Pipeline: "listings", DeliveryID: d.DeliveryID, FencingToken: 7}
+		want := store.LeaseRef{Pipeline: "listings", DeliveryID: d.DeliveryID, Step: "score", FencingToken: 7}
 		if d.LeaseRef != want || d.Attempt != 2 || d.CostUSD != 0 {
 			t.Errorf("done = %+v", d)
 		}
@@ -154,7 +154,7 @@ func TestHeartbeatRenewsHeldLeases(t *testing.T) {
 	if len(tr.heartbeats) < 2 {
 		t.Fatalf("heartbeats = %d, want several during a 300 ms delivery", len(tr.heartbeats))
 	}
-	want := store.LeaseRef{Pipeline: "listings", DeliveryID: "dl_1", FencingToken: 7}
+	want := store.LeaseRef{Pipeline: "listings", DeliveryID: "dl_1", Step: "score", FencingToken: 7}
 	for _, refs := range tr.heartbeats {
 		if len(refs) != 1 || refs[0] != want {
 			t.Errorf("heartbeat refs = %+v", refs)

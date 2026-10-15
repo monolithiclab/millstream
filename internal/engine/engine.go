@@ -3,8 +3,10 @@
 // Transport, leasing deliveries through the store and resolving each into the action process to run.
 //
 // Coordination is in memory, as the spec asks: step concurrency and pipeline limits are counted from the leases the
-// engine handed out (rebuilt from the store's leased deliveries at start and after leases expire), and step rates
-// are token buckets. Pause state and the round-robin across pipelines belong to the store's Lease unit, which
+// engine handed out, and step rates are token buckets. The leases in flight are rebuilt from the store's leased
+// deliveries once, when Run starts (Ready is closed after that), so those of a previous engine count until they
+// expire; afterwards an entry leaves only when its own lease ends, matched by fencing token: a report the store
+// accepted or refused as stale, a lease the heartbeat lost, or one ExpireLeases ended. Pause state and the round-robin across pipelines belong to the store's Lease unit, which
 // receives the engine's counts as slots and exclusions. All of the engine's mutable state is guarded by one mutex.
 //
 // Packages are the engine's to hold: a delivery runs the action of its run's revision, so it needs that revision's
@@ -89,6 +91,9 @@ type Engine struct {
 	buckets  map[store.StepRef]*bucket      // step rate limits
 
 	crons map[[2]string]*cronState // cron triggers by pipeline and name; the scheduler's goroutine only
+
+	ready     chan struct{} // closed once Run has rebuilt the leases in flight
+	readyOnce sync.Once
 }
 
 // revision is a decoded revision.
@@ -99,12 +104,13 @@ type revision struct {
 	p         *pipeline.Pipeline
 }
 
-// flight is a delivery leased through the engine and not yet reported.
+// flight is a delivery leased through the engine and not yet reported, under its fencing token.
 type flight struct {
 	step    store.StepRef
 	runID   string
 	itemID  string
 	attempt int
+	token   int64
 }
 
 // New returns an engine over opts.Store.
@@ -134,7 +140,7 @@ func New(opts Options) (*Engine, error) {
 		st: opts.Store, opts: opts, log: opts.Logger,
 		packages: map[string]*pipeline.Package{}, revs: map[store.RevisionID]*revision{},
 		actions: map[actionKey]*resolvedAction{}, inflight: map[string]flight{}, buckets: map[store.StepRef]*bucket{},
-		crons:  map[[2]string]*cronState{},
+		crons: map[[2]string]*cronState{}, ready: make(chan struct{}),
 		parser: cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor),
 	}, nil
 }
@@ -160,7 +166,9 @@ func (e *Engine) Apply(ctx context.Context, pkg *pipeline.Package) (store.Revisi
 	return id, nil
 }
 
-// Run expires leases and runs the cron scheduler every tick until ctx is cancelled. It returns nil then.
+// Run rebuilds the leases in flight from the store, closes Ready, then expires leases and runs the cron scheduler
+// every tick until ctx is cancelled. It returns nil then. Nodes start pulling once Ready is closed, so the rebuild
+// never races their leases.
 func (e *Engine) Run(ctx context.Context) error {
 	if err := e.resync(ctx); err != nil {
 		if ctx.Err() != nil {
@@ -168,6 +176,7 @@ func (e *Engine) Run(ctx context.Context) error {
 		}
 		return err
 	}
+	e.readyOnce.Do(func() { close(e.ready) })
 	tick := time.NewTicker(e.opts.TickInterval)
 	defer tick.Stop()
 	for {
@@ -183,25 +192,30 @@ func (e *Engine) Run(ctx context.Context) error {
 	}
 }
 
-// expire returns expired leases to pending and, when any expired, recounts the deliveries in flight.
+// Ready is closed once Run has rebuilt the leases in flight: a node pulling from the engine starts after it.
+func (e *Engine) Ready() <-chan struct{} { return e.ready }
+
+// expire ends expired leases in the store and forgets exactly those it ended.
 func (e *Engine) expire(ctx context.Context) {
-	n, err := e.st.ExpireLeases(ctx)
-	switch {
-	case err != nil:
+	refs, err := e.st.ExpireLeases(ctx)
+	if err != nil {
 		if ctx.Err() == nil {
 			e.log.Error("expire leases", "error", err.Error())
 		}
-	case n > 0:
-		e.log.Info("leases expired", "count", n)
-		if err := e.resync(ctx); err != nil && ctx.Err() == nil {
-			e.log.Error("recount leases", "error", err.Error())
-		}
+		return
+	}
+	for _, ref := range refs {
+		f, _ := e.release(ref)
+		e.flightLog(ref, f).Warn("lease expired")
 	}
 }
 
-// resync rebuilds the deliveries in flight from the store's leased deliveries: at start, those of a previous engine
-// that died count until their leases expire.
+// resync rebuilds the deliveries in flight from the store's leased deliveries, at start: those of a previous engine
+// that died count until their leases expire. It holds e.mu from the read to the swap, so a lease taken or released
+// meanwhile is ordered entirely before or after it.
 func (e *Engine) resync(ctx context.Context) error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
 	ds, err := e.st.Deliveries(ctx, store.DeliveryFilter{State: store.DeliveryLeased})
 	if err != nil {
 		return fmt.Errorf("engine: read leased deliveries: %w", err)
@@ -209,12 +223,11 @@ func (e *Engine) resync(ctx context.Context) error {
 	inflight := make(map[string]flight, len(ds))
 	for _, d := range ds {
 		inflight[d.ID] = flight{
-			step: store.StepRef{Pipeline: d.Pipeline, Step: d.Step}, runID: d.RunID, itemID: d.ItemID, attempt: d.Attempt,
+			step: store.StepRef{Pipeline: d.Pipeline, Step: d.Step}, runID: d.RunID, itemID: d.ItemID,
+			attempt: d.Attempt, token: d.FencingToken,
 		}
 	}
-	e.mu.Lock()
 	e.inflight = inflight
-	e.mu.Unlock()
 	return nil
 }
 

@@ -85,6 +85,8 @@ const (
 	// ClassMissingStep: a delivery reported done for a step its run's revision does not have, so its outputs have
 	// nowhere to go. Never retried.
 	ClassMissingStep = "missingStep"
+	// ClassLeaseExpired: the lease expired before its owner reported (spec section 5.3). It consumes the attempt.
+	ClassLeaseExpired = "leaseExpired"
 )
 
 // MaxErrorMessage is the most bytes of an error message kept on a delivery (spec section 5.5).
@@ -207,13 +209,15 @@ type Lease struct {
 
 // Ref returns the reference that renews or completes the lease.
 func (l Lease) Ref() LeaseRef {
-	return LeaseRef{Pipeline: l.Pipeline, DeliveryID: l.DeliveryID, FencingToken: l.FencingToken}
+	return LeaseRef{Pipeline: l.Pipeline, DeliveryID: l.DeliveryID, Step: l.Step, FencingToken: l.FencingToken}
 }
 
-// LeaseRef identifies one lease: a delivery and the fencing token it was leased with.
+// LeaseRef identifies one lease: a delivery and the fencing token it was leased with. Step is informative: the
+// units find the delivery by pipeline and id.
 type LeaseRef struct {
 	Pipeline     string
 	DeliveryID   string
+	Step         string
 	FencingToken int64
 }
 

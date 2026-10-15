@@ -79,6 +79,12 @@ func (c RunCmd) Run(rt *Runtime) error {
 		defer cancel()
 		engineDone, nodeDone := make(chan error, 1), make(chan error, 1)
 		go func() { engineDone <- e.Run(runCtx) }()
+		// The node pulls only once the engine has rebuilt its leases in flight from the store.
+		select {
+		case <-e.Ready():
+		case err := <-engineDone:
+			return err
+		}
 		go func() { nodeDone <- n.Run(runCtx) }()
 		var waitErr error
 		if c.Once {

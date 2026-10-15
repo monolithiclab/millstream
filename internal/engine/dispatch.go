@@ -98,7 +98,9 @@ func (e *Engine) lease(ctx context.Context, owner string, maxN int) ([]store.Lea
 	}
 	for _, l := range leases {
 		ref := store.StepRef{Pipeline: l.Pipeline, Step: l.Step}
-		e.inflight[l.DeliveryID] = flight{step: ref, runID: l.RunID, itemID: l.Item.ID, attempt: l.Attempt}
+		e.inflight[l.DeliveryID] = flight{
+			step: ref, runID: l.RunID, itemID: l.Item.ID, attempt: l.Attempt, token: l.FencingToken,
+		}
 		if b := e.buckets[ref]; b != nil {
 			b.take()
 		}
@@ -137,14 +139,33 @@ func (e *Engine) bucket(ref store.StepRef, rate string, now time.Time) *bucket {
 	return b
 }
 
-// release forgets a delivery in flight and returns what was recorded about it.
-func (e *Engine) release(deliveryID string) (flight, bool) {
+// release forgets the delivery in flight under ref's lease and returns what was recorded about it. A newer lease of
+// the same delivery, under another fencing token, is left alone.
+func (e *Engine) release(ref store.LeaseRef) (flight, bool) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	f, ok := e.inflight[deliveryID]
-	delete(e.inflight, deliveryID)
-	return f, ok
+	f, ok := e.inflight[ref.DeliveryID]
+	if !ok || f.token != ref.FencingToken {
+		return flight{}, false
+	}
+	delete(e.inflight, ref.DeliveryID)
+	return f, true
 }
+
+// lookup returns what is recorded about the delivery in flight under ref's lease, without forgetting it.
+func (e *Engine) lookup(ref store.LeaseRef) flight {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if f, ok := e.inflight[ref.DeliveryID]; ok && f.token == ref.FencingToken {
+		return f
+	}
+	return flight{}
+}
+
+// ended reports whether a Done or Fail outcome ended the lease: the store applied it, or refused it as stale
+// because the lease had already ended. Any other error leaves the delivery leased until it reports again or its
+// lease expires, so it keeps counting in flight.
+func ended(err error) bool { return err == nil || errors.Is(err, store.ErrStaleLease) }
 
 // Heartbeat implements node.Transport: it renews owner's leases and returns those lost, which stop counting in
 // flight.
@@ -154,16 +175,15 @@ func (e *Engine) Heartbeat(ctx context.Context, owner string, refs []store.Lease
 		return nil, fmt.Errorf("heartbeat: %w", err)
 	}
 	for _, ref := range lost {
-		e.release(ref.DeliveryID)
+		e.release(ref)
 	}
 	return lost, nil
 }
 
-// Done implements node.Transport. The delivery stops counting in flight once the store answered, whatever it
-// answered: a refused report means another owner holds the delivery, or the lease expires.
+// Done implements node.Transport. The delivery stops counting in flight once its lease ended (see ended).
 func (e *Engine) Done(ctx context.Context, req store.DoneRequest) error {
 	state, err := e.st.Done(ctx, req)
-	f, _ := e.release(req.DeliveryID)
+	f := e.settleFlight(req.LeaseRef, err)
 	if err != nil {
 		return fmt.Errorf("done %s: %w", req.DeliveryID, err)
 	}
@@ -174,13 +194,23 @@ func (e *Engine) Done(ctx context.Context, req store.DoneRequest) error {
 // Fail implements node.Transport, counting in flight like Done.
 func (e *Engine) Fail(ctx context.Context, req store.FailRequest) error {
 	state, err := e.st.Fail(ctx, req)
-	f, _ := e.release(req.DeliveryID)
+	f := e.settleFlight(req.LeaseRef, err)
 	if err != nil {
 		return fmt.Errorf("fail %s: %w", req.DeliveryID, err)
 	}
 	e.flightLog(req.LeaseRef, f).Info("delivery failed", "state", string(state), "class", req.Class,
 		"retryable", req.Retryable)
 	return nil
+}
+
+// settleFlight releases the delivery in flight when the store's answer err ended its lease, and returns what was
+// recorded about it either way.
+func (e *Engine) settleFlight(ref store.LeaseRef, err error) flight {
+	if ended(err) {
+		f, _ := e.release(ref)
+		return f
+	}
+	return e.lookup(ref)
 }
 
 func (e *Engine) flightLog(ref store.LeaseRef, f flight) *slog.Logger {

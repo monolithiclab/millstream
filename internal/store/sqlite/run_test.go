@@ -60,8 +60,8 @@ func TestCancelFailAndExpiry(t *testing.T) {
 			t.Fatal(err)
 		}
 		e.clock.Advance(2 * time.Minute)
-		if n, err := e.s.ExpireLeases(e.ctx); n != 1 || err != nil {
-			t.Fatalf("ExpireLeases = %d, %v", n, err)
+		if refs, err := e.s.ExpireLeases(e.ctx); len(refs) != 1 || err != nil {
+			t.Fatalf("ExpireLeases = %v, %v", refs, err)
 		}
 		if d := e.deliveries("r1")[0]; d.State != store.DeliveryCancelled {
 			t.Fatalf("delivery = %s, want cancelled", d.State)

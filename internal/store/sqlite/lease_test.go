@@ -49,25 +49,55 @@ func TestLeaseFencingTokenGrows(t *testing.T) {
 	e.fire("r1")
 	l := e.lease(1)[0]
 	e.clock.Advance(2 * time.Minute)
-	if n, err := e.s.ExpireLeases(e.ctx); err != nil || n != 1 {
-		t.Fatalf("ExpireLeases = %d, %v", n, err)
+	refs, err := e.s.ExpireLeases(e.ctx)
+	if want := l.Ref(); err != nil || len(refs) != 1 || refs[0] != want {
+		t.Fatalf("ExpireLeases = %+v, %v; want %+v", refs, err, want)
 	}
-	d := e.deliveries("r1")[0]
-	if d.State != store.DeliveryPending || d.Attempt != 1 || d.LeaseOwner != "" {
-		t.Fatalf("expired delivery = %+v; want pending, attempt unchanged", d)
-	}
+	e.clock.Advance(time.Minute) // past the backoff
 	l2 := e.lease(1)[0]
 	if l2.FencingToken != l.FencingToken+1 {
 		t.Fatalf("token %d after %d", l2.FencingToken, l.FencingToken)
 	}
 	// The first owner's messages are refused.
-	_, err := e.s.Done(e.ctx, store.DoneRequest{LeaseRef: l.Ref(), Attempt: 1})
+	_, err = e.s.Done(e.ctx, store.DoneRequest{LeaseRef: l.Ref(), Attempt: 1})
 	wantErr(t, err, store.ErrStaleLease)
 	if n := len(e.eventKinds(store.EventLeaseExpired)); n != 1 {
 		t.Fatalf("%d leaseExpired events", n)
 	}
-	if n, _ := e.s.ExpireLeases(e.ctx); n != 0 {
-		t.Fatalf("expired %d live leases", n)
+	if refs, _ := e.s.ExpireLeases(e.ctx); len(refs) != 0 {
+		t.Fatalf("expired live leases %+v", refs)
+	}
+}
+
+// An expired lease consumes its attempt (spec section 5.3): the delivery is retried after backoff while attempts
+// remain, then ends dead with its dead letter, class leaseExpired.
+func TestLeaseExpiryConsumesAttempts(t *testing.T) {
+	t.Parallel()
+	e := newEnv(t, fixture) // crawl: maxAttempts 3, backoff 10s, jitter one half
+	e.fire("r1")
+	for attempt := 1; attempt <= 3; attempt++ {
+		l := e.leaseStep("crawl")
+		wantState(t, "attempt", l.Attempt, attempt)
+		e.clock.Advance(2 * time.Minute)
+		if refs, err := e.s.ExpireLeases(e.ctx); err != nil || len(refs) != 1 {
+			t.Fatalf("ExpireLeases = %v, %v", refs, err)
+		}
+		d := e.deliveries("r1")[0]
+		if d.ErrorClass != store.ClassLeaseExpired {
+			t.Fatalf("delivery = %+v; want class leaseExpired", d)
+		}
+		if attempt < 3 {
+			if d.State != store.DeliveryPending || d.Attempt != attempt+1 || !d.NextAttemptAt.After(e.clock.Now()) {
+				t.Fatalf("after expiry %d: delivery = %+v; want pending, next attempt after backoff", attempt, d)
+			}
+			e.clock.Advance(time.Minute)
+		} else if d.State != store.DeliveryDead {
+			t.Fatalf("after the last attempt: delivery = %+v; want dead", d)
+		}
+	}
+	dls := e.deadLetters("r1")
+	if len(dls) != 1 || dls[0].Stream != "crawl.dlq" || !strings.HasPrefix(dls[0].Error, "leaseExpired: ") {
+		t.Fatalf("dead letters = %+v", dls)
 	}
 }
 
@@ -157,8 +187,8 @@ func TestRenew(t *testing.T) {
 		t.Fatalf("another owner renewed: lost %v", lost)
 	}
 	e.clock.Advance(45 * time.Second) // 75 s after the lease: only the renewed one survives
-	if n, _ := e.s.ExpireLeases(e.ctx); n != 1 {
-		t.Fatalf("expired %d, want 1", n)
+	if refs, _ := e.s.ExpireLeases(e.ctx); len(refs) != 1 {
+		t.Fatalf("expired %+v, want 1", refs)
 	}
 	if d := e.deliveries("r1")[0]; d.State != store.DeliveryLeased || !d.LeaseExpiresAt.Equal(t0.Add(90*time.Second)) {
 		t.Fatalf("renewed delivery = %+v", d)
