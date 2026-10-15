@@ -3,6 +3,7 @@ package store
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -134,6 +135,8 @@ const (
 	EventResumed                = "resumed"
 	EventFiringSkipped          = "firingSkipped"
 	EventBudgetReached          = "budgetReached"
+	EventInsightOpened          = "insightOpened"
+	EventInsightResolved        = "insightResolved"
 )
 
 // Budget scopes (spec section 7.5): budget.runUsd bounds the spend of one run, budget.dayUsd the spend of the
@@ -324,14 +327,40 @@ type Artifact struct {
 	Refcount int64
 }
 
+// Metric is a measurement an action reported for an attempt with a metric message (spec section 6.3). The Done and
+// Fail units record an attempt's metrics in its event, where the rollup projector reads them (spec section 10.2).
+type Metric struct {
+	Name   string            `json:"name"`
+	Value  float64           `json:"value"`
+	Labels map[string]string `json:"labels,omitempty"`
+}
+
+// MaxAttemptMetrics is the most metrics an attempt records; a node drops the others.
+const MaxAttemptMetrics = 256
+
+// ValidMetrics checks an attempt's metrics: at most MaxAttemptMetrics, each with a name and a finite value. Its
+// error wraps ErrInvalid.
+func ValidMetrics(ms []Metric) error {
+	if len(ms) > MaxAttemptMetrics {
+		return fmt.Errorf("%d metrics, over %d: %w", len(ms), MaxAttemptMetrics, ErrInvalid)
+	}
+	for _, m := range ms {
+		if m.Name == "" || math.IsNaN(m.Value) || math.IsInf(m.Value, 0) {
+			return fmt.Errorf("metric %q: want a name and a finite value: %w", m.Name, ErrInvalid)
+		}
+	}
+	return nil
+}
+
 // DoneRequest completes a leased delivery with its outputs. Artifacts are the attempt's own (spec section 6.3),
-// already in the artifact store.
+// already in the artifact store, and Metrics the ones the action reported.
 type DoneRequest struct {
 	LeaseRef
 	Attempt   int
 	Outputs   []Output
 	CostUSD   float64
 	Artifacts []ArtifactRef
+	Metrics   []Metric
 }
 
 // FailRequest fails a leased delivery. Artifacts are the failed attempt's own, kept as on done.
@@ -346,6 +375,7 @@ type FailRequest struct {
 	// budget reservation is charged in full, as for an expired lease, when it exceeds CostUSD.
 	Unreported bool
 	Artifacts  []ArtifactRef
+	Metrics    []Metric
 }
 
 // AttemptArtifact is an artifact an attempt of a delivery kept for itself, such as an agent's transcript.
@@ -444,6 +474,40 @@ type Delivery struct {
 	CostUSD      float64
 	// ReservedUSD is the budget reservation of a leased agent delivery (spec section 5.9), zero otherwise.
 	ReservedUSD float64
+	// CreatedAt is when the delivery was created (or reset by a dead-letter replay), LeasedAt when its latest
+	// attempt was leased (zero before the first), and FinishedAt when it became terminal (zero until then).
+	CreatedAt  time.Time
+	LeasedAt   time.Time
+	FinishedAt time.Time
+	// Wait is the time its attempts spent due but not leased (queue wait, backoff excluded), and Work the time they
+	// spent leased: together, with the backoffs, its latency (spec section 11.1).
+	Wait time.Duration
+	Work time.Duration
+}
+
+// WaitAt is the delivery's queue wait as of now: Wait, plus the time a due pending delivery has waited since.
+func (d Delivery) WaitAt(now time.Time) time.Duration {
+	if d.State == DeliveryPending && !d.NextAttemptAt.After(now) {
+		return d.Wait + now.Sub(d.NextAttemptAt)
+	}
+	return d.Wait
+}
+
+// WorkAt is the delivery's work time as of now: Work, plus the time a leased delivery has held its lease since.
+func (d Delivery) WorkAt(now time.Time) time.Duration {
+	if d.State == DeliveryLeased && !d.LeasedAt.IsZero() {
+		return d.Work + max(now.Sub(d.LeasedAt), 0)
+	}
+	return d.Work
+}
+
+// Latency is the delivery's latency: from creation to terminal, or to now while it is not terminal.
+func (d Delivery) Latency(now time.Time) time.Duration {
+	end := d.FinishedAt
+	if end.IsZero() {
+		end = now
+	}
+	return max(end.Sub(d.CreatedAt), 0)
 }
 
 // DeadLetter is a dead-letter record; its ID is the dead-letter item's id on Stream.
@@ -491,6 +555,85 @@ type DeliveryFilter struct {
 	Pipeline string
 	RunID    string
 	State    DeliveryState
+	// Since keeps the deliveries created at or after it.
+	Since time.Time
+}
+
+// EventFilter selects a pipeline's events; empty fields match everything. Events come in sequence order.
+type EventFilter struct {
+	Pipeline string
+	Kinds    []string
+	// Since keeps the events recorded at or after it.
+	Since time.Time
+}
+
+// MetricRollup is one metric's one-minute rollup for one label set (spec section 10.2).
+type MetricRollup struct {
+	Pipeline string
+	Name     string
+	// Labels are the label set, by name; nil when it has none.
+	Labels map[string]string
+	// Minute is the minute the rollup covers, truncated.
+	Minute time.Time
+	Count  int64
+	Sum    float64
+	Min    float64
+	Max    float64
+}
+
+// MetricFilter selects rollups; empty fields match everything. Rollups come by pipeline, name, labels and minute.
+type MetricFilter struct {
+	Pipeline string
+	Name     string
+	// Since keeps the minutes at or after it.
+	Since time.Time
+}
+
+// InsightState is an insight's state (spec section 11.1).
+type InsightState string
+
+// Insight states. The projector opens and resolves insights; a user acknowledges or mutes them, and a muted insight
+// stays muted whatever the projector finds.
+const (
+	InsightOpen         InsightState = "open"
+	InsightAcknowledged InsightState = "acknowledged"
+	InsightResolved     InsightState = "resolved"
+	InsightMuted        InsightState = "muted"
+)
+
+// Insight is a finding of the insights projector (spec section 11.1). ID is its fingerprint: a recurring problem
+// updates its row.
+type Insight struct {
+	Pipeline string
+	ID       string
+	Kind     string
+	// Scope is the step it concerns, or "pipeline".
+	Scope       string
+	WindowStart time.Time
+	WindowEnd   time.Time
+	// Severity is info, warning or error.
+	Severity string
+	// Evidence is a JSON object: the figures and up to 20 sample item ids.
+	Evidence json.RawMessage
+	State    InsightState
+	// OpenedAt is when the projector first found it, UpdatedAt when it last changed.
+	OpenedAt  time.Time
+	UpdatedAt time.Time
+}
+
+// InsightReport is what one pass of the insights projector found for a pipeline: Insights for the Kinds it
+// evaluated. An insight of those kinds not found again is resolved; kinds not evaluated are left as they are.
+type InsightReport struct {
+	Pipeline string
+	Kinds    []string
+	Insights []Insight
+}
+
+// InsightFilter selects insights; empty fields match everything. Insights come by pipeline, then most recently
+// updated first.
+type InsightFilter struct {
+	Pipeline string
+	State    InsightState
 }
 
 // DeadLetterFilter selects dead letters; empty fields match everything.

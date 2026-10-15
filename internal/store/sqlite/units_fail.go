@@ -17,6 +17,9 @@ func (s *Store) Fail(ctx context.Context, f store.FailRequest) (store.DeliverySt
 	if err := validAttemptArtifacts(f.Artifacts); err != nil {
 		return "", fmt.Errorf("fail: %w", err)
 	}
+	if err := store.ValidMetrics(f.Metrics); err != nil {
+		return "", fmt.Errorf("fail: %w", err)
+	}
 	var state store.DeliveryState
 	err := s.submit(ctx, unitFail, func(w *wtx) error {
 		d, err := w.leased(f.LeaseRef, f.Attempt)
@@ -35,7 +38,7 @@ func (s *Store) Fail(ctx context.Context, f store.FailRequest) (store.DeliverySt
 			cost = max(cost, d.reserved) // unreported spend is charged in full (spec section 5.9)
 		}
 		if run.state == store.RunCancelled {
-			state, err = w.cancelDelivery(d, cost)
+			state, err = w.cancelDelivery(d, cost, f.Metrics)
 			return err
 		}
 		rev, err := w.revision(run.revision)
@@ -44,18 +47,19 @@ func (s *Store) Fail(ctx context.Context, f store.FailRequest) (store.DeliverySt
 		}
 		step, _ := rev.stepOrOrphan(d.step)
 		state, err = w.fail(d, run, rev, step, failure{
-			class: f.Class, message: f.Message, retryable: f.Retryable, cost: cost,
+			class: f.Class, message: f.Message, retryable: f.Retryable,
+			attemptEnd: attemptEnd{cost: cost, metrics: f.Metrics},
 		})
 		return err
 	})
 	return state, err
 }
 
-// failure is why an attempt failed.
+// failure is why an attempt failed, with what the attempt's end records.
 type failure struct {
 	class, message string
 	retryable      bool
-	cost           float64
+	attemptEnd
 }
 
 // fail ends a failed attempt of a leased delivery: pending after backoff when the error is retryable and attempts
@@ -68,7 +72,13 @@ func (w *wtx) fail(d *deliveryRow, run *runRow, rev *revision, step pipeline.Ste
 		return "", err
 	}
 	retry := step.Retry
-	if f.retryable && d.attempt < retry.MaxAttempts {
+	retried := f.retryable && d.attempt < retry.MaxAttempts
+	data, err := w.endAttempt(d, !retried, f.attemptEnd)
+	if err != nil {
+		return "", err
+	}
+	data["class"], data["error"] = f.class, eventError(msg)
+	if retried {
 		next := w.now.Add(backoff(retry, d.attempt, w.s.opts.Rand()))
 		if _, err := w.exec(`UPDATE deliveries SET state = ?, attempt = attempt + 1, lease_owner = '',
 			lease_expires_at = '', next_attempt_at = ?, error_class = ?, error_message = ?
@@ -76,18 +86,14 @@ func (w *wtx) fail(d *deliveryRow, run *runRow, rev *revision, step pipeline.Ste
 			store.DeliveryPending, formatTime(next), f.class, msg, d.pipeline, d.id); err != nil {
 			return "", err
 		}
-		return store.DeliveryPending, w.event(d.pipeline, d.runID, store.EventDeliveryRetry, map[string]any{
-			"deliveryId": d.id, "step": d.step, "attempt": d.attempt, "class": f.class,
-			"nextAttemptAt": formatTime(next),
-		})
+		data["nextAttemptAt"] = formatTime(next)
+		return store.DeliveryPending, w.event(d.pipeline, d.runID, store.EventDeliveryRetry, data)
 	}
 	if _, err := w.exec(`UPDATE deliveries SET state = ?, lease_owner = '', lease_expires_at = '', error_class = ?,
 		error_message = ? WHERE pipeline = ? AND id = ?`, store.DeliveryDead, f.class, msg, d.pipeline, d.id); err != nil {
 		return "", err
 	}
-	if err := w.event(d.pipeline, d.runID, store.EventDeliveryDead, map[string]any{
-		"deliveryId": d.id, "step": d.step, "attempt": d.attempt, "class": f.class,
-	}); err != nil {
+	if err := w.event(d.pipeline, d.runID, store.EventDeliveryDead, data); err != nil {
 		return "", err
 	}
 	input, err := w.itemEnvelope(d.pipeline, d.itemID)
@@ -103,6 +109,12 @@ func (w *wtx) fail(d *deliveryRow, run *runRow, rev *revision, step pipeline.Ste
 	}
 	return store.DeliveryDead, w.settle(d.pipeline, d.runID)
 }
+
+// maxEventError is the most bytes of an error message a failed attempt's event keeps: enough for the
+// failureCluster insight to fingerprint it (spec section 11.1); the delivery keeps up to MaxErrorMessage.
+const maxEventError = 512
+
+func eventError(msg string) string { return truncate(msg, maxEventError) }
 
 // itemEnvelope reads an item as the envelope a dead letter carries (spec section 5.2).
 func (w *wtx) itemEnvelope(pipelineName, id string) (map[string]any, error) {

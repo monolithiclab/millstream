@@ -1,0 +1,173 @@
+[
+  {
+    "id": "in_3d9770cfd4c89d02",
+    "kind": "slowStep",
+    "scope": "publish",
+    "severity": "warning",
+    "window": [
+      "2026-10-14T12:00:00Z",
+      "2026-10-15T12:00:00Z"
+    ],
+    "summary": "0% of the critical path (queue 0%, work 100%, backoff 0%); p95 3.1s, baseline 0s",
+    "evidence": {
+      "backoffShare": 0,
+      "baselineP95Seconds": 0,
+      "criticalPathShare": 0.005,
+      "deliveries": 5,
+      "p95Seconds": 3.1,
+      "queueWaitShare": 0,
+      "regression": true,
+      "runs": 3,
+      "samples": [
+        "it_1556a280415fbee458965393fe1263b0",
+        "it_31f458ae256f436d903d05c3971396d7",
+        "it_82bd3608b3d3c582682cfbac798c109e"
+      ],
+      "slowestPart": "work",
+      "workShare": 1
+    }
+  },
+  {
+    "id": "in_1c136be1e3282f2d",
+    "kind": "slowStep",
+    "scope": "score",
+    "severity": "warning",
+    "window": [
+      "2026-10-14T12:00:00Z",
+      "2026-10-15T12:00:00Z"
+    ],
+    "summary": "96% of the critical path (queue 33%, work 67%, backoff 0%); p95 33s, baseline 1s",
+    "evidence": {
+      "backoffShare": 0.005,
+      "baselineP95Seconds": 1,
+      "criticalPathShare": 0.964,
+      "deliveries": 6,
+      "p95Seconds": 33,
+      "queueWaitShare": 0.328,
+      "regression": true,
+      "runs": 3,
+      "samples": [
+        "it_469dfa940f38d1bd96cc5c6952f5b609",
+        "it_c8c4223a00571629d794fc20f7f338dd",
+        "it_d795ad9b21a91cced15694f2ad0e854d"
+      ],
+      "slowestPart": "work",
+      "workShare": 0.667
+    }
+  },
+  {
+    "id": "in_c359228920226e9e",
+    "kind": "failureCluster",
+    "scope": "score",
+    "severity": "error",
+    "window": [
+      "2026-10-14T12:00:00Z",
+      "2026-10-15T12:00:00Z"
+    ],
+    "summary": "1 failures (14% of attempts), 0% recovered on retry: action: parse \u003cpath\u003e: unexpected token at offset \u003cn\u003e",
+    "evidence": {
+      "class": "action",
+      "count": 1,
+      "dead": 1,
+      "deliveries": 1,
+      "example": "parse /data/slow2/page-1.json: unexpected token at offset 17",
+      "firstSeen": "2026-10-15T10:00:31Z",
+      "lastSeen": "2026-10-15T10:00:31Z",
+      "message": "parse \u003cpath\u003e: unexpected token at offset \u003cn\u003e",
+      "rate": 0.143,
+      "retrySuccessShare": 0,
+      "samples": [
+        "it_4d5f24f38af4b0910b0adbbe11837af1"
+      ]
+    }
+  },
+  {
+    "id": "in_94e6c59d6c862d4a",
+    "kind": "failureCluster",
+    "scope": "score",
+    "severity": "warning",
+    "window": [
+      "2026-10-14T12:00:00Z",
+      "2026-10-15T12:00:00Z"
+    ],
+    "summary": "1 failures (14% of attempts), 100% recovered on retry: action: timeout after \u003cn\u003es calling \u003curl\u003e",
+    "evidence": {
+      "class": "action",
+      "count": 1,
+      "dead": 0,
+      "deliveries": 1,
+      "example": "timeout after 30s calling https://api.example.test/v1/items/slow1",
+      "firstSeen": "2026-10-15T09:00:31Z",
+      "lastSeen": "2026-10-15T09:00:31Z",
+      "message": "timeout after \u003cn\u003es calling \u003curl\u003e",
+      "rate": 0.143,
+      "retrySuccessShare": 1,
+      "samples": [
+        "it_d795ad9b21a91cced15694f2ad0e854d"
+      ]
+    }
+  },
+  {
+    "id": "in_9ebab9e5937b9760",
+    "kind": "cost",
+    "scope": "score",
+    "severity": "warning",
+    "window": [
+      "2026-10-14T12:00:00Z",
+      "2026-10-15T12:00:00Z"
+    ],
+    "summary": "$0.14 for 5 outputs ($0.028 each), 2.333 turns per delivery, 1 schema failures",
+    "evidence": {
+      "baselineCostPerOutput": 0.01,
+      "byModel": {
+        "small-model": {
+          "attempts": 7,
+          "costUsd": 0.14,
+          "schemaFailures": 1,
+          "tokensIn": 700,
+          "tokensOut": 140,
+          "turns": 14
+        }
+      },
+      "costPerOutput": 0.028,
+      "costUsd": 0.14,
+      "outputs": 5,
+      "samples": [
+        "it_d795ad9b21a91cced15694f2ad0e854d",
+        "it_d564675a59dc8e292897c85515af3237",
+        "it_4d5f24f38af4b0910b0adbbe11837af1",
+        "it_c8c4223a00571629d794fc20f7f338dd",
+        "it_c2abe53553468cfb01cc8bf7c3e2964c",
+        "it_469dfa940f38d1bd96cc5c6952f5b609"
+      ],
+      "schemaFailures": 1,
+      "turnsPerDelivery": 2.333
+    }
+  },
+  {
+    "id": "in_4c4a5ea9ce02a478",
+    "kind": "unschedulable",
+    "scope": "publish",
+    "severity": "error",
+    "window": [
+      "2026-10-14T12:00:00Z",
+      "2026-10-15T12:00:00Z"
+    ],
+    "summary": "5 attempts no runtime can take: sandbox: agent step publish needs a container sandbox (a container runtime, agents.image)",
+    "evidence": {
+      "class": "sandbox",
+      "count": 5,
+      "deliveries": 5,
+      "example": "agent step publish needs a container sandbox (a container runtime, agents.image)",
+      "firstSeen": "2026-10-15T09:00:34.1Z",
+      "lastSeen": "2026-10-15T11:00:31.2Z",
+      "samples": [
+        "it_e54eefd247b341aba66562f58fe418a3",
+        "it_82bd3608b3d3c582682cfbac798c109e",
+        "it_31f458ae256f436d903d05c3971396d7",
+        "it_61fef443cc2463e49036703a9b857abc",
+        "it_1556a280415fbee458965393fe1263b0"
+      ]
+    }
+  }
+]

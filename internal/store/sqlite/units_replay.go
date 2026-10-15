@@ -94,10 +94,10 @@ func (s *Store) StartReplay(ctx context.Context, r store.ReplayStart) (int64, bo
 		}
 		for _, id := range r.Items {
 			if _, err := w.exec(`INSERT INTO deliveries
-				(pipeline, id, run_id, step, item_id, generation, state, attempt, next_attempt_at)
-				VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?) ON CONFLICT DO NOTHING`,
+				(pipeline, id, run_id, step, item_id, generation, state, attempt, next_attempt_at, created_at)
+				VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?) ON CONFLICT DO NOTHING`,
 				r.Pipeline, ids.Delivery(r.Step, id, generation), r.RunID, r.Step, id, generation,
-				store.DeliveryPending, w.ts()); err != nil {
+				store.DeliveryPending, w.ts(), w.ts()); err != nil {
 				return err
 			}
 		}

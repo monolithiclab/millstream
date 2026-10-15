@@ -31,6 +31,9 @@ func (s *Store) Done(ctx context.Context, d store.DoneRequest) (store.DeliverySt
 	if err := validAttemptArtifacts(d.Artifacts); err != nil {
 		return "", fmt.Errorf("done: %w", err)
 	}
+	if err := store.ValidMetrics(d.Metrics); err != nil {
+		return "", fmt.Errorf("done: %w", err)
+	}
 	var state store.DeliveryState
 	err := s.submit(ctx, unitDone, func(w *wtx) error {
 		var err error
@@ -53,24 +56,25 @@ func (w *wtx) done(req store.DoneRequest, outputs []payload) (store.DeliveryStat
 		return "", err
 	}
 	if run.state == store.RunCancelled {
-		return w.cancelDelivery(d, req.CostUSD)
+		return w.cancelDelivery(d, req.CostUSD, req.Metrics)
 	}
 	rev, err := w.revision(run.revision)
 	if err != nil {
 		return "", err
 	}
+	end := attemptEnd{cost: req.CostUSD, metrics: req.Metrics}
 	step, ok := rev.stepOrOrphan(d.step)
 	if !ok {
-		return w.fail(d, run, rev, step, failure{class: store.ClassMissingStep, cost: req.CostUSD,
+		return w.fail(d, run, rev, step, failure{class: store.ClassMissingStep, attemptEnd: end,
 			message: fmt.Sprintf("step %q is not in revision %s: its outputs have nowhere to go", d.step, rev.hash)})
 	}
 	if msg := keyRule(req.Outputs); msg != "" {
-		return w.fail(d, run, rev, step, failure{class: store.ClassKeyRule, message: msg, cost: req.CostUSD})
+		return w.fail(d, run, rev, step, failure{class: store.ClassKeyRule, message: msg, attemptEnd: end})
 	}
 	routes := make([]routing, len(outputs))
 	for i, o := range outputs {
 		if routes[i], err = rev.route(step, o.value, run.vars, run.exprRun(rev)); err != nil {
-			return w.fail(d, run, rev, step, failure{class: store.ClassRoute, message: err.Error(), cost: req.CostUSD})
+			return w.fail(d, run, rev, step, failure{class: store.ClassRoute, message: err.Error(), attemptEnd: end})
 		}
 	}
 	for i, o := range outputs {
@@ -85,9 +89,12 @@ func (w *wtx) done(req store.DoneRequest, outputs []payload) (store.DeliveryStat
 	if err := w.addCost(d, req.CostUSD); err != nil {
 		return "", err
 	}
-	if err := w.event(d.pipeline, d.runID, store.EventDeliveryDone, map[string]any{
-		"deliveryId": d.id, "step": d.step, "attempt": d.attempt, "outputs": len(outputs),
-	}); err != nil {
+	data, err := w.endAttempt(d, true, end)
+	if err != nil {
+		return "", err
+	}
+	data["outputs"] = len(outputs)
+	if err := w.event(d.pipeline, d.runID, store.EventDeliveryDone, data); err != nil {
 		return "", err
 	}
 	return store.DeliveryDone, w.settle(d.pipeline, d.runID)
@@ -168,8 +175,9 @@ func (w *wtx) publishOutput(rev *revision, run *runRow, step pipeline.Step, d *d
 	return nil
 }
 
-// cancelDelivery ends a delivery of a cancelled run: no outputs, its cost recorded (spec section 5.3).
-func (w *wtx) cancelDelivery(d *deliveryRow, cost float64) (store.DeliveryState, error) {
+// cancelDelivery ends a leased delivery of a cancelled run: no outputs, its cost and metrics recorded (spec section
+// 5.3).
+func (w *wtx) cancelDelivery(d *deliveryRow, cost float64, metrics []store.Metric) (store.DeliveryState, error) {
 	if _, err := w.exec(`UPDATE deliveries SET state = ?, lease_owner = '', lease_expires_at = ''
 		WHERE pipeline = ? AND id = ?`, store.DeliveryCancelled, d.pipeline, d.id); err != nil {
 		return "", err
@@ -177,8 +185,11 @@ func (w *wtx) cancelDelivery(d *deliveryRow, cost float64) (store.DeliveryState,
 	if err := w.addCost(d, cost); err != nil {
 		return "", err
 	}
-	if err := w.event(d.pipeline, d.runID, store.EventDeliveryCancelled,
-		map[string]any{"deliveryId": d.id, "step": d.step, "attempt": d.attempt}); err != nil {
+	data, err := w.endAttempt(d, true, attemptEnd{cost: cost, metrics: metrics})
+	if err != nil {
+		return "", err
+	}
+	if err := w.event(d.pipeline, d.runID, store.EventDeliveryCancelled, data); err != nil {
 		return "", err
 	}
 	return store.DeliveryCancelled, w.settle(d.pipeline, d.runID)

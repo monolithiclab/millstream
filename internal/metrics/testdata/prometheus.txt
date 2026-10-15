@@ -1,0 +1,15 @@
+# TYPE millstream_delivery_latency_seconds histogram
+millstream_delivery_latency_seconds_bucket{le="1",pipeline="p",step="score"} 1
+millstream_delivery_latency_seconds_bucket{le="+Inf",pipeline="p",step="score"} 3
+millstream_delivery_latency_seconds_sum{pipeline="p",step="score"} 4.5
+millstream_delivery_latency_seconds_count{pipeline="p",step="score"} 3
+# TYPE millstream_delivery_work_seconds summary
+millstream_delivery_work_seconds_sum{pipeline="q"} 0.25
+millstream_delivery_work_seconds_count{pipeline="q"} 1
+# TYPE millstream_items_out_total counter
+millstream_items_out_total{pipeline="p",step="score",stream="a.b"} 5
+# TYPE millstream_queue_depth gauge
+millstream_queue_depth{pipeline="p",step="score"} 3
+# TYPE millstream_tokens_in summary
+millstream_tokens_in_sum{model="a \"quoted\"\\name",pipeline="p",step="score"} 300
+millstream_tokens_in_count{model="a \"quoted\"\\name",pipeline="p",step="score"} 2

@@ -65,6 +65,7 @@ func Check(pkg *Package, actions ActionResolver, env func(string) (string, bool)
 	c.producers, c.consumers = c.p.streamIndex()
 	c.stepNames = slices.Sorted(maps.Keys(c.p.Steps))
 	c.checkSecrets()
+	c.checkInsights()
 	c.checkTriggers()
 	c.checkStreams()
 	for _, name := range c.stepNames {
@@ -104,6 +105,13 @@ func (c *checker) checkSecrets() {
 		if _, ok := c.env(SecretEnv(name)); !ok {
 			c.errorf(indexPath("secrets", i), "secret %s is not set: set %s", name, SecretEnv(name))
 		}
+	}
+}
+
+// checkInsights checks the insights key (spec section 11.1).
+func (c *checker) checkInsights() {
+	if _, err := c.p.InsightsConfig(); err != nil {
+		c.errorf("insights", "%v", err)
 	}
 }
 

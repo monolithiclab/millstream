@@ -171,23 +171,23 @@ func (s *Store) Deliveries(ctx context.Context, f store.DeliveryFilter) ([]store
 	w.eq("pipeline", f.Pipeline)
 	w.eq("run_id", f.RunID)
 	w.eq("state", string(f.State))
+	w.since("created_at", f.Since)
 	ds, err := scan(ctx, s.read, `SELECT pipeline, id, run_id, step, item_id, generation, state, attempt, lease_owner,
 		fencing_token, lease_expires_at, next_attempt_at, error_class, error_message, filter_reason, cost_usd,
-		reserved_usd FROM deliveries`+w.String()+` ORDER BY rowid`, w.args, func(rows *sql.Rows) (store.Delivery, error) {
-		var d store.Delivery
-		var expires, next string
-		if err := rows.Scan(&d.Pipeline, &d.ID, &d.RunID, &d.Step, &d.ItemID, &d.Generation, &d.State, &d.Attempt,
-			&d.LeaseOwner, &d.FencingToken, &expires, &next, &d.ErrorClass, &d.ErrorMessage, &d.FilterReason, &d.CostUSD,
-			&d.ReservedUSD); err != nil {
-			return d, fmt.Errorf("scan delivery: %w", err)
-		}
-		var err error
-		if d.LeaseExpiresAt, err = parseTime(expires); err != nil {
-			return d, err
-		}
-		d.NextAttemptAt, err = parseTime(next)
-		return d, err
-	})
+		reserved_usd, created_at, leased_at, finished_at, wait_ms, work_ms FROM deliveries`+w.String()+` ORDER BY rowid`,
+		w.args, func(rows *sql.Rows) (store.Delivery, error) {
+			var d store.Delivery
+			var expires, next, created, leased, finished string
+			var wait, work int64
+			if err := rows.Scan(&d.Pipeline, &d.ID, &d.RunID, &d.Step, &d.ItemID, &d.Generation, &d.State, &d.Attempt,
+				&d.LeaseOwner, &d.FencingToken, &expires, &next, &d.ErrorClass, &d.ErrorMessage, &d.FilterReason,
+				&d.CostUSD, &d.ReservedUSD, &created, &leased, &finished, &wait, &work); err != nil {
+				return d, fmt.Errorf("scan delivery: %w", err)
+			}
+			d.Wait, d.Work = time.Duration(wait)*time.Millisecond, time.Duration(work)*time.Millisecond
+			return d, parseTimes(map[*time.Time]string{&d.LeaseExpiresAt: expires, &d.NextAttemptAt: next,
+				&d.CreatedAt: created, &d.LeasedAt: leased, &d.FinishedAt: finished})
+		})
 	if err != nil {
 		return nil, fmt.Errorf("deliveries: %w", err)
 	}
@@ -225,21 +225,42 @@ func (s *Store) Events(ctx context.Context, afterSeq int64, limit int) ([]store.
 		limit = 1000
 	}
 	evs, err := scan(ctx, s.read, `SELECT seq, ts, pipeline, run_id, kind, data FROM events WHERE seq > ?
-		ORDER BY seq LIMIT ?`, []any{afterSeq, limit}, func(rows *sql.Rows) (store.Event, error) {
-		var e store.Event
-		var ts, data string
-		if err := rows.Scan(&e.Seq, &ts, &e.Pipeline, &e.RunID, &e.Kind, &data); err != nil {
-			return e, fmt.Errorf("scan event: %w", err)
-		}
-		e.Data = json.RawMessage(data)
-		var err error
-		e.TS, err = parseTime(ts)
-		return e, err
-	})
+		ORDER BY seq LIMIT ?`, []any{afterSeq, limit}, scanEvent)
 	if err != nil {
 		return nil, fmt.Errorf("events: %w", err)
 	}
 	return evs, nil
+}
+
+// PipelineEvents returns the events f selects, in sequence order.
+func (s *Store) PipelineEvents(ctx context.Context, f store.EventFilter) ([]store.Event, error) {
+	var w where
+	w.eq("pipeline", f.Pipeline)
+	if len(f.Kinds) > 0 {
+		w.conds = append(w.conds, "kind IN (?"+strings.Repeat(", ?", len(f.Kinds)-1)+")")
+		for _, k := range f.Kinds {
+			w.args = append(w.args, k)
+		}
+	}
+	w.since("ts", f.Since)
+	evs, err := scan(ctx, s.read, `SELECT seq, ts, pipeline, run_id, kind, data FROM events`+w.String()+
+		` ORDER BY seq`, w.args, scanEvent)
+	if err != nil {
+		return nil, fmt.Errorf("pipeline events: %w", err)
+	}
+	return evs, nil
+}
+
+func scanEvent(rows *sql.Rows) (store.Event, error) {
+	var e store.Event
+	var ts, data string
+	if err := rows.Scan(&e.Seq, &ts, &e.Pipeline, &e.RunID, &e.Kind, &data); err != nil {
+		return e, fmt.Errorf("scan event: %w", err)
+	}
+	e.Data = json.RawMessage(data)
+	var err error
+	e.TS, err = parseTime(ts)
+	return e, err
 }
 
 // ActiveRevision returns the pipeline's active revision.

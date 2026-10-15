@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
+	"math"
 	"slices"
 	"strings"
 	"testing"
@@ -368,17 +370,41 @@ func TestReportsCostMetrics(t *testing.T) {
 			defer tr.mu.Unlock()
 			var cost float64
 			var unreported bool
+			var metrics []store.Metric
 			switch {
 			case len(tr.dones) == 1:
-				cost = tr.dones[0].CostUSD
+				cost, metrics = tr.dones[0].CostUSD, tr.dones[0].Metrics
 			case len(tr.fails) == 1:
-				cost, unreported = tr.fails[0].CostUSD, tr.fails[0].Unreported
+				cost, unreported, metrics = tr.fails[0].CostUSD, tr.fails[0].Unreported, tr.fails[0].Metrics
 			default:
 				t.Fatalf("dones = %+v, fails = %+v", tr.dones, tr.fails)
 			}
 			if cost != tt.cost || unreported != tt.unreported {
 				t.Fatalf("cost = %v unreported %v, want %v %v", cost, unreported, tt.cost, tt.unreported)
 			}
+			// The action's metrics travel with the report: the cost_usd ones and the other one.
+			if tt.mode == "cost" && len(metrics) != len(sliceOf(tt.config["costs"]))+1 {
+				t.Fatalf("metrics = %+v", metrics)
+			}
 		})
+	}
+}
+
+func sliceOf(v any) []any {
+	s, _ := v.([]any)
+	return s
+}
+
+// Metrics without a name or a finite value are dropped, and at most store.MaxAttemptMetrics are kept.
+func TestStoreMetrics(t *testing.T) {
+	t.Parallel()
+	in := []protocol.Metric{{Name: "a", Value: 1, Labels: map[string]string{"k": "v"}}, {Name: "", Value: 1},
+		{Name: "nan", Value: math.NaN()}, {Name: "inf", Value: math.Inf(-1)}}
+	for range store.MaxAttemptMetrics + 5 {
+		in = append(in, protocol.Metric{Name: "many", Value: 2})
+	}
+	out := storeMetrics(slog.New(slog.DiscardHandler), in)
+	if len(out) != store.MaxAttemptMetrics || out[0].Name != "a" || out[0].Labels["k"] != "v" {
+		t.Fatalf("metrics = %d, first %+v", len(out), out[0])
 	}
 }

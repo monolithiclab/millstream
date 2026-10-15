@@ -93,10 +93,10 @@ func (w *wtx) firstCommit(run *runRow, it newItem, hash string) error {
 func (w *wtx) createDeliveries(rev *revision, run *runRow, stream, itemID string) error {
 	for _, step := range rev.consumers[stream] {
 		_, err := w.exec(`INSERT INTO deliveries
-			(pipeline, id, run_id, step, item_id, generation, state, attempt, next_attempt_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?) ON CONFLICT DO NOTHING`,
+			(pipeline, id, run_id, step, item_id, generation, state, attempt, next_attempt_at, created_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?) ON CONFLICT DO NOTHING`,
 			run.pipeline, ids.Delivery(step, itemID, run.generation), run.id, step, itemID, run.generation,
-			store.DeliveryPending, w.ts())
+			store.DeliveryPending, w.ts(), w.ts())
 		if err != nil {
 			return err
 		}
@@ -140,7 +140,8 @@ func (w *wtx) deadLetter(rev *revision, run *runRow, step pipeline.Step, kind st
 		return err
 	}
 	return w.event(run.pipeline, run.id, store.EventDeadLetter, map[string]any{
-		"deadLetterId": id, "kind": kind, "stream": stream, "originDelivery": deliveryID, "seq": seq,
+		"deadLetterId": id, "kind": kind, "stream": stream, "originDelivery": deliveryID, "originStep": step.Name,
+		"seq": seq,
 	})
 }
 
@@ -177,11 +178,14 @@ func (w *wtx) settle(pipelineName, runID string) error {
 			state = store.RunCompletedWithErrors
 		}
 	}
-	if _, err := w.exec(`UPDATE runs SET state = ?, settled_at = ? WHERE pipeline = ? AND id = ?`,
-		state, w.ts(), pipelineName, runID); err != nil {
-		return err
+	var cost float64
+	if err := w.queryRow(`UPDATE runs SET state = ?, settled_at = ? WHERE pipeline = ? AND id = ? RETURNING cost_usd`,
+		state, w.ts(), pipelineName, runID).Scan(&cost); err != nil {
+		return fmt.Errorf("settle run %s: %w", runID, err)
 	}
-	return w.event(pipelineName, runID, store.EventRunSettled, map[string]any{"state": state})
+	return w.event(pipelineName, runID, store.EventRunSettled, map[string]any{
+		"state": state, "durationMs": millis(w.now.Sub(run.startedAt)), "costUsd": cost,
+	})
 }
 
 // addCost charges a delivery's attempt its cost, on the delivery, its run and its pipeline's UTC day, and clears

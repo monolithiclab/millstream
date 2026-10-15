@@ -26,6 +26,9 @@ var (
 	ErrClosed = errors.New("store closed")
 )
 
+// RollupBatch is the most events one Rollup pass reads.
+const RollupBatch = 5000
+
 // Store is the log store. Units block until the transaction that applied them commits. A unit that fails leaves no
 // trace, whatever else committed in the same batch.
 type Store interface {
@@ -78,6 +81,18 @@ type Store interface {
 	// SkipFirings records each scheduled time of the cron trigger that catch-up none passed over (spec section
 	// 4.6), with a firingSkipped event, all in one unit. A time already recorded is a no-op.
 	SkipFirings(ctx context.Context, pipeline, trigger string, times []time.Time) error
+	// Rollup is the rollup projector's unit (spec section 10.2): it rolls the events recorded since its last pass
+	// up into one-minute metric rollups, with a sample of each step's queue depth and oldest pending age, and moves
+	// its cursor in the same transaction, so a pass that fails leaves no trace and a pass repeated finds nothing
+	// new. It returns how many events it read, at most RollupBatch: a full batch means more are waiting.
+	Rollup(ctx context.Context) (int, error)
+	// RecordInsights applies one pass of the insights projector (spec section 11.1): each insight found is opened
+	// or updated by fingerprint, a resolved one found again reopens, and the open or acknowledged insights of the
+	// evaluated kinds not found are resolved; muted ones keep their state. It records insightOpened and
+	// insightResolved events.
+	RecordInsights(ctx context.Context, r InsightReport) error
+	// SetInsightState acknowledges or mutes an insight, or reopens one (open).
+	SetInsightState(ctx context.Context, pipeline, id string, state InsightState) error
 
 	Runs(ctx context.Context, f RunFilter) ([]Run, error)
 	Run(ctx context.Context, pipeline, id string) (Run, error)
@@ -86,6 +101,12 @@ type Store interface {
 	DeadLetters(ctx context.Context, f DeadLetterFilter) ([]DeadLetter, error)
 	// Events returns up to limit events with a sequence number above afterSeq, in sequence order.
 	Events(ctx context.Context, afterSeq int64, limit int) ([]Event, error)
+	// PipelineEvents returns the events f selects, in sequence order.
+	PipelineEvents(ctx context.Context, f EventFilter) ([]Event, error)
+	// MetricRollups returns the rollups f selects.
+	MetricRollups(ctx context.Context, f MetricFilter) ([]MetricRollup, error)
+	// Insights returns the insights f selects.
+	Insights(ctx context.Context, f InsightFilter) ([]Insight, error)
 	ActiveRevision(ctx context.Context, pipeline string) (RevisionID, error)
 	// OpenRevisions returns the revisions of the runs not yet settled, in ascending order: the revisions whose steps
 	// may still have deliveries to dispatch.

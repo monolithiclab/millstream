@@ -15,6 +15,7 @@ import (
 // candidate is a pending delivery Lease may pick, with what the lease returns.
 type candidate struct {
 	rowid int64
+	due   time.Time // next_attempt_at: when the attempt became due, which its queue wait counts from
 	lease store.Lease
 }
 
@@ -83,16 +84,18 @@ func (w *wtx) lease(req store.LeaseRequest) ([]store.Lease, error) {
 					continue
 				}
 			}
+			wait := millis(w.now.Sub(c.due))
 			if err := w.queryRow(`UPDATE deliveries SET state = ?, lease_owner = ?, fencing_token = fencing_token + 1,
-				lease_expires_at = ?, reserved_usd = ? WHERE pipeline = ? AND id = ? RETURNING fencing_token`,
-				store.DeliveryLeased, req.Owner, formatTime(expires), reserve, l.Pipeline, l.DeliveryID).
+				lease_expires_at = ?, reserved_usd = ?, leased_at = ?, wait_ms = wait_ms + ?
+				WHERE pipeline = ? AND id = ? RETURNING fencing_token`,
+				store.DeliveryLeased, req.Owner, formatTime(expires), reserve, w.ts(), wait, l.Pipeline, l.DeliveryID).
 				Scan(&l.FencingToken); err != nil {
 				return nil, fmt.Errorf("lease %s: %w", l.DeliveryID, err)
 			}
 			l.ExpiresAt = expires
 			data := map[string]any{
 				"deliveryId": l.DeliveryID, "step": l.Step, "attempt": l.Attempt, "owner": req.Owner,
-				"fencingToken": l.FencingToken,
+				"fencingToken": l.FencingToken, "waitMs": wait,
 			}
 			if reserve > 0 {
 				data["reservedUsd"] = reserve
@@ -179,7 +182,7 @@ func excluded(exclude []store.StepRef, ref store.StepRef) bool {
 }
 
 func (w *wtx) dueDeliveries(ref store.StepRef, n int) ([]candidate, error) {
-	rows, err := w.query(`SELECT d.rowid, d.id, d.run_id, r.revision, d.generation, d.attempt,
+	rows, err := w.query(`SELECT d.rowid, d.next_attempt_at, d.id, d.run_id, r.revision, d.generation, d.attempt,
 		i.id, i.run_id, i.stream, i.step, i.key, i.parents, i.generation, i.ts, i.payload, i.artifacts
 		FROM deliveries d
 		JOIN runs r ON r.pipeline = d.pipeline AND r.id = d.run_id
@@ -193,8 +196,8 @@ func (w *wtx) dueDeliveries(ref store.StepRef, n int) ([]candidate, error) {
 	for rows.Next() {
 		c := candidate{lease: store.Lease{Pipeline: ref.Pipeline, Step: ref.Step}}
 		l := &c.lease
-		var parents, ts, body, artifacts string
-		if err := rows.Scan(&c.rowid, &l.DeliveryID, &l.RunID, &l.Revision, &l.Generation, &l.Attempt,
+		var due, parents, ts, body, artifacts string
+		if err := rows.Scan(&c.rowid, &due, &l.DeliveryID, &l.RunID, &l.Revision, &l.Generation, &l.Attempt,
 			&l.Item.ID, &l.Item.RunID, &l.Item.Stream, &l.Item.Step, &l.Item.Key, &parents, &l.Item.Generation,
 			&ts, &body, &artifacts); err != nil {
 			_ = rows.Close()
@@ -202,7 +205,11 @@ func (w *wtx) dueDeliveries(ref store.StepRef, n int) ([]candidate, error) {
 		}
 		l.Item.Pipeline = ref.Pipeline
 		l.Item.Payload = json.RawMessage(body)
-		if err := fillItem(&l.Item, parents, ts, artifacts); err != nil {
+		var err error
+		if c.due, err = parseTime(due); err == nil {
+			err = fillItem(&l.Item, parents, ts, artifacts)
+		}
+		if err != nil {
 			_ = rows.Close()
 			return nil, err
 		}
@@ -330,7 +337,7 @@ func (w *wtx) expire(d *deliveryRow) error {
 		return err
 	}
 	if run.state == store.RunCancelled {
-		_, err := w.cancelDelivery(d, d.reserved)
+		_, err := w.cancelDelivery(d, d.reserved, nil)
 		return err
 	}
 	rev, err := w.revision(run.revision)
@@ -339,7 +346,7 @@ func (w *wtx) expire(d *deliveryRow) error {
 	}
 	step, _ := rev.stepOrOrphan(d.step)
 	_, err = w.fail(d, run, rev, step, failure{
-		class: store.ClassLeaseExpired, retryable: true, cost: d.reserved,
+		class: store.ClassLeaseExpired, retryable: true, attemptEnd: attemptEnd{cost: d.reserved},
 		message: fmt.Sprintf("the lease held by %s expired before it reported", d.owner),
 	})
 	return err

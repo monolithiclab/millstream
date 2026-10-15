@@ -21,17 +21,64 @@ type deliveryRow struct {
 	owner                             string
 	token                             int64
 	reserved                          float64 // the budget reservation of a leased agent delivery
+	createdAt, leasedAt               time.Time
 }
 
 func (w *wtx) delivery(pipelineName, id string) (*deliveryRow, error) {
 	d := &deliveryRow{pipeline: pipelineName, id: id}
+	var created, leased string
 	err := w.queryRow(`SELECT run_id, step, item_id, generation, state, attempt, lease_owner, fencing_token,
-		reserved_usd FROM deliveries WHERE pipeline = ? AND id = ?`, pipelineName, id).
-		Scan(&d.runID, &d.step, &d.itemID, &d.generation, &d.state, &d.attempt, &d.owner, &d.token, &d.reserved)
+		reserved_usd, created_at, leased_at FROM deliveries WHERE pipeline = ? AND id = ?`, pipelineName, id).
+		Scan(&d.runID, &d.step, &d.itemID, &d.generation, &d.state, &d.attempt, &d.owner, &d.token, &d.reserved,
+			&created, &leased)
 	if err != nil {
 		return nil, notFound(err, "delivery "+id)
 	}
+	if d.createdAt, err = parseTime(created); err != nil {
+		return nil, err
+	}
+	if d.leasedAt, err = parseTime(leased); err != nil {
+		return nil, err
+	}
 	return d, nil
+}
+
+// millis is d in whole milliseconds, never negative: the unit of the delivery timings.
+func millis(d time.Duration) int64 { return max(d.Milliseconds(), 0) }
+
+// attemptEnd is what the end of a leased attempt records in its event (spec section 10.2): the attempt's work
+// time, its cost and the action's metrics, and, when the delivery became terminal, its latency.
+type attemptEnd struct {
+	cost    float64
+	metrics []store.Metric
+}
+
+// endAttempt ends d's leased attempt at the batch instant: it adds the attempt's work time to the delivery and,
+// when terminal, marks it finished. It returns the fields the attempt's event carries.
+func (w *wtx) endAttempt(d *deliveryRow, terminal bool, a attemptEnd) (map[string]any, error) {
+	work := int64(0)
+	if !d.leasedAt.IsZero() {
+		work = millis(w.now.Sub(d.leasedAt))
+	}
+	finished := ""
+	if terminal {
+		finished = w.ts()
+	}
+	if _, err := w.exec(`UPDATE deliveries SET work_ms = work_ms + ?, finished_at = ? WHERE pipeline = ? AND id = ?`,
+		work, finished, d.pipeline, d.id); err != nil {
+		return nil, err
+	}
+	data := map[string]any{"deliveryId": d.id, "step": d.step, "attempt": d.attempt, "workMs": work}
+	if terminal {
+		data["latencyMs"] = millis(w.now.Sub(d.createdAt))
+	}
+	if a.cost != 0 {
+		data["costUsd"] = a.cost
+	}
+	if len(a.metrics) > 0 {
+		data["metrics"] = a.metrics
+	}
+	return data, nil
 }
 
 // leased returns the delivery a Done or Fail names, refusing it unless it is still leased under the same fencing

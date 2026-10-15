@@ -19,6 +19,8 @@ earlier designs are in the git history of the spec.
 
 ## Follow-ups
 
+- Insights: deployment-wide `insights` defaults from the environment file, a CLI to reopen a muted insight, and
+  retention of `metric_rollups` and of the events the projectors read (M4).
 - Go SDK: per-output artifacts for `MapKeyed` (today `Context.Artifact` attaches a file to every output of the
   delivery).
 - Registry actions: listing a remote registry's tags to resolve ranges, and pulling the pinned digest on a node that

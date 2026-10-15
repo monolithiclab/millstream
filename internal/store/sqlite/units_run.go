@@ -29,8 +29,9 @@ func (s *Store) Cancel(ctx context.Context, pipelineName, runID string) error {
 			store.RunCancelled, pipelineName, runID); err != nil {
 			return err
 		}
-		n, err := w.affected(`UPDATE deliveries SET state = ? WHERE pipeline = ? AND run_id = ? AND state IN (?, ?)`,
-			store.DeliveryCancelled, pipelineName, runID, store.DeliveryPending, store.DeliveryAwaitingReview)
+		n, err := w.affected(`UPDATE deliveries SET state = ?, finished_at = ?
+			WHERE pipeline = ? AND run_id = ? AND state IN (?, ?)`,
+			store.DeliveryCancelled, w.ts(), pipelineName, runID, store.DeliveryPending, store.DeliveryAwaitingReview)
 		if err != nil {
 			return err
 		}
@@ -226,9 +227,11 @@ func (w *wtx) replayOne(rev *revision, run *runRow, dl deadLetterRow) (bool, err
 		return false, err
 	}
 	if dl.kind == store.DeadLetterDead {
-		n, err := w.affected(`UPDATE deliveries SET state = ?, attempt = 1, next_attempt_at = ?
+		// The replayed delivery starts afresh: its timings count from the replay.
+		n, err := w.affected(`UPDATE deliveries SET state = ?, attempt = 1, next_attempt_at = ?, created_at = ?,
+			leased_at = '', finished_at = '', wait_ms = 0, work_ms = 0
 			WHERE pipeline = ? AND id = ? AND state = ?`,
-			store.DeliveryPending, w.ts(), d.pipeline, d.id, store.DeliveryDead)
+			store.DeliveryPending, w.ts(), w.ts(), d.pipeline, d.id, store.DeliveryDead)
 		if err != nil {
 			return false, err
 		}

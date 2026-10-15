@@ -61,23 +61,25 @@ type CLI struct {
 	DB      string `name:"db" default:".millstream/millstream.db" help:"State database path (created with its directory)."`
 	EnvFile string `name:"env-file" type:"path" help:"Environment file (default: ./millstream.yaml when it exists)."`
 
-	Run     RunCmd     `cmd:"" help:"Apply packages and run the engine with an embedded node."`
-	Check   CheckCmd   `cmd:"" help:"Validate a pipeline package."`
-	Lock    LockCmd    `cmd:"" help:"Pin a package's container and registry actions by image digest in millstream.lock."`
-	Graph   GraphCmd   `cmd:"" help:"Print a package's graph as Mermaid or DOT."`
-	Vars    VarsCmd    `cmd:"" help:"Print a package's variables, values and sources."`
-	Status  StatusCmd  `cmd:"" help:"Show pipelines and recent runs."`
-	Tail    TailCmd    `cmd:"" help:"Print events as JSON lines."`
-	Trigger TriggerCmd `cmd:"" help:"Fire a trigger."`
-	Cancel  CancelCmd  `cmd:"" help:"Cancel a run."`
-	Replay  ReplayCmd  `cmd:"" help:"Replay dead letters into their run, or a step over past items in a replay run."`
-	DLQ     DLQCmd     `cmd:"" name:"dlq" help:"List and discard dead letters."`
-	Pause   PauseCmd   `cmd:"" help:"Pause a pipeline or one of its steps."`
-	Resume  ResumeCmd  `cmd:"" help:"Resume a pipeline or one of its steps."`
-	Test    TestCmd    `cmd:"" help:"Test a package against stubbed actions."`
-	Eval    EvalCmd    `cmd:"" help:"Run an action's evals and score them."`
-	Version VersionCmd `cmd:"" help:"Print the version."`
-	Agent   AgentCmd   `cmd:"" hidden:"" help:"Run the agent adapter: the action process of agent steps."`
+	Run      RunCmd      `cmd:"" help:"Apply packages and run the engine with an embedded node; run report prints a run's report."`
+	Check    CheckCmd    `cmd:"" help:"Validate a pipeline package."`
+	Lock     LockCmd     `cmd:"" help:"Pin a package's container and registry actions by image digest in millstream.lock."`
+	Graph    GraphCmd    `cmd:"" help:"Print a package's graph as Mermaid or DOT."`
+	Vars     VarsCmd     `cmd:"" help:"Print a package's variables, values and sources."`
+	Status   StatusCmd   `cmd:"" help:"Show pipelines and recent runs."`
+	Tail     TailCmd     `cmd:"" help:"Print events as JSON lines."`
+	Trigger  TriggerCmd  `cmd:"" help:"Fire a trigger."`
+	Cancel   CancelCmd   `cmd:"" help:"Cancel a run."`
+	Replay   ReplayCmd   `cmd:"" help:"Replay dead letters into their run, or a step over past items in a replay run."`
+	DLQ      DLQCmd      `cmd:"" name:"dlq" help:"List and discard dead letters."`
+	Pause    PauseCmd    `cmd:"" help:"Pause a pipeline or one of its steps."`
+	Resume   ResumeCmd   `cmd:"" help:"Resume a pipeline or one of its steps."`
+	Test     TestCmd     `cmd:"" help:"Test a package against stubbed actions."`
+	Eval     EvalCmd     `cmd:"" help:"Run an action's evals and score them."`
+	Metrics  MetricsCmd  `cmd:"" help:"Print metric rollups, or their Prometheus exposition."`
+	Insights InsightsCmd `cmd:"" help:"List, acknowledge and mute insights."`
+	Version  VersionCmd  `cmd:"" help:"Print the version."`
+	Agent    AgentCmd    `cmd:"" hidden:"" help:"Run the agent adapter: the action process of agent steps."`
 }
 
 // Main runs the CLI and returns the process exit code.

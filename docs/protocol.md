@@ -89,7 +89,9 @@ output when a delivery has several, each output with its own key. `artifacts` li
 
 **`metric`** records a measurement for the current delivery. Names are Prometheus snake_case. A metric that
 arrives after the delivery's `done` or `error`, before the next `item` is answered, is ignored rather than treated
-as a violation. The engine accepts metrics but does not store them yet: they are stored later in milestone M2.
+as a violation. The engine records an attempt's metrics with the attempt and rolls them up per minute, labelled
+with the step; at most 256 per attempt are kept, and a metric without a name or with a value that is not a finite
+number is dropped. A name the engine's own metrics use (`items_out`, `queue_depth`…) is stored as `action_<name>`.
 One name has a meaning of its own: the `cost_usd` metrics of an attempt add up to its cost in US dollars, recorded on
 the delivery and its run and counted against the pipeline's budgets (platform design, sections 5.9 and 7.5). A late
 `cost_usd` is ignored like any late metric, so report it before `done` or `error`.

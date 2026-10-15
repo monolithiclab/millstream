@@ -40,26 +40,29 @@ import (
 var Units = []string{
 	unitApplyRevision, unitFire, unitLease, unitRenew, unitDone, unitFail, unitCancel,
 	unitReplay, unitDiscard, unitExpireLeases, unitSetPaused, unitSkipFirings, unitFilter, unitDedupe,
-	unitStartReplay, unitRecordEval,
+	unitStartReplay, unitRecordEval, unitRollup, unitRecordInsights, unitSetInsightState,
 }
 
 const (
-	unitApplyRevision = "applyRevision"
-	unitFire          = "fire"
-	unitLease         = "lease"
-	unitRenew         = "renew"
-	unitDone          = "done"
-	unitFail          = "fail"
-	unitCancel        = "cancel"
-	unitReplay        = "replay"
-	unitDiscard       = "discard"
-	unitExpireLeases  = "expireLeases"
-	unitSetPaused     = "setPaused"
-	unitSkipFirings   = "skipFirings"
-	unitFilter        = "filter"
-	unitDedupe        = "dedupe"
-	unitStartReplay   = "startReplay"
-	unitRecordEval    = "recordEval"
+	unitApplyRevision   = "applyRevision"
+	unitFire            = "fire"
+	unitLease           = "lease"
+	unitRenew           = "renew"
+	unitDone            = "done"
+	unitFail            = "fail"
+	unitCancel          = "cancel"
+	unitReplay          = "replay"
+	unitDiscard         = "discard"
+	unitExpireLeases    = "expireLeases"
+	unitSetPaused       = "setPaused"
+	unitSkipFirings     = "skipFirings"
+	unitFilter          = "filter"
+	unitDedupe          = "dedupe"
+	unitStartReplay     = "startReplay"
+	unitRecordEval      = "recordEval"
+	unitRollup          = "rollup"
+	unitRecordInsights  = "recordInsights"
+	unitSetInsightState = "setInsightState"
 )
 
 // Memory opens a store on a fresh temporary database file, removed by Close. A real file rather than SQLite's

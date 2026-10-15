@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
 	"time"
 
 	"github.com/monolithiclab/millstream/internal/protocol"
@@ -206,7 +207,7 @@ func (l *loop) execute(ctx context.Context, log *slog.Logger, a Assignment) {
 	rctx, cancel := context.WithTimeout(l.base, reportTimeout)
 	defer cancel()
 	ref, attempt := a.Lease.Ref(), a.Lease.Attempt
-	cost := costOf(res.Metrics)
+	cost, metrics := costOf(res.Metrics), storeMetrics(log, res.Metrics)
 	var rerr error
 	switch {
 	case err != nil:
@@ -220,11 +221,11 @@ func (l *loop) execute(ctx context.Context, log *slog.Logger, a Assignment) {
 		log.Info("delivery failed in the action", "retryable", res.Err.Retryable)
 		rerr = l.t.Fail(rctx, store.FailRequest{
 			LeaseRef: ref, Attempt: attempt, Class: ClassAction, Message: a.Redact.String(res.Err.Message),
-			Retryable: res.Err.Retryable, CostUSD: cost, Artifacts: res.Artifacts,
+			Retryable: res.Err.Retryable, CostUSD: cost, Artifacts: res.Artifacts, Metrics: metrics,
 		})
 	default:
 		rerr = l.t.Done(rctx, store.DoneRequest{LeaseRef: ref, Attempt: attempt, Outputs: res.Outputs,
-			CostUSD: cost, Artifacts: res.Artifacts})
+			CostUSD: cost, Artifacts: res.Artifacts, Metrics: metrics})
 	}
 	switch {
 	case errors.Is(rerr, store.ErrStaleLease):
@@ -243,6 +244,25 @@ func costOf(metrics []protocol.Metric) float64 {
 		}
 	}
 	return sum
+}
+
+// storeMetrics returns the metrics an attempt reports for the store: the action's metric messages, without the
+// ones whose value is not a finite number or that have no name, and at most store.MaxAttemptMetrics, each dropped
+// one logged.
+func storeMetrics(log *slog.Logger, ms []protocol.Metric) []store.Metric {
+	var out []store.Metric
+	for _, m := range ms {
+		switch {
+		case m.Name == "" || math.IsNaN(m.Value) || math.IsInf(m.Value, 0):
+			log.Warn("metric dropped: it needs a name and a finite value", "metric", m.Name)
+		case len(out) == store.MaxAttemptMetrics:
+			log.Warn("metric dropped: too many metrics for one attempt", "metric", m.Name,
+				"max", store.MaxAttemptMetrics)
+		default:
+			out = append(out, store.Metric{Name: m.Name, Value: m.Value, Labels: m.Labels})
+		}
+	}
+	return out
 }
 
 // pipelineArtifacts binds the transport's artifact store to one pipeline, as the runtime moves a delivery's files.

@@ -1,0 +1,122 @@
+{
+  "pipeline": "shop",
+  "run": "slow2",
+  "kind": "trigger",
+  "state": "completedWithErrors",
+  "startedAt": "2026-10-15T10:00:00Z",
+  "settledAt": "2026-10-15T10:00:31.1Z",
+  "durationSeconds": 31.1,
+  "costUsd": 0.04,
+  "items": {
+    "pages": 2,
+    "publish.dlq": 1,
+    "score.dlq": 1,
+    "scored": 1,
+    "trigger.adhoc": 1
+  },
+  "criticalPath": {
+    "totalSeconds": 31.1,
+    "steps": [
+      {
+        "step": "crawl",
+        "delivery": "dl_82bbe92e6eed04142259c9f90c8a0315",
+        "latencySeconds": 1,
+        "waitSeconds": 0,
+        "workSeconds": 1,
+        "backoffSeconds": 0,
+        "share": 0.032
+      },
+      {
+        "step": "score",
+        "delivery": "dl_b0ae0d819aeda0802b7d84f490c4b15f",
+        "latencySeconds": 30,
+        "waitSeconds": 10,
+        "workSeconds": 20,
+        "backoffSeconds": 0,
+        "share": 0.965
+      },
+      {
+        "step": "publish",
+        "delivery": "dl_73aabedfa3e32cde9cf5ce98e040bc2d",
+        "latencySeconds": 0.1,
+        "waitSeconds": 0,
+        "workSeconds": 0.1,
+        "backoffSeconds": 0,
+        "share": 0.003
+      }
+    ]
+  },
+  "steps": [
+    {
+      "step": "score",
+      "deliveries": 2,
+      "failedAttempts": 1,
+      "p50Seconds": 30,
+      "p95Seconds": 30,
+      "maxSeconds": 30,
+      "meanWaitSeconds": 10,
+      "meanWorkSeconds": 20,
+      "costUsd": 0.04
+    },
+    {
+      "step": "crawl",
+      "deliveries": 1,
+      "failedAttempts": 0,
+      "p50Seconds": 1,
+      "p95Seconds": 1,
+      "maxSeconds": 1,
+      "meanWaitSeconds": 0,
+      "meanWorkSeconds": 1,
+      "costUsd": 0
+    },
+    {
+      "step": "publish",
+      "deliveries": 1,
+      "failedAttempts": 1,
+      "p50Seconds": 0.1,
+      "p95Seconds": 0.1,
+      "maxSeconds": 0.1,
+      "meanWaitSeconds": 0,
+      "meanWorkSeconds": 0.1,
+      "costUsd": 0
+    }
+  ],
+  "failures": [
+    {
+      "step": "publish",
+      "class": "sandbox",
+      "message": "agent step publish needs a container sandbox (a container runtime, agents.image)",
+      "example": "agent step publish needs a container sandbox (a container runtime, agents.image)",
+      "count": 1,
+      "recovered": 0
+    },
+    {
+      "step": "score",
+      "class": "action",
+      "message": "parse \u003cpath\u003e: unexpected token at offset \u003cn\u003e",
+      "example": "parse /data/slow2/page-1.json: unexpected token at offset 17",
+      "count": 1,
+      "recovered": 0
+    }
+  ],
+  "comparison": {
+    "runs": 7,
+    "durationSeconds": {
+      "value": 31.1,
+      "median": 2
+    },
+    "costUsd": {
+      "value": 0.04,
+      "median": 0.02
+    },
+    "items": {
+      "value": 6,
+      "median": 5
+    },
+    "failedAttempts": {
+      "value": 2,
+      "median": 0
+    }
+  },
+  "eta": null
+}

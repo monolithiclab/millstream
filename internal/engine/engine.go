@@ -35,8 +35,9 @@ import (
 
 // Defaults for zero Options.
 const (
-	DefaultLeaseTTL     = 60 * time.Second
-	DefaultTickInterval = time.Second
+	DefaultLeaseTTL        = 60 * time.Second
+	DefaultTickInterval    = time.Second
+	DefaultProjectInterval = 15 * time.Second
 )
 
 // Options configure an Engine. Store is required.
@@ -51,6 +52,8 @@ type Options struct {
 	LeaseTTL time.Duration
 	// TickInterval paces lease expiry and the cron scheduler; zero means DefaultTickInterval.
 	TickInterval time.Duration
+	// ProjectInterval paces the projectors (Project); zero means DefaultProjectInterval.
+	ProjectInterval time.Duration
 	// Env looks up environment variables: variables (MILLSTREAM_VAR_*), secrets (MILLSTREAM_SECRET_*) and the
 	// PATH, HOME and TMPDIR action processes receive. Nil means an empty environment.
 	Env func(string) (string, bool)
@@ -125,6 +128,9 @@ type Engine struct {
 
 	ready     chan struct{} // closed once Run has rebuilt the leases in flight
 	readyOnce sync.Once
+
+	projMu       sync.Mutex           // serialises Project
+	lastInsights map[string]time.Time // when each pipeline's insights last ran; under projMu
 }
 
 // revision is a decoded revision.
@@ -162,6 +168,9 @@ func New(opts Options) (*Engine, error) {
 	if opts.TickInterval <= 0 {
 		opts.TickInterval = DefaultTickInterval
 	}
+	if opts.ProjectInterval <= 0 {
+		opts.ProjectInterval = DefaultProjectInterval
+	}
 	if opts.Env == nil {
 		opts.Env = func(string) (string, bool) { return "", false }
 	}
@@ -174,7 +183,7 @@ func New(opts Options) (*Engine, error) {
 		actions:  map[actionKey]*resolvedAction{},
 		lessonsC: map[actionKey]lessonsEntry{}, inflight: map[string]flight{}, buckets: map[store.StepRef]*bucket{},
 		builtins: map[builtinKey]*builtin{},
-		crons:    map[[2]string]*cronState{}, ready: make(chan struct{}),
+		crons:    map[[2]string]*cronState{}, ready: make(chan struct{}), lastInsights: map[string]time.Time{},
 		parser: cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor),
 	}, nil
 }
@@ -201,8 +210,8 @@ func (e *Engine) Apply(ctx context.Context, pkg *pipeline.Package) (store.Revisi
 }
 
 // Run rebuilds the leases in flight from the store, closes Ready, then expires leases and runs the cron scheduler
-// every tick until ctx is cancelled. It returns nil then. Nodes start pulling once Ready is closed, so the rebuild
-// never races their leases.
+// every tick, and the projectors every ProjectInterval, until ctx is cancelled. It returns nil then, once the
+// projectors stopped. Nodes start pulling once Ready is closed, so the rebuild never races their leases.
 func (e *Engine) Run(ctx context.Context) error {
 	if err := e.resync(ctx); err != nil {
 		if ctx.Err() != nil {
@@ -211,6 +220,9 @@ func (e *Engine) Run(ctx context.Context) error {
 		return err
 	}
 	e.readyOnce.Do(func() { close(e.ready) })
+	var wg sync.WaitGroup
+	defer wg.Wait()
+	wg.Go(func() { e.projectLoop(ctx) })
 	tick := time.NewTicker(e.opts.TickInterval)
 	defer tick.Stop()
 	for {

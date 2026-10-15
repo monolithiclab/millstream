@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -211,6 +212,12 @@ func TestRunSchemaMismatch(t *testing.T) {
 		if !ok || !last.Retryable || !strings.Contains(last.Message, "does not match the output schema") ||
 			!strings.Contains(last.Message, TranscriptFile) || len(last.Artifacts) != 1 {
 			t.Fatalf("attempt %d: %+v", attempt, msgs[len(msgs)-1])
+		}
+		if !slices.ContainsFunc(msgs, func(m protocol.Message) bool {
+			mt, ok := m.(protocol.Metric)
+			return ok && mt.Name == MetricSchemaFailures && mt.Value == 1 && mt.Labels["model"] != ""
+		}) {
+			t.Fatalf("attempt %d: no schema-validation failure metric in %+v", attempt, msgs)
 		}
 		tr, _ := s.transcript()
 		if tr.Attempt != attempt || !strings.Contains(tr.Error, "output schema") || compact(t, tr.Output) != `{"score":"high"}` {

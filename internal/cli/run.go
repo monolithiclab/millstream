@@ -21,8 +21,14 @@ import (
 	"github.com/monolithiclab/millstream/internal/store/sqlite"
 )
 
-// RunCmd is "millstream run".
+// RunCmd is "millstream run": "run [dir…]" runs packages, "run report" prints a run's report.
 type RunCmd struct {
+	Packages RunPackagesCmd `cmd:"" default:"withargs" hidden:"" help:"Apply packages and run the engine with an embedded node."`
+	Report   RunReportCmd   `cmd:"" help:"Print a run's report: critical path, slowest steps, failures, cost, comparison."`
+}
+
+// RunPackagesCmd is "millstream run [dir…]".
+type RunPackagesCmd struct {
 	Dirs      []string          `arg:"" optional:"" type:"path" help:"Package directories (default: the current one)."`
 	Var       map[string]string `help:"Set a variable (name=value)."`
 	Once      bool              `help:"Fire each pipeline's manual triggers (or its first cron trigger) once, wait for every run to settle, print a summary and exit."`
@@ -40,7 +46,7 @@ func signalContext(ctx context.Context) (context.Context, context.CancelFunc) {
 // in-flight deliveries. With --once it fires one run per pipeline, waits until those runs and every other unsettled
 // run of the pipelines settle (runs left by a crash, runs reopened by a replay), prints a summary and fails unless
 // they all succeeded. Logs are JSON lines on stderr.
-func (c RunCmd) Run(rt *Runtime) error {
+func (c RunPackagesCmd) Run(rt *Runtime) error {
 	ctx, stop := signalContext(rt.Ctx)
 	defer stop()
 	log := slog.New(slog.NewJSONHandler(rt.IO.Err, nil))
@@ -96,6 +102,10 @@ func (c RunCmd) Run(rt *Runtime) error {
 		if c.Once {
 			if runs, waitErr = waitAll(runCtx, e, st, pkgs, runs); waitErr == nil {
 				log.Info("every run settled", "runs", len(runs))
+				// The runs' metrics and insights, as the engine's projectors would find them at their next pass.
+				if err := e.Project(runCtx); err != nil {
+					log.Warn("projections", "error", err.Error())
+				}
 			}
 		} else {
 			<-runCtx.Done()
@@ -113,7 +123,7 @@ func (c RunCmd) Run(rt *Runtime) error {
 
 // load loads and checks each package, logging each diagnostic, and fails on any check error and on a --var no
 // package declares.
-func (c RunCmd) load(rt *Runtime, log *slog.Logger, actions pipeline.ActionResolver, opts pipeline.CheckOptions,
+func (c RunPackagesCmd) load(rt *Runtime, log *slog.Logger, actions pipeline.ActionResolver, opts pipeline.CheckOptions,
 ) ([]*pipeline.Package, error) {
 	dirs := c.Dirs
 	if len(dirs) == 0 {
@@ -159,7 +169,7 @@ func (c RunCmd) load(rt *Runtime, log *slog.Logger, actions pipeline.ActionResol
 
 // fire fires each pipeline's manual triggers under the request id, or its first cron trigger for the current
 // minute when it has no manual trigger.
-func (c RunCmd) fire(ctx context.Context, e *engine.Engine, pkgs []*pipeline.Package) ([]engine.RunRef, error) {
+func (c RunPackagesCmd) fire(ctx context.Context, e *engine.Engine, pkgs []*pipeline.Package) ([]engine.RunRef, error) {
 	reqID := c.RequestID
 	if reqID == "" {
 		reqID = engine.NewRequestID(time.Now())

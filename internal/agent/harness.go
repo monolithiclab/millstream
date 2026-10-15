@@ -53,6 +53,8 @@ type Turn struct {
 type Error struct {
 	Msg       string
 	Retryable bool
+	// Schema marks an output that is not JSON or does not match the output schema: a schema-validation failure.
+	Schema bool
 }
 
 func (e *Error) Error() string { return e.Msg }
@@ -66,6 +68,11 @@ func permanent(format string, args ...any) error {
 // 7.5): its message starts with "budget:".
 func overBudget(format string, args ...any) error {
 	return &Error{Msg: "budget: " + fmt.Sprintf(format, args...)}
+}
+
+// schemaFailure is the retryable Error of an output that is not JSON or does not match the output schema.
+func schemaFailure(format string, args ...any) error {
+	return &Error{Msg: fmt.Sprintf(format, args...), Retryable: true, Schema: true}
 }
 
 // retryable is a retryable Error.

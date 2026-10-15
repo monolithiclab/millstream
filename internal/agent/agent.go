@@ -44,6 +44,8 @@ const (
 	MetricCostUSD    = protocol.MetricCostUSD
 	MetricTurns      = "turns"
 	MetricDurationMS = "duration_ms"
+	// MetricSchemaFailures is 1 for an attempt whose output is not JSON or does not match the output schema.
+	MetricSchemaFailures = "schema_validation_failures"
 )
 
 // Options configure the adapter. Package and Action are required.
@@ -250,7 +252,8 @@ func (a *adapter) handle(ctx context.Context, w *protocol.Writer, it protocol.It
 		arts = []protocol.Artifact{{Name: TranscriptFile, Path: TranscriptFile}}
 	}
 	if t.Prompt != "" { // the harness ran: its metrics are due
-		if err := a.metrics(w, it.Delivery, t); err != nil {
+		e, ok := errors.AsType[*Error](err)
+		if err := a.metrics(w, it.Delivery, t, ok && e.Schema); err != nil {
 			return err
 		}
 	}
@@ -301,10 +304,10 @@ func (a *adapter) attempt(ctx context.Context, it protocol.Item, t *Transcript) 
 	t.Output = out
 	var v any
 	if err := json.Unmarshal(out, &v); err != nil {
-		return nil, retryable("decode output: %v", err)
+		return nil, schemaFailure("decode output: %v", err)
 	}
 	if err := a.output.Validate(v); err != nil {
-		return nil, retryable("the output does not match the output schema: %v", err)
+		return nil, schemaFailure("the output does not match the output schema: %v", err)
 	}
 	return out, nil
 }
@@ -324,15 +327,21 @@ func (a *adapter) cost(resp Response) float64 {
 	return 0
 }
 
-func (a *adapter) metrics(w *protocol.Writer, delivery string, t Transcript) error {
+// metrics sends the attempt's metrics, labelled with the model; schemaFailed adds a schema-validation failure.
+func (a *adapter) metrics(w *protocol.Writer, delivery string, t Transcript, schemaFailed bool) error {
 	labels := map[string]string{"model": t.Model}
-	for _, m := range []struct {
+	type metric struct {
 		name  string
 		value float64
-	}{
+	}
+	ms := []metric{
 		{MetricTokensIn, float64(t.TokensIn)}, {MetricTokensOut, float64(t.TokensOut)}, {MetricCostUSD, t.CostUSD},
 		{MetricTurns, float64(t.NumTurns)}, {MetricDurationMS, float64(t.DurationMS)},
-	} {
+	}
+	if schemaFailed {
+		ms = append(ms, metric{MetricSchemaFailures, 1})
+	}
+	for _, m := range ms {
 		if err := w.Write(protocol.Metric{Delivery: delivery, Name: m.name, Value: m.value, Labels: labels}); err != nil {
 			return err
 		}

@@ -27,11 +27,12 @@ var phases = []string{"beforeCommit", "afterCommit"}
 // failpointEnv arms a failpoint in a millstream process.
 func failpointEnv(name string) []string { return []string{failpoint.EnvVar + "=" + name} }
 
-// reachedByRun are the units "run --once" on the builtins fixture must reach, so their failpoints must be hit. The
-// others are reached through their own commands (TestCrashInCommands), or, for skipFirings, only by a cron scheduler
-// that missed a firing, which a one-shot run never starts.
+// reachedByRun are the units "run --once" on the builtins fixture must reach, so their failpoints must be hit; it
+// runs the projectors (rollup, recordInsights) once its runs settled. The others are reached through their own
+// commands (TestCrashInCommands), or, for skipFirings, only by a cron scheduler that missed a firing, which a
+// one-shot run never starts.
 var reachedByRun = []string{"applyRevision", "fire", "lease", "renew", "done", "fail", "expireLeases", "filter",
-	"dedupe"}
+	"dedupe", "rollup", "recordInsights"}
 
 // slowCrawl makes the crawl hold its lease for several heartbeats, so the renew unit is reached for sure.
 var slowCrawl = []string{"--var", "crawlDelayMs=1500"}

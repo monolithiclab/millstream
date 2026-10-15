@@ -88,7 +88,7 @@ func (w *wtx) leasedLive(ref store.LeaseRef, attempt int) (d *deliveryRow, cance
 		return nil, false, err
 	}
 	if run.state == store.RunCancelled {
-		_, err = w.cancelDelivery(d, 0)
+		_, err = w.cancelDelivery(d, 0, nil)
 		return nil, true, err
 	}
 	return d, false, nil
@@ -100,9 +100,12 @@ func (w *wtx) filter(d *deliveryRow, reason string) (store.DeliveryState, error)
 		WHERE pipeline = ? AND id = ?`, store.DeliveryFiltered, reason, d.pipeline, d.id); err != nil {
 		return "", err
 	}
-	if err := w.event(d.pipeline, d.runID, store.EventDeliveryFiltered, map[string]any{
-		"deliveryId": d.id, "step": d.step, "attempt": d.attempt, "reason": reason,
-	}); err != nil {
+	data, err := w.endAttempt(d, true, attemptEnd{})
+	if err != nil {
+		return "", err
+	}
+	data["reason"] = reason
+	if err := w.event(d.pipeline, d.runID, store.EventDeliveryFiltered, data); err != nil {
 		return "", err
 	}
 	return store.DeliveryFiltered, w.settle(d.pipeline, d.runID)
