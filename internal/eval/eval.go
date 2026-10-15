@@ -73,10 +73,15 @@ func Load(dir string) ([]*Case, error) {
 	if err != nil {
 		return nil, err
 	}
+	return parseCases(files, os.ReadFile)
+}
+
+// parseCases parses the eval files, in that order, reading each with read.
+func parseCases(files []string, read func(string) ([]byte, error)) ([]*Case, error) {
 	var cases []*Case
 	seen := map[string]string{}
 	for _, f := range files {
-		c, err := loadCase(f)
+		c, err := loadCase(f, read)
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", f, err)
 		}
@@ -89,8 +94,8 @@ func Load(dir string) ([]*Case, error) {
 	return cases, nil
 }
 
-func loadCase(path string) (*Case, error) {
-	data, err := os.ReadFile(path) // #nosec G304 -- an eval file of the action the user names
+func loadCase(path string, read func(string) ([]byte, error)) (*Case, error) {
+	data, err := read(path)
 	if err != nil {
 		return nil, err
 	}
@@ -353,8 +358,8 @@ func runAgent(ctx context.Context, opts Options, config, vars map[string]any, it
 		}
 	}
 	err = agent.Run(ctx, &in, &out, agent.Options{
-		Package: opts.Package.Dir, Action: opts.Ref, Secrets: opts.Package.Pipeline.Secrets, Price: opts.Price,
-		Logger: opts.Logger,
+		Package: opts.Package.Dir, Loaded: opts.Package, Action: opts.Ref, Secrets: opts.Package.Pipeline.Secrets,
+		Price: opts.Price, Logger: opts.Logger,
 		Env: func(k string) (string, bool) {
 			if v, ok := overlay[k]; ok {
 				return v, v != ""

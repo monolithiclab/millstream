@@ -1,8 +1,10 @@
 package eval
 
 import (
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -47,13 +49,11 @@ func TestLoad(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			files := map[string]string{}
-			for name, body := range tt.files {
-				files["actions/echo/evals/"+name] = body
-			}
-			_, err := Load(filepath.Join(writePackage(t, "http://unused", files), "actions", "echo"))
+			// What Load reads, in memory: the files in name order, as Glob lists them.
+			names := slices.Sorted(maps.Keys(tt.files))
+			_, err := parseCases(names, func(name string) ([]byte, error) { return []byte(tt.files[name]), nil })
 			if err == nil || !strings.Contains(err.Error(), tt.want) {
-				t.Fatalf("Load: %v, want %q", err, tt.want)
+				t.Fatalf("parseCases: %v, want %q", err, tt.want)
 			}
 		})
 	}
