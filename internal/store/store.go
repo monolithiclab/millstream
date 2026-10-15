@@ -74,6 +74,9 @@ type Store interface {
 	// Events returns up to limit events with a sequence number above afterSeq, in sequence order.
 	Events(ctx context.Context, afterSeq int64, limit int) ([]Event, error)
 	ActiveRevision(ctx context.Context, pipeline string) (RevisionID, error)
+	// OpenRevisions returns the revisions of the runs not yet settled, in ascending order: the revisions whose steps
+	// may still have deliveries to dispatch.
+	OpenRevisions(ctx context.Context) ([]RevisionID, error)
 	Revision(ctx context.Context, id RevisionID) (Revision, error)
 	PipelineState(ctx context.Context, pipeline string) (PipelineState, error)
 	// Pipelines returns every pipeline's state, by name.

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"time"
 
 	"github.com/monolithiclab/millstream/internal/node"
@@ -52,17 +53,9 @@ func (e *Engine) Pull(ctx context.Context, owner string, maxN int) ([]node.Assig
 
 // lease leases up to maxN deliveries under the in-memory limits and records them in flight.
 func (e *Engine) lease(ctx context.Context, owner string, maxN int) ([]store.Lease, error) {
-	pipelines, err := e.st.Pipelines(ctx)
+	active, steps, err := e.limitSources(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("pull: %w", err)
-	}
-	revs := make([]*revision, 0, len(pipelines))
-	for _, ps := range pipelines {
-		rev, err := e.revision(ctx, ps.ActiveRevision)
-		if err != nil {
-			return nil, fmt.Errorf("pull: %w", err)
-		}
-		revs = append(revs, rev)
 	}
 
 	e.mu.Lock()
@@ -73,24 +66,23 @@ func (e *Engine) lease(ctx context.Context, owner string, maxN int) ([]store.Lea
 		Slots: map[store.StepRef]int{}, PipelineSlots: map[string]int{},
 	}
 	perStep, perPipeline := e.countInflight()
-	for _, rev := range revs {
+	for _, rev := range active {
 		name := rev.p.Name
 		if limit := rev.p.Limits.Concurrency; limit > 0 {
 			req.PipelineSlots[name] = limit - perPipeline[name]
 		}
-		for stepName, step := range rev.p.Steps {
-			ref := store.StepRef{Pipeline: name, Step: stepName}
-			free := max(step.Concurrency, 1) - perStep[ref]
-			if b := e.bucket(ref, step.Rate, now); b != nil {
-				tokens := b.available(now)
-				if tokens == 0 {
-					req.Exclude = append(req.Exclude, ref)
-					continue
-				}
-				free = min(free, tokens)
+	}
+	for ref, step := range steps {
+		free := max(step.Concurrency, 1) - perStep[ref]
+		if b := e.bucket(ref, step.Rate, now); b != nil {
+			tokens := b.available(now)
+			if tokens == 0 {
+				req.Exclude = append(req.Exclude, ref)
+				continue
 			}
-			req.Slots[ref] = free
+			free = min(free, tokens)
 		}
+		req.Slots[ref] = free
 	}
 	leases, err := e.st.Lease(ctx, req)
 	if err != nil {
@@ -106,6 +98,46 @@ func (e *Engine) lease(ctx context.Context, owner string, maxN int) ([]store.Lea
 		}
 	}
 	return leases, nil
+}
+
+// limitSources returns each pipeline's active revision, whose limits apply, and the definition each step's
+// concurrency and rate come from: the active revision's, or, for a step only older revisions have, that of the
+// newest revision with unsettled runs that has it, so its remaining deliveries are still limited.
+func (e *Engine) limitSources(ctx context.Context) ([]*revision, map[store.StepRef]pipeline.Step, error) {
+	pipelines, err := e.st.Pipelines(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	open, err := e.st.OpenRevisions(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	active := make([]*revision, 0, len(pipelines))
+	steps := map[store.StepRef]pipeline.Step{}
+	add := func(rev *revision) {
+		for name, step := range rev.p.Steps {
+			ref := store.StepRef{Pipeline: rev.p.Name, Step: name}
+			if _, ok := steps[ref]; !ok {
+				steps[ref] = step
+			}
+		}
+	}
+	for _, ps := range pipelines {
+		rev, err := e.revision(ctx, ps.ActiveRevision)
+		if err != nil {
+			return nil, nil, err
+		}
+		active = append(active, rev)
+		add(rev)
+	}
+	for _, id := range slices.Backward(open) { // newest first
+		rev, err := e.revision(ctx, id)
+		if err != nil {
+			return nil, nil, err
+		}
+		add(rev)
+	}
+	return active, steps, nil
 }
 
 // countInflight counts the deliveries in flight per step and per pipeline. The caller holds e.mu.

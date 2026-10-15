@@ -105,3 +105,28 @@ func TestCancelErrors(t *testing.T) {
 	wantErr(t, e.s.Cancel(e.ctx, "listings", "m1"), store.ErrConflict)
 	wantErr(t, e.s.Cancel(e.ctx, "listings", "nope"), store.ErrNotFound)
 }
+
+func TestOpenRevisions(t *testing.T) {
+	t.Parallel()
+	e := newEnv(t, fixture)
+	e.fire("r1")
+	rev2 := e.apply(fixtureFixed)
+	e.fire("r2")
+	open := func() []store.RevisionID {
+		t.Helper()
+		ids, err := e.s.OpenRevisions(e.ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return ids
+	}
+	if got := open(); len(got) != 2 || got[0] != 1 || got[1] != rev2 {
+		t.Fatalf("OpenRevisions = %v; want [1 %d]", got, rev2)
+	}
+	if err := e.s.Cancel(e.ctx, "listings", "r1"); err != nil {
+		t.Fatal(err)
+	}
+	if got := open(); len(got) != 1 || got[0] != rev2 {
+		t.Fatalf("OpenRevisions after r1 settled = %v", got)
+	}
+}

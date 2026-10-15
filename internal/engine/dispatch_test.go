@@ -410,3 +410,32 @@ func TestCancelWhileLeased(t *testing.T) {
 		t.Fatalf("pull after cancel = %v", got)
 	}
 }
+
+// A step that only an older revision has keeps its concurrency and rate for the runs still on that revision: its
+// slots come from the revision of its live runs.
+func TestStepOfAnOlderRevisionKeepsItsLimits(t *testing.T) {
+	t.Parallel()
+	v := newEnv(t, Options{})
+	v.apply(writePackage(t, manualPipeline("p", `
+  old: { action: ./actions/a, in: trigger.adhoc, concurrency: 1, rate: 2/h }
+`), "a"))
+	fireN(v, "p", 4)
+	v.apply(writePackage(t, manualPipeline("p", "  new: { action: ./actions/a, in: trigger.adhoc }\n"), "a"))
+	as, err := v.e.Pull(v.ctx, "node-a", 10)
+	if err != nil || len(as) != 1 || as[0].Lease.Step != "old" {
+		t.Fatalf("pull = %d, %v; want one delivery of old, its concurrency", len(as), err)
+	}
+	if err := v.e.Done(v.ctx, store.DoneRequest{LeaseRef: as[0].Lease.Ref(), Attempt: 1}); err != nil {
+		t.Fatal(err)
+	}
+	as, err = v.e.Pull(v.ctx, "node-a", 10)
+	if err != nil || len(as) != 1 {
+		t.Fatalf("second pull = %d, %v; want one", len(as), err)
+	}
+	if err := v.e.Done(v.ctx, store.DoneRequest{LeaseRef: as[0].Lease.Ref(), Attempt: 1}); err != nil {
+		t.Fatal(err)
+	}
+	if got := v.pull(10); len(got) != 0 {
+		t.Fatalf("pull past the rate of 2/h = %v", got)
+	}
+}

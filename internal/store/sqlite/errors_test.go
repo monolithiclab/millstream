@@ -71,6 +71,7 @@ func TestUnitsSurfaceStoreErrors(t *testing.T) {
 				func() error { _, err := e.s.PipelineState(ctx, "listings"); return err },
 				func() error { _, err := e.s.Pipelines(ctx); return err },
 				func() error { _, err := e.s.LastFiring(ctx, "listings", "daily"); return err },
+				func() error { _, err := e.s.OpenRevisions(ctx); return err },
 			} {
 				count(read())
 			}

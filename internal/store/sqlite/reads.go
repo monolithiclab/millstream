@@ -230,6 +230,20 @@ func (s *Store) Events(ctx context.Context, afterSeq int64, limit int) ([]store.
 }
 
 // ActiveRevision returns the pipeline's active revision.
+// OpenRevisions returns the revisions of the unsettled runs, ascending.
+func (s *Store) OpenRevisions(ctx context.Context) ([]store.RevisionID, error) {
+	ids, err := scan(ctx, s.read, `SELECT DISTINCT revision FROM runs WHERE settled_at IS NULL ORDER BY revision`, nil,
+		func(rows *sql.Rows) (store.RevisionID, error) {
+			var id store.RevisionID
+			err := rows.Scan(&id)
+			return id, err
+		})
+	if err != nil {
+		return nil, fmt.Errorf("open revisions: %w", err)
+	}
+	return ids, nil
+}
+
 func (s *Store) ActiveRevision(ctx context.Context, pipelineName string) (store.RevisionID, error) {
 	var id store.RevisionID
 	if err := s.read.QueryRowContext(ctx, `SELECT active_revision FROM pipelines WHERE id = ?`, pipelineName).
