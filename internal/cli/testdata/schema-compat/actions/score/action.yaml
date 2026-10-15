@@ -1,0 +1,7 @@
+name: score
+kind: exec
+input:
+  type: object
+  properties: { url: { type: string }, price: { type: number }, kind: { enum: [flat, house] }, city: { type: string } }
+  required: [url, price, city]
+runtime: { exec: { command: [score] } }

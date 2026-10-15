@@ -1,0 +1,5 @@
+pipeline: p
+triggers: { go: { manual: {} } }
+steps:
+  a: { action: ./actions/a, in: trigger.go, out: [listings, audit] }
+  b: { action: ./actions/a, in: listings }

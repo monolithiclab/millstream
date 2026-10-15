@@ -1,0 +1,1 @@
+{"type": "object", "properties": {"url": {"type": "string"}, "price": {"type": "integer"}}, "required": ["url", "price"]}

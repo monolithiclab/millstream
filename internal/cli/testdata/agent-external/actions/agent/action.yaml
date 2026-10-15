@@ -1,0 +1,4 @@
+name: agent
+kind: agent
+effects: none
+runtime: { exec: { command: [agent] } }

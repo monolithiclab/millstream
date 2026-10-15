@@ -6,9 +6,14 @@ package schema
 
 import (
 	"bytes"
+	"cmp"
+	"errors"
 	"fmt"
+	"slices"
 
 	"github.com/santhosh-tekuri/jsonschema/v6"
+	"golang.org/x/text/language"
+	"golang.org/x/text/message"
 )
 
 // docURL is the location the compiled document is registered under; nothing is ever fetched from it.
@@ -46,6 +51,53 @@ func (s *Schema) Validate(v any) error {
 		return fmt.Errorf("validate: %w", err)
 	}
 	return nil
+}
+
+// Violation is one way a value fails a schema. Pointer is a JSON pointer into the value ("" for the root).
+type Violation struct {
+	Pointer string
+	Message string
+}
+
+// printer renders validation messages; they are developer-facing, in English.
+var printer = message.NewPrinter(language.English)
+
+// Violations validates a decoded JSON value and returns each failure at the leaves of the error tree, sorted by
+// pointer then message, so callers can place each one; nil means valid.
+func (s *Schema) Violations(v any) []Violation {
+	err := s.compiled.Validate(v)
+	var ve *jsonschema.ValidationError
+	if !errors.As(err, &ve) {
+		if err != nil {
+			return []Violation{{Message: err.Error()}}
+		}
+		return nil
+	}
+	var out []Violation
+	var collect func(e *jsonschema.ValidationError)
+	collect = func(e *jsonschema.ValidationError) {
+		if len(e.Causes) == 0 {
+			out = append(out, Violation{Pointer: pointer(e.InstanceLocation), Message: e.ErrorKind.LocalizedString(printer)})
+		}
+		for _, c := range e.Causes {
+			collect(c)
+		}
+	}
+	collect(ve)
+	slices.SortFunc(out, func(a, b Violation) int {
+		return cmp.Or(cmp.Compare(a.Pointer, b.Pointer), cmp.Compare(a.Message, b.Message))
+	})
+	return slices.Compact(out)
+}
+
+// pointer joins reference tokens into a JSON pointer.
+func pointer(tokens []string) string {
+	var b bytes.Buffer
+	for _, t := range tokens {
+		b.WriteByte('/')
+		b.WriteString(EscapeToken(t))
+	}
+	return b.String()
 }
 
 // parse decodes a schema document and refuses any reference outside it: the one entry point for documents, so

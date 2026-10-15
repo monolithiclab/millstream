@@ -1,0 +1,6 @@
+pipeline: p
+triggers: { go: { manual: {} } }
+steps:
+  a: { action: ./actions/a, in: [trigger.go, c.out], out: a.out }
+  b: { action: ./actions/a, in: a.out, out: b.out }
+  c: { action: ./actions/a, in: b.out, out: c.out }

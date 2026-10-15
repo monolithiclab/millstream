@@ -1,0 +1,4 @@
+name: a
+kind: exec
+effects: none
+runtime: { exec: { command: [a] } }

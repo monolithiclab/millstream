@@ -1,0 +1,7 @@
+name: crawl
+kind: exec
+output:
+  type: object
+  properties: { url: { type: string }, price: { type: [number, "null"] }, kind: { type: string } }
+  required: [url, price]
+runtime: { exec: { command: [crawl] } }

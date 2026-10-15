@@ -1,0 +1,4 @@
+pipeline: p
+triggers: { go: { manual: {} } }
+steps:
+  a: { action: ./actions/a, out: x }

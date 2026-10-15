@@ -9,8 +9,17 @@ import (
 
 func runCLI(t *testing.T, version string, argv ...string) (code int, stdout, stderr string) {
 	t.Helper()
+	return runCLIEnv(t, version, nil, argv...)
+}
+
+// runCLIEnv runs the CLI with env as the whole environment.
+func runCLIEnv(t *testing.T, version string, env map[string]string, argv ...string) (code int, stdout, stderr string) {
+	t.Helper()
 	var out, errb bytes.Buffer
-	code = Run(context.Background(), argv, IO{In: strings.NewReader(""), Out: &out, Err: &errb}, version, nil)
+	code = Run(context.Background(), argv, IO{In: strings.NewReader(""), Out: &out, Err: &errb}, version,
+		func(rt *Runtime) {
+			rt.Env = func(k string) (string, bool) { v, ok := env[k]; return v, ok }
+		})
 	return code, out.String(), errb.String()
 }
 
@@ -33,7 +42,7 @@ func Test_unknownCommandPrintsUsage(t *testing.T) {
 func Test_stubCommandsExitTwo(t *testing.T) {
 	t.Parallel()
 	tests := [][]string{
-		{"run"}, {"check"}, {"graph", "--format", "dot"}, {"vars"}, {"status"}, {"tail"},
+		{"run"}, {"status"}, {"tail"},
 		{"trigger", "p", "t"}, {"cancel", "r1"}, {"replay", "--from", "dlq", "--run", "r1"},
 		{"dlq", "list"}, {"dlq", "discard", "d1"}, {"pause", "p"}, {"resume", "p", "s"},
 		{"test", "pipeline"},

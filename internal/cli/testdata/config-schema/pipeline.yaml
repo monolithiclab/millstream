@@ -1,0 +1,13 @@
+pipeline: p
+vars: { maxPrice: "400000", region: null }
+secrets: [portalToken]
+triggers: { go: { manual: {} } }
+steps:
+  a:
+    action: ./actions/a
+    in: trigger.go
+    config:
+      maxPrice: "${vars.maxPrice}"
+      region: "${vars.region}"
+      token: "${secrets.portalToken}"
+      unexpected: true

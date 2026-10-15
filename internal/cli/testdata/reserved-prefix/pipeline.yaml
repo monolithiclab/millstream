@@ -1,0 +1,6 @@
+pipeline: p
+triggers: { go: { manual: {} } }
+streams:
+  trigger.weekly: { retention: 7d }
+steps:
+  a: { action: ./actions/a, in: trigger.go }

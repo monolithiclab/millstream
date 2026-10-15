@@ -87,3 +87,48 @@ func TestCompileRefusesNonLocalRefs(t *testing.T) {
 		t.Errorf("Compile refused a property named $ref: %v", err)
 	}
 }
+
+func TestViolations(t *testing.T) {
+	t.Parallel()
+	s, err := Compile([]byte(`{
+	  "type": "object",
+	  "properties": {
+	    "filters": {"type": "object", "properties": {"max": {"type": "integer"}, "a/b": {"type": "string"}}},
+	    "tags": {"type": "array", "items": {"type": "string"}}
+	  },
+	  "required": ["filters"],
+	  "additionalProperties": false
+	}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	tests := []struct {
+		name string
+		v    any
+		want []string // pointer|message fragment
+	}{
+		{"valid with Go numbers", map[string]any{"filters": map[string]any{"max": int64(3)}, "tags": []any{"x"}}, nil},
+		{"missing required at root", map[string]any{}, []string{"|filters"}},
+		{"not a JSON value", make(chan int), []string{"|invalid jsonType"}},
+		{"nested leaves", map[string]any{
+			"filters": map[string]any{"max": "x", "a/b": 1.5},
+			"tags":    []any{"ok", true},
+			"extra":   1,
+		}, []string{"|extra", "/filters/a~1b|string", "/filters/max|integer", "/tags/1|string"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := s.Violations(tt.v)
+			if len(got) != len(tt.want) {
+				t.Fatalf("got %+v, want %v", got, tt.want)
+			}
+			for i, w := range tt.want {
+				ptr, frag, _ := strings.Cut(w, "|")
+				if got[i].Pointer != ptr || !strings.Contains(got[i].Message, frag) {
+					t.Fatalf("violation %d = %+v, want %s", i, got[i], w)
+				}
+			}
+		})
+	}
+}

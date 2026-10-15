@@ -1,0 +1,11 @@
+name: a
+kind: exec
+config:
+  type: object
+  properties:
+    maxPrice: { type: integer }
+    region: { type: integer }
+    token: { type: string, minLength: 32 }
+  required: [maxPrice, token, city]
+  additionalProperties: false
+runtime: { exec: { command: [a] } }

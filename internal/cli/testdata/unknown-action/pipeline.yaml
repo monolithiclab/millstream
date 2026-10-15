@@ -1,0 +1,6 @@
+pipeline: p
+triggers: { go: { manual: {} } }
+steps:
+  local: { action: ./actions/missing, in: trigger.go, out: a }
+  bogus: { action: frobnicate, in: a, out: b }
+  registry: { action: lab/score@2, in: b }

@@ -159,7 +159,7 @@ func (c *checker) compareEnums(where string, p, cv *view) {
 
 func (c *checker) compareObjects(p, cv *view) {
 	for _, name := range slices.Sorted(maps.Keys(cv.required)) {
-		at := cv.loc() + "/properties/" + escape(name)
+		at := cv.loc() + "/properties/" + EscapeToken(name)
 		_, declared := p.props[name]
 		switch {
 		case p.required[name]:
@@ -173,7 +173,7 @@ func (c *checker) compareObjects(p, cv *view) {
 		pp, declared := p.props[name]
 		if !declared && p.required[name] {
 			// Required without a schema: always present, of any type.
-			pp, declared = []ref{{true, p.loc() + "/properties/" + escape(name)}}, true
+			pp, declared = []ref{{true, p.loc() + "/properties/" + EscapeToken(name)}}, true
 		}
 		if declared {
 			c.compare(newView(c.prod, pp...), newView(c.cons, cv.props[name]...))

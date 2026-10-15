@@ -1,0 +1,5 @@
+name: score
+kind: exec
+input: { type: object, properties: { url: { type: string }, price: { type: number } }, required: [url] }
+output: { type: object, properties: { url: { type: string }, score: { type: integer } }, required: [url, score] }
+runtime: { exec: { command: [score] } }

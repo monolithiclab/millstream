@@ -26,7 +26,7 @@ func walk(node any, ptr string, fn func(obj map[string]any, ptr string) error) e
 	}
 	for _, kw := range schemaKeywords {
 		if sub, ok := obj[kw].(map[string]any); ok {
-			if err := walk(sub, ptr+"/"+escape(kw), fn); err != nil {
+			if err := walk(sub, ptr+"/"+EscapeToken(kw), fn); err != nil {
 				return err
 			}
 		}
@@ -34,7 +34,7 @@ func walk(node any, ptr string, fn func(obj map[string]any, ptr string) error) e
 	for _, kw := range schemaListKeywords {
 		list, _ := obj[kw].([]any)
 		for i, sub := range list {
-			if err := walk(sub, ptr+"/"+escape(kw)+"/"+strconv.Itoa(i), fn); err != nil {
+			if err := walk(sub, ptr+"/"+EscapeToken(kw)+"/"+strconv.Itoa(i), fn); err != nil {
 				return err
 			}
 		}
@@ -42,7 +42,7 @@ func walk(node any, ptr string, fn func(obj map[string]any, ptr string) error) e
 	for _, kw := range schemaMapKeywords {
 		m, _ := obj[kw].(map[string]any)
 		for name, sub := range m {
-			if err := walk(sub, ptr+"/"+escape(kw)+"/"+escape(name), fn); err != nil {
+			if err := walk(sub, ptr+"/"+EscapeToken(kw)+"/"+EscapeToken(name), fn); err != nil {
 				return err
 			}
 		}
@@ -50,8 +50,11 @@ func walk(node any, ptr string, fn func(obj map[string]any, ptr string) error) e
 	return nil
 }
 
-// escape escapes one JSON pointer reference token.
-func escape(token string) string { return pointerEscaper.Replace(token) }
+// EscapeToken escapes one JSON pointer reference token: ~ as ~0, / as ~1.
+func EscapeToken(token string) string { return pointerEscaper.Replace(token) }
+
+// UnescapeToken reverses EscapeToken.
+func UnescapeToken(token string) string { return pointerUnescaper.Replace(token) }
 
 var (
 	pointerEscaper   = strings.NewReplacer("~", "~0", "/", "~1")
@@ -80,7 +83,7 @@ func resolve(root any, ref string) (any, string, error) {
 		return node, "", nil
 	}
 	for _, tok := range strings.Split(frag[1:], "/") {
-		tok = pointerUnescaper.Replace(tok)
+		tok = UnescapeToken(tok)
 		switch t := node.(type) {
 		case map[string]any:
 			next, ok := t[tok]

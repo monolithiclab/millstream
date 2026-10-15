@@ -1,0 +1,7 @@
+pipeline: p
+triggers: { go: { manual: {} } }
+streams:
+  listings.typo: { retention: 7d }
+steps:
+  a: { action: ./actions/a, in: trigger.go, out: listings }
+  b: { action: ./actions/a, in: listing }

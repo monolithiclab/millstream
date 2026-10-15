@@ -1,0 +1,13 @@
+{
+  "type": "object",
+  "properties": {
+    "filters": {
+      "type": "object",
+      "properties": {"city": {"type": "string"}, "maxPrice": {"type": "integer"}},
+      "required": ["city"]
+    },
+    "token": {"type": "string", "minLength": 32}
+  },
+  "required": ["filters", "token"],
+  "additionalProperties": false
+}

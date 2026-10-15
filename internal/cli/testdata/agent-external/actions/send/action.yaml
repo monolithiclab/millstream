@@ -1,0 +1,4 @@
+name: send
+kind: exec
+effects: external
+runtime: { exec: { command: [send] } }

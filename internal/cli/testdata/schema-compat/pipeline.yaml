@@ -1,0 +1,6 @@
+pipeline: p
+triggers: { go: { manual: {} } }
+steps:
+  crawl: { action: ./actions/crawl, in: trigger.go, out: raw }
+  keep: { action: filter, in: raw, out: kept, config: { expr: "item.price > 0" } }
+  score: { action: ./actions/score, in: kept }

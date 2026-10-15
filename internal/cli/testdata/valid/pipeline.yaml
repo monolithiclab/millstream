@@ -1,0 +1,25 @@
+pipeline: listings
+description: A valid package
+vars:
+  city: Lyon
+  maxPrice: 400000
+secrets: [portalToken]
+triggers:
+  daily: { cron: "0 6 * * *", tz: Europe/Paris }
+steps:
+  crawl:
+    action: ./actions/crawl
+    in: trigger.daily
+    out: listings.raw
+    config:
+      filters: { city: "${vars.city}", maxPrice: "${vars.maxPrice}" }
+      token: "${secrets.portalToken}"
+  score:
+    action: ./actions/score
+    in: listings.raw
+    out:
+      - { when: "item.score >= 70", out: listings.good }
+      - { when: "true", out: listings.rest }
+  report:
+    action: ./actions/report
+    in: [listings.good, listings.rest, score.dlq]

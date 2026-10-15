@@ -34,6 +34,8 @@ type Runtime struct {
 	Ctx     context.Context
 	IO      IO
 	Version string
+	// Env looks up an environment variable: variables and secrets resolve through it.
+	Env func(string) (string, bool)
 }
 
 // errNotImplemented is returned by the commands whose task has not landed yet.
@@ -43,6 +45,9 @@ var errNotImplemented = usageError("not implemented yet")
 type usageError string
 
 func (e usageError) Error() string { return string(e) }
+
+// errFailed exits with the failure status without a message: the command already reported why on its streams.
+var errFailed = errors.New("failed")
 
 // exitSignal carries a status out of Kong's Exit hook (--help) without exiting mid-defer.
 type exitSignal int
@@ -80,32 +85,6 @@ type RunCmd struct {
 
 // Run is a stub until the engine lands.
 func (RunCmd) Run() error { return errNotImplemented }
-
-// CheckCmd is "millstream check".
-type CheckCmd struct {
-	Dir string `arg:"" optional:"" default:"." type:"path" help:"Package directory."`
-}
-
-// Run is a stub until the checks land.
-func (CheckCmd) Run() error { return errNotImplemented }
-
-// GraphCmd is "millstream graph".
-type GraphCmd struct {
-	Dir    string `arg:"" optional:"" default:"." type:"path" help:"Package directory."`
-	Format string `enum:"mermaid,dot" default:"mermaid" help:"Output format."`
-}
-
-// Run is a stub until the graph renderer lands.
-func (GraphCmd) Run() error { return errNotImplemented }
-
-// VarsCmd is "millstream vars".
-type VarsCmd struct {
-	Dir string            `arg:"" optional:"" default:"." type:"path" help:"Package directory."`
-	Var map[string]string `help:"Set a variable (name=value)."`
-}
-
-// Run is a stub until variable resolution lands.
-func (VarsCmd) Run() error { return errNotImplemented }
 
 // StatusCmd is "millstream status".
 type StatusCmd struct{ DBFlag }
@@ -211,7 +190,7 @@ func Main(ctx context.Context, argv []string, stdio IO, version string) int {
 // Run parses argv and runs the selected command, returning its exit code. configure, when not nil, adjusts the
 // Runtime before the command runs: the seam tests use to inject fakes.
 func Run(ctx context.Context, argv []string, stdio IO, version string, configure func(*Runtime)) (code int) {
-	rt := &Runtime{Ctx: ctx, IO: stdio, Version: version}
+	rt := &Runtime{Ctx: ctx, IO: stdio, Version: version, Env: os.LookupEnv}
 	if configure != nil {
 		configure(rt)
 	}
@@ -248,6 +227,9 @@ func Run(ctx context.Context, argv []string, stdio IO, version string, configure
 		return exitUsage
 	}
 	if err := kctx.Run(); err != nil {
+		if errors.Is(err, errFailed) {
+			return exitFail
+		}
 		fmt.Fprintf(rt.IO.Err, "millstream: %v\n", err)
 		if errors.As(err, new(usageError)) {
 			return exitUsage

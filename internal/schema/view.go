@@ -85,7 +85,7 @@ func (v *view) merge(root any, r ref, seen map[string]bool) {
 
 // keyword merges one keyword of the schema object at ptr.
 func (v *view) keyword(root any, ptr, kw string, val any, seen map[string]bool) {
-	at := ptr + "/" + escape(kw)
+	at := ptr + "/" + EscapeToken(kw)
 	switch {
 	case outsideKeywords[kw]:
 		v.outside = append(v.outside, at)
@@ -103,7 +103,7 @@ func (v *view) keyword(root any, ptr, kw string, val any, seen map[string]bool) 
 	case kw == "properties":
 		props, _ := val.(map[string]any)
 		for name, sub := range props {
-			v.props[name] = append(v.props[name], ref{sub, at + "/" + escape(name)})
+			v.props[name] = append(v.props[name], ref{sub, at + "/" + EscapeToken(name)})
 		}
 	case kw == "required":
 		list, _ := val.([]any)

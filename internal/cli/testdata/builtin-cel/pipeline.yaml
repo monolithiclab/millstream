@@ -1,0 +1,7 @@
+pipeline: p
+triggers: { go: { manual: {} } }
+steps:
+  a: { action: ./actions/a, in: trigger.go, out: raw }
+  dedupe: { action: dedupe, in: raw, out: unique, config: { key: "item.address +", window: 30d } }
+  keep: { action: filter, in: unique, out: kept, config: { expr: "secrets.token == ''" } }
+  b: { action: ./actions/a, in: kept }

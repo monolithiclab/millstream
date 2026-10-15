@@ -1,0 +1,4 @@
+name: report
+kind: exec
+effects: none
+runtime: { exec: { command: [report] } }

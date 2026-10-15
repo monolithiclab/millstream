@@ -1,0 +1,5 @@
+pipeline: p
+triggers: { go: { manual: {} } }
+steps:
+  agent: { action: ./actions/agent, in: trigger.go, out: drafts }
+  send: { action: ./actions/send, in: drafts }

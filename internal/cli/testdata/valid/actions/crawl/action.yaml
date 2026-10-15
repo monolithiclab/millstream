@@ -1,0 +1,7 @@
+name: crawl
+version: 1.0.0
+kind: exec
+effects: none
+output: { $ref: schema/output.json }
+config: { $ref: schema/config.json }
+runtime: { exec: { command: [./crawl.sh] } }
