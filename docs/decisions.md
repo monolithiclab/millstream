@@ -144,15 +144,18 @@ trademark search finds an obstacle, the rename is mechanical while there is no c
 ### D13. The package is the unit of deployment and isolation (2026-10-14)
 
 **Decision.** A pipeline is deployed as a package: a directory with the pipeline file, local actions, lessons,
-evals, assets, vars overlays and the lock file. A revision is the hash of the whole package. Within one instance,
-the pipeline id scopes data, secret grants, capacity limits, placement and lifecycle.
+evals, assets and the lock file. A revision is the hash of the whole package. Variables declare their defaults in the
+pipeline file, and a deployment overrides them with environment variables, never with files in the package. Within
+one instance, the pipeline id scopes data, secret grants, capacity limits, placement and lifecycle.
 
 **Evidence.** One instance must run many pipelines of an organisation without one's backlog, secrets or rollout
 affecting another. Hashing only the pipeline file would let a change to a local action or lesson slip past the
-revision, breaking replay.
+revision, breaking replay. Environment variables are how every target (systemd, Compose, CI) already configures a
+deployment, so the same package needs no files per environment.
 
 **Cost if wrong.** Packages are uploaded as bundles, so large assets make every apply heavier; content addressing
-limits this to changed packages.
+limits this to changed packages. A value changed in the environment changes behaviour without a new revision; runs
+record their resolved values and where each came from.
 
 ### D14. Triggers publish to trigger streams (2026-10-14)
 
