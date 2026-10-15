@@ -213,9 +213,22 @@ func (s *sim) slowRun(id string, at time.Time, failure string) {
 	}
 }
 
-// fixture returns a sim on a clone of the fixture's history: six quick runs in the baseline, then three slow ones in
-// the window, with a flaky failure, a deterministic one and a step no runtime can take. The history is built once
-// per process and each caller gets its own clone, its clock at the end of the history.
+// The fixture's history: six quick runs in the baseline, then three slow ones in the window, with a flaky failure, a
+// deterministic one and a step no runtime can take, and a run in progress. It is built once per process: a test that
+// only reads it uses it as it is (shared), one that writes gets its own clone (fixture), its clock at the end of the
+// history.
+
+// The package's tests do not call t.Parallel: run one at a time, they reuse the Memory pool's warm connections, as
+// in internal/store/sqlite, where running them in parallel made the package slower.
+
+// shared returns a sim on the fixture's history itself, which the test must not write to.
+func shared(t *testing.T) *sim {
+	t.Helper()
+	st, end := fixtureStore(t)
+	return simOn(t, st, &clock{t: end}, shop)
+}
+
+// fixture returns a sim on a clone of the fixture's history.
 func fixture(t *testing.T) *sim {
 	t.Helper()
 	base, end := fixtureStore(t)
@@ -259,6 +272,8 @@ func fixtureStore(t *testing.T) (*sqlite.Store, time.Time) {
 	s.slowRun("slow1", now.Add(-3*time.Hour), "flaky")
 	s.slowRun("slow2", now.Add(-2*time.Hour), "deterministic")
 	s.slowRun("slow3", now.Add(-1*time.Hour), "")
+	s.fire("running", now.Add(-5*time.Second)) // a run in progress, its crawl leased
+	s.lease("crawl")
 	built.st, built.end = st, c.Now()
 	return built.st, built.end
 }
@@ -299,8 +314,7 @@ type goldenInsight struct {
 // two failure clusters (flaky, recovered on retry; deterministic, dead), the scorer's cost (per output up threefold,
 // a schema-validation failure) and the unschedulable publish step.
 func TestGoldenInsights(t *testing.T) {
-	t.Parallel()
-	s := fixture(t)
+	s := shared(t)
 	d, err := Load(s.ctx, s.st, "shop", now)
 	if err != nil {
 		t.Fatal(err)
@@ -320,7 +334,6 @@ func TestGoldenInsights(t *testing.T) {
 // The projector records what it finds, updates it on the next pass, and resolves what clears: a day later, after
 // a clean quick run, the failures and the unschedulable step are gone from the window.
 func TestProjectLifecycle(t *testing.T) {
-	t.Parallel()
 	s := fixture(t)
 	if err := Project(s.ctx, s.st, s.p, now); err != nil {
 		t.Fatal(err)
@@ -353,42 +366,56 @@ func TestProjectLifecycle(t *testing.T) {
 }
 
 // insights.enabled and insights.disable decide which kinds the projector evaluates; with insights off it records
-// nothing and leaves what it recorded alone.
+// nothing and leaves what it recorded alone. The passes run in turn on one copy of the history, each adding to what
+// the one before recorded.
 func TestProjectKeys(t *testing.T) {
-	t.Parallel()
-	tests := []struct {
-		name   string
-		keys   string
-		kinds  map[string]bool
-		resets bool
-	}{
-		{"default", "", map[string]bool{"slowStep": true, "failureCluster": true, "cost": true,
-			"unschedulable": true}, false},
-		{"disable", "insights: { disable: [cost, slowStep, drift] }",
-			map[string]bool{"failureCluster": true, "unschedulable": true}, false},
-		{"off", "insights: { enabled: false, every: 1h }", map[string]bool{}, false},
+	s := fixture(t)
+	recorded := func() map[string]store.InsightState {
+		t.Helper()
+		ins, err := s.st.Insights(s.ctx, store.InsightFilter{Pipeline: "shop"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := map[string]store.InsightState{}
+		for _, in := range ins {
+			got[in.Kind] = in.State
+		}
+		return got
 	}
-	for _, tt := range tests {
+	events := func() int {
+		t.Helper()
+		evs, err := s.st.Events(s.ctx, 0, 100000)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return len(evs)
+	}
+	all := map[string]store.InsightState{"slowStep": store.InsightOpen, "failureCluster": store.InsightOpen,
+		"cost": store.InsightOpen, "unschedulable": store.InsightOpen}
+	for _, tt := range []struct {
+		name string
+		keys string
+		want map[string]store.InsightState
+	}{
+		{"disable", "insights: { disable: [cost, slowStep, drift] }",
+			map[string]store.InsightState{"failureCluster": store.InsightOpen, "unschedulable": store.InsightOpen}},
+		{"default", "", all},
+		{"off", "insights: { enabled: false, every: 1h }", all},
+	} {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			s := fixture(t)
 			p, err := pipeline.Parse([]byte(shop + tt.keys + "\n"))
 			if err != nil {
 				t.Fatal(err)
 			}
+			before := events()
 			if err := Project(s.ctx, s.st, p, now); err != nil {
 				t.Fatal(err)
 			}
-			ins, err := s.st.Insights(s.ctx, store.InsightFilter{Pipeline: "shop"})
-			if err != nil {
-				t.Fatal(err)
+			if got := recorded(); fmt.Sprint(got) != fmt.Sprint(tt.want) {
+				t.Errorf("insights recorded = %v, want %v", got, tt.want)
 			}
-			got := map[string]bool{}
-			for _, in := range ins {
-				got[in.Kind] = true
-			}
-			if fmt.Sprint(got) != fmt.Sprint(tt.kinds) {
-				t.Errorf("kinds recorded = %v, want %v", got, tt.kinds)
+			if tt.name == "off" && events() != before {
+				t.Error("the projector wrote events with insights off")
 			}
 		})
 	}
@@ -403,8 +430,7 @@ func TestProjectKeys(t *testing.T) {
 
 // Golden run reports: a settled run against the median of the runs before it, and a running run with its ETA.
 func TestGoldenReports(t *testing.T) {
-	t.Parallel()
-	s := fixture(t)
+	s := shared(t)
 	r, err := BuildReport(s.ctx, s.st, "shop", "slow2", now)
 	if err != nil {
 		t.Fatal(err)
@@ -420,8 +446,6 @@ func TestGoldenReports(t *testing.T) {
 	}
 	golden(t, "report.json", append(body, '\n'))
 
-	s.fire("running", now.Add(-5*time.Second))
-	s.lease("crawl")
 	r, err = BuildReport(s.ctx, s.st, "shop", "running", now)
 	if err != nil {
 		t.Fatal(err)
@@ -439,7 +463,6 @@ func TestGoldenReports(t *testing.T) {
 
 // The first run of a pipeline has nothing to compare with.
 func TestReportWithoutHistory(t *testing.T) {
-	t.Parallel()
 	s := newSim(t, shop)
 	s.quickRun("only", now.Add(-time.Hour))
 	r, err := BuildReport(s.ctx, s.st, "shop", "only", now)
