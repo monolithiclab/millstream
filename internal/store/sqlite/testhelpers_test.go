@@ -105,49 +105,25 @@ type env struct {
 	ctx   context.Context
 }
 
-// newEnv opens a store with a fake clock and a jitter of one half, holding the given pipelines applied. The store
-// is a clone of a template where they were applied once per process, at t0.
+// newEnv opens a store with a fake clock and a jitter of one half, and applies the given pipelines. A fresh Memory
+// store reuses a closed one's connection and its prepared statements, where a clone would prepare them all again.
 func newEnv(t *testing.T, pipelines ...string) *env {
 	t.Helper()
-	tmpl, err := envTemplate(pipelines)
-	if err != nil {
-		t.Fatal(err)
-	}
 	clock := &fakeClock{t: t0}
-	s, err := tmpl.Clone(Options{Now: clock.Now, Rand: func() float64 { return 0.5 }})
+	s, err := Open(Memory, Options{Now: clock.Now, Rand: func() float64 { return 0.5 }})
 	if err != nil {
-		t.Fatalf("Clone: %v", err)
+		t.Fatalf("Open: %v", err)
 	}
 	t.Cleanup(func() {
 		if err := s.Close(); err != nil {
 			t.Errorf("Close: %v", err)
 		}
 	})
-	return &env{t: t, s: s, clock: clock, ctx: context.Background()}
-}
-
-// envTemplates holds a func() (*Store, error) per set of pipelines newEnv applies: stores open for the process.
-var envTemplates sync.Map
-
-func envTemplate(pipelines []string) (*Store, error) {
-	f, _ := envTemplates.LoadOrStore(strings.Join(pipelines, "\x00"), sync.OnceValues(func() (*Store, error) {
-		s, err := Open(Memory, Options{Now: func() time.Time { return t0 }})
-		if err != nil {
-			return nil, err
-		}
-		for _, src := range pipelines {
-			p, err := parsed(src)
-			if err != nil {
-				return nil, err
-			}
-			if _, err := s.ApplyRevision(context.Background(), store.PackageRecord{Hash: hashOf(src),
-				Bundle: []byte(src), Pipeline: p}); err != nil {
-				return nil, err
-			}
-		}
-		return s, nil
-	}))
-	return f.(func() (*Store, error))()
+	e := &env{t: t, s: s, clock: clock, ctx: context.Background()}
+	for _, src := range pipelines {
+		e.apply(src)
+	}
+	return e
 }
 
 // parsedPipelines caches parse: a parsed pipeline is read-only, so stores and tests share it.

@@ -40,7 +40,7 @@ func (w *where) String() string {
 }
 
 // scan runs a read query and scans every row with fn.
-func scan[T any](ctx context.Context, db *sql.DB, query string, args []any, fn func(*sql.Rows) (T, error)) ([]T,
+func scan[T any](ctx context.Context, db *readDB, query string, args []any, fn func(*sql.Rows) (T, error)) ([]T,
 	error,
 ) {
 	rows, err := db.QueryContext(ctx, query, args...)

@@ -138,9 +138,10 @@ type Options struct {
 // Store is the SQLite log store. It is safe for concurrent use.
 type Store struct {
 	write *sql.DB // one connection, the writer goroutine's (and a Memory store's reads, between batches)
-	read  *sql.DB // the read pool; write for a Memory store
+	read  *readDB // the read pool; on write for a Memory store
 	opts  Options
 	uri   string // the database, for Clone
+	mem   bool   // a Memory store, whose database goes back to memoryPool on Close
 
 	mu     sync.RWMutex // guards closed against sends on reqs
 	closed bool
@@ -168,6 +169,9 @@ func Open(path string, opts Options) (*Store, error) {
 // Clone opens a Memory store holding a copy of s's database as committed when it is called: a store to try
 // something on without touching s, or a test's copy of a history built once.
 func (s *Store) Clone(opts Options) (*Store, error) {
+	if s.read.closed.Load() { // its database may be another store's now
+		return nil, store.ErrClosed
+	}
 	return open(Memory, s.uri, opts)
 }
 
@@ -195,6 +199,16 @@ func open(path, from string, opts Options) (*Store, error) {
 
 func (s *Store) open(path, from string) error {
 	memory := path == Memory
+	s.mem = memory
+	if memory {
+		if m := takeMemory(); m != nil {
+			s.write, s.read, s.uri, s.stmts = m.write, newReadDB(m.write, m.reads), m.uri, m.stmts
+			if from != "" {
+				return restore(s.write, from)
+			}
+			return nil
+		}
+	}
 	sep := "?"
 	if memory {
 		path, sep = fmt.Sprintf("file:/millstream-%d?vfs=memdb", memorySeq.Add(1)), "&"
@@ -226,13 +240,15 @@ func (s *Store) open(path, from string) error {
 	if memory {
 		// The writer's connection serves the reads too: a read waits for the batch in progress, as it would on
 		// memdb's locks, but without a connection of its own to open or busy_timeout to sleep through.
-		s.read = s.write
+		s.read = newReadDB(s.write, nil)
 		return nil
 	}
-	if s.read, err = sql.Open("sqlite", path+sep+pragmas+"&_pragma=query_only(1)"); err != nil {
+	read, err := sql.Open("sqlite", path+sep+pragmas+"&_pragma=query_only(1)")
+	if err != nil {
 		return fmt.Errorf("open store %s: %w", path, err)
 	}
-	s.read.SetMaxOpenConns(s.opts.ReadConns)
+	read.SetMaxOpenConns(s.opts.ReadConns)
+	s.read = newReadDB(read, nil)
 	return nil
 }
 
@@ -296,14 +312,26 @@ func (s *Store) Close() error {
 	close(s.reqs)
 	s.mu.Unlock()
 	<-s.done
+	if s.mem {
+		s.read.closed.Store(true) // its connection may serve another store from now on
+		if putMemory(&memoryDB{write: s.write, reads: s.read.stmts, uri: s.uri, stmts: s.stmts}) {
+			return nil
+		}
+	}
 	return s.closeDBs()
 }
 
 func (s *Store) closeDBs() error {
 	var errs []error
+	for _, st := range s.stmts {
+		errs = append(errs, st.Close())
+	}
 	dbs := []*sql.DB{s.write}
-	if s.read != s.write { // a Memory store reads on its write connection
-		dbs = append(dbs, s.read)
+	if s.read != nil {
+		s.read.closeStmts()
+		if s.read.DB != s.write { // a Memory store reads on its write connection
+			dbs = append(dbs, s.read.DB)
+		}
 	}
 	for _, db := range dbs {
 		if db != nil {

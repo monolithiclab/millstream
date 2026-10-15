@@ -61,7 +61,6 @@ func (s *Store) submit(ctx context.Context, unit string, fn func(*wtx) error) er
 // writer is the single writer loop. It exits when Close closes reqs, after applying what was queued.
 func (s *Store) writer() {
 	defer close(s.done)
-	defer s.closeStmts()
 	for first := range s.reqs {
 		batch := []*request{first}
 		deadline := time.Now().Add(batchWindow)
@@ -78,10 +77,10 @@ func (s *Store) writer() {
 			}
 		}
 		results := s.commit(batch)
+		s.prepareUnseen() // before the replies: once a unit returns, the writer is idle
 		for i, r := range batch {
 			r.done <- results[i]
 		}
-		s.prepareUnseen()
 	}
 }
 
@@ -97,12 +96,6 @@ func (s *Store) prepareUnseen() {
 		}
 	}
 	clear(s.unseen)
-}
-
-func (s *Store) closeStmts() {
-	for _, st := range s.stmts {
-		_ = st.Close()
-	}
 }
 
 // stmt returns query prepared for the batch transaction, or nil when it is not prepared yet: the writer prepares it

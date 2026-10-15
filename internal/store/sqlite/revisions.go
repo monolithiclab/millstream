@@ -3,6 +3,7 @@ package sqlite
 import (
 	"fmt"
 	"slices"
+	"sync"
 
 	"github.com/monolithiclab/millstream/internal/expr"
 	"github.com/monolithiclab/millstream/internal/pipeline"
@@ -58,13 +59,24 @@ func (w *wtx) revision(id store.RevisionID) (*revision, error) {
 	if r := w.s.revs[hash]; r != nil {
 		return r, nil
 	}
+	key := hash + "\x00" + data
+	if r, ok := revisions.Load(key); ok {
+		w.s.revs[hash] = r.(*revision)
+		return r.(*revision), nil
+	}
 	r, err := newRevision(hash, []byte(data))
 	if err != nil {
 		return nil, fmt.Errorf("revision %d: %w", id, err)
 	}
+	revisions.Store(key, r)
 	w.s.revs[hash] = r
 	return r, nil
 }
+
+// revisions caches the revisions every store of the process built, by package hash and pipeline: compiling a
+// pipeline's routes costs more than most units, and the stores of a process (tests, millstream test) apply the same
+// few pipelines over and over.
+var revisions sync.Map
 
 // step returns a step of the revision, or an error naming it when the revision has no such step.
 func (r *revision) step(name string) (pipeline.Step, error) {
