@@ -9,7 +9,6 @@ import (
 )
 
 func TestLease(t *testing.T) {
-	t.Parallel()
 	e := newEnv(t, fixture)
 	e.fire("r1")
 	e.fire("r2")
@@ -44,7 +43,6 @@ func TestLease(t *testing.T) {
 }
 
 func TestLeaseFencingTokenGrows(t *testing.T) {
-	t.Parallel()
 	e := newEnv(t, fixture)
 	e.fire("r1")
 	l := e.lease(1)[0]
@@ -72,7 +70,6 @@ func TestLeaseFencingTokenGrows(t *testing.T) {
 // An expired lease consumes its attempt (spec section 5.3): the delivery is retried after backoff while attempts
 // remain, then ends dead with its dead letter, class leaseExpired.
 func TestLeaseExpiryConsumesAttempts(t *testing.T) {
-	t.Parallel()
 	e := newEnv(t, fixture) // crawl: maxAttempts 3, backoff 10s, jitter one half
 	e.fire("r1")
 	for attempt := 1; attempt <= 3; attempt++ {
@@ -102,7 +99,6 @@ func TestLeaseExpiryConsumesAttempts(t *testing.T) {
 }
 
 func TestLeaseSkipsFutureRetries(t *testing.T) {
-	t.Parallel()
 	e := newEnv(t, fixture)
 	e.fire("r1")
 	e.fail(e.lease(1)[0], true)
@@ -116,7 +112,6 @@ func TestLeaseSkipsFutureRetries(t *testing.T) {
 }
 
 func TestLeaseSlotsAndExclusions(t *testing.T) {
-	t.Parallel()
 	e := newEnv(t, fixture)
 	for _, id := range []string{"r1", "r2", "r3"} {
 		e.fire(id)
@@ -152,7 +147,6 @@ func TestLeaseSlotsAndExclusions(t *testing.T) {
 // The dispatcher serves pipelines with ready deliveries in round-robin (spec section 4.10): a pipeline with a
 // backlog never starves another, and the first pipeline served rotates.
 func TestLeaseRoundRobin(t *testing.T) {
-	t.Parallel()
 	e := newEnv(t, fixture, strings.Replace(fixture, "pipeline: listings", "pipeline: other", 1))
 	for _, id := range []string{"a1", "a2", "a3", "a4"} {
 		e.firePipeline("listings", "daily", id)
@@ -171,7 +165,6 @@ func TestLeaseRoundRobin(t *testing.T) {
 }
 
 func TestRenew(t *testing.T) {
-	t.Parallel()
 	e := newEnv(t, fixture)
 	e.fire("r1")
 	e.fire("r2")

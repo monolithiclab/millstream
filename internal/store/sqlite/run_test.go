@@ -10,7 +10,6 @@ import (
 // Review focus 5: a run cancelled while a delivery is leased discards its outputs and ends cancelled with its
 // cost.
 func TestCancelWhileLeased(t *testing.T) {
-	t.Parallel()
 	e := newEnv(t, fixture)
 	e.fire("r1")
 	l := e.lease(1)[0]
@@ -39,9 +38,7 @@ func TestCancelWhileLeased(t *testing.T) {
 }
 
 func TestCancelFailAndExpiry(t *testing.T) {
-	t.Parallel()
 	t.Run("fail after cancel", func(t *testing.T) {
-		t.Parallel()
 		e := newEnv(t, fixture)
 		e.fire("r1")
 		l := e.lease(1)[0]
@@ -52,7 +49,6 @@ func TestCancelFailAndExpiry(t *testing.T) {
 		wantState(t, "run", e.run("r1").State, store.RunCancelled)
 	})
 	t.Run("lease expires after cancel", func(t *testing.T) {
-		t.Parallel()
 		e := newEnv(t, fixture)
 		e.fire("r1")
 		e.lease(1)
@@ -73,7 +69,6 @@ func TestCancelFailAndExpiry(t *testing.T) {
 }
 
 func TestCancelPendingAndRetrying(t *testing.T) {
-	t.Parallel()
 	e := newEnv(t, fixture)
 	e.fire("r1")
 	e.done(e.leaseStep("crawl"), out("a", `{"score":1}`), out("b", `{"score":2}`))
@@ -99,7 +94,6 @@ func TestCancelPendingAndRetrying(t *testing.T) {
 }
 
 func TestCancelErrors(t *testing.T) {
-	t.Parallel()
 	e := newEnv(t, fixture)
 	e.firePipeline("listings", "adhoc", "m1") // settles at once
 	wantErr(t, e.s.Cancel(e.ctx, "listings", "m1"), store.ErrConflict)
@@ -107,7 +101,6 @@ func TestCancelErrors(t *testing.T) {
 }
 
 func TestOpenRevisions(t *testing.T) {
-	t.Parallel()
 	e := newEnv(t, fixture)
 	e.fire("r1")
 	rev2 := e.apply(fixtureFixed)

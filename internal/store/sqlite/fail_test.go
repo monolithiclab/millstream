@@ -11,7 +11,6 @@ import (
 
 // crawl retries with backoff 10s capped at 30s and three attempts; the jitter is one half.
 func TestFailRetrySchedule(t *testing.T) {
-	t.Parallel()
 	e := newEnv(t, fixture)
 	e.fire("r1")
 	waits := []time.Duration{5 * time.Second, 10 * time.Second} // half of 10s, then half of 20s
@@ -38,7 +37,6 @@ func TestFailRetrySchedule(t *testing.T) {
 }
 
 func TestFailNonRetryableIsDeadAtOnce(t *testing.T) {
-	t.Parallel()
 	e := newEnv(t, fixture)
 	e.fire("r1")
 	wantState(t, "state", e.fail(e.lease(1)[0], false), store.DeliveryDead)
@@ -48,7 +46,6 @@ func TestFailNonRetryableIsDeadAtOnce(t *testing.T) {
 }
 
 func TestFailTruncatesMessage(t *testing.T) {
-	t.Parallel()
 	e := newEnv(t, fixture)
 	e.fire("r1")
 	l := e.lease(1)[0]
@@ -67,7 +64,6 @@ func TestFailTruncatesMessage(t *testing.T) {
 }
 
 func Test_truncate(t *testing.T) {
-	t.Parallel()
 	tests := []struct {
 		in   string
 		n    int
@@ -86,7 +82,6 @@ func Test_truncate(t *testing.T) {
 }
 
 func Test_backoff(t *testing.T) {
-	t.Parallel()
 	r := pipeline.Retry{MaxAttempts: 10, Backoff: 10 * time.Second, MaxBackoff: time.Minute}
 	tests := []struct {
 		attempt int

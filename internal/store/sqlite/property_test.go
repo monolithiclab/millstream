@@ -15,10 +15,8 @@ import (
 // after every step: a sequence of propertySteps steps per seed of propertySeeds, a short set by default and the long
 // run under the e2e tag.
 func TestRandomUnitSequences(t *testing.T) {
-	t.Parallel()
 	for _, seed := range propertySeeds {
 		t.Run(fmt.Sprint("seed", seed), func(t *testing.T) {
-			t.Parallel()
 			m := &model{e: newEnv(t, fixture), rng: rand.New(rand.NewPCG(seed, 42))}
 			for step := range propertySteps {
 				op := m.step()

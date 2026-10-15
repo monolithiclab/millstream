@@ -31,7 +31,6 @@ func (e *env) startReplay(runID, step string, items []string) (int64, bool, erro
 }
 
 func TestStartReplay(t *testing.T) {
-	t.Parallel()
 	e := newEnv(t, dedupePipeline)
 	raw := e.crawled()
 	// Generation 0 lets x through once: a passes, b is a duplicate.
@@ -97,7 +96,6 @@ func (e *env) deliveryOfItem(runID, itemID string) store.Delivery {
 }
 
 func TestConcurrentReplaysTakeDistinctGenerations(t *testing.T) {
-	t.Parallel()
 	e := newEnv(t, dedupePipeline)
 	raw := e.crawled()
 	const n = 8
@@ -123,7 +121,6 @@ func TestConcurrentReplaysTakeDistinctGenerations(t *testing.T) {
 }
 
 func TestStartReplayRefusals(t *testing.T) {
-	t.Parallel()
 	e := newEnv(t, dedupePipeline)
 	raw := e.crawled()
 	other := e.apply(otherPipeline)
@@ -162,7 +159,6 @@ func TestStartReplayRefusals(t *testing.T) {
 // TestReplayRefusesExpiredPayloads: an item whose payload was replaced by a tombstone is never replayed (spec
 // section 5.7); retention arrives in M4, so the tombstone is set by hand.
 func TestReplayRefusesExpiredPayloads(t *testing.T) {
-	t.Parallel()
 	e := newEnv(t, dedupePipeline)
 	raw := e.crawled()
 	if err := e.s.submit(e.ctx, "test", func(w *wtx) error {

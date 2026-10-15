@@ -8,7 +8,6 @@ import (
 )
 
 func TestSkipFiringsAndLastFiring(t *testing.T) {
-	t.Parallel()
 	e := newEnv(t, fixture)
 	last := func() time.Time {
 		t.Helper()
@@ -66,7 +65,6 @@ func TestSkipFiringsAndLastFiring(t *testing.T) {
 }
 
 func TestPipelines(t *testing.T) {
-	t.Parallel()
 	e := newEnv(t, fixture, otherPipeline)
 	if err := e.s.SetPaused(e.ctx, "other", "", true); err != nil {
 		t.Fatal(err)
@@ -82,7 +80,6 @@ func TestPipelines(t *testing.T) {
 }
 
 func TestLeasePipelineSlots(t *testing.T) {
-	t.Parallel()
 	e := newEnv(t, fixture, otherPipeline)
 	for _, id := range []string{"r1", "r2", "r3"} {
 		e.fire(id)

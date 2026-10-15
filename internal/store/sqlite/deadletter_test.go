@@ -22,7 +22,6 @@ func deadRun(t *testing.T) (*env, store.Lease) {
 }
 
 func TestReplayDead(t *testing.T) {
-	t.Parallel()
 	e, l := deadRun(t)
 	n, err := e.s.ReplayDeadLetters(e.ctx, "listings", "r1", nil, false)
 	if err != nil || n != 1 {
@@ -49,7 +48,6 @@ func TestReplayDead(t *testing.T) {
 // A delivery dead again after a replay publishes a new dead letter, under the next failure sequence, so readers of
 // the dlq stream see the new failure; the replayed one stays replayed.
 func TestReplayDeadAgainCreatesNewDeadLetter(t *testing.T) {
-	t.Parallel()
 	e, l := deadRun(t)
 	if _, err := e.s.ReplayDeadLetters(e.ctx, "listings", "r1", nil, false); err != nil {
 		t.Fatal(err)
@@ -82,7 +80,6 @@ func unroutedRun(t *testing.T) *env {
 }
 
 func TestReplayUnroutedWithoutMigrateStaysOpen(t *testing.T) {
-	t.Parallel()
 	e := unroutedRun(t)
 	n, err := e.s.ReplayDeadLetters(e.ctx, "listings", "r1", nil, false)
 	if err != nil || n != 0 {
@@ -95,7 +92,6 @@ func TestReplayUnroutedWithoutMigrateStaysOpen(t *testing.T) {
 }
 
 func TestReplayUnroutedWithMigrate(t *testing.T) {
-	t.Parallel()
 	e := unroutedRun(t)
 	fixed := e.apply(fixtureFixed)
 	dl := e.deadLetters("r1")[0]
@@ -129,7 +125,6 @@ func TestReplayUnroutedWithMigrate(t *testing.T) {
 }
 
 func TestReplayErrors(t *testing.T) {
-	t.Parallel()
 	e, _ := deadRun(t)
 	_, err := e.s.ReplayDeadLetters(e.ctx, "listings", "r1", []string{"it_nope"}, false)
 	wantErr(t, err, store.ErrNotFound)
@@ -147,7 +142,6 @@ func TestReplayErrors(t *testing.T) {
 }
 
 func TestDiscard(t *testing.T) {
-	t.Parallel()
 	e, _ := deadRun(t)
 	dl := e.deadLetters("r1")[0]
 	n, err := e.s.DiscardDeadLetters(e.ctx, "listings", []string{dl.ID})
@@ -170,7 +164,6 @@ func TestDiscard(t *testing.T) {
 
 // A run whose dead letter is discarded before it settles settles completedWithErrors.
 func TestDiscardBeforeSettlement(t *testing.T) {
-	t.Parallel()
 	e := newEnv(t, fixture)
 	e.fire("r1")
 	e.fail(e.leaseStep("crawl"), false)
@@ -185,7 +178,6 @@ func TestDiscardBeforeSettlement(t *testing.T) {
 
 // Replaying into a revision that no longer has the dead delivery's step fails whole: the run keeps its revision.
 func TestReplayMigrateToRevisionWithoutStep(t *testing.T) {
-	t.Parallel()
 	e, _ := deadRun(t)
 	e.apply(strings.Replace(fixture, "  crawl:\n", "  fetch:\n", 1))
 	_, err := e.s.ReplayDeadLetters(e.ctx, "listings", "r1", nil, true)
@@ -199,7 +191,6 @@ func TestReplayMigrateToRevisionWithoutStep(t *testing.T) {
 // Migrating refuses a target revision that lacks the step of a delivery still live in the run: that delivery would
 // have no step to run, route or dead-letter on. A target that keeps the step is accepted.
 func TestReplayMigrateRefusedWhileLiveStepMissing(t *testing.T) {
-	t.Parallel()
 	e := newEnv(t, fixture)
 	e.fire("r1")
 	e.done(e.leaseStep("crawl"), out("a", `{"score":1}`)) // audit and score deliveries, pending
@@ -238,10 +229,8 @@ func moveRun(e *env, runID string, rev store.RevisionID) {
 // A delivery whose step its revision lacks ends dead on the default <step>.dlq, whether it fails or reports done,
 // instead of staying leased forever behind an error.
 func TestOrphanStepEndsDead(t *testing.T) {
-	t.Parallel()
 	for _, report := range []string{"fail", "done"} {
 		t.Run(report, func(t *testing.T) {
-			t.Parallel()
 			e := newEnv(t, fixture)
 			e.fire("r1")
 			e.done(e.leaseStep("crawl"), out("a", `{"score":1}`))

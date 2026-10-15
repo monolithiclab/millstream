@@ -97,6 +97,11 @@ func (c *fakeClock) Advance(d time.Duration) {
 	c.mu.Unlock()
 }
 
+// The package's tests do not call t.Parallel. Run one at a time, they take their store from the Memory pool warm,
+// its statements prepared; run in parallel, each opens a cold connection and they contend on the transpiled
+// SQLite's global allocator mutex (modernc libc's allocMu), so the package took longer in parallel than serially:
+// 0.33 s against 0.45 s at -parallel 10. The concurrency tests race their own goroutines.
+
 // env is a store under test with its clock.
 type env struct {
 	t     *testing.T
@@ -327,19 +332,3 @@ func wantState[S comparable](t *testing.T, what string, got, want S) {
 
 // otherPipeline is the fixture under another pipeline name.
 var otherPipeline = strings.Replace(fixture, "pipeline: listings", "pipeline: other", 1)
-
-// clone returns an env on a clone of e's store, its clock at e's instant, for t.
-func (e *env) clone(t *testing.T) *env {
-	t.Helper()
-	clock := &fakeClock{t: e.clock.Now()}
-	s, err := e.s.Clone(Options{Now: clock.Now, Rand: func() float64 { return 0.5 }})
-	if err != nil {
-		t.Fatalf("Clone: %v", err)
-	}
-	t.Cleanup(func() {
-		if err := s.Close(); err != nil {
-			t.Errorf("Close: %v", err)
-		}
-	})
-	return &env{t: t, s: s, clock: clock, ctx: e.ctx}
-}

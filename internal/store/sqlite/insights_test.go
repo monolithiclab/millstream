@@ -39,7 +39,6 @@ func (e *env) insightStates() map[string]store.InsightState {
 // that was evaluated, reopened when it recurs; an acknowledged insight is still resolved, a muted one never changes;
 // a kind not evaluated is left alone.
 func TestInsightLifecycle(t *testing.T) {
-	t.Parallel()
 	e := newEnv(t, fixture)
 	kinds := []string{"failureCluster", "slowStep"}
 	e.record(kinds, finding("a", "failureCluster", "warning"), finding("b", "failureCluster", "error"),
@@ -76,7 +75,6 @@ func TestInsightLifecycle(t *testing.T) {
 }
 
 func TestInsightRequests(t *testing.T) {
-	t.Parallel()
 	e := newEnv(t, fixture)
 	for _, r := range []store.InsightReport{
 		{Kinds: []string{"cost"}},

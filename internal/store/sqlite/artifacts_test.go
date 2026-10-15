@@ -45,7 +45,6 @@ func (e *env) refcounts(pipelineName string) map[string]int64 {
 // TestDoneCountsArtifactsPerItem: each published item counts one reference to each artifact it carries; crawl
 // publishes every output on two streams, so two items reference each artifact per output.
 func TestDoneCountsArtifactsPerItem(t *testing.T) {
-	t.Parallel()
 	e := newEnv(t, fixture)
 	e.fire("r1")
 	crawl := e.leaseStep("crawl")
@@ -73,7 +72,6 @@ func TestDoneCountsArtifactsPerItem(t *testing.T) {
 // TestRepublishedItemCountsNothing: an output published again under the same id (a retry) is a no-op, its
 // artifacts included.
 func TestRepublishedItemCountsNothing(t *testing.T) {
-	t.Parallel()
 	e := newEnv(t, fixture)
 	e.fire("r1")
 	err := e.s.submit(e.ctx, "test", func(w *wtx) error {
@@ -114,7 +112,6 @@ func TestRepublishedItemCountsNothing(t *testing.T) {
 }
 
 func TestDoneRefusesInvalidArtifacts(t *testing.T) {
-	t.Parallel()
 	tests := map[string]store.ArtifactRef{
 		"empty name":      ref("", shaA),
 		"path as name":    ref("out/x.txt", shaA),
@@ -144,9 +141,7 @@ func TestDoneRefusesInvalidArtifacts(t *testing.T) {
 // TestArtifactsTravelWithItems: a dedupe pass republishes the item with its artifacts, a dead input's dead letter
 // copies them, and an unrouted output keeps them for its replay.
 func TestArtifactsTravelWithItems(t *testing.T) {
-	t.Parallel()
 	t.Run("dedupe", func(t *testing.T) {
-		t.Parallel()
 		e := newEnv(t, dedupePipeline)
 		if _, err := e.s.Fire(e.ctx, store.Firing{Pipeline: "dd", Trigger: "adhoc", Key: "r1", RunID: "r1"}); err != nil {
 			t.Fatal(err)
@@ -162,7 +157,6 @@ func TestArtifactsTravelWithItems(t *testing.T) {
 		}
 	})
 	t.Run("dead letter", func(t *testing.T) {
-		t.Parallel()
 		e := newEnv(t, fixture)
 		e.fire("r1")
 		e.done(e.leaseStep("crawl"), withArtifacts(out("a", `{"score": 80}`), ref("page.html", shaA)))
@@ -182,7 +176,6 @@ func TestArtifactsTravelWithItems(t *testing.T) {
 		}
 	})
 	t.Run("unrouted replay", func(t *testing.T) {
-		t.Parallel()
 		e := newEnv(t, fixture)
 		e.fire("r1")
 		e.done(e.leaseStep("crawl"), out("a", `{"score": -1}`))
@@ -207,7 +200,6 @@ func TestArtifactsTravelWithItems(t *testing.T) {
 // TestAttemptArtifacts: each attempt keeps its own artifacts, a failed one included, apart from the outputs; each
 // counts one reference. Invalid or twice-named references are refused whole.
 func TestAttemptArtifacts(t *testing.T) {
-	t.Parallel()
 	e := newEnv(t, fixture)
 	e.fire("r1")
 	l := e.leaseStep("crawl")

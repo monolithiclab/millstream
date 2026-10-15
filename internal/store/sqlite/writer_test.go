@@ -28,7 +28,6 @@ var errUnit = errors.New("unit failed on purpose")
 // Units that fail after writing are rolled back alone, whatever batch they share with units that commit, and
 // give their event sequence numbers back.
 func TestFailingUnitsRollBackAlone(t *testing.T) {
-	t.Parallel()
 	e := newEnv(t, fixture)
 	const n = 32 // enough concurrent units that batches mix failing and committing ones
 	var wg sync.WaitGroup
@@ -68,7 +67,6 @@ func TestFailingUnitsRollBackAlone(t *testing.T) {
 
 // Many concurrent Done calls batch into shared transactions and each publishes exactly its own outputs.
 func TestConcurrentDone(t *testing.T) {
-	t.Parallel()
 	e := newEnv(t, fixture)
 	const runs = concurrentDones
 	for i := range runs {
@@ -104,7 +102,6 @@ func TestConcurrentDone(t *testing.T) {
 }
 
 func TestCloseDrainsQueuedUnits(t *testing.T) {
-	t.Parallel()
 	s, err := Open(Memory, Options{})
 	if err != nil {
 		t.Fatal(err)
@@ -186,7 +183,6 @@ func TestFailpointAfterCommit(t *testing.T) {
 }
 
 func TestUnitsAreNamed(t *testing.T) {
-	t.Parallel()
 	seen := map[string]bool{}
 	for _, u := range Units {
 		if u == "" || seen[u] {
@@ -200,7 +196,6 @@ func TestUnitsAreNamed(t *testing.T) {
 // A unit whose savepoint cannot be rolled back leaves the transaction in an unknown state: the whole batch is
 // aborted, with an error for every unit in it, and nothing commits.
 func TestRollbackFailureAbortsBatch(t *testing.T) {
-	t.Parallel()
 	e := newEnv(t, fixture)
 	unit := func(fn func(*wtx) error) *request {
 		return &request{ctx: e.ctx, unit: "test", fn: fn, done: make(chan error, 1)}

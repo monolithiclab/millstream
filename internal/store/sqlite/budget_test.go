@@ -96,7 +96,6 @@ func approx(a, b float64) bool { return a-b < 1e-9 && b-a < 1e-9 }
 // agent steps once, with the cause shown; resuming lifts the pause, and the run that reached its budget does not
 // pause the pipeline again.
 func TestRunBudgetConcurrentLeases(t *testing.T) {
-	t.Parallel()
 	e := newEnv(t, budgetPipeline(0.3, 0))
 	e.fanOut("r1", 8)
 	var (
@@ -174,7 +173,6 @@ func TestRunBudgetConcurrentLeases(t *testing.T) {
 // A delivery a budget holds back does not take its step's slot: a run within its budget is still served past the
 // older deliveries of a run that reached its own.
 func TestBudgetSkipsPastHeldBackDeliveries(t *testing.T) {
-	t.Parallel()
 	e := newEnv(t, budgetPipeline(0.1, 0))
 	e.fanOut("r1", 3)
 	e.fanOut("r2", 3)
@@ -207,7 +205,6 @@ func TestBudgetSkipsPastHeldBackDeliveries(t *testing.T) {
 // The day budget is per pipeline and UTC day of the store clock: it counts every run, and a new day starts from
 // nothing.
 func TestDayBudgetRollsOverByUTCDay(t *testing.T) {
-	t.Parallel()
 	e := newEnv(t, budgetPipeline(0, 0.2))
 	e.clock.Advance(17*time.Hour + 30*time.Minute) // 23:30 UTC
 	e.fanOut("r1", 2)
@@ -240,7 +237,6 @@ func TestDayBudgetRollsOverByUTCDay(t *testing.T) {
 // A node that dies keeps its reservation: the expired lease charges it in full to the delivery, the run and the day.
 // A failure without a reported cost does the same; a reported cost replaces the reservation.
 func TestReservationChargedWhenUnreported(t *testing.T) {
-	t.Parallel()
 	e := newEnv(t, budgetPipeline(0, 0.25))
 	e.fanOut("r1", 3)
 	ls := e.leaseAgent(3, 0.1)
@@ -281,7 +277,6 @@ func TestReservationChargedWhenUnreported(t *testing.T) {
 // A reported failure cost replaces the reservation, and an agent step reserving nothing is still held back once the
 // budget is reached.
 func TestFailCostReplacesReservation(t *testing.T) {
-	t.Parallel()
 	e := newEnv(t, budgetPipeline(0.1, 0))
 	e.fanOut("r1", 3)
 	l := e.leaseAgent(1, 0.08)[0]
@@ -303,7 +298,6 @@ func TestFailCostReplacesReservation(t *testing.T) {
 // A step a user paused keeps its pause, and its lack of a cause, when a budget pauses the others; resuming the
 // pipeline does not lift it.
 func TestBudgetLeavesUserPauses(t *testing.T) {
-	t.Parallel()
 	e := newEnv(t, budgetPipeline(0.1, 0))
 	e.fanOut("r1", 3)
 	e.leaseAgent(1, 0.1)

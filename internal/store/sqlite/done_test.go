@@ -10,7 +10,6 @@ import (
 )
 
 func TestDoneFanOutAndSettle(t *testing.T) {
-	t.Parallel()
 	e := newEnv(t, fixture)
 	e.fire("r1")
 	crawl := e.leaseStep("crawl")
@@ -67,7 +66,6 @@ func TestDoneFanOutAndSettle(t *testing.T) {
 }
 
 func TestDoneStaleLease(t *testing.T) {
-	t.Parallel()
 	e := newEnv(t, fixture)
 	e.fire("r1")
 	l := e.lease(1)[0]
@@ -85,7 +83,6 @@ func TestDoneStaleLease(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
 			_, err := e.s.Done(e.ctx, store.DoneRequest{LeaseRef: tt.ref, Attempt: tt.attempt})
 			wantErr(t, err, tt.want)
 			_, err = e.s.Fail(e.ctx, store.FailRequest{LeaseRef: tt.ref, Attempt: tt.attempt, Retryable: true})
@@ -93,7 +90,6 @@ func TestDoneStaleLease(t *testing.T) {
 		})
 	}
 	t.Run("already done", func(t *testing.T) {
-		t.Parallel()
 		e := newEnv(t, fixture)
 		e.fire("r1")
 		l := e.lease(1)[0]
@@ -104,7 +100,6 @@ func TestDoneStaleLease(t *testing.T) {
 }
 
 func TestDoneInvalidOutput(t *testing.T) {
-	t.Parallel()
 	e := newEnv(t, fixture)
 	e.fire("r1")
 	l := e.lease(1)[0]
@@ -115,7 +110,6 @@ func TestDoneInvalidOutput(t *testing.T) {
 // Review focus 2: two outputs where one has no key, or two with the same key, fail as a non-retryable key-rule
 // error, never collide.
 func TestDoneKeyRule(t *testing.T) {
-	t.Parallel()
 	for _, tc := range []struct {
 		name    string
 		outputs []store.Output
@@ -126,7 +120,6 @@ func TestDoneKeyRule(t *testing.T) {
 			`outputs 0 and 2 share the key "a"`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
 			testKeyRule(t, tc.outputs, tc.message)
 		})
 	}
@@ -215,9 +208,7 @@ func publishAgain(e *env, payloads ...string) {
 // The first commit of an item wins (spec section 5.2): publishing an existing item id again is a no-op with the same
 // payload and records nondeterministicOutput with another.
 func TestDoneFirstCommit(t *testing.T) {
-	t.Parallel()
 	t.Run("same payload is a no-op", func(t *testing.T) {
-		t.Parallel()
 		e := newEnv(t, fixture)
 		e.fire("r1")
 		publishAgain(e, `{"score":1, "x":2}`, `{"x":2,"score":1}`)
@@ -229,7 +220,6 @@ func TestDoneFirstCommit(t *testing.T) {
 		}
 	})
 	t.Run("different payload keeps the first", func(t *testing.T) {
-		t.Parallel()
 		e := newEnv(t, fixture)
 		e.fire("r1")
 		publishAgain(e, `{"score":1}`, `{"score":2}`)
@@ -255,7 +245,6 @@ func TestDoneFirstCommit(t *testing.T) {
 }
 
 func TestDoneRouting(t *testing.T) {
-	t.Parallel()
 	e := newEnv(t, fixture)
 	e.fire("r1")
 	e.done(e.leaseStep("crawl"), out("a", `{"score":1}`))
@@ -277,7 +266,6 @@ func TestDoneRouting(t *testing.T) {
 }
 
 func TestDoneRouteEvaluationFails(t *testing.T) {
-	t.Parallel()
 	e := newEnv(t, fixture)
 	e.fire("r1")
 	e.done(e.leaseStep("crawl"), out("a", `{}`))
@@ -295,7 +283,6 @@ func TestDoneRouteEvaluationFails(t *testing.T) {
 }
 
 func TestDoneRouteDoesNotCompile(t *testing.T) {
-	t.Parallel()
 	src := strings.Replace(fixture, `"item.score >= 0"`, `"item.score >="`, 1)
 	e := newEnv(t, src)
 	e.fire("r1")
@@ -306,7 +293,6 @@ func TestDoneRouteDoesNotCompile(t *testing.T) {
 }
 
 func TestDoneTerminalStepDropsOutputs(t *testing.T) {
-	t.Parallel()
 	e := newEnv(t, fixture)
 	e.fire("r1")
 	e.done(e.leaseStep("crawl"), out("a", `{"score":1}`))

@@ -13,7 +13,6 @@ import (
 )
 
 func TestOpenFileAndReopen(t *testing.T) {
-	t.Parallel()
 	path := filepath.Join(t.TempDir(), "m.db")
 	s, err := Open(path, Options{})
 	if err != nil {
@@ -69,7 +68,6 @@ func TestOpenFileAndReopen(t *testing.T) {
 
 // A clone holds the database as committed when it was taken, and goes its own way from there.
 func TestClone(t *testing.T) {
-	t.Parallel()
 	e := newEnv(t, fixture)
 	e.fire("r1")
 	c, err := e.s.Clone(Options{Now: e.clock.Now})
@@ -93,14 +91,12 @@ func TestClone(t *testing.T) {
 }
 
 func TestOpenErrors(t *testing.T) {
-	t.Parallel()
 	if _, err := Open(filepath.Join(t.TempDir(), "missing", "dir", "m.db"), Options{}); err == nil {
 		t.Fatal("Open in a missing directory succeeded")
 	}
 }
 
 func TestClosedStore(t *testing.T) {
-	t.Parallel()
 	s, err := Open(Memory, Options{})
 	if err != nil {
 		t.Fatal(err)
@@ -113,7 +109,6 @@ func TestClosedStore(t *testing.T) {
 }
 
 func TestCancelledContext(t *testing.T) {
-	t.Parallel()
 	e := newEnv(t, fixture)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -122,7 +117,6 @@ func TestCancelledContext(t *testing.T) {
 }
 
 func TestReads(t *testing.T) {
-	t.Parallel()
 	e := newEnv(t, fixture)
 	e.fire("r1")
 	e.clock.Advance(time.Second)

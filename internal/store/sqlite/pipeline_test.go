@@ -10,7 +10,6 @@ import (
 )
 
 func TestApplyRevision(t *testing.T) {
-	t.Parallel()
 	e := newEnv(t)
 	first := e.apply(fixture)
 	if again := e.apply(fixture); again != first {
@@ -50,7 +49,6 @@ func TestApplyRevision(t *testing.T) {
 }
 
 func TestApplyRevisionPausedSteps(t *testing.T) {
-	t.Parallel()
 	src := strings.Replace(fixture, "  audit:\n    action: ./actions/audit\n", "  audit:\n    action: ./actions/audit\n    paused: true\n", 1)
 	e := newEnv(t, src)
 	ps, err := e.s.PipelineState(e.ctx, "listings")
@@ -72,7 +70,6 @@ func TestApplyRevisionPausedSteps(t *testing.T) {
 }
 
 func TestFire(t *testing.T) {
-	t.Parallel()
 	e := newEnv(t, fixture)
 	e.fire("r1")
 	created, err := e.s.Fire(e.ctx, store.Firing{Pipeline: "listings", Trigger: "daily", Key: "r1", RunID: "r1"})
@@ -105,7 +102,6 @@ func TestFire(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
 			_, err := e.s.Fire(e.ctx, tt.f)
 			wantErr(t, err, tt.want)
 		})
@@ -113,14 +109,12 @@ func TestFire(t *testing.T) {
 }
 
 func TestFireRevisionOfAnotherPipeline(t *testing.T) {
-	t.Parallel()
 	e := newEnv(t, fixture, strings.Replace(fixture, "pipeline: listings", "pipeline: other", 1))
 	_, err := e.s.Fire(e.ctx, store.Firing{Pipeline: "other", Trigger: "daily", Key: "k", RunID: "x", Revision: 1})
 	wantErr(t, err, store.ErrInvalid)
 }
 
 func TestFireWithoutConsumersSettles(t *testing.T) {
-	t.Parallel()
 	e := newEnv(t, fixture)
 	e.firePipeline("listings", "adhoc", "m1")
 	r := e.run("m1")
@@ -132,7 +126,6 @@ func TestFireWithoutConsumersSettles(t *testing.T) {
 // Two pipelines with a trigger of the same name fire runs and trigger items with the same ids; the pipeline id
 // keeps them apart (spec section 4.10).
 func TestFireIsolatesPipelines(t *testing.T) {
-	t.Parallel()
 	e := newEnv(t, fixture, strings.Replace(fixture, "pipeline: listings", "pipeline: other", 1))
 	e.firePipeline("listings", "daily", "run_x_daily")
 	e.firePipeline("other", "daily", "run_x_daily")
@@ -150,7 +143,6 @@ func TestFireIsolatesPipelines(t *testing.T) {
 }
 
 func TestSetPaused(t *testing.T) {
-	t.Parallel()
 	e := newEnv(t, fixture)
 	e.fire("r1")
 	if err := e.s.SetPaused(e.ctx, "listings", "crawl", true); err != nil {
@@ -184,7 +176,6 @@ func TestSetPaused(t *testing.T) {
 
 // Revisions are decoded once and cached by package hash: two revisions of one package share the entry.
 func TestRevisionCache(t *testing.T) {
-	t.Parallel()
 	e := newEnv(t, fixture)
 	e.apply(fixtureFixed)
 	e.apply(fixture) // revision 3: the package of revision 1

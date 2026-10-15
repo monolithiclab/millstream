@@ -75,7 +75,6 @@ func (e *env) deliveryOf(runID, step string) store.Delivery {
 }
 
 func TestFilter(t *testing.T) {
-	t.Parallel()
 	e := newEnv(t, dedupePipeline)
 	l := e.crawlOne("r1", 0, "x", "gate")
 	state, err := e.s.Filter(e.ctx, store.FilterRequest{LeaseRef: l.Ref(), Attempt: l.Attempt, Reason: store.FilterReasonExpr})
@@ -101,7 +100,6 @@ func TestFilter(t *testing.T) {
 }
 
 func TestBuiltinUnitsOnCancelledRun(t *testing.T) {
-	t.Parallel()
 	e := newEnv(t, dedupePipeline)
 	gate := e.crawlOne("r1", 0, "x", "gate")
 	unique := e.leaseOf("unique")
@@ -125,7 +123,6 @@ func TestBuiltinUnitsOnCancelledRun(t *testing.T) {
 // TestDedupeWindow is review focus 1: a key let through 30 days and 1 second ago passes again; one let through 29
 // days (or exactly 30 days) ago is a duplicate.
 func TestDedupeWindow(t *testing.T) {
-	t.Parallel()
 	tests := []struct {
 		name   string
 		window time.Duration
@@ -137,14 +134,11 @@ func TestDedupeWindow(t *testing.T) {
 		{"exactly 30 days ago is a duplicate", window30d, window30d, store.DeliveryFiltered},
 		{"no window holds for ever", 0, 3650 * 24 * time.Hour, store.DeliveryFiltered},
 	}
-	// The first item records the key once; each case clones the store and dedupes a second one later.
-	base := newEnv(t, dedupePipeline)
-	first := base.crawlOne("r1", 0, "x", "unique")
-	wantState(t, "first", base.dedupe(first, "x", window30d), store.DeliveryDone)
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			e := base.clone(t)
+			e := newEnv(t, dedupePipeline)
+			first := e.crawlOne("r1", 0, "x", "unique")
+			wantState(t, "first", e.dedupe(first, "x", tt.window), store.DeliveryDone)
 			e.clock.Advance(tt.after)
 			second := e.crawlOne("r2", 0, "x", "unique")
 			wantState(t, "second", e.dedupe(second, "x", tt.window), tt.want)
@@ -175,7 +169,6 @@ func TestDedupeWindow(t *testing.T) {
 }
 
 func TestDedupePassPublishesTheItemUnchanged(t *testing.T) {
-	t.Parallel()
 	e := newEnv(t, dedupePipeline)
 	l := e.crawlOne("r1", 0, "x", "unique")
 	e.dedupe(l, "x", window30d)
@@ -196,7 +189,6 @@ func TestDedupePassPublishesTheItemUnchanged(t *testing.T) {
 // TestDedupeScopedByGeneration: a key let through in generation 0 does not hold back the same key in generation 1,
 // and the reverse.
 func TestDedupeScopedByGeneration(t *testing.T) {
-	t.Parallel()
 	e := newEnv(t, dedupePipeline)
 	wantState(t, "generation 0", e.dedupe(e.crawlOne("r1", 0, "x", "unique"), "x", 0), store.DeliveryDone)
 	wantState(t, "generation 1", e.dedupe(e.crawlOne("r2", 1, "x", "unique"), "x", 0), store.DeliveryDone)

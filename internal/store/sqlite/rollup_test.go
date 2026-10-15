@@ -39,7 +39,6 @@ func (e *env) rollup() int {
 // Delivery timings: the queue wait counts from when an attempt is due (backoff excluded), the work from its lease,
 // and the latency from creation to terminal; each attempt's end records its share in its event.
 func TestDeliveryTimings(t *testing.T) {
-	t.Parallel()
 	e := newEnv(t, fixture)
 	e.fire("r1")
 	e.clock.Advance(2 * time.Second) // queue wait
@@ -83,7 +82,6 @@ func TestDeliveryTimings(t *testing.T) {
 
 // A dead-letter replay restarts the delivery's timings.
 func TestReplayResetsTimings(t *testing.T) {
-	t.Parallel()
 	e := newEnv(t, fixture)
 	e.fire("r1")
 	l := e.leaseStep("crawl")
@@ -102,7 +100,6 @@ func TestReplayResetsTimings(t *testing.T) {
 // The rollup adds each event's points to the rollup of its minute: count, sum, min and max over the minute, a
 // boundary starting a new row, and a second pass finding nothing new.
 func TestRollupMath(t *testing.T) {
-	t.Parallel()
 	e := newEnv(t, fixture)
 	e.clock.Advance(50 * time.Second) // 06:00:50
 	e.fire("r1")
@@ -186,7 +183,6 @@ func TestRollupMath(t *testing.T) {
 
 // Invalid metrics are refused before the unit runs.
 func TestDoneRefusesInvalidMetrics(t *testing.T) {
-	t.Parallel()
 	e := newEnv(t, fixture)
 	e.fire("r1")
 	l := e.leaseStep("crawl")
@@ -231,7 +227,6 @@ func TestRollupFailpoint(t *testing.T) {
 
 // Rollups and pipeline events are filtered by pipeline, name, kind and time.
 func TestMetricAndEventFilters(t *testing.T) {
-	t.Parallel()
 	e := newEnv(t, fixture, otherPipeline)
 	e.fire("r1")
 	e.clock.Advance(time.Hour)

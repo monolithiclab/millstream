@@ -9,7 +9,6 @@ import (
 )
 
 func TestEvalResults(t *testing.T) {
-	t.Parallel()
 	e := newEnv(t)
 	first := []store.EvalResult{
 		{Action: "lab/score", ActionDigest: "sha256:a", Case: "one", Score: 0.5},
