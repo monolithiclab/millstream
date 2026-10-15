@@ -163,6 +163,9 @@ func (e *Engine) Apply(ctx context.Context, pkg *pipeline.Package) (store.Revisi
 // Run expires leases and runs the cron scheduler every tick until ctx is cancelled. It returns nil then.
 func (e *Engine) Run(ctx context.Context) error {
 	if err := e.resync(ctx); err != nil {
+		if ctx.Err() != nil {
+			return nil
+		}
 		return err
 	}
 	tick := time.NewTicker(e.opts.TickInterval)

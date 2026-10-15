@@ -39,25 +39,6 @@ func Test_unknownCommandPrintsUsage(t *testing.T) {
 	}
 }
 
-func Test_stubCommandsExitTwo(t *testing.T) {
-	t.Parallel()
-	tests := [][]string{
-		{"run"}, {"status"}, {"tail"},
-		{"trigger", "p", "t"}, {"cancel", "r1"}, {"replay", "--from", "dlq", "--run", "r1"},
-		{"dlq", "list"}, {"dlq", "discard", "d1"}, {"pause", "p"}, {"resume", "p", "s"},
-		{"test", "pipeline"},
-	}
-	for _, argv := range tests {
-		t.Run(strings.Join(argv, " "), func(t *testing.T) {
-			t.Parallel()
-			code, _, errOut := runCLI(t, "dev", argv...)
-			if code != 2 || !strings.Contains(errOut, "not implemented yet") {
-				t.Fatalf("code=%d err=%q", code, errOut)
-			}
-		})
-	}
-}
-
 func Test_helpExitsZero(t *testing.T) {
 	t.Parallel()
 	code, out, _ := runCLI(t, "dev", "--help")

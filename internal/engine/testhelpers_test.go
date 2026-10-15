@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -128,29 +127,10 @@ func writePackage(t *testing.T, pipelineYAML string, actions ...string) *pipelin
 	return pkg
 }
 
-// linkFakeAction places the fake action binary in the package directory dir at rel, hard-linked when possible.
+// linkFakeAction places the fake action binary in the package directory dir at rel.
 func linkFakeAction(t *testing.T, dir, rel string) {
 	t.Helper()
-	dst := filepath.Join(dir, filepath.FromSlash(rel))
-	if err := os.MkdirAll(filepath.Dir(dst), 0o750); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Link(fakeBin, dst); err == nil {
-		return
-	}
-	src, err := os.Open(fakeBin)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = src.Close() }()
-	out, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY, 0o700) // #nosec G302 -- an executable test binary
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := io.Copy(out, src); err != nil {
-		t.Fatal(err)
-	}
-	if err := out.Close(); err != nil {
+	if err := exectest.Place(fakeBin, filepath.Join(dir, filepath.FromSlash(rel))); err != nil {
 		t.Fatal(err)
 	}
 }

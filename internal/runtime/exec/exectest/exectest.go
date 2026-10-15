@@ -3,7 +3,9 @@
 package exectest
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	osexec "os/exec"
 	"path/filepath"
@@ -25,4 +27,26 @@ func Build(dir string) (string, error) {
 		return "", fmt.Errorf("build fake action: %w", err)
 	}
 	return bin, nil
+}
+
+// Place puts the binary bin at dst, creating dst's directory and replacing a file already there: a hard link when
+// the file system allows it, a copy otherwise. Tests use it to ship the fake action inside a pipeline package.
+func Place(bin, dst string) error {
+	if err := os.MkdirAll(filepath.Dir(dst), 0o750); err != nil {
+		return fmt.Errorf("place fake action: %w", err)
+	}
+	if err := os.Remove(dst); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("place fake action: %w", err)
+	}
+	if err := os.Link(bin, dst); err == nil {
+		return nil
+	}
+	data, err := os.ReadFile(bin) // #nosec G304 -- the binary Build produced
+	if err != nil {
+		return fmt.Errorf("place fake action: %w", err)
+	}
+	if err := os.WriteFile(dst, data, 0o700); err != nil { // #nosec G306 G703 -- an executable test binary at the test's own path
+		return fmt.Errorf("place fake action: %w", err)
+	}
+	return nil
 }

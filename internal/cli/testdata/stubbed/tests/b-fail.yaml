@@ -1,0 +1,6 @@
+name: failing crawl
+trigger: adhoc
+stubs:
+  crawl:
+    error: { message: portal down, retryable: false }
+expect: { listings: 1, crawl.dlq: 1 }

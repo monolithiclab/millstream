@@ -1,0 +1,8 @@
+pipeline: nightly
+triggers:
+  daily: { cron: "0 6 * * *", catchup: none }
+steps:
+  crawl:
+    action: ./actions/fake
+    in: trigger.daily
+    config: { mode: echo }

@@ -1,0 +1,8 @@
+name: stubbed crawl, real score
+payload: { city: Lyon }
+stubs:
+  crawl:
+    outputs:
+      - { key: a, payload: { price: 1 } }
+      - { key: b, payload: { price: 2 } }
+expect: { trigger.adhoc: 1, listings: 2 }

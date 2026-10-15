@@ -168,3 +168,19 @@ func TestRunExpiresLeases(t *testing.T) {
 		t.Fatalf("pull after expiry = %v", got)
 	}
 }
+
+func TestRunReturnsWhenCancelledBeforeStart(t *testing.T) {
+	t.Parallel()
+	v := newEnv(t, Options{})
+	ctx, cancel := context.WithCancel(v.ctx)
+	cancel()
+	if err := v.e.Run(ctx); err != nil {
+		t.Fatalf("Run = %v", err)
+	}
+	if err := v.st.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := v.e.Run(v.ctx); err == nil {
+		t.Fatal("Run on a closed store succeeded")
+	}
+}
