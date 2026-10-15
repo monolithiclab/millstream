@@ -499,3 +499,15 @@ type DeadLetterFilter struct {
 	RunID    string
 	State    DeadLetterState
 }
+
+// EvalResult is the score of one eval case of an action (spec section 7.4), the eval_score{action,case} metric.
+type EvalResult struct {
+	// Action is the action's name and ActionDigest the content hash of its directory when it was scored.
+	Action       string
+	ActionDigest string
+	Case         string
+	// Score is from 0 to 1.
+	Score float64
+	// At is when the store recorded it.
+	At time.Time
+}

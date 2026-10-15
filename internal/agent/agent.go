@@ -166,10 +166,14 @@ func (a *adapter) setup(secrets map[string]string) error {
 	if a.prompt, err = ParsePrompt(act.Agent.Prompt, string(pkg.Files[act.Agent.Prompt])); err != nil {
 		return err
 	}
+	mode, dir, err := harnessMode(a.opts.Env)
+	if err != nil {
+		return err
+	}
 	var apiKey string
 	if name := act.Agent.APIKeySecret; name != "" {
 		v, ok := secrets[name]
-		if !ok {
+		if !ok && mode != ModeReplay { // a replay never calls the harness
 			return fmt.Errorf("runtime.agent.apiKeySecret: secret %s is not one of the pipeline's secrets, or is "+
 				"not set", name)
 		}
@@ -179,21 +183,7 @@ func (a *adapter) setup(secrets map[string]string) error {
 	if newHarness == nil {
 		newHarness = a.defaultHarness
 	}
-	h := newHarness(act.Agent, apiKey)
-	mode, _ := a.opts.Env(EnvHarnessMode)
-	dir, _ := a.opts.Env(EnvHarnessDir)
-	switch mode {
-	case "":
-		mode = ModeLive
-	case ModeLive:
-	case ModeRecord, ModeReplay:
-		if dir == "" {
-			return fmt.Errorf("%s=%s needs %s, the recordings directory", EnvHarnessMode, mode, EnvHarnessDir)
-		}
-	default:
-		return fmt.Errorf("%s: %q is not one of %s, %s, %s", EnvHarnessMode, mode, ModeLive, ModeRecord, ModeReplay)
-	}
-	a.harness = Recorder{Harness: h, Name: act.Agent.Harness, Mode: mode, Dir: dir}
+	a.harness = Recorder{Harness: newHarness(act.Agent, apiKey), Name: act.Agent.Harness, Mode: mode, Dir: dir}
 	return nil
 }
 

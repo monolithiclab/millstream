@@ -36,8 +36,10 @@ type Runtime struct {
 	Version string
 	// Env looks up an environment variable: variables and secrets resolve through it.
 	Env func(string) (string, bool)
-	// DB is the state database path, from the global --db flag.
-	DB string
+	// DB is the state database path, from the global --db flag; DBSet says the flag was given, for the commands
+	// that write to the database only when asked to (eval).
+	DB    string
+	DBSet bool
 	// EnvFile is the environment file named by the global --env-file flag; empty reads ./millstream.yaml when it
 	// exists.
 	EnvFile string
@@ -73,6 +75,7 @@ type CLI struct {
 	Pause   PauseCmd   `cmd:"" help:"Pause a pipeline or one of its steps."`
 	Resume  ResumeCmd  `cmd:"" help:"Resume a pipeline or one of its steps."`
 	Test    TestCmd    `cmd:"" help:"Test a package against stubbed actions."`
+	Eval    EvalCmd    `cmd:"" help:"Run an action's evals and score them."`
 	Version VersionCmd `cmd:"" help:"Print the version."`
 	Agent   AgentCmd   `cmd:"" hidden:"" help:"Run the agent adapter: the action process of agent steps."`
 }
@@ -114,6 +117,11 @@ func Run(ctx context.Context, argv []string, stdio IO, version string, configure
 	}
 	kctx, err := parser.Parse(argv)
 	rt.DB, rt.EnvFile = tree.DB, tree.EnvFile
+	if kctx != nil {
+		for _, p := range kctx.Path {
+			rt.DBSet = rt.DBSet || p.Flag != nil && p.Flag.Name == "db"
+		}
+	}
 	if err != nil {
 		fmt.Fprintf(rt.IO.Err, "millstream: %v\n", err)
 		if trace, terr := kong.Trace(parser, argv); terr == nil {

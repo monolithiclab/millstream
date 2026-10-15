@@ -159,3 +159,19 @@ func TestLoadErrors(t *testing.T) {
 		})
 	}
 }
+
+// TestActionDigest: an action's digest covers the files of its directory only, not those of a directory whose name
+// it prefixes.
+func TestActionDigest(t *testing.T) {
+	t.Parallel()
+	pkg := &Package{Files: map[string][]byte{"actions/score/action.yaml": []byte("a"), "actions/scorer/x": []byte("b")}}
+	d := pkg.ActionDigest("actions/score")
+	pkg.Files["actions/scorer/x"] = []byte("c")
+	if !strings.HasPrefix(d, "sha256:") || pkg.ActionDigest("actions/score") != d {
+		t.Fatalf("digest %s changed with another directory", d)
+	}
+	pkg.Files["actions/score/prompt.md"] = []byte("p")
+	if pkg.ActionDigest("actions/score") == d {
+		t.Fatal("digest unchanged by a file of the action")
+	}
+}

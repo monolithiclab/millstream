@@ -40,7 +40,7 @@ import (
 var Units = []string{
 	unitApplyRevision, unitFire, unitLease, unitRenew, unitDone, unitFail, unitCancel,
 	unitReplay, unitDiscard, unitExpireLeases, unitSetPaused, unitSkipFirings, unitFilter, unitDedupe,
-	unitStartReplay,
+	unitStartReplay, unitRecordEval,
 }
 
 const (
@@ -59,6 +59,7 @@ const (
 	unitFilter        = "filter"
 	unitDedupe        = "dedupe"
 	unitStartReplay   = "startReplay"
+	unitRecordEval    = "recordEval"
 )
 
 // Memory opens a store on a fresh temporary database file, removed by Close. A real file rather than SQLite's

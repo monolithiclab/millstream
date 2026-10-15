@@ -73,6 +73,8 @@ type Store interface {
 	ExpireLeases(ctx context.Context) ([]LeaseRef, error)
 	// SetPaused pauses or resumes a step, or the whole pipeline when step is empty.
 	SetPaused(ctx context.Context, pipeline, step string, paused bool) error
+	// RecordEval stores the scores of an eval run, all in one unit, at the store clock's instant.
+	RecordEval(ctx context.Context, results []EvalResult) error
 	// SkipFirings records each scheduled time of the cron trigger that catch-up none passed over (spec section
 	// 4.6), with a firingSkipped event, all in one unit. A time already recorded is a no-op.
 	SkipFirings(ctx context.Context, pipeline, trigger string, times []time.Time) error
@@ -96,6 +98,8 @@ type Store interface {
 	PipelineState(ctx context.Context, pipeline string) (PipelineState, error)
 	// Pipelines returns every pipeline's state, by name.
 	Pipelines(ctx context.Context) ([]PipelineState, error)
+	// EvalResults returns the recorded scores of an action, newest first.
+	EvalResults(ctx context.Context, action string) ([]EvalResult, error)
 	// LastFiring returns the latest scheduled time the cron trigger fired a cron run for or skipped, zero when it
 	// never did: where catch-up resumes. Manual firings of the trigger do not count.
 	LastFiring(ctx context.Context, pipeline, trigger string) (time.Time, error)

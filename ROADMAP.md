@@ -33,6 +33,8 @@ earlier designs are in the git history of the spec.
   action's command: an edit there while a run is open changes what later deliveries of that revision run. Serving
   the revision's files from the engine would close this for both.
 - Transcripts are stored uncompressed until retention (M4) brings compression and `retention.transcripts`.
+- Evals: container actions, a step's lessons applied to a case, and the judge's own cost in the printed cost (M2
+  evaluates agent and exec actions, without lessons, and prints only the action's cost).
 
 ## Execution (icebox)
 

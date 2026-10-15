@@ -8,6 +8,8 @@ import (
 	"io"
 	"maps"
 	"math/rand/v2"
+	"os"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
@@ -176,6 +178,36 @@ func TestCrashInCommands(t *testing.T) {
 				discarded.DeadLetters[id] = deadLetter{RunID: dl.RunID, State: store.DeadLetterDiscarded}
 			}
 			wantSame(t, readSnapshot(t, db), discarded)
+		})
+
+		t.Run("recordEval."+phase, func(t *testing.T) {
+			t.Parallel()
+			pkg := filepath.Join(t.TempDir(), "pkg")
+			if err := os.CopyFS(pkg, os.DirFS(fixtureV1)); err != nil {
+				t.Fatal(err)
+			}
+			action := filepath.Join(pkg, "actions", "score")
+			if err := os.MkdirAll(filepath.Join(action, "evals"), 0o750); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(action, "evals", "listing.yaml"), []byte(
+				"input: { id: l1, city: Lyon, priceEur: 200000, surfaceM2: 50, condition: good }\n"+
+					"assert: [\"output.score >= 0 && output.score <= 100\"]\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			db := dbPath(t)
+			mustExit(t, failpoint.ExitCode, db, failpointEnv("recordEval."+phase), "eval", action)
+			mustExit(t, 0, db, nil, "eval", action)
+			st, err := sqlite.Open(db, sqlite.Options{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = st.Close() }()
+			// Committed before the crash, the first scores stay; rolled back, only the rerun's are there.
+			want := map[string]int{"beforeCommit": 1, "afterCommit": 2}[phase]
+			if got, err := st.EvalResults(t.Context(), "m1-fixture/score"); err != nil || len(got) != want {
+				t.Fatalf("eval results after a crash %s: %+v, %v", phase, got, err)
+			}
 		})
 
 		t.Run("setPaused."+phase, func(t *testing.T) {

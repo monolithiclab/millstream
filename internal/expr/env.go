@@ -1,7 +1,8 @@
 // Package expr is Millstream's CEL environment (spec section 4.4): config interpolation, evaluated once per run over
-// vars, run and secrets, and item expressions (filters, route objects), evaluated per item over item, envelope,
-// vars and run. Secrets exist only in interpolation, so no per-item expression can read or leak one. Every program
-// runs under a cost limit; exceeding it is ErrCostLimit, which the engine treats as non-retryable.
+// vars, run and secrets; item expressions (filters, route objects), evaluated per item over item, envelope, vars and
+// run; and eval assertions over an action's output, input and vars (spec section 7.4). Secrets exist only in
+// interpolation, so no per-item expression can read or leak one. Every program runs under a cost limit; exceeding it
+// is ErrCostLimit, which the engine treats as non-retryable.
 package expr
 
 import (

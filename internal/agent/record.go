@@ -26,6 +26,26 @@ const (
 	EnvHarnessDir  = "MILLSTREAM_HARNESS_DIR"
 )
 
+// harnessMode reads the harness mode and the recordings directory from MILLSTREAM_HARNESS_MODE (live when unset)
+// and MILLSTREAM_HARNESS_DIR, which record and replay need.
+func harnessMode(env func(string) (string, bool)) (mode, dir string, err error) {
+	mode, _ = env(EnvHarnessMode)
+	dir, _ = env(EnvHarnessDir)
+	switch mode {
+	case "":
+		mode = ModeLive
+	case ModeLive:
+	case ModeRecord, ModeReplay:
+		if dir == "" {
+			return "", "", fmt.Errorf("%s=%s needs %s, the recordings directory", EnvHarnessMode, mode, EnvHarnessDir)
+		}
+	default:
+		return "", "", fmt.Errorf("%s: %q is not one of %s, %s, %s", EnvHarnessMode, mode, ModeLive, ModeRecord,
+			ModeReplay)
+	}
+	return mode, dir, nil
+}
+
 // Recorder wraps a harness with record/replay. A recording is keyed by the harness, the model, the rendered prompt
 // and the output schema (Key), so anything that changes the prompt, a lessons file included, misses the old
 // recordings rather than replaying a stale answer.

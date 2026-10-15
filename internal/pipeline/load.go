@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 )
 
 // FileName is the pipeline file at the root of a package.
@@ -94,6 +95,19 @@ func readTree(dir string, files map[string][]byte) error {
 		files[p] = data
 		return nil
 	})
+}
+
+// ActionDigest is the content hash of the action directory dir, slash-separated and relative to the package:
+// "sha256:" and the SHA-256 over path NUL content NUL of each of its files, in path order. It identifies what an
+// action process runs (its reuse key) and which version of an action an eval scored.
+func (p *Package) ActionDigest(dir string) string {
+	files := map[string][]byte{}
+	for path, data := range p.Files {
+		if strings.HasPrefix(path, dir+"/") {
+			files[path] = data
+		}
+	}
+	return "sha256:" + hashFiles(files)
 }
 
 // hashFiles is SHA-256 over path NUL content NUL for each file, in path order.

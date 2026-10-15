@@ -2,16 +2,12 @@ package engine
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"maps"
 	"path/filepath"
 	"slices"
 	"strconv"
-	"strings"
 
 	"github.com/monolithiclab/millstream/internal/agent"
 	"github.com/monolithiclab/millstream/internal/expr"
@@ -206,7 +202,7 @@ func resolve(r pipeline.ActionResolver, pkg *pipeline.Package, ref string) *reso
 			"action %s is of kind %s: this build runs exec, container and agent actions only", ref, a.Kind)}
 	}
 	ra := &resolvedAction{a: a, dir: filepath.Join(pkg.Dir, filepath.FromSlash(a.Dir)), pkgDir: pkg.Dir,
-		digest: digest(pkg, a.Dir)}
+		digest: pkg.ActionDigest(a.Dir)}
 	if a.Kind == pipeline.KindContainer {
 		ra.digest = a.ImageDigest // the image is the action's content
 	}
@@ -236,23 +232,6 @@ func validateJSON(s *schema.Schema, doc []byte) error {
 		return err
 	}
 	return s.Validate(v)
-}
-
-// digest is the content hash of an action directory: SHA-256 over path NUL content NUL for each of its files, in
-// path order.
-func digest(pkg *pipeline.Package, dir string) string {
-	h := sha256.New()
-	prefix := dir + "/"
-	for _, p := range slices.Sorted(maps.Keys(pkg.Files)) {
-		if !strings.HasPrefix(p, prefix) {
-			continue
-		}
-		h.Write([]byte(p))
-		h.Write([]byte{0})
-		h.Write(pkg.Files[p])
-		h.Write([]byte{0})
-	}
-	return "sha256:" + hex.EncodeToString(h.Sum(nil))
 }
 
 // processEnv is the environment of action processes: PATH, HOME and TMPDIR from the engine's, when set.

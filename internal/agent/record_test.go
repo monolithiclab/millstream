@@ -83,11 +83,12 @@ func TestRecordings(t *testing.T) {
 	}
 }
 
-// TestReplay runs the testdata action from its recordings through the default harness: no network, no API call.
-// A payload never recorded misses, permanently.
+// TestReplay runs the testdata action from its recordings through the default harness: no network, no API call,
+// so no API key either. A payload never recorded misses, permanently.
 func TestReplay(t *testing.T) {
 	t.Parallel()
 	s := recordingSession(t, ModeReplay, recordingsDir)
+	delete(s.env, "MILLSTREAM_SECRET_ANTHROPIC_KEY")
 	s.config = map[string]any{}
 	msgs := s.run(`{"url": "https://example.com/listings/1"}`, `{"url": "https://example.com/listings/3"}`)
 	var emit *protocol.Emit
