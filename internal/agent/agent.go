@@ -53,6 +53,8 @@ type Options struct {
 	// Package is the package directory and Action the step's reference to the agent action in it (./actions/x).
 	Package string
 	Action  string
+	// Loaded is the package at Package when the caller has loaded it already; nil loads it.
+	Loaded *pipeline.Package
 	// Secrets are the names of the pipeline's secrets; their values are read from MILLSTREAM_SECRET_<NAME>.
 	Secrets []string
 	// Price is the model's price from the environment file, nil when it has none.
@@ -145,9 +147,12 @@ func newAdapter(opts Options, hello protocol.Hello) *adapter {
 
 // setup resolves the action in its package and prepares its prompt, output schema and harness.
 func (a *adapter) setup(secrets map[string]string) error {
-	pkg, err := pipeline.Load(a.opts.Package)
-	if err != nil {
-		return err
+	pkg := a.opts.Loaded
+	if pkg == nil {
+		var err error
+		if pkg, err = pipeline.Load(a.opts.Package); err != nil {
+			return err
+		}
 	}
 	act, err := pipeline.Resolver{}.Resolve(pkg, a.opts.Action)
 	if err != nil {

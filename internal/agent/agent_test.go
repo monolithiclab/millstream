@@ -27,23 +27,15 @@ runtime: { agent: { harness: api, model: claude-sonnet-5-5, apiKeySecret: apiTok
 	testPrompt = "Score {{ .Payload.url }} for {{ .Vars.city }} with at least {{ .Config.rooms }} rooms.\n"
 )
 
-// writePackage writes a package with the agent action ./actions/score, its manifest and prompt replaced when not
-// empty, and returns its directory.
-func writePackage(t *testing.T, manifest, prompt string) string {
+// memPackage builds, in memory, a package with the agent action ./actions/score of manifest and prompt.
+func memPackage(t *testing.T, manifest, prompt string) *pipeline.Package {
 	t.Helper()
-	dir := t.TempDir()
-	files := map[string]string{"pipeline.yaml": testPipeline, "actions/score/action.yaml": manifest,
-		"actions/score/prompt.md": prompt}
-	for name, body := range files {
-		p := filepath.Join(dir, filepath.FromSlash(name))
-		if err := os.MkdirAll(filepath.Dir(p), 0o750); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
-			t.Fatal(err)
-		}
+	pkg, err := pipeline.FromFiles("/pkg", map[string][]byte{"pipeline.yaml": []byte(testPipeline),
+		"actions/score/action.yaml": []byte(manifest), "actions/score/prompt.md": []byte(prompt)})
+	if err != nil {
+		t.Fatal(err)
 	}
-	return dir
+	return pkg
 }
 
 // fakeHarness answers every request with fn and records the requests.
@@ -72,7 +64,16 @@ type session struct {
 	apiKey  string
 }
 
-func newSession(t *testing.T, pkg string, h Harness) *session {
+// newSession runs the action of a package loaded in memory.
+func newSession(t *testing.T, pkg *pipeline.Package, h Harness) *session {
+	t.Helper()
+	s := dirSession(t, pkg.Dir, h)
+	s.opts.Loaded = pkg
+	return s
+}
+
+// dirSession runs the action of the package the adapter loads from dir.
+func dirSession(t *testing.T, pkg string, h Harness) *session {
 	t.Helper()
 	s := &session{t: t, workdir: t.TempDir(), config: map[string]any{"rooms": 2}}
 	s.env = map[string]string{"MILLSTREAM_WORKDIR": s.workdir, "MILLSTREAM_SECRET_API_TOKEN": "sk-test-0123456789"}
@@ -162,7 +163,7 @@ var transcriptArtifact = []protocol.Artifact{{Name: TranscriptFile, Path: Transc
 func TestRunEmitsOutput(t *testing.T) {
 	t.Parallel()
 	h := &fakeHarness{fn: answer("Here it is.\n```json\n{\"score\": 7}\n```\n", 1000, 500)}
-	s := newSession(t, writePackage(t, testManifest, testPrompt), h)
+	s := newSession(t, memPackage(t, testManifest, testPrompt), h)
 	s.opts.Price = &pipeline.Price{InPerMtok: 3, OutPerMtok: 15}
 	msgs := s.run(`{"url": "https://example.com/1"}`)
 	if len(msgs) != 7 {
@@ -203,7 +204,7 @@ func TestRunEmitsOutput(t *testing.T) {
 func TestRunSchemaMismatch(t *testing.T) {
 	t.Parallel()
 	h := &fakeHarness{fn: answer("```json\n{\"score\": \"high\"}\n```", 10, 5)}
-	s := newSession(t, writePackage(t, testManifest, testPrompt), h)
+	s := newSession(t, memPackage(t, testManifest, testPrompt), h)
 	for attempt := 1; attempt <= 2; attempt++ {
 		_ = os.Remove(filepath.Join(s.workdir, TranscriptFile)) // the node empties the working directory
 		payloads := []string{`{"url": "u"}`, `{"url": "u"}`}[:attempt]
@@ -250,7 +251,7 @@ func TestRunFailures(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			s := newSession(t, writePackage(t, testManifest, tt.prompt), &fakeHarness{fn: tt.fn})
+			s := newSession(t, memPackage(t, testManifest, tt.prompt), &fakeHarness{fn: tt.fn})
 			msgs := s.run(`{"url": "u"}`)
 			last, ok := msgs[len(msgs)-1].(protocol.Error)
 			if !ok || last.Retryable != tt.retryable || !strings.Contains(last.Message, tt.message) ||
@@ -287,7 +288,7 @@ func TestRunSetupErrors(t *testing.T) {
 			if p, ok := tt.env["prompt"]; ok {
 				prompt = p
 			}
-			s := newSession(t, writePackage(t, tt.manifest, prompt), &fakeHarness{fn: answer("", 0, 0)})
+			s := newSession(t, memPackage(t, tt.manifest, prompt), &fakeHarness{fn: answer("", 0, 0)})
 			for k, v := range tt.env {
 				if v == "" {
 					delete(s.env, k)
@@ -307,7 +308,7 @@ func TestRunSetupErrors(t *testing.T) {
 			}
 		})
 	}
-	s := newSession(t, filepath.Join(t.TempDir(), "missing"), nil)
+	s := dirSession(t, filepath.Join(t.TempDir(), "missing"), nil)
 	if msgs := s.run(`{}`); len(msgs) != 1 || msgs[0].(protocol.Error).Retryable {
 		t.Fatalf("missing package: %+v", msgs)
 	}
@@ -324,7 +325,7 @@ func TestRunRedactsSecrets(t *testing.T) {
 			{Role: "user", Text: req.Prompt}, {Role: "assistant", Text: "token " + secret, Data: data},
 		}}, nil
 	}}
-	s := newSession(t, writePackage(t, testManifest, "Use {{ .Config.token }} on {{ .Payload.url }}."), h)
+	s := newSession(t, memPackage(t, testManifest, "Use {{ .Config.token }} on {{ .Payload.url }}."), h)
 	s.env["MILLSTREAM_SECRET_API_TOKEN"] = secret
 	s.config = map[string]any{"token": secret}
 	s.run(`{"url": "u"}`)
@@ -370,7 +371,7 @@ func TestCost(t *testing.T) {
 // TestRunWithoutWorkdir: without a working directory the transcript is not kept, logged, and the item answered.
 func TestRunWithoutWorkdir(t *testing.T) {
 	t.Parallel()
-	s := newSession(t, writePackage(t, testManifest, testPrompt), &fakeHarness{fn: answer(`{"score": 3}`, 1, 1)})
+	s := newSession(t, memPackage(t, testManifest, testPrompt), &fakeHarness{fn: answer(`{"score": 3}`, 1, 1)})
 	delete(s.env, "MILLSTREAM_WORKDIR")
 	msgs := s.run(`{"url": "u"}`)
 	if done, ok := msgs[len(msgs)-1].(protocol.Done); !ok || done.Artifacts != nil ||
@@ -412,7 +413,7 @@ func TestRunLessons(t *testing.T) {
 	prompts := func(prompt string, lessons json.RawMessage) string {
 		t.Helper()
 		h := &fakeHarness{fn: answer(`{"score": 1}`, 1, 1)}
-		s := newSession(t, writePackage(t, testManifest, prompt), h)
+		s := newSession(t, memPackage(t, testManifest, prompt), h)
 		s.lessons = lessons
 		s.run(`{"url": "u"}`)
 		return h.reqs[0].Prompt
@@ -437,7 +438,7 @@ func TestRunLessons(t *testing.T) {
 		t.Fatal("editing the lessons left the prompt or the recording key unchanged")
 	}
 
-	s := newSession(t, writePackage(t, testManifest, testPrompt), &fakeHarness{fn: answer("", 0, 0)})
+	s := newSession(t, memPackage(t, testManifest, testPrompt), &fakeHarness{fn: answer("", 0, 0)})
 	s.lessons = json.RawMessage(`{"rules": 3}`)
 	if msgs := s.run(`{}`); len(msgs) != 1 || !strings.Contains(msgs[0].(protocol.Error).Message, "hello lessons") {
 		t.Fatalf("malformed lessons: %+v", msgs)

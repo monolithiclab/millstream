@@ -29,7 +29,7 @@ var recordedAnswers = map[string]string{
 // recordingSession runs the testdata package's agent action in a harness mode.
 func recordingSession(t *testing.T, mode, dir string) *session {
 	t.Helper()
-	s := newSession(t, "testdata/score", nil)
+	s := dirSession(t, "testdata/score", nil)
 	s.opts.Secrets = []string{"anthropicKey"}
 	s.env = map[string]string{"MILLSTREAM_WORKDIR": s.workdir, "MILLSTREAM_SECRET_ANTHROPIC_KEY": "sk-ant-test-key",
 		EnvHarnessMode: mode, EnvHarnessDir: dir}
@@ -57,7 +57,7 @@ func TestRecordings(t *testing.T) {
 		srv := newFakeAPI(t, http.StatusOK, string(body))
 		s := recordingSession(t, ModeRecord, dir)
 		s.opts.NewHarness = func(rt *pipeline.AgentRuntime, apiKey string) Harness {
-			return API{Provider: rt.Provider, BaseURL: srv.URL, APIKey: apiKey}
+			return API{Provider: rt.Provider, BaseURL: srv.URL, Client: srv.Client(), APIKey: apiKey}
 		}
 		s.config = map[string]any{}
 		msgs := s.run(`{"url": "` + url + `"}`)

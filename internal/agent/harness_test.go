@@ -118,10 +118,11 @@ func TestRecorder(t *testing.T) {
 	}
 }
 
-// fakeAPI is an httptest server standing in for a model provider: it answers every request with status and body
-// and records the requests.
+// fakeAPI stands in for a model provider, in process: its Client hands every request to a handler that answers with
+// status and body and records the request.
 type fakeAPI struct {
-	*httptest.Server
+	URL     string
+	h       http.Handler
 	mu      sync.Mutex
 	paths   []string
 	headers []http.Header
@@ -130,8 +131,8 @@ type fakeAPI struct {
 
 func newFakeAPI(t *testing.T, status int, body string) *fakeAPI {
 	t.Helper()
-	f := &fakeAPI{}
-	f.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	f := &fakeAPI{URL: "http://model.test"}
+	f.h = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		raw, _ := io.ReadAll(r.Body)
 		var b map[string]any
 		_ = json.Unmarshal(raw, &b)
@@ -141,9 +142,20 @@ func newFakeAPI(t *testing.T, status int, body string) *fakeAPI {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(status)
 		_, _ = io.WriteString(w, body)
-	}))
-	t.Cleanup(f.Close)
+	})
 	return f
+}
+
+// Client returns a client whose requests reach the fake.
+func (f *fakeAPI) Client() *http.Client { return &http.Client{Transport: f} }
+
+// RoundTrip serves req with the handler.
+func (f *fakeAPI) RoundTrip(req *http.Request) (*http.Response, error) {
+	rec := httptest.NewRecorder()
+	f.h.ServeHTTP(rec, req)
+	resp := rec.Result()
+	resp.Request = req
+	return resp, nil
 }
 
 const (
@@ -158,7 +170,7 @@ const (
 func TestAPIAnthropic(t *testing.T) {
 	t.Parallel()
 	srv := newFakeAPI(t, http.StatusOK, anthropicBody)
-	h := API{Provider: pipeline.ProviderAnthropic, BaseURL: srv.URL + "/", APIKey: "sk-ant"}
+	h := API{Provider: pipeline.ProviderAnthropic, BaseURL: srv.URL + "/", Client: srv.Client(), APIKey: "sk-ant"}
 	resp, err := h.Run(t.Context(), Request{Model: "claude-sonnet-5-5", Prompt: "Score it.",
 		Schema: json.RawMessage(`{"type":"object"}`)})
 	if err != nil {
@@ -182,7 +194,7 @@ func TestAPIAnthropic(t *testing.T) {
 func TestAPIOpenAI(t *testing.T) {
 	t.Parallel()
 	srv := newFakeAPI(t, http.StatusOK, openAIBody)
-	h := API{Provider: pipeline.ProviderOpenAI, BaseURL: srv.URL + "/v1", APIKey: "sk-oai"}
+	h := API{Provider: pipeline.ProviderOpenAI, BaseURL: srv.URL + "/v1", Client: srv.Client(), APIKey: "sk-oai"}
 	resp, err := h.Run(t.Context(), Request{Model: "mistral-large", Prompt: "Score it."})
 	if err != nil {
 		t.Fatalf("Run: %v", err)
@@ -220,16 +232,17 @@ func TestAPIErrors(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			srv := newFakeAPI(t, tt.status, tt.body)
-			_, err := API{Provider: tt.provider, BaseURL: srv.URL, APIKey: "k"}.Run(t.Context(), Request{Model: "m"})
+			h := API{Provider: tt.provider, BaseURL: srv.URL, Client: srv.Client(), APIKey: "k"}
+			_, err := h.Run(t.Context(), Request{Model: "m"})
 			if err == nil || isRetryable(err) != tt.retryable {
 				t.Fatalf("err = %v, want retryable %v", err, tt.retryable)
 			}
 		})
 	}
-	srv := newFakeAPI(t, http.StatusOK, anthropicBody)
-	srv.Close()
-	if _, err := (API{BaseURL: srv.URL, APIKey: "k"}).Run(t.Context(), Request{}); err == nil || !isRetryable(err) {
-		t.Fatalf("closed server: %v", err)
+	// Nothing listens on port 1: the default client's connection is refused.
+	refused := API{BaseURL: "http://127.0.0.1:1", APIKey: "k"}
+	if _, err := refused.Run(t.Context(), Request{}); err == nil || !isRetryable(err) {
+		t.Fatalf("refused connection: %v", err)
 	}
 	if _, err := (API{}).Run(t.Context(), Request{}); err == nil || isRetryable(err) {
 		t.Fatalf("no key: %v", err)
@@ -318,8 +331,11 @@ func TestAPIMaxCost(t *testing.T) {
 			t.Parallel()
 			manifest := strings.Replace(testManifest, "apiKeySecret: apiToken",
 				"apiKeySecret: apiToken, baseUrl: \""+srv.URL+"\", maxCostUsd: "+tt.limit, 1)
-			s := newSession(t, writePackage(t, manifest, testPrompt), nil)
+			s := newSession(t, memPackage(t, manifest, testPrompt), nil)
 			s.opts.Price = &pipeline.Price{InPerMtok: 3, OutPerMtok: 15}
+			s.opts.NewHarness = func(rt *pipeline.AgentRuntime, apiKey string) Harness {
+				return API{Provider: rt.Provider, BaseURL: rt.BaseURL, APIKey: apiKey, Client: srv.Client()}
+			}
 			msgs := s.run(`{"url":"https://example.com/1"}`)
 			var cost float64
 			for _, m := range msgs {

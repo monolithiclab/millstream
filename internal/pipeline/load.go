@@ -164,3 +164,16 @@ func defaultLessons(pkg *Package) {
 		}
 	}
 }
+
+// FromFiles builds the package of the directory dir from its files, already read: what Load does once it has read a
+// directory. files maps slash-separated paths relative to dir to their content.
+func FromFiles(dir string, files map[string][]byte) (*Package, error) {
+	if _, ok := files[FileName]; !ok {
+		return nil, fmt.Errorf("package %s: no %s", dir, FileName)
+	}
+	pkg := &Package{Dir: dir, PipelineFile: FileName, Files: files}
+	if err := pkg.parse(); err != nil {
+		return nil, err
+	}
+	return pkg, nil
+}

@@ -170,16 +170,25 @@ func TestActionDigest(t *testing.T) {
 	}
 }
 
-// memPackage builds a package from files (slash paths) in memory, as Load builds one from what it reads: the tests
-// of what follows the reading need no directory.
+// memPackage builds a package from files (slash paths) in memory: the tests of what follows the reading need no
+// directory.
 func memPackage(t *testing.T, files ...[2]string) *Package {
 	t.Helper()
-	pkg := &Package{Dir: "/pkg", PipelineFile: FileName, Files: map[string][]byte{}}
+	m := map[string][]byte{}
 	for _, f := range files {
-		pkg.Files[f[0]] = []byte(f[1])
+		m[f[0]] = []byte(f[1])
 	}
-	if err := pkg.parse(); err != nil {
-		t.Fatalf("parse: %v", err)
+	pkg, err := FromFiles("/pkg", m)
+	if err != nil {
+		t.Fatal(err)
 	}
 	return pkg
+}
+
+func TestFromFilesWithoutPipeline(t *testing.T) {
+	t.Parallel()
+	if _, err := FromFiles("/pkg", map[string][]byte{"README.md": nil}); err == nil ||
+		!strings.Contains(err.Error(), "no pipeline.yaml") {
+		t.Fatalf("err = %v", err)
+	}
 }
