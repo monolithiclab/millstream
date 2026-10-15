@@ -63,7 +63,7 @@ type CLI struct {
 	Tail    TailCmd    `cmd:"" help:"Print events as JSON lines."`
 	Trigger TriggerCmd `cmd:"" help:"Fire a trigger."`
 	Cancel  CancelCmd  `cmd:"" help:"Cancel a run."`
-	Replay  ReplayCmd  `cmd:"" help:"Replay dead letters into their run."`
+	Replay  ReplayCmd  `cmd:"" help:"Replay dead letters into their run, or a step over past items in a replay run."`
 	DLQ     DLQCmd     `cmd:"" name:"dlq" help:"List and discard dead letters."`
 	Pause   PauseCmd   `cmd:"" help:"Pause a pipeline or one of its steps."`
 	Resume  ResumeCmd  `cmd:"" help:"Resume a pipeline or one of its steps."`

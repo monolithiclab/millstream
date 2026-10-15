@@ -283,6 +283,22 @@ type DedupeRequest struct {
 	Window  time.Duration
 }
 
+// ReplayStart starts a replay run (spec section 5.7).
+type ReplayStart struct {
+	Pipeline string
+	Step     string
+	// RunID is the replay run's id and Key the request id it derives from (ids.ReplayRun).
+	RunID string
+	Key   string
+	// Revision pins the run; zero means the pipeline's active revision.
+	Revision RevisionID
+	// Vars are the run's resolved variables and VarSources where each came from.
+	Vars       map[string]any
+	VarSources map[string]string
+	// Items are the selected input items, each on one of the step's input streams.
+	Items []string
+}
+
 // Run is a run record.
 type Run struct {
 	ID            string
@@ -375,6 +391,8 @@ type ItemFilter struct {
 	Pipeline string
 	Stream   string
 	RunID    string
+	// Since keeps the items published at or after it.
+	Since time.Time
 }
 
 // DeliveryFilter selects deliveries; empty fields match everything. Deliveries come in creation order.

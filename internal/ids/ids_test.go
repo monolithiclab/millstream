@@ -29,6 +29,7 @@ func TestFormulas(t *testing.T) {
 		{"cron key in UTC", CronKey(time.Date(2026, 10, 14, 8, 0, 42, 0, cest)), "2026-10-14T06:00Z"},
 		{"cron run", CronRun(time.Date(2026, 10, 14, 8, 0, 42, 0, cest), "daily"), "run_2026-10-14T06:00Z_daily"},
 		{"manual run", ManualRun("req42", "rescore"), "run_req42_rescore"},
+		{"replay run", ReplayRun("req42"), "run_replay_req42"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

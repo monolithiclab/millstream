@@ -7,8 +7,10 @@ import (
 	"slices"
 	"strings"
 	"text/tabwriter"
+	"time"
 
 	"github.com/monolithiclab/millstream/internal/engine"
+	"github.com/monolithiclab/millstream/internal/pipeline"
 	"github.com/monolithiclab/millstream/internal/store"
 	"github.com/monolithiclab/millstream/internal/store/sqlite"
 )
@@ -91,23 +93,87 @@ func (c CancelCmd) Run(rt *Runtime) error {
 	})
 }
 
-// ReplayCmd is "millstream replay".
+// ReplayCmd is "millstream replay": dead-letter replay into the origin run (--from dlq, spec section 5.6), or a
+// replay run of a step over past items (--step, spec section 5.7).
 type ReplayCmd struct {
-	From     string   `enum:"dlq" required:"" help:"What to replay from: dlq."`
-	Pipeline string   `required:"" help:"Pipeline name."`
-	RunID    string   `name:"run" required:"" help:"Run id."`
-	Migrate  bool     `help:"Move the run to the pipeline's active revision first."`
-	IDs      []string `arg:"" optional:"" name:"id" help:"Dead letters to replay; all of the run's open ones when none."`
+	From      string            `placeholder:"dlq" help:"Replay dead letters into their run: dlq. Exclusive with --step."`
+	Step      string            `help:"Start a replay run of this step over past items on its input streams."`
+	Pipeline  string            `required:"" help:"Pipeline name."`
+	RunID     string            `name:"run" help:"With --from dlq, the run whose dead letters to replay; with --step, replay only this run's items."`
+	Migrate   bool              `help:"With --from dlq, move the run to the pipeline's active revision first."`
+	Since     string            `help:"With --step, replay only the items published within this duration (7d, 12h)."`
+	Where     string            `help:"With --step, replay only the items for which this CEL expression holds."`
+	Revision  int64             `help:"With --step, the revision to run on (default: the active one)."`
+	RequestID string            `name:"request-id" help:"With --step, the request id naming the replay run; repeating it starts nothing new."`
+	Var       map[string]string `help:"With --step, set a variable (name=value)."`
+	IDs       []string          `arg:"" optional:"" name:"id" help:"With --from dlq, the dead letters to replay; all of the run's open ones when none."`
 }
 
-// Run replays the run's open dead letters, reopening it; a running engine dispatches what they send back.
+// Run replays the run's open dead letters, reopening it, or starts a replay run and prints its id; a running engine
+// dispatches the deliveries either creates.
 func (c ReplayCmd) Run(rt *Runtime) error {
+	switch {
+	case c.From != "" && c.Step != "":
+		return usageError("--from and --step are mutually exclusive")
+	case c.From == "dlq":
+		return c.deadLetters(rt)
+	case c.From != "":
+		return usageError(fmt.Sprintf("--from %s: only dlq is supported", c.From))
+	case c.Step != "":
+		return c.replayStep(rt)
+	default:
+		return usageError("replay needs --from dlq or --step")
+	}
+}
+
+func (c ReplayCmd) deadLetters(rt *Runtime) error {
+	switch {
+	case c.RunID == "":
+		return usageError("--from dlq needs --run")
+	case c.Since != "" || c.Where != "" || c.Revision != 0 || c.RequestID != "" || len(c.Var) > 0:
+		return usageError("--since, --where, --revision, --request-id and --var go with --step, not --from dlq")
+	}
 	return withStore(rt, func(st *sqlite.Store) error {
 		n, err := st.ReplayDeadLetters(rt.Ctx, c.Pipeline, c.RunID, c.IDs, c.Migrate)
 		if err != nil {
 			return err
 		}
 		_, err = fmt.Fprintf(rt.IO.Out, "%s replayed\n", plural(n, "dead letter"))
+		return err
+	})
+}
+
+func (c ReplayCmd) replayStep(rt *Runtime) error {
+	if c.Migrate || len(c.IDs) > 0 {
+		return usageError("--migrate and dead-letter ids go with --from dlq, not --step")
+	}
+	var since time.Duration
+	if c.Since != "" {
+		var err error
+		if since, err = pipeline.ParseDuration(c.Since); err != nil {
+			return usageError("--since: " + err.Error())
+		}
+	}
+	return withStore(rt, func(st *sqlite.Store) error {
+		if err := checkFlagsDeclared(rt, st, c.Pipeline, c.Var); err != nil {
+			return err
+		}
+		e, err := engine.New(engine.Options{Store: st, Env: rt.Env, Flags: c.Var})
+		if err != nil {
+			return err
+		}
+		id, created, err := e.Replay(rt.Ctx, engine.ReplayRequest{
+			Pipeline: c.Pipeline, Step: c.Step, Revision: store.RevisionID(c.Revision), Since: since, RunID: c.RunID,
+			Where: c.Where, RequestID: c.RequestID,
+		})
+		if err != nil {
+			return err
+		}
+		suffix := ""
+		if !created {
+			suffix = " (already started)"
+		}
+		_, err = fmt.Fprintf(rt.IO.Out, "%s%s\n", id, suffix)
 		return err
 	})
 }

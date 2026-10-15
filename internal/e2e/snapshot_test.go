@@ -209,6 +209,8 @@ var (
 	cleanBuiltins reference
 	// replayed is clean followed by the dead-letter replay onto v2, without a crash.
 	replayed reference
+	// replayedStep is clean followed by a replay run of score over the run, without a crash.
+	replayedStep reference
 )
 
 // cleanRun returns the clean reference.
@@ -254,6 +256,34 @@ func replayedRun(t *testing.T) snapshot {
 		t.Fatal("the replayed reference run failed")
 	}
 	return replayed.snap
+}
+
+// replayedStepRun returns the replayedStep reference.
+func replayedStepRun(t *testing.T) snapshot {
+	t.Helper()
+	replayedStep.once.Do(func() {
+		replayedStep.failed = true
+		db := dbPath(t)
+		mustExit(t, 1, db, nil, runOnce(fixtureV1)...)
+		if r := mustExit(t, 0, db, nil, replayStepArgs()...); r.stdout != replayStepRun+"\n" {
+			t.Errorf("replay printed %q, want the replay run id", r.stdout)
+		}
+		mustExit(t, 1, db, nil, runOnce(fixtureV1)...)
+		replayedStep.snap, replayedStep.failed = readSnapshot(t, db), t.Failed()
+	})
+	if replayedStep.failed {
+		t.Fatal("the replayed step reference failed")
+	}
+	return replayedStep.snap
+}
+
+// replayStepRun is the id of the replay run replayStepArgs starts.
+var replayStepRun = ids.ReplayRun(crashRequest)
+
+// replayStepArgs replays score over the crash suite's run, under the crash request id.
+func replayStepArgs() []string {
+	return []string{"replay", "--pipeline", pipelineName, "--step", "score", "--run", crashRun,
+		"--request-id", crashRequest}
 }
 
 // crashRun is the id of the run the crash suite fires.

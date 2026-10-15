@@ -141,6 +141,21 @@ func TestCrashInCommands(t *testing.T) {
 			wantSame(t, readSnapshot(t, db), want)
 		})
 
+		t.Run("startReplay."+phase, func(t *testing.T) {
+			t.Parallel()
+			want := replayedStepRun(t)
+			db := dbPath(t)
+			mustExit(t, 1, db, nil, runOnce(fixtureV1)...)
+			mustExit(t, failpoint.ExitCode, db, failpointEnv("startReplay."+phase), replayStepArgs()...)
+			r := mustExit(t, 0, db, nil, replayStepArgs()...)
+			wantOut := map[string]string{"beforeCommit": replayStepRun + "\n", "afterCommit": replayStepRun + " (already started)\n"}
+			if r.stdout != wantOut[phase] {
+				t.Fatalf("replay again after a crash %s: %s", phase, r)
+			}
+			mustExit(t, 1, db, nil, runOnce(fixtureV1)...)
+			wantSame(t, readSnapshot(t, db), want)
+		})
+
 		t.Run("discard."+phase, func(t *testing.T) {
 			t.Parallel()
 			want := cleanRun(t)

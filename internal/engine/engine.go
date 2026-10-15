@@ -1,6 +1,7 @@
 // Package engine is the active engine (spec sections 4.6 and 5.9): it applies packages as revisions, fires runs from
-// cron and manual triggers with their variables resolved and stored at run start, and serves nodes as their
-// Transport, leasing deliveries through the store and resolving each into the action process to run.
+// cron and manual triggers with their variables resolved and stored at run start, starts replay runs (spec section
+// 5.7), runs the filter and dedupe builtins itself, and serves nodes as their Transport, leasing deliveries through
+// the store and resolving each into the action process to run.
 //
 // Coordination is in memory, as the spec asks: step concurrency and pipeline limits are counted from the leases the
 // engine handed out, and step rates are token buckets. The leases in flight are rebuilt from the store's leased

@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/monolithiclab/millstream/internal/node"
 	"github.com/monolithiclab/millstream/internal/store"
 )
 
@@ -22,14 +23,18 @@ steps:
   sink: { action: ./actions/a, in: uniq, concurrency: 5 }
 `
 
-// emit pulls the one src delivery and completes it with outputs.
+// emit pulls the one src delivery due and completes it with outputs; whatever else the pull leased stays leased.
 func (v *env) emit(outputs ...store.Output) {
 	v.t.Helper()
-	as, err := v.e.Pull(v.ctx, "node-a", 1)
-	if err != nil || len(as) != 1 || as[0].Lease.Step != "src" {
-		v.t.Fatalf("pull src = %v, %v", as, err)
+	as, err := v.e.Pull(v.ctx, "node-a", 100)
+	if err != nil {
+		v.t.Fatal(err)
 	}
-	if err := v.e.Done(v.ctx, store.DoneRequest{LeaseRef: as[0].Lease.Ref(), Attempt: 1, Outputs: outputs}); err != nil {
+	i := slices.IndexFunc(as, func(a node.Assignment) bool { return a.Lease.Step == "src" })
+	if i < 0 {
+		v.t.Fatalf("no src delivery in %v", as)
+	}
+	if err := v.e.Done(v.ctx, store.DoneRequest{LeaseRef: as[i].Lease.Ref(), Attempt: 1, Outputs: outputs}); err != nil {
 		v.t.Fatal(err)
 	}
 }

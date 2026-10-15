@@ -158,6 +158,46 @@ func TestRunAndReplay(t *testing.T) {
 	checkPayloads(t, snap, false)
 }
 
+// TestReplayStep replays score over a run of the fixture: the replay run re-scores every crawled listing in its own
+// generation, so its outputs are new items (new ids, generation 1) with the same payloads as the original run's,
+// and everything downstream runs again, the designed dead letter included.
+func TestReplayStep(t *testing.T) {
+	t.Parallel()
+	snap := replayedStepRun(t)
+	if snap.Runs[crashRun] != store.RunCompletedWithErrors || snap.Runs[replayStepRun] != store.RunCompletedWithErrors ||
+		len(snap.Runs) != 2 {
+		t.Fatalf("runs = %v", snap.Runs)
+	}
+	original, replay := onlyRun(snap, crashRun), onlyRun(snap, replayStepRun)
+	want := expectedCounts(false)
+	delete(want, "trigger.adhoc")
+	delete(want, "listings.raw") // the replay reads the original run's crawl, it does not crawl again
+	if got := replay.counts(); !maps.Equal(got, want) {
+		t.Fatalf("replay counts = %v, want %v", got, want)
+	}
+	byParent := map[string]item{} // score's outputs are unkeyed: the listing they score is their parent
+	for _, it := range original.Items {
+		byParent[it.Stream+"/"+it.Parents] = it
+	}
+	for id, it := range replay.Items {
+		if _, dup := original.Items[id]; dup || it.Generation != 1 {
+			t.Fatalf("replay item %s: generation %d, also in the original run %v", id, it.Generation, dup)
+		}
+		if it.Stream != "listings.shortlist" && it.Stream != "listings.rejected" {
+			continue
+		}
+		if o, ok := byParent[it.Stream+"/"+it.Parents]; !ok || o.Payload != it.Payload {
+			t.Errorf("replay item %s on %s does not re-score the original's listing %s: %+v", id, it.Stream,
+				it.Parents, o)
+		}
+	}
+	for id, d := range replay.Deliveries {
+		if d.Step == "crawl" {
+			t.Errorf("the replay crawled again: %s", id)
+		}
+	}
+}
+
 // checkPayloads checks every priced and reported payload against the fixture's rules, from the scored listing that
 // produced it.
 func checkPayloads(t *testing.T, s snapshot, strict bool) {

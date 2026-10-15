@@ -145,6 +145,57 @@ func Test_dlqAndReplayCommands(t *testing.T) {
 	mustRun(t, 1, "--db", db, "replay", "--from", "dlq", "--pipeline", "listings", "--run", "nope")
 }
 
+func Test_replayStepCommand(t *testing.T) {
+	t.Parallel()
+	db, pkg := appliedDB(t)
+	replay := func(want int, args ...string) (string, string) {
+		t.Helper()
+		return mustRun(t, want, append([]string{"--db", db, "replay", "--pipeline", "listings"}, args...)...)
+	}
+	out, _ := replay(0, "--step", "score", "--run", "run_r1_adhoc", "--since", "7d", "--revision", "1",
+		"--where", "envelope.key != ''", "--request-id", "s1", "--var", "count=3")
+	if out != "run_replay_s1\n" {
+		t.Fatalf("replay stdout = %q", out)
+	}
+	if out, _ = replay(0, "--step", "score", "--request-id", "s1"); out != "run_replay_s1 (already started)\n" {
+		t.Fatalf("replay again stdout = %q", out)
+	}
+	out, _ = replay(0, "--step", "score")
+	if !regexp.MustCompile(`^run_replay_\d{8}T\d{6}Z-[0-9a-f]{8}\n$`).MatchString(out) {
+		t.Fatalf("generated id stdout = %q", out)
+	}
+	// run --once waits for the replay runs too, and reports them.
+	out, _ = mustRun(t, 0, "--db", db, "run", "--once", "--request-id", "r1", pkg)
+	if !strings.Contains(out, "listings run_replay_s1 succeeded\n") {
+		t.Fatalf("summary:\n%s", out)
+	}
+	tests := []struct {
+		args    []string
+		code    int
+		wantErr string
+	}{
+		{[]string{"--from", "dlq", "--step", "score"}, 2, "--from and --step are mutually exclusive"},
+		{nil, 2, "replay needs --from dlq or --step"},
+		{[]string{"--from", "later"}, 2, "--from later: only dlq is supported"},
+		{[]string{"--from", "dlq"}, 2, "--from dlq needs --run"},
+		{[]string{"--from", "dlq", "--run", "run_r1_adhoc", "--since", "7d"}, 2, "go with --step"},
+		{[]string{"--step", "score", "--migrate"}, 2, "go with --from dlq"},
+		{[]string{"--step", "score", "it_x"}, 2, "go with --from dlq"},
+		{[]string{"--step", "score", "--since", "soon"}, 2, "--since: invalid duration"},
+		{[]string{"--step", "score", "--var", "nope=1"}, 2, "declares no such variable"},
+		{[]string{"--step", "score", "--where", "item.n >"}, 1, "--where"},
+		{[]string{"--step", "nope"}, 1, `has no step "nope"`},
+		{[]string{"--step", "score", "--run", "nope"}, 1, "selects no item"},
+	}
+	for _, tt := range tests {
+		code, _, errOut := runCLICtx(t, context.Background(), nil,
+			append([]string{"--db", db, "replay", "--pipeline", "listings"}, tt.args...)...)
+		if code != tt.code || !strings.Contains(errOut, tt.wantErr) {
+			t.Errorf("%v: code %d, stderr %q; want %d, %q", tt.args, code, errOut, tt.code, tt.wantErr)
+		}
+	}
+}
+
 func Test_tailCommand(t *testing.T) {
 	t.Parallel()
 	db, _ := appliedDB(t)

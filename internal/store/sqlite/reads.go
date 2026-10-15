@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/monolithiclab/millstream/internal/pipeline"
 	"github.com/monolithiclab/millstream/internal/store"
@@ -21,6 +22,13 @@ func (w *where) eq(column string, v string) {
 	if v != "" {
 		w.conds = append(w.conds, column+" = ?")
 		w.args = append(w.args, v)
+	}
+}
+
+func (w *where) since(column string, t time.Time) {
+	if !t.IsZero() {
+		w.conds = append(w.conds, column+" >= ?")
+		w.args = append(w.args, formatTime(t))
 	}
 }
 
@@ -136,6 +144,7 @@ func (s *Store) Items(ctx context.Context, f store.ItemFilter) ([]store.Item, er
 	w.eq("pipeline", f.Pipeline)
 	w.eq("stream", f.Stream)
 	w.eq("run_id", f.RunID)
+	w.since("ts", f.Since)
 	items, err := scan(ctx, s.read, `SELECT pipeline, id, run_id, stream, step, key, parents, generation, ts, payload
 		FROM items`+w.String()+` ORDER BY rowid`, w.args, func(rows *sql.Rows) (store.Item, error) {
 		var it store.Item

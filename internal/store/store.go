@@ -55,6 +55,10 @@ type Store interface {
 	// Done, when its key was not let through by the step in the same generation within the window; otherwise the
 	// delivery is filtered with FilterReasonDuplicate. It returns the state the delivery ended in, as Done does.
 	Dedupe(ctx context.Context, d DedupeRequest) (DeliveryState, error)
+	// StartReplay is the Start replay unit (spec section 5.7): a replay run on the revision named, the pipeline's
+	// next generation, and a delivery of the step for each selected item. It returns the run's generation, and
+	// created false when the run already existed: the request already started it.
+	StartReplay(ctx context.Context, r ReplayStart) (generation int64, created bool, err error)
 	// Cancel is the Cancel unit.
 	Cancel(ctx context.Context, pipeline, runID string) error
 	// ReplayDeadLetters is the Dead-letter replay unit for the open dead letters of a run (all of them when ids is

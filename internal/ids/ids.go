@@ -118,3 +118,9 @@ func isUpper(r rune) bool { return r >= 'A' && r <= 'Z' }
 func isLower(r rune) bool { return r >= 'a' && r <= 'z' }
 func isDigit(r rune) bool { return r >= '0' && r <= '9' }
 func isAlnum(r rune) bool { return isUpper(r) || isLower(r) || isDigit(r) }
+
+// ReplayRun is the id of a replay run (spec section 5.7): run_replay_<request id>, so a replay request retried
+// after a crash lands on the run it already started.
+func ReplayRun(requestID string) string {
+	return runPrefix + "replay_" + requestID
+}
