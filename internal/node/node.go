@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/monolithiclab/millstream/internal/protocol"
+	"github.com/monolithiclab/millstream/internal/redact"
 	"github.com/monolithiclab/millstream/internal/runtime/exec"
 	"github.com/monolithiclab/millstream/internal/store"
 )
@@ -44,6 +45,9 @@ type Assignment struct {
 	ItemMsg protocol.Item
 	// Timeout is the step's timeout; zero means none.
 	Timeout time.Duration
+	// Redact removes the values of the secrets resolved for the delivery (spec section 4.5) from its logs, the
+	// action's stderr included, and from the error messages reported for it. Nil redacts nothing.
+	Redact *redact.Redactor
 }
 
 // Transport connects a node to the engine: in memory for the embedded node, over HTTP/2 for remote ones.
@@ -165,8 +169,8 @@ func (l *loop) pull(ctx context.Context) {
 
 func (l *loop) start(a Assignment) {
 	ls := a.Lease
-	log := l.log.With("pipeline", ls.Pipeline, "runId", ls.RunID, "step", ls.Step, "itemId", ls.Item.ID,
-		"deliveryId", ls.DeliveryID, "attempt", ls.Attempt)
+	log := a.Redact.Logger(l.log.With("pipeline", ls.Pipeline, "runId", ls.RunID, "step", ls.Step,
+		"itemId", ls.Item.ID, "deliveryId", ls.DeliveryID, "attempt", ls.Attempt))
 	ctx, cancel := context.WithCancel(l.base)
 	l.held[ls.DeliveryID] = &running{ref: ls.Ref(), log: log, cancel: cancel}
 	go func() {
@@ -193,12 +197,14 @@ func (l *loop) execute(ctx context.Context, log *slog.Logger, a Assignment) {
 		class, retryable := exec.ClassOf(err), !exec.Permanent(err)
 		log.Warn("delivery failed in the runtime", "class", class, "retryable", retryable, "error", err.Error())
 		rerr = l.t.Fail(rctx, store.FailRequest{
-			LeaseRef: ref, Attempt: attempt, Class: class, Message: err.Error(), Retryable: retryable,
+			LeaseRef: ref, Attempt: attempt, Class: class, Message: a.Redact.String(err.Error()),
+			Retryable: retryable,
 		})
 	case res.Err != nil:
 		log.Info("delivery failed in the action", "retryable", res.Err.Retryable)
 		rerr = l.t.Fail(rctx, store.FailRequest{
-			LeaseRef: ref, Attempt: attempt, Class: ClassAction, Message: res.Err.Message, Retryable: res.Err.Retryable,
+			LeaseRef: ref, Attempt: attempt, Class: ClassAction, Message: a.Redact.String(res.Err.Message),
+			Retryable: res.Err.Retryable,
 		})
 	default:
 		rerr = l.t.Done(rctx, store.DoneRequest{LeaseRef: ref, Attempt: attempt, Outputs: res.Outputs})

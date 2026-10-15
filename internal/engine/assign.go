@@ -17,6 +17,7 @@ import (
 	"github.com/monolithiclab/millstream/internal/node"
 	"github.com/monolithiclab/millstream/internal/pipeline"
 	"github.com/monolithiclab/millstream/internal/protocol"
+	"github.com/monolithiclab/millstream/internal/redact"
 	"github.com/monolithiclab/millstream/internal/runtime/exec"
 	"github.com/monolithiclab/millstream/internal/schema"
 	"github.com/monolithiclab/millstream/internal/store"
@@ -98,6 +99,8 @@ func (e *Engine) assign(ctx context.Context, l store.Lease) (node.Assignment, er
 		}
 		secrets[name] = v
 	}
+	red := redact.New(secrets)
+	e.setRedactor(l.Ref(), red)
 	runInfo := expr.Run{ID: run.ID, Trigger: run.Trigger, StartedAt: run.StartedAt, Revision: rev.hash}
 	config, err := expr.Interpolate(step.Config, expr.InterpCtx{Vars: run.Vars, Run: runInfo, Secrets: secrets})
 	if err != nil {
@@ -130,7 +133,19 @@ func (e *Engine) assign(ctx context.Context, l store.Lease) (node.Assignment, er
 			IdempotencyKey: ids.Idempotency(l.Step, l.Item.ID, l.Generation),
 		},
 		Timeout: step.Timeout,
+		Redact:  red,
 	}, nil
+}
+
+// setRedactor records the redactor of a delivery in flight, so its failure messages and logs are redacted in the
+// engine too, whatever the node did.
+func (e *Engine) setRedactor(ref store.LeaseRef, r *redact.Redactor) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if f, ok := e.inflight[ref.DeliveryID]; ok && f.token == ref.FencingToken {
+		f.redact = r
+		e.inflight[ref.DeliveryID] = f
+	}
 }
 
 // action resolves a step's action reference against its revision's package, once per package and reference.

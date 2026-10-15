@@ -23,8 +23,8 @@ below) for the reasoning, and `make help` for every command.
 ## Layout
 
 - `cmd/millstream/`: the binary's `main`.
-- `internal/`: `cli`, `pipeline`, `ids`, `expr`, `schema`, `protocol`, `store`, `failpoint`, `engine`, `node` and
-  the other packages named in the M1 plan's file structure.
+- `internal/`: `cli`, `pipeline`, `ids`, `expr`, `schema`, `protocol`, `store`, `failpoint`, `engine`, `node`,
+  `redact` and the other packages named in the M1 plan's file structure.
 - `sdk/go/`: the Go action SDK, its own module.
 - `examples/`: fixture and example pipeline packages.
 - `make ci` is the gate: lint (golangci-lint, govulncheck, tidy, pins, shellcheck), tests with `-race`, and the docs

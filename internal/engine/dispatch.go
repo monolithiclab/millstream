@@ -223,8 +223,10 @@ func (e *Engine) Done(ctx context.Context, req store.DoneRequest) error {
 	return nil
 }
 
-// Fail implements node.Transport, counting in flight like Done.
+// Fail implements node.Transport, counting in flight like Done. The message is redacted of the delivery's secrets
+// before it is stored, so neither the delivery's error nor its dead letter holds them.
 func (e *Engine) Fail(ctx context.Context, req store.FailRequest) error {
+	req.Message = e.lookup(req.LeaseRef).redact.String(req.Message)
 	state, err := e.st.Fail(ctx, req)
 	f := e.settleFlight(req.LeaseRef, err)
 	if err != nil {
@@ -246,8 +248,8 @@ func (e *Engine) settleFlight(ref store.LeaseRef, err error) flight {
 }
 
 func (e *Engine) flightLog(ref store.LeaseRef, f flight) *slog.Logger {
-	return e.log.With("pipeline", ref.Pipeline, "runId", f.runID, "step", f.step.Step, "itemId", f.itemID,
-		"deliveryId", ref.DeliveryID, "attempt", f.attempt)
+	return f.redact.Logger(e.log).With("pipeline", ref.Pipeline, "runId", f.runID, "step", f.step.Step,
+		"itemId", f.itemID, "deliveryId", ref.DeliveryID, "attempt", f.attempt)
 }
 
 // completeStub completes a stubbed delivery with the stub's outcome.
@@ -270,7 +272,8 @@ func (e *Engine) completeStub(ctx context.Context, l store.Lease, s Stub) {
 func (e *Engine) failDispatch(ctx context.Context, l store.Lease, err error) {
 	de := &dispatchError{class: ClassEngine, retryable: true, err: err}
 	errors.As(err, &de)
-	e.leaseLog(l).Warn("delivery not dispatched", "class", de.class, "retryable", de.retryable, "error", err.Error())
+	e.lookup(l.Ref()).redact.Logger(e.leaseLog(l)).Warn("delivery not dispatched", "class", de.class,
+		"retryable", de.retryable, "error", err.Error())
 	if ferr := e.Fail(ctx, store.FailRequest{
 		LeaseRef: l.Ref(), Attempt: l.Attempt, Class: de.class, Message: err.Error(), Retryable: de.retryable,
 	}); ferr != nil {

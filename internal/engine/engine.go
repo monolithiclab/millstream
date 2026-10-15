@@ -26,6 +26,7 @@ import (
 	"github.com/robfig/cron/v3"
 
 	"github.com/monolithiclab/millstream/internal/pipeline"
+	"github.com/monolithiclab/millstream/internal/redact"
 	"github.com/monolithiclab/millstream/internal/runtime/exec"
 	"github.com/monolithiclab/millstream/internal/store"
 )
@@ -111,6 +112,7 @@ type flight struct {
 	itemID  string
 	attempt int
 	token   int64
+	redact  *redact.Redactor // the secrets resolved for its dispatch; nil until then
 }
 
 // New returns an engine over opts.Store.
