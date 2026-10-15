@@ -7,7 +7,9 @@ import (
 	"maps"
 	"os"
 	"path"
+	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -30,7 +32,7 @@ type TestCmd struct {
 
 // TestPipelineCmd is "millstream test pipeline".
 type TestPipelineCmd struct {
-	Dir     string        `arg:"" optional:"" default:"." type:"path" help:"Package directory."`
+	Dir     string        `arg:"" optional:"" type:"path" help:"Package directory (default: the current one)."`
 	Timeout time.Duration `default:"60s" help:"How long each test may take to settle."`
 }
 
@@ -57,7 +59,7 @@ type pipelineTest struct {
 // the other steps run their actions, and once the run settles the item count of each stream under expect is
 // compared. It prints PASS or FAIL per test and fails when any test fails.
 func (c TestPipelineCmd) Run(rt *Runtime) error {
-	pkg, err := pipeline.Load(c.Dir)
+	pkg, err := pipeline.Load(dirOrCurrent(c.Dir))
 	if err != nil {
 		return err
 	}
@@ -83,8 +85,15 @@ func (c TestPipelineCmd) Run(rt *Runtime) error {
 		return fmt.Errorf("%s: no tests/*.yaml", pkg.Dir)
 	}
 	slices.Sort(files)
+	// Each test's artifacts go to a directory of its own under one temporary directory, which the artifact store
+	// creates on first use.
+	artifactsDir, err := os.MkdirTemp("", "millstream-test-artifacts-")
+	if err != nil {
+		return err
+	}
+	defer func() { _ = os.RemoveAll(artifactsDir) }()
 	failed := 0
-	for _, file := range files {
+	for i, file := range files {
 		var tc pipelineTest
 		if err := yaml.Unmarshal(pkg.Files[file], &tc); err != nil {
 			return fmt.Errorf("%s: %w", file, err)
@@ -92,7 +101,7 @@ func (c TestPipelineCmd) Run(rt *Runtime) error {
 		if tc.Name == "" {
 			tc.Name = file
 		}
-		problems, err := c.runTest(rt, pkg, tc, actions, env)
+		problems, err := c.runTest(rt, pkg, tc, actions, env, filepath.Join(artifactsDir, strconv.Itoa(i)))
 		if err != nil {
 			problems = append(problems, err.Error())
 		}
@@ -115,7 +124,7 @@ func (c TestPipelineCmd) Run(rt *Runtime) error {
 
 // runTest runs one test and returns its failed expectations.
 func (c TestPipelineCmd) runTest(rt *Runtime, pkg *pipeline.Package, tc pipelineTest,
-	actions pipeline.ActionResolver, env *pipeline.Environment,
+	actions pipeline.ActionResolver, env *pipeline.Environment, artifactsDir string,
 ) ([]string, error) {
 	p := pkg.Pipeline
 	trigger := tc.Trigger
@@ -144,13 +153,8 @@ func (c TestPipelineCmd) runTest(rt *Runtime, pkg *pipeline.Package, tc pipeline
 		return nil, err
 	}
 	defer func() { _ = st.Close() }()
-	dir, err := os.MkdirTemp("", "millstream-test-artifacts-")
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = os.RemoveAll(dir) }()
 	e, err := engine.New(engine.Options{Store: st, Env: rt.Env, NoCron: true, Stubs: stubs,
-		Artifacts: artifacts.New(dir), Resolver: actions, Agents: agents(rt, env)})
+		Artifacts: artifacts.New(artifactsDir), Resolver: actions, Agents: agents(rt, env)})
 	if err != nil {
 		return nil, err
 	}

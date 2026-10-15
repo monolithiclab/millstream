@@ -8,10 +8,12 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 
 	"github.com/alecthomas/kong"
 
 	"github.com/monolithiclab/millstream/internal/runtime/exec"
+	"github.com/monolithiclab/millstream/internal/store/sqlite"
 )
 
 // Exit codes: a closed set, so deferred work always runs before the process exits.
@@ -47,6 +49,22 @@ type Runtime struct {
 	EnvFile string
 	// Launchers, when set, replace the launchers the environment selects: tests run actions in-process with them.
 	Launchers map[string]exec.Launcher
+	// Store, when set, is the state database the commands use instead of opening --db, and leave open: tests run a
+	// series of commands against one store with it.
+	Store *sqlite.Store
+}
+
+// dirOrCurrent returns dir, or the current directory's absolute path when dir is empty. The directory arguments
+// default to it here rather than through a default:"." tag, which Kong expands (a getwd and its stats) for every
+// such argument of the tree on every run, whichever command runs.
+func dirOrCurrent(dir string) string {
+	if dir != "" {
+		return dir
+	}
+	if abs, err := filepath.Abs("."); err == nil {
+		return abs
+	}
+	return "."
 }
 
 // usageError marks an error that exits with the usage status.

@@ -12,14 +12,14 @@ import (
 
 // LockCmd is "millstream lock".
 type LockCmd struct {
-	Dir string `arg:"" optional:"" default:"." type:"path" help:"Package directory."`
+	Dir string `arg:"" optional:"" type:"path" help:"Package directory (default: the current one)."`
 }
 
 // Run resolves every container and registry action of the package to an exact version and image digest, ignoring
 // the current lock file, and writes them to the package's millstream.lock (spec section 6.2). It prints one line per
 // pinned action. A package without such actions gets no lock file.
 func (c LockCmd) Run(rt *Runtime) error {
-	pkg, err := pipeline.Load(c.Dir)
+	pkg, err := pipeline.Load(dirOrCurrent(c.Dir))
 	if err != nil {
 		return err
 	}

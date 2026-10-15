@@ -8,13 +8,13 @@ import (
 
 // CheckCmd is "millstream check".
 type CheckCmd struct {
-	Dir string `arg:"" optional:"" default:"." type:"path" help:"Package directory."`
+	Dir string `arg:"" optional:"" type:"path" help:"Package directory (default: the current one)."`
 }
 
 // Run validates the package and prints one "severity path: message" line per diagnostic on stdout, then a summary
 // on stderr. It fails when the package does not load or any diagnostic is an error.
 func (c CheckCmd) Run(rt *Runtime) error {
-	pkg, err := pipeline.Load(c.Dir)
+	pkg, err := pipeline.Load(dirOrCurrent(c.Dir))
 	if err != nil {
 		return err
 	}

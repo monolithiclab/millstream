@@ -16,12 +16,12 @@ type InitCmd struct {
 // InitPipelineCmd is "millstream init pipeline".
 type InitPipelineCmd struct {
 	Name string `arg:"" help:"The pipeline's name: lowercase letters, digits and single dashes."`
-	Dir  string `default:"." type:"path" help:"The directory to create the package in."`
+	Dir  string `type:"path" help:"The directory to create the package in (default: the current one)."`
 }
 
 // Run writes the package and says what to do next.
 func (c InitPipelineCmd) Run(rt *Runtime) error {
-	dir, err := scaffold.Pipeline(c.Dir, c.Name)
+	dir, err := scaffold.Pipeline(dirOrCurrent(c.Dir), c.Name)
 	if err != nil {
 		return initErr(err)
 	}
@@ -32,13 +32,13 @@ func (c InitPipelineCmd) Run(rt *Runtime) error {
 // InitActionCmd is "millstream init action".
 type InitActionCmd struct {
 	Name string `arg:"" help:"The action's name: lowercase letters, digits and single dashes."`
-	Dir  string `default:"." type:"path" help:"The directory to create the action in."`
+	Dir  string `type:"path" help:"The directory to create the action in (default: the current one)."`
 	Lang string `enum:"go,raw" default:"go" help:"go: the Go SDK; raw: the protocol spoken directly, in Python 3."`
 }
 
 // Run writes the action and says what to do next.
 func (c InitActionCmd) Run(rt *Runtime) error {
-	dir, err := scaffold.Action(c.Dir, c.Name, c.Lang)
+	dir, err := scaffold.Action(dirOrCurrent(c.Dir), c.Name, c.Lang)
 	if err != nil {
 		return initErr(err)
 	}

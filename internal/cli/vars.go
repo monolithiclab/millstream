@@ -12,7 +12,7 @@ import (
 
 // VarsCmd is "millstream vars".
 type VarsCmd struct {
-	Dir string            `arg:"" optional:"" default:"." type:"path" help:"Package directory."`
+	Dir string            `arg:"" optional:"" type:"path" help:"Package directory (default: the current one)."`
 	Var map[string]string `help:"Set a variable (name=value)."`
 }
 
@@ -20,7 +20,7 @@ type VarsCmd struct {
 // not resolve is listed as unset, and the command then fails with every resolution problem on stderr. Secrets are
 // not variables: they are left to check and run.
 func (c VarsCmd) Run(rt *Runtime) error {
-	pkg, err := pipeline.Load(c.Dir)
+	pkg, err := pipeline.Load(dirOrCurrent(c.Dir))
 	if err != nil {
 		return err
 	}

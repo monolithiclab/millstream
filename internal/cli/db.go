@@ -22,8 +22,12 @@ func openStore(rt *Runtime) (*sqlite.Store, error) {
 	return sqlite.Open(rt.DB, sqlite.Options{})
 }
 
-// withStore opens the state database, runs fn and closes it, reporting the first error.
+// withStore opens the state database, runs fn and closes it, reporting the first error; with Runtime.Store set, it
+// runs fn on that store and leaves it open.
 func withStore(rt *Runtime, fn func(st *sqlite.Store) error) (err error) {
+	if rt.Store != nil {
+		return fn(rt.Store)
+	}
 	st, err := openStore(rt)
 	if err != nil {
 		return err
