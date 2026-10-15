@@ -50,13 +50,15 @@ awk -v total_budget="$BUDGET_TOTAL_MS" -v test_budget="$BUDGET_TEST_MS" -v pkg_b
 	file == 1 { if (test == "" && (base == "" || ms < base)) base = ms; next }
 	file == 3 { if (test == "" && (!(pkg in floor) || ms < floor[pkg])) floor[pkg] = ms; next }
 	file == 4 { if (test == "" && (!(pkg in wall) || ms < wall[pkg])) wall[pkg] = ms; next }
-	# One test runs at a time: the time between two consecutive events of the same top-level test (its own or those
-	# of its subtests) belongs to that test, and a gap between events of different tests to the framework.
+	# One test runs at a time: the time up to an event belongs to the top-level test of that event (its own or one of
+	# its subtests), unless the event starts or resumes a test: the time before it goes to the framework. A resumed
+	# test need not announce itself (go test prints no CONT line when no other test printed since), hence the
+	# attribution to the later event.
 	test == "" { next }
 	{ key = pkg " " substr(test, 1, index(test "/", "/") - 1); now = secs(field("Time")) }
-	key == last { d = (now - then) * 1000; took[key] += d; sum[pkg] += d; total += d }
+	action !~ /^(run|cont)$/ && pkg == lastpkg { d = (now - then) * 1000; took[key] += d; sum[pkg] += d; total += d }
 	!(key in took) { took[key] = 0 }
-	{ last = key; then = now }
+	{ lastpkg = pkg; then = now }
 	END {
 		printf "empty test binary: %.0f ms\n\n%-56s %7s %7s %7s %8s\n", base, "package", "wall", "floor", "over",
 			"tests"
