@@ -28,3 +28,10 @@ lint-sdk:
 
 test: test-sdk
 lint: lint-sdk
+
+# The e2e suite runs the built binary, so the test cache cannot see changes to the code it exercises.
+.PHONY: test-e2e
+test-e2e: ## Run the end-to-end and crash suite without the test cache
+	@go test -race -count=1 ./internal/e2e/...
+
+test: test-e2e

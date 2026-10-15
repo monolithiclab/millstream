@@ -218,7 +218,7 @@ func (s *Store) Renew(ctx context.Context, owner string, refs []store.LeaseRef, 
 func (s *Store) ExpireLeases(ctx context.Context) ([]store.LeaseRef, error) {
 	var expired []store.LeaseRef
 	err := s.submit(ctx, unitExpireLeases, func(w *wtx) error {
-		expired = nil // a batch retried after a failure starts over
+		expired = nil // the unit fills the result only when it applies
 		rows, err := w.query(`SELECT id, pipeline FROM deliveries WHERE state = ? AND lease_expires_at < ?
 			ORDER BY rowid`, store.DeliveryLeased, w.ts())
 		if err != nil {
