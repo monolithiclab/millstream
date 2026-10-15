@@ -1,18 +1,15 @@
 include common.mk
+include common.go.mk
 
-# Docs-only until the first implementation plan lands; the Go targets arrive with cmd/millstream (see lab-go-app).
+VULNCHECK_PACKAGES = ./cmd/... ./internal/...
 
-.PHONY: build
-build: ## Check that every relative Markdown link resolves and prose wraps at 120 columns
+.PHONY: docs
+docs: ## Check Markdown links and 120-column prose
 	@scripts/check-docs
 
-.PHONY: lint
-lint: ## Shellcheck the scripts
+.PHONY: lint-shell
+lint-shell:
 	@shellcheck scripts/check-docs
 
-.PHONY: ci
-ci: lint build ## The gate: lint and build (what CI runs)
-
-.PHONY: clean
-clean: ## Remove build output
-	@rm -rf .build
+lint: lint-shell
+ci: docs

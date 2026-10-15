@@ -19,8 +19,8 @@ steps:
     config: { expr: "item.score >= vars.min_score" }
 ```
 
-**Status:** design. The platform specification is written and under review; no code yet. The name is
-chosen, pending a trademark search ([naming note](docs/research/20261014.naming.md)).
+**Status:** design. The platform specification is written and under review; the engine is being built milestone by
+milestone. The name is chosen, pending a trademark search ([naming note](docs/research/20261014.naming.md)).
 
 ## Documentation
 
@@ -33,8 +33,9 @@ chosen, pending a trademark search ([naming note](docs/research/20261014.naming.
 
 ## Development
 
-`make help` lists every command; `make ci` is the gate. Until the engine exists, the gate checks the Markdown docs
-(links and 120-column wrapping) and needs `shellcheck`.
+`make help` lists every command; `make ci` is the gate (lint, tests, Markdown docs check) and needs `shellcheck`.
+
+Build: `make build` writes `build/millstream`; `make ci` runs the gate.
 
 ## License
 

@@ -1,14 +1,15 @@
 # AGENTS.md
 
-Millstream is a Monolithic Lab pipeline platform (Go engine, React UI) in its design phase: the repo holds the
-specification and decisions only. See [README.md](README.md) for what it is, `docs/` (table below) for the
-reasoning, and `make help` for every command.
+Millstream is a Monolithic Lab pipeline platform (Go engine, React UI) under construction: the repo holds the
+specification, decisions and the Go engine as it is built. See [README.md](README.md) for what it is, `docs/` (table
+below) for the reasoning, and `make help` for every command.
 
 ## Hard rules
 
 - The repo is meant to go open source: no customer, prospect or partner names anywhere, in docs, examples or
   commit messages. The reference example is the generic real estate pipeline.
-- No code before the platform spec is approved and an implementation plan exists for the milestone.
+- Each milestone is implemented from its plan in `docs/plans/`; a change to a public contract updates the spec in the
+  same commit.
 - A change to the pipeline file format, the action protocol or the HTTP API updates the spec in the same commit:
   these are public contracts.
 
@@ -18,6 +19,16 @@ reasoning, and `make help` for every command.
 - Thresholds belong in `filter` steps, not in actions, so actions stay reusable (spec section 4.7).
 - At-least-once delivery is deliberate; idempotency comes from deterministic item ids (D9), not from exactly-once
   machinery.
+
+## Layout
+
+- `cmd/millstream/`: the binary's `main`.
+- `internal/`: `cli`, `pipeline`, `ids`, `expr`, `schema`, `protocol`, `store`, `failpoint`, `engine`, `node` and
+  the other packages named in the M1 plan's file structure.
+- `sdk/go/`: the Go action SDK, its own module.
+- `examples/`: fixture and example pipeline packages.
+- `make ci` is the gate: lint (golangci-lint, govulncheck, tidy, pins, shellcheck), tests with `-race`, and the docs
+  check.
 
 ## Where things go
 

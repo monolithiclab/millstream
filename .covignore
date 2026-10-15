@@ -1,0 +1,3 @@
+# Generated-code patterns (regexes) filtered out of the coverage profile.
+# main only wires os.Args to the cli package, which is tested.
+/cmd/millstream/
