@@ -169,8 +169,8 @@ trigger streams as run roots, enforced by `check`.
 
 **Decision.** Every step's `out` takes one of three shapes: a stream, a list of streams (each output goes to all), or
 a list of route objects `{when, out}` evaluated in order when an output is published, first match wins. An output
-matching no route goes to the step's `dlq` as an `unrouted` dead letter, so a step with route objects must name its
-`dlq`. There is no routing builtin.
+matching no route goes to the step's dead-letter stream (`<step>.dlq` by default) as an `unrouted` dead letter; a
+catch-all route (`when: "true"`) routes everything instead. There is no routing builtin.
 
 **Evidence.** A separate routing step costs one more delivery per item and would be the one builtin declaring outputs
 outside `out`. Evaluating routes at publication makes routing free and available to every action, including catalog
