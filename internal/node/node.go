@@ -219,10 +219,11 @@ func (l *loop) execute(ctx context.Context, log *slog.Logger, a Assignment) {
 		log.Info("delivery failed in the action", "retryable", res.Err.Retryable)
 		rerr = l.t.Fail(rctx, store.FailRequest{
 			LeaseRef: ref, Attempt: attempt, Class: ClassAction, Message: a.Redact.String(res.Err.Message),
-			Retryable: res.Err.Retryable,
+			Retryable: res.Err.Retryable, Artifacts: res.Artifacts,
 		})
 	default:
-		rerr = l.t.Done(rctx, store.DoneRequest{LeaseRef: ref, Attempt: attempt, Outputs: res.Outputs})
+		rerr = l.t.Done(rctx, store.DoneRequest{LeaseRef: ref, Attempt: attempt, Outputs: res.Outputs,
+			Artifacts: res.Artifacts})
 	}
 	switch {
 	case errors.Is(rerr, store.ErrStaleLease):

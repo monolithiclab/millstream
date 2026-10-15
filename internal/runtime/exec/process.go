@@ -47,6 +47,9 @@ type Spec struct {
 	Image string
 	// Network gives a container action the network; it has none otherwise.
 	Network bool
+	// Mounts are a container's directories and files besides its working directory, such as the agent adapter
+	// and the package it reads (spec section 7.3).
+	Mounts []Mount
 	// Dir is an exec process's working directory: the action directory on disk.
 	Dir string
 	// Lifecycle is pipeline.LifecycleLong (the default) or pipeline.LifecyclePerItem.
@@ -58,6 +61,13 @@ type Spec struct {
 	Env []string
 }
 
+// Mount is a host path a container sees at Target.
+type Mount struct {
+	Source   string
+	Target   string
+	ReadOnly bool
+}
+
 // Launcher starts the processes of one kind of action (spec section 6.4). The runtime around it is shared: the
 // protocol, the pool, the timeouts and the process group, which the runtime sets on the command and kills.
 type Launcher interface {
@@ -66,6 +76,21 @@ type Launcher interface {
 	// Kill releases what outlives the process group once it is killed, such as a container. It is called only when
 	// the process did not exit cleanly.
 	Kill(spec Spec, workdir string)
+}
+
+// LookPath finds an executable named name in the directories of path, a PATH value: the first regular file with an
+// execute bit. ok is false when there is none.
+func LookPath(name, path string) (string, bool) {
+	for _, dir := range filepath.SplitList(path) {
+		if dir == "" {
+			continue
+		}
+		p := filepath.Join(dir, name)
+		if fi, err := os.Stat(p); err == nil && fi.Mode().IsRegular() && fi.Mode().Perm()&0o111 != 0 {
+			return p, true
+		}
+	}
+	return "", false
 }
 
 // ExecLauncher runs exec actions as child processes of the node, in their action directory.
@@ -140,11 +165,13 @@ type Delivery struct {
 }
 
 // Result is what a delivery produced. Outputs are set only when the action answered done, with the artifacts they
-// name already in the artifact store; Err only when it answered error.
+// name already in the artifact store; Err only when it answered error. Artifacts are the attempt's own, named by its
+// done or error, already in the artifact store.
 type Result struct {
-	Outputs []store.Output
-	Metrics []protocol.Metric
-	Err     *ActionError
+	Outputs   []store.Output
+	Metrics   []protocol.Metric
+	Err       *ActionError
+	Artifacts []store.ArtifactRef
 }
 
 // ActionError is an action's own error message.
@@ -351,7 +378,10 @@ func (p *Process) Deliver(ctx context.Context, d Delivery) (Result, error) {
 		return Result{}, p.exitErr(ctx, "send item %s: %w", id, err)
 	}
 	var res Result
-	var emitted [][]protocol.Artifact // the artifacts each output named, moved once the delivery is done
+	// The artifacts each output named, then those of the attempt, named by done or error: moved once the delivery is
+	// answered.
+	var emitted [][]protocol.Artifact
+	var attempt []protocol.Artifact
 	for {
 		select {
 		case <-dctx.Done():
@@ -363,7 +393,7 @@ func (p *Process) Deliver(ctx context.Context, d Delivery) (Result, error) {
 			if p.lateMetric(m) {
 				continue
 			}
-			done, err := collect(&res, &emitted, id, m)
+			done, err := collect(&res, &emitted, &attempt, id, m)
 			if err != nil {
 				p.kill()
 				return Result{}, runtimeErr(ClassProtocol, "delivery %s: %w", id, err)
@@ -373,7 +403,7 @@ func (p *Process) Deliver(ctx context.Context, d Delivery) (Result, error) {
 			}
 			p.prev = id
 			stop() // the action has answered: moving its files is no longer its time to spend
-			if err := p.upload(ctx, d, &res, emitted); err != nil {
+			if err := p.upload(ctx, d, &res, emitted, attempt); err != nil {
 				return Result{}, err
 			}
 			return res, nil
@@ -422,8 +452,11 @@ func (p *Process) lateMetric(m protocol.Message) bool {
 	return true
 }
 
-// collect adds m to res, and an emit's artifacts to emitted, and reports whether m ended the delivery.
-func collect(res *Result, emitted *[][]protocol.Artifact, id string, m protocol.Message) (bool, error) {
+// collect adds m to res, an emit's artifacts to emitted and those of done or error to attempt, and reports whether m
+// ended the delivery.
+func collect(res *Result, emitted *[][]protocol.Artifact, attempt *[]protocol.Artifact, id string,
+	m protocol.Message,
+) (bool, error) {
 	var got string
 	switch m := m.(type) {
 	case protocol.Emit:
@@ -435,9 +468,10 @@ func collect(res *Result, emitted *[][]protocol.Artifact, id string, m protocol.
 		res.Metrics = append(res.Metrics, m)
 	case protocol.Done:
 		got = m.Delivery
+		*attempt = m.Artifacts
 	case protocol.Error:
 		got = m.Delivery
-		res.Outputs, *emitted = nil, nil
+		res.Outputs, *emitted, *attempt = nil, nil, m.Artifacts
 		res.Err = &ActionError{Message: m.Message, Retryable: m.Retryable}
 	default:
 		return false, fmt.Errorf("%w: unexpected %s message", protocol.ErrProtocol, m.Type())

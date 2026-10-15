@@ -27,6 +27,12 @@ earlier designs are in the git history of the spec.
   list).
 - Artifact files orphaned by a retry whose item already existed (first commit wins) are only reclaimed by a sweep
   of unreferenced hashes, which arrives with retention (M4).
+- Agent harnesses: the `api` harness's tool loop over declared tools, and MCP servers for both harnesses (M2
+  resolves either as unavailable).
+- The agent adapter reads its action (manifest, prompt, schemas) from the package directory on disk, like an exec
+  action's command: an edit there while a run is open changes what later deliveries of that revision run. Serving
+  the revision's files from the engine would close this for both.
+- Transcripts are stored uncompressed until retention (M4) brings compression and `retention.transcripts`.
 
 ## Execution (icebox)
 

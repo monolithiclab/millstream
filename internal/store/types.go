@@ -304,15 +304,17 @@ type Artifact struct {
 	Refcount int64
 }
 
-// DoneRequest completes a leased delivery with its outputs.
+// DoneRequest completes a leased delivery with its outputs. Artifacts are the attempt's own (spec section 6.3),
+// already in the artifact store.
 type DoneRequest struct {
 	LeaseRef
-	Attempt int
-	Outputs []Output
-	CostUSD float64
+	Attempt   int
+	Outputs   []Output
+	CostUSD   float64
+	Artifacts []ArtifactRef
 }
 
-// FailRequest fails a leased delivery.
+// FailRequest fails a leased delivery. Artifacts are the failed attempt's own, kept as on done.
 type FailRequest struct {
 	LeaseRef
 	Attempt   int
@@ -320,6 +322,13 @@ type FailRequest struct {
 	Message   string
 	Retryable bool
 	CostUSD   float64
+	Artifacts []ArtifactRef
+}
+
+// AttemptArtifact is an artifact an attempt of a delivery kept for itself, such as an agent's transcript.
+type AttemptArtifact struct {
+	Attempt int
+	ArtifactRef
 }
 
 // FilterRequest filters a leased delivery: a builtin decided not to pass it on.

@@ -13,14 +13,15 @@ func TestParseEnvironment(t *testing.T) {
 registries: { lab: ghcr.io/monolithiclab/millstream-actions/, local: "localhost:5000/actions" }
 runtime: { container: podman }
 prices: { claude-sonnet-5-5: { inPerMtok: 3, outPerMtok: 15.5 } }
-agents: { allowUnsandboxed: true }
+agents: { allowUnsandboxed: true, image: "agents:1", linuxBinary: /opt/millstream-linux }
 `))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if env.Registries["lab"] != "ghcr.io/monolithiclab/millstream-actions" ||
 		env.Registries["local"] != "localhost:5000/actions" || env.ContainerRuntime != RuntimePodman ||
-		env.Prices["claude-sonnet-5-5"] != (Price{InPerMtok: 3, OutPerMtok: 15.5}) || !env.AllowUnsandboxed {
+		env.Prices["claude-sonnet-5-5"] != (Price{InPerMtok: 3, OutPerMtok: 15.5}) || !env.AllowUnsandboxed ||
+		env.AgentImage != "agents:1" || env.AgentBinary != "/opt/millstream-linux" {
 		t.Fatalf("environment %+v", env)
 	}
 	empty, err := ParseEnvironment(nil)
@@ -50,6 +51,8 @@ func TestParseEnvironmentErrors(t *testing.T) {
 		"agents not bool":   {"agents: { allowUnsandboxed: yes please }\n", "agents.allowUnsandboxed: must be true or false"},
 		"agents key":        {"agents: { sandbox: none }\n", "agents.sandbox: unknown key"},
 		"agents scalar":     {"agents: true\n", "agents: must be a mapping"},
+		"agents image":      {"agents: { image: \"\" }\n", "agents.image: must not be empty"},
+		"agents binary":     {"agents: { linuxBinary: [x] }\n", "agents.linuxBinary: must be a string"},
 		"registries scalar": {"registries: x\n", "registries: must be a mapping"},
 		"yaml":              {"registries: [\n", "parse YAML"},
 	}
@@ -80,6 +83,14 @@ func TestLoadEnvironment(t *testing.T) {
 	}
 	if _, err := LoadEnvironment(bad, false); err == nil || !strings.Contains(err.Error(), bad) {
 		t.Fatalf("a bad file: %v", err)
+	}
+	// agents.linuxBinary is relative to the environment file.
+	rel := filepath.Join(dir, "rel.yaml")
+	if err := os.WriteFile(rel, []byte("agents: { linuxBinary: bin/millstream }\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if env, err := LoadEnvironment(rel, true); err != nil || env.AgentBinary != filepath.Join(dir, "bin", "millstream") {
+		t.Fatalf("relative linuxBinary: %+v, %v", env, err)
 	}
 }
 

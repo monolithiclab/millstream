@@ -28,6 +28,9 @@ func (s *Store) Done(ctx context.Context, d store.DoneRequest) (store.DeliverySt
 			}
 		}
 	}
+	if err := validAttemptArtifacts(d.Artifacts); err != nil {
+		return "", fmt.Errorf("done: %w", err)
+	}
 	var state store.DeliveryState
 	err := s.submit(ctx, unitDone, func(w *wtx) error {
 		var err error
@@ -40,6 +43,9 @@ func (s *Store) Done(ctx context.Context, d store.DoneRequest) (store.DeliverySt
 func (w *wtx) done(req store.DoneRequest, outputs []payload) (store.DeliveryState, error) {
 	d, err := w.leased(req.LeaseRef, req.Attempt)
 	if err != nil {
+		return "", err
+	}
+	if err := w.keepAttemptArtifacts(d, req.Artifacts); err != nil {
 		return "", err
 	}
 	run, err := w.run(d.pipeline, d.runID)
@@ -85,6 +91,33 @@ func (w *wtx) done(req store.DoneRequest, outputs []payload) (store.DeliveryStat
 		return "", err
 	}
 	return store.DeliveryDone, w.settle(d.pipeline, d.runID)
+}
+
+// validAttemptArtifacts checks an attempt's artifacts: valid references with distinct names.
+func validAttemptArtifacts(refs []store.ArtifactRef) error {
+	seen := make(map[string]bool, len(refs))
+	for _, a := range refs {
+		if err := store.ValidArtifact(a); err != nil {
+			return fmt.Errorf("attempt artifact: %w", err)
+		}
+		if seen[a.Name] {
+			return fmt.Errorf("attempt artifact %s: named twice: %w", a.Name, store.ErrInvalid)
+		}
+		seen[a.Name] = true
+	}
+	return nil
+}
+
+// keepAttemptArtifacts records the artifacts of the leased delivery's current attempt, each one reference.
+func (w *wtx) keepAttemptArtifacts(d *deliveryRow, refs []store.ArtifactRef) error {
+	for _, a := range refs {
+		if _, err := w.exec(`INSERT INTO attempt_artifacts
+			(pipeline, delivery_id, attempt, name, sha256, size, type, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+			d.pipeline, d.id, d.attempt, a.Name, a.SHA256, a.Size, a.Type, w.ts()); err != nil {
+			return fmt.Errorf("keep attempt artifact %s: %w", a.Name, err)
+		}
+	}
+	return w.countArtifacts(d.pipeline, refs)
 }
 
 // keyRule returns why the outputs break the key rule (spec section 5.2), or "" when they keep it: several

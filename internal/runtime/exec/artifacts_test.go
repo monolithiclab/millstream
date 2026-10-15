@@ -121,6 +121,45 @@ func TestDeliverMovesArtifacts(t *testing.T) {
 	}
 }
 
+// TestDeliverAttemptArtifacts: the artifacts named by done or error are the attempt's, kept apart from the outputs;
+// after an error, one that cannot be moved is dropped and the action's error reported.
+func TestDeliverAttemptArtifacts(t *testing.T) {
+	t.Parallel()
+	p := startFake(t, "echo", nil)
+	mem, _ := newMemArtifacts()
+	files := map[string]string{"transcript.json": "{}", "out.txt": "out"}
+	res, err := p.Deliver(t.Context(), artifactDelivery(t, "dl_1", map[string]any{
+		"files": files, "emit": []protocol.Artifact{{Name: "out.txt", Path: "out.txt"}},
+		"attempt": []protocol.Artifact{{Name: "transcript.json", Path: "transcript.json"}},
+	}, mem))
+	if err != nil {
+		t.Fatalf("Deliver: %v", err)
+	}
+	if len(res.Outputs[0].Artifacts) != 1 || res.Outputs[0].Artifacts[0].Name != "out.txt" ||
+		len(res.Artifacts) != 1 || res.Artifacts[0].Name != "transcript.json" || mem.content(res.Artifacts[0].SHA256) != "{}" {
+		t.Fatalf("outputs %+v, attempt %+v", res.Outputs, res.Artifacts)
+	}
+
+	res, err = p.Deliver(t.Context(), artifactDelivery(t, "dl_2", map[string]any{
+		"files": files, "fail": true, "attempt": []protocol.Artifact{{Name: "transcript.json", Path: "transcript.json"}},
+	}, mem))
+	if err != nil || res.Err == nil || res.Outputs != nil || len(res.Artifacts) != 1 {
+		t.Fatalf("error answer: %+v, %v", res, err)
+	}
+
+	// A refused attempt artifact on done is a permanent protocol error; on error it is dropped.
+	_, err = p.Deliver(t.Context(), artifactDelivery(t, "dl_3", map[string]any{
+		"attempt": []protocol.Artifact{{Name: "transcript.json", Path: "../x"}},
+	}, mem))
+	requireClass(t, err, ClassProtocol)
+	res, err = p.Deliver(t.Context(), artifactDelivery(t, "dl_4", map[string]any{
+		"fail": true, "attempt": []protocol.Artifact{{Name: "transcript.json", Path: "../x"}},
+	}, mem))
+	if err != nil || res.Err == nil || res.Err.Message != "failed" || res.Artifacts != nil {
+		t.Fatalf("refused artifact after error: %+v, %v", res, err)
+	}
+}
+
 // TestDeliverRefusesArtifactPaths: a path outside the working directory, through a symbolic link or to something
 // other than a regular file is a permanent protocol error; the process stays healthy.
 func TestDeliverRefusesArtifactPaths(t *testing.T) {

@@ -1,6 +1,10 @@
 package cli
 
 import (
+	"os"
+	"runtime"
+
+	"github.com/monolithiclab/millstream/internal/engine"
 	"github.com/monolithiclab/millstream/internal/pipeline"
 	"github.com/monolithiclab/millstream/internal/runtime/container"
 	"github.com/monolithiclab/millstream/internal/runtime/exec"
@@ -34,4 +38,20 @@ func launchers(rt *Runtime, env *pipeline.Environment) map[string]exec.Launcher 
 		l[pipeline.KindContainer] = container.Launcher{Runtime: crt}
 	}
 	return l
+}
+
+// agents returns how the engine runs agent steps: in a container sandbox when the runtime the environment selects is
+// installed and agents.image is set, with agents.linuxBinary as the adapter (the running binary on Linux); else
+// unsandboxed as this binary's agent subcommand, when agents.allowUnsandboxed allows it.
+func agents(rt *Runtime, env *pipeline.Environment) engine.Agents {
+	a := engine.Agents{AllowUnsandboxed: env.AllowUnsandboxed, Prices: env.Prices}
+	a.Executable, _ = os.Executable()
+	bin := env.AgentBinary
+	if bin == "" && runtime.GOOS == "linux" {
+		bin = a.Executable
+	}
+	if _, ok := container.Find(env.ContainerRuntime, rt.Env); ok && env.AgentImage != "" && bin != "" {
+		a.Sandbox = &engine.AgentSandbox{Image: env.AgentImage, Binary: bin}
+	}
+	return a
 }

@@ -91,14 +91,16 @@ as a violation. The engine accepts metrics but does not store them yet: they are
 {"type":"metric","delivery":"dl_3f…","name":"pages_fetched","value":12,"labels":{"source":"portal"}}
 ```
 
-**`done`** ends the delivery successfully. Its staged outputs are published now, all together.
+**`done`** ends the delivery successfully. Its staged outputs are published now, all together. The optional
+`artifacts` lists the attempt's own files (see Artifacts below), such as an agent's transcript.
 
 ```json
-{"type":"done","delivery":"dl_3f…"}
+{"type":"done","delivery":"dl_3f…","artifacts":[{"name":"transcript.json","path":"transcript.json"}]}
 ```
 
 **`error`** ends the delivery in failure. `retryable: true` asks for a retry with backoff; `false` sends the item to
-the step's dead-letter stream at once.
+the step's dead-letter stream at once. The optional `artifacts` lists the failed attempt's own files, kept so the
+failure can be investigated.
 
 ```json
 {"type":"error","delivery":"dl_3f…","message":"portal answered 503","retryable":true}
@@ -146,8 +148,11 @@ Files go through `MILLSTREAM_WORKDIR`, never through the protocol itself. The di
   of an `emit`: `name` is how downstream steps see the file, `path` where it is, relative to the working directory.
   On `done`, the node moves every named file to the artifact store, then reports the outputs with their artifacts;
   the files of a delivery that ends in `error` are dropped.
+- **Attempt artifacts.** `done` and `error` may name files of the attempt itself in their own `artifacts`. They
+  belong to the attempt, by its number, never to an output, and are kept for a failed attempt too. On `error`, an
+  attempt artifact the node cannot take is dropped with a warning and the action's own error is reported.
 - **Names** are file names: not empty, at most 255 bytes, not `.` or `..`, without `/`, `\` or a NUL byte, and
-  distinct among one output's artifacts.
+  distinct among one output's artifacts, or among the attempt's.
 - **Paths** must stay inside the working directory, pass through no symbolic link and end at a regular file.
 
 A name or path that breaks these rules fails the delivery at once, not retryable (a protocol error that does not

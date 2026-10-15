@@ -1,0 +1,6 @@
+pipeline: listings
+secrets: [apiKey]
+triggers:
+  adhoc: { manual: {} }
+steps:
+  score: { action: ./actions/score, in: trigger.adhoc, out: scored, config: { rooms: 2 }, retry: { maxAttempts: 1 } }

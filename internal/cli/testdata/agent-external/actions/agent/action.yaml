@@ -1,4 +1,5 @@
 name: agent
 kind: agent
 effects: none
-runtime: { exec: { command: [agent] } }
+output: { type: object }
+runtime: { agent: { harness: api, model: claude-sonnet-5-5, network: [api.anthropic.com] } }

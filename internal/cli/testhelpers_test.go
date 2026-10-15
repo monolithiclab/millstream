@@ -18,6 +18,10 @@ import (
 var fakeBin string
 
 func TestMain(m *testing.M) {
+	// The engine runs unsandboxed agents as its own executable's agent subcommand: under test, this binary.
+	if len(os.Args) > 1 && os.Args[1] == "agent" {
+		os.Exit(Main(context.Background(), os.Args[1:], StdIO(), "test"))
+	}
 	os.Exit(runTests(m))
 }
 

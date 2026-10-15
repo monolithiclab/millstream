@@ -31,7 +31,12 @@ input: { type: object, properties: { url: { type: string }, price: { type: numbe
 output: { type: object, properties: { score: { type: number } }, required: [score] }
 runtime: { exec: { command: [score] } }
 `},
-	{"actions/agent/action.yaml", "name: agent\nkind: agent\n"},
+	{"actions/agent/action.yaml", "name: agent\nkind: agent\noutput: { type: object }\n" +
+		"runtime: { agent: { harness: api, model: m, network: [api.anthropic.com] } }\n"},
+	{"actions/agent/prompt.md", "Score {{ .Payload }}.\n"},
+	{"actions/keyed/action.yaml", "name: keyed\nkind: agent\noutput: { type: object }\n" +
+		"runtime: { agent: { harness: claude-code, model: m, apiKeySecret: anthropicKey } }\n"},
+	{"actions/keyed/prompt.md", "Score.\n"},
 	{"actions/notify/action.yaml", "name: notify\nkind: exec\neffects: external\nruntime: { exec: { command: [notify] } }\n"},
 }
 
@@ -209,6 +214,18 @@ steps:
 					"review step that has no autoApprove in between",
 				"warning steps.agent: agent output can reach step send2, whose action has external effects, without a " +
 					"review step that has no autoApprove in between",
+			},
+		},
+		{
+			name: "agent needs",
+			yaml: checkHeader + `steps:
+  agent: { action: ./actions/keyed, in: trigger.go }
+`,
+			want: []string{
+				"error steps.agent.action: action ./actions/keyed reads its API key from secret anthropicKey, which is " +
+					"not declared under secrets",
+				"warning steps.agent.action: action ./actions/keyed declares no runtime.agent.network: in its sandbox it " +
+					"cannot reach its model; list the model's endpoint there (api.anthropic.com)",
 			},
 		},
 		{

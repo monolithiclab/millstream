@@ -74,6 +74,7 @@ type CLI struct {
 	Resume  ResumeCmd  `cmd:"" help:"Resume a pipeline or one of its steps."`
 	Test    TestCmd    `cmd:"" help:"Test a package against stubbed actions."`
 	Version VersionCmd `cmd:"" help:"Print the version."`
+	Agent   AgentCmd   `cmd:"" hidden:"" help:"Run the agent adapter: the action process of agent steps."`
 }
 
 // Main runs the CLI and returns the process exit code.

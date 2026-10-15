@@ -91,6 +91,8 @@ type Store interface {
 	Revision(ctx context.Context, id RevisionID) (Revision, error)
 	// Artifacts returns the artifact store entries of a pipeline (all pipelines when empty), by pipeline and hash.
 	Artifacts(ctx context.Context, pipeline string) ([]Artifact, error)
+	// AttemptArtifacts returns the artifacts the attempts of a delivery kept, by attempt then name.
+	AttemptArtifacts(ctx context.Context, pipeline, deliveryID string) ([]AttemptArtifact, error)
 	PipelineState(ctx context.Context, pipeline string) (PipelineState, error)
 	// Pipelines returns every pipeline's state, by name.
 	Pipelines(ctx context.Context) ([]PipelineState, error)

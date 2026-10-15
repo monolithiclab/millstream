@@ -85,6 +85,8 @@ type Action struct {
 	Network bool
 	// Unpinned is true when the lock file does not pin this container action: it runs the image found now.
 	Unpinned bool
+	// Agent is an agent action's runtime.agent, nil for other kinds.
+	Agent *AgentRuntime
 }
 
 // ActionResolver turns a step's action reference into an Action. Implementations report a reference they know but
@@ -238,6 +240,10 @@ func parseManifest(data []byte) (*Action, map[string]any, error) {
 		if err := containerRuntime(rt, m); err != nil {
 			return nil, nil, err
 		}
+	case KindAgent:
+		if m.Agent, err = agentRuntime(rt); err != nil {
+			return nil, nil, err
+		}
 	}
 	return m, schemas, nil
 }
@@ -313,7 +319,8 @@ func stringList(at string, v any) ([]string, error) {
 	return out, nil
 }
 
-// finish loads the manifest's schemas and resolves its command against the action directory.
+// finish loads the manifest's schemas and resolves its command, or its agent's prompt, against the action
+// directory.
 func (r Resolver) finish(pkg *Package, m *Action, schemas map[string]any) error {
 	for key, dst := range map[string]*[]byte{"input": &m.Input, "output": &m.Output, "config": &m.Config} {
 		v, ok := schemas[key]
@@ -328,6 +335,9 @@ func (r Resolver) finish(pkg *Package, m *Action, schemas map[string]any) error 
 			return fmt.Errorf("%s: %w", key, err)
 		}
 		*dst = doc
+	}
+	if m.Kind == KindAgent {
+		return finishAgent(pkg, m)
 	}
 	if m.Kind != KindExec || len(m.Command) == 0 {
 		return nil

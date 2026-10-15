@@ -215,7 +215,7 @@ func TestPauseAndResume(t *testing.T) {
 func TestUndispatchableDeliveriesFail(t *testing.T) {
 	t.Parallel()
 	containerManifest := "name: c\nkind: container\nruntime: { container: { image: c:1 } }\n"
-	agentManifest := "name: g\nkind: agent\n"
+	agentManifest := "name: g\nkind: agent\noutput: { type: object }\nruntime: { agent: { harness: api, model: m } }\n"
 	tests := []struct {
 		name      string
 		action    string
@@ -230,8 +230,8 @@ func TestUndispatchableDeliveriesFail(t *testing.T) {
 		{"registry", "lab/score@1", nil, nil, ClassUnsupported, false, "no registries are configured", ""},
 		{"container without a runtime", "./actions/c", map[string]string{"actions/c/action.yaml": containerManifest},
 			nil, ClassUnsupported, false, "container actions need Docker or Podman", ""},
-		{"agent", "./actions/c", map[string]string{"actions/c/action.yaml": agentManifest}, nil,
-			ClassUnsupported, false, "this build runs exec and container actions only", ""},
+		{"agent without a sandbox", "./actions/c", map[string]string{"actions/c/action.yaml": agentManifest,
+			"actions/c/prompt.md": "Score."}, nil, ClassSandbox, false, "agent step s needs a container sandbox", ""},
 		{"missing manifest", "./actions/none", nil, nil, ClassConfig, false, "no actions/none/action.yaml", ""},
 		{"bad interpolation", "./actions/a", nil, nil, ClassConfig, false, "interpolate config of step s",
 			`, config: { x: "${vars.nope}" }`},

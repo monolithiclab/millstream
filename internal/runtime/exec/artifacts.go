@@ -81,43 +81,62 @@ func place(ctx context.Context, root *os.Root, rel string, ref store.ArtifactRef
 }
 
 // upload moves the artifacts each output named in its emit to the artifact store and attaches their references to
-// the output. A path that is not a regular file inside the working directory, reached without a symbolic link, is
-// refused as a permanent protocol error: retrying would refuse it again. A failure of the store is retryable. The
-// process is left running either way: it answered the delivery properly.
-func (p *Process) upload(ctx context.Context, d Delivery, res *Result, emitted [][]protocol.Artifact) error {
-	named := false
+// the output, then the attempt's own artifacts (named by done or error) to res.Artifacts. A path that is not a
+// regular file inside the working directory, reached without a symbolic link, is refused as a permanent protocol
+// error: retrying would refuse it again. A failure of the store is retryable. The process is left running either
+// way: it answered the delivery properly. After an error answer, artifacts that cannot be moved are logged and
+// dropped instead, so the action's own error is the one reported.
+func (p *Process) upload(ctx context.Context, d Delivery, res *Result, emitted [][]protocol.Artifact,
+	attempt []protocol.Artifact,
+) error {
 	for i, list := range emitted {
-		seen := map[string]bool{}
-		for _, a := range list {
-			if !store.ValidArtifactName(a.Name) || seen[a.Name] {
-				return refused("output %d: artifact name %q: want distinct file names without a path separator", i,
-					a.Name)
-			}
-			seen[a.Name] = true
-			named = true
+		refs, err := p.move(ctx, d, fmt.Sprintf("output %d", i), list)
+		if err != nil {
+			return err
 		}
+		res.Outputs[i].Artifacts = refs
 	}
-	if !named {
+	refs, err := p.move(ctx, d, "attempt", attempt)
+	if err != nil && res.Err != nil {
+		p.logger().Warn("artifacts of a failed attempt dropped", "error", err.Error())
 		return nil
 	}
+	res.Artifacts = refs
+	return err
+}
+
+// move moves one list of artifacts, named for errors by where, to the store. Names must be distinct within it.
+func (p *Process) move(ctx context.Context, d Delivery, where string, list []protocol.Artifact) ([]store.ArtifactRef,
+	error,
+) {
+	if len(list) == 0 {
+		return nil, nil
+	}
+	seen := map[string]bool{}
+	for _, a := range list {
+		if !store.ValidArtifactName(a.Name) || seen[a.Name] {
+			return nil, refused("%s: artifact name %q: want distinct file names without a path separator", where,
+				a.Name)
+		}
+		seen[a.Name] = true
+	}
 	if d.Artifacts == nil {
-		return runtimeErr(ClassArtifact, "delivery %s emits artifacts: %w", d.Item.Delivery, errNoArtifacts)
+		return nil, runtimeErr(ClassArtifact, "delivery %s names artifacts: %w", d.Item.Delivery, errNoArtifacts)
 	}
 	root, err := os.OpenRoot(p.workdir)
 	if err != nil {
-		return runtimeErr(ClassArtifact, "open workdir: %w", err)
+		return nil, runtimeErr(ClassArtifact, "open workdir: %w", err)
 	}
 	defer func() { _ = root.Close() }()
-	for i, list := range emitted {
-		for _, a := range list {
-			ref, err := put(ctx, root, a, d.Artifacts)
-			if err != nil {
-				return err
-			}
-			res.Outputs[i].Artifacts = append(res.Outputs[i].Artifacts, ref)
+	refs := make([]store.ArtifactRef, 0, len(list))
+	for _, a := range list {
+		ref, err := put(ctx, root, a, d.Artifacts)
+		if err != nil {
+			return nil, err
 		}
+		refs = append(refs, ref)
 	}
-	return nil
+	return refs, nil
 }
 
 // put stores one emitted artifact.

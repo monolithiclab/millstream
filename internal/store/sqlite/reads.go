@@ -317,3 +317,20 @@ func (s *Store) Artifacts(ctx context.Context, pipelineName string) ([]store.Art
 	}
 	return out, nil
 }
+
+// AttemptArtifacts implements store.Store.
+func (s *Store) AttemptArtifacts(ctx context.Context, pipelineName, deliveryID string) ([]store.AttemptArtifact,
+	error,
+) {
+	out, err := scan(ctx, s.read, `SELECT attempt, name, sha256, size, type FROM attempt_artifacts
+		WHERE pipeline = ? AND delivery_id = ? ORDER BY attempt, name`, []any{pipelineName, deliveryID},
+		func(rows *sql.Rows) (store.AttemptArtifact, error) {
+			var a store.AttemptArtifact
+			err := rows.Scan(&a.Attempt, &a.Name, &a.SHA256, &a.Size, &a.Type)
+			return a, err
+		})
+	if err != nil {
+		return nil, fmt.Errorf("attempt artifacts: %w", err)
+	}
+	return out, nil
+}

@@ -59,17 +59,9 @@ func Find(name string, env func(string) (string, bool)) (Runtime, bool) {
 		}
 	}
 	path, _ := env("PATH")
-	for _, dir := range filepath.SplitList(path) {
-		if dir == "" {
-			continue
-		}
-		p := filepath.Join(dir, name)
-		if fi, err := os.Stat(p); err == nil && fi.Mode().IsRegular() && fi.Mode().Perm()&0o111 != 0 {
-			rt.Bin = p
-			return rt, true
-		}
-	}
-	return rt, false
+	var ok bool
+	rt.Bin, ok = exec.LookPath(name, path)
+	return rt, ok
 }
 
 // nodeUser is uid:gid of the node, or empty where there are no such ids.
@@ -113,7 +105,13 @@ func (l Launcher) Command(spec exec.Spec, workdir string) (*osexec.Cmd, error) {
 	if spec.Image == "" {
 		return nil, fmt.Errorf("action %s: no image", spec.Action)
 	}
-	return l.Runtime.command(context.Background(), l.Args(spec, workdir)...), nil
+	cmd := l.Runtime.command(context.Background(), l.Args(spec, workdir)...)
+	for _, kv := range spec.Env {
+		if k, _, _ := strings.Cut(kv, "="); !l.Runtime.hasEnv(k) {
+			cmd.Env = append(cmd.Env, kv)
+		}
+	}
+	return cmd, nil
 }
 
 // Kill implements exec.Launcher: it removes the container, which outlives its killed client.
@@ -137,11 +135,33 @@ func (l Launcher) Args(spec exec.Spec, workdir string) []string {
 	case l.Runtime.User != "":
 		args = append(args, "--user", l.Runtime.User)
 	}
+	for _, m := range spec.Mounts {
+		v := m.Source + ":" + m.Target
+		if m.ReadOnly {
+			v += ":ro"
+		}
+		args = append(args, "--volume", v)
+	}
 	for _, kv := range spec.Env {
+		if k, _, _ := strings.Cut(kv, "="); !l.Runtime.hasEnv(k) {
+			kv = k // by name: the value reaches the container through the CLI's environment, never its arguments
+		}
 		args = append(args, "--env", kv)
 	}
 	args = append(args, spec.Image)
 	return append(args, spec.Command...)
+}
+
+// hasEnv reports whether the CLI's own environment sets k. The action's variables the CLI does not have are passed
+// by name, their values in the CLI's environment, so values such as secrets never appear on a command line; the
+// others (HOME for an agent's sandbox) are passed inline, so the CLI keeps its own.
+func (r Runtime) hasEnv(k string) bool {
+	for _, kv := range r.Env {
+		if strings.HasPrefix(kv, k+"=") {
+			return true
+		}
+	}
+	return false
 }
 
 // Name is the container name of the process whose working directory is workdir: unique per process, so a killed

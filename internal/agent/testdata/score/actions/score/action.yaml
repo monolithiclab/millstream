@@ -1,0 +1,15 @@
+name: lab/score-listing
+version: 1.0.0
+description: Scores a real estate listing for renovation potential
+kind: agent
+input: { type: object, properties: { url: { type: string } }, required: [url] }
+output:
+  type: object
+  properties: { score: { type: integer, minimum: 0, maximum: 100 }, reason: { type: string } }
+  required: [score, reason]
+runtime:
+  agent:
+    harness: api
+    model: claude-sonnet-5-5
+    apiKeySecret: anthropicKey
+    network: [api.anthropic.com]

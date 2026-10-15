@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 
@@ -31,6 +32,13 @@ type Environment struct {
 	Prices map[string]Price
 	// AllowUnsandboxed is agents.allowUnsandboxed: agents may run without a container sandbox.
 	AllowUnsandboxed bool
+	// AgentImage is agents.image: the image the agent sandbox runs (spec section 7.3). The adapter is mounted
+	// into it, so it needs no Millstream of its own, only what the harness needs (CA certificates; the claude
+	// CLI for claude-code). Empty means no sandbox can run.
+	AgentImage string
+	// AgentBinary is agents.linuxBinary: a Linux build of millstream for the sandbox's platform, mounted into it as
+	// the adapter. Relative to the environment file; empty means the running binary, on Linux only.
+	AgentBinary string
 }
 
 // Price is a model's price per million tokens, in US dollars.
@@ -56,6 +64,9 @@ func LoadEnvironment(path string, required bool) (*Environment, error) {
 	env, err := ParseEnvironment(data)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	if env.AgentBinary != "" && !filepath.IsAbs(env.AgentBinary) {
+		env.AgentBinary = filepath.Join(filepath.Dir(path), env.AgentBinary)
 	}
 	return env, nil
 }
@@ -172,8 +183,17 @@ func readAgents(f *fields, env *Environment) error {
 	if err != nil {
 		return err
 	}
-	if err := af.allow("allowUnsandboxed"); err != nil {
+	if err := af.allow("allowUnsandboxed", "image", "linuxBinary"); err != nil {
 		return err
 	}
-	return optional(af, "allowUnsandboxed", &env.AllowUnsandboxed, boolean)
+	for _, err := range []error{
+		optional(af, "allowUnsandboxed", &env.AllowUnsandboxed, boolean),
+		optional(af, "image", &env.AgentImage, nonEmptyStr),
+		optional(af, "linuxBinary", &env.AgentBinary, nonEmptyStr),
+	} {
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }

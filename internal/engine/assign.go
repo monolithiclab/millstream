@@ -10,8 +10,10 @@ import (
 	"maps"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 
+	"github.com/monolithiclab/millstream/internal/agent"
 	"github.com/monolithiclab/millstream/internal/expr"
 	"github.com/monolithiclab/millstream/internal/ids"
 	"github.com/monolithiclab/millstream/internal/node"
@@ -25,8 +27,8 @@ import (
 
 // Error classes of deliveries the engine fails at dispatch.
 const (
-	// ClassUnsupported: the step's action is a builtin, or a kind this build cannot run yet (review arrives in M3,
-	// agent actions with the agent adapter), or it needs a runtime this machine lacks. Never retried.
+	// ClassUnsupported: the step's action is a builtin, or a kind this build cannot run yet (review arrives in M3),
+	// or it needs a runtime this machine lacks. Never retried.
 	ClassUnsupported = "unsupported"
 	// ClassConfig: the step's config does not interpolate, a secret is unset, or the action does not resolve.
 	// Never retried (spec section 5.5).
@@ -37,7 +39,13 @@ const (
 	// ClassEngine: the engine could not prepare the delivery (its revision's package is not loaded, a store read
 	// failed). Retried.
 	ClassEngine = "engine"
+	// ClassSandbox: an agent step has no container sandbox to run in and the environment file does not allow it to
+	// run without one (spec section 7.3). Never retried.
+	ClassSandbox = "sandbox"
 )
+
+// AgentBinaryPath is where a sandbox container sees the millstream binary that runs the agent adapter.
+const AgentBinaryPath = "/millstream"
 
 // envPassed are the variables of the engine's environment an action process receives; nothing else is passed.
 var envPassed = []string{"PATH", "HOME", "TMPDIR"}
@@ -62,6 +70,7 @@ type actionKey struct{ hash, ref string }
 type resolvedAction struct {
 	a             *pipeline.Action
 	dir           string // the action directory on disk
+	pkgDir        string // the package directory on disk
 	digest        string
 	input, config *schema.Schema // the action's schemas, nil when it declares none
 	err           error
@@ -121,10 +130,15 @@ func (e *Engine) assign(ctx context.Context, l store.Lease) (node.Assignment, er
 		Action: act.a.Name, Version: act.a.Version, Kind: act.a.Kind, Digest: act.digest,
 		Command: slices.Clone(act.a.Command), Lifecycle: act.a.Lifecycle, Config: config, Vars: run.Vars,
 	}
-	if act.a.Kind == pipeline.KindContainer {
+	switch act.a.Kind {
+	case pipeline.KindContainer:
 		// A container gets no variable of the engine's environment: the host's PATH and HOME mean nothing in it.
 		spec.Image, spec.Network = act.a.Pin, act.a.Network
-	} else {
+	case pipeline.KindAgent:
+		if err := e.agentSpec(&spec, act, rev.p.Secrets, secrets, l); err != nil {
+			return node.Assignment{}, err
+		}
+	default:
 		spec.Dir, spec.Env = act.dir, e.processEnv()
 	}
 	return node.Assignment{
@@ -184,11 +198,12 @@ func resolve(r pipeline.ActionResolver, pkg *pipeline.Package, ref string) *reso
 	case a.Builtin: // runBuiltin runs builtins before assign is reached; a resolver may still return one
 		return &resolvedAction{err: dispatchErr(ClassUnsupported, false,
 			"the %s builtin runs in the engine, never on a node", a.Name)}
-	case a.Kind != pipeline.KindExec && a.Kind != pipeline.KindContainer:
+	case a.Kind != pipeline.KindExec && a.Kind != pipeline.KindContainer && a.Kind != pipeline.KindAgent:
 		return &resolvedAction{err: dispatchErr(ClassUnsupported, false,
-			"action %s is of kind %s: this build runs exec and container actions only", ref, a.Kind)}
+			"action %s is of kind %s: this build runs exec, container and agent actions only", ref, a.Kind)}
 	}
-	ra := &resolvedAction{a: a, dir: filepath.Join(pkg.Dir, filepath.FromSlash(a.Dir)), digest: digest(pkg, a.Dir)}
+	ra := &resolvedAction{a: a, dir: filepath.Join(pkg.Dir, filepath.FromSlash(a.Dir)), pkgDir: pkg.Dir,
+		digest: digest(pkg, a.Dir)}
 	if a.Kind == pipeline.KindContainer {
 		ra.digest = a.ImageDigest // the image is the action's content
 	}
@@ -246,4 +261,63 @@ func (e *Engine) processEnv() []string {
 		}
 	}
 	return env
+}
+
+// agentSpec makes spec run the agent adapter for an agent action (spec section 7.3): millstream agent in the
+// sandbox container when one is configured, with the binary and the package mounted read-only and the manifest's
+// network policy; else as a child process when the environment file allows it, logged at every start; else the
+// delivery fails, not retried. The adapter receives the pipeline's secrets in its environment, for redaction and the
+// API key, and the record/replay variables of the engine's.
+func (e *Engine) agentSpec(spec *exec.Spec, act *resolvedAction, names []string, secrets map[string]string,
+	l store.Lease,
+) error {
+	ag := e.opts.Agents
+	args := []string{"agent", "--package", act.pkgDir, "--action", act.a.Ref}
+	var env []string
+	for _, name := range names {
+		args = append(args, "--secret", name)
+		env = append(env, pipeline.SecretEnv(name)+"="+secrets[name])
+	}
+	if price, ok := ag.Prices[act.a.Agent.Model]; ok {
+		args = append(args, "--price-in", strconv.FormatFloat(price.InPerMtok, 'f', -1, 64),
+			"--price-out", strconv.FormatFloat(price.OutPerMtok, 'f', -1, 64))
+	}
+	mode, _ := e.opts.Env(agent.EnvHarnessMode)
+	dir, _ := e.opts.Env(agent.EnvHarnessDir)
+	if dir != "" {
+		abs, err := filepath.Abs(dir) // the adapter does not run in the engine's working directory
+		if err != nil {
+			return dispatchErr(ClassConfig, false, "%s: %w", agent.EnvHarnessDir, err)
+		}
+		dir = abs
+		env = append(env, agent.EnvHarnessDir+"="+dir)
+	}
+	if mode != "" {
+		env = append(env, agent.EnvHarnessMode+"="+mode)
+	}
+	switch {
+	case ag.Sandbox != nil:
+		spec.Kind, spec.Image, spec.Network = pipeline.KindContainer, ag.Sandbox.Image, len(act.a.Agent.Network) > 0
+		spec.Command = append([]string{AgentBinaryPath}, args...)
+		spec.Mounts = []exec.Mount{
+			{Source: ag.Sandbox.Binary, Target: AgentBinaryPath, ReadOnly: true},
+			{Source: act.pkgDir, Target: act.pkgDir, ReadOnly: true},
+		}
+		if dir != "" {
+			spec.Mounts = append(spec.Mounts, exec.Mount{Source: dir, Target: dir, ReadOnly: mode != agent.ModeRecord})
+		}
+		// The root file system is read-only: HOME is the container's private /tmp, where a harness keeps its state.
+		spec.Env = append([]string{"HOME=/tmp"}, env...)
+	case ag.AllowUnsandboxed && ag.Executable != "":
+		e.log.Warn("agent running without a sandbox: agents.allowUnsandboxed is true in the environment file",
+			"pipeline", l.Pipeline, "step", l.Step, "deliveryId", l.DeliveryID)
+		spec.Kind, spec.Dir = pipeline.KindExec, act.dir
+		spec.Command = append([]string{ag.Executable}, args...)
+		spec.Env = append(e.processEnv(), env...)
+	default:
+		return dispatchErr(ClassSandbox, false, "agent step %s needs a container sandbox (a container runtime, "+
+			"agents.image, and off Linux a Linux build of millstream in agents.linuxBinary), or "+
+			"agents.allowUnsandboxed: true in the environment file", l.Step)
+	}
+	return nil
 }

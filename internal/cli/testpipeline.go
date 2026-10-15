@@ -91,7 +91,7 @@ func (c TestPipelineCmd) Run(rt *Runtime) error {
 		if tc.Name == "" {
 			tc.Name = file
 		}
-		problems, err := c.runTest(rt, pkg, tc, actions, launchers(rt, env))
+		problems, err := c.runTest(rt, pkg, tc, actions, env)
 		if err != nil {
 			problems = append(problems, err.Error())
 		}
@@ -114,7 +114,7 @@ func (c TestPipelineCmd) Run(rt *Runtime) error {
 
 // runTest runs one test and returns its failed expectations.
 func (c TestPipelineCmd) runTest(rt *Runtime, pkg *pipeline.Package, tc pipelineTest,
-	actions pipeline.ActionResolver, launch map[string]exec.Launcher,
+	actions pipeline.ActionResolver, env *pipeline.Environment,
 ) ([]string, error) {
 	p := pkg.Pipeline
 	trigger := tc.Trigger
@@ -149,7 +149,7 @@ func (c TestPipelineCmd) runTest(rt *Runtime, pkg *pipeline.Package, tc pipeline
 	}
 	defer func() { _ = os.RemoveAll(dir) }()
 	e, err := engine.New(engine.Options{Store: st, Env: rt.Env, NoCron: true, Stubs: stubs,
-		Artifacts: artifacts.New(dir), Resolver: actions})
+		Artifacts: artifacts.New(dir), Resolver: actions, Agents: agents(rt, env)})
 	if err != nil {
 		return nil, err
 	}
@@ -162,7 +162,7 @@ func (c TestPipelineCmd) runTest(rt *Runtime, pkg *pipeline.Package, tc pipeline
 	if err != nil {
 		return nil, err
 	}
-	pool := exec.NewPool(exec.PoolOptions{Options: exec.Options{Launchers: launch}})
+	pool := exec.NewPool(exec.PoolOptions{Options: exec.Options{Launchers: launchers(rt, env)}})
 	defer func() { _ = pool.Close() }()
 	n, err := node.New(e, node.Options{Owner: "test", Slots: 4, Pool: pool, PullInterval: 20 * time.Millisecond})
 	if err != nil {

@@ -1,0 +1,5 @@
+pipeline: listings
+secrets: [anthropicKey]
+triggers: { go: { manual: {} } }
+steps:
+  score: { action: ./actions/score, in: trigger.go }

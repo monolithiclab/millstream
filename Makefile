@@ -35,3 +35,8 @@ test-e2e: ## Run the end-to-end and crash suite without the test cache
 	@go test -race -count=1 ./internal/e2e/...
 
 test: test-e2e
+
+# Harness recordings are made against a fake model server, never the network.
+.PHONY: recordings
+recordings: ## Rewrite the agent harness recordings under internal/agent/testdata
+	@go test ./internal/agent -run TestRecordings -count=1 -update

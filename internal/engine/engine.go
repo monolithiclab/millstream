@@ -66,6 +66,30 @@ type Options struct {
 	Resolver pipeline.ActionResolver
 	// Artifacts is the artifact store nodes move artifacts through; nil fails every delivery that has any.
 	Artifacts *artifacts.Store
+	// Agents says how agent steps run.
+	Agents Agents
+}
+
+// Agents says how the engine runs the agent adapter of agent steps (spec section 7.3): in a container sandbox when
+// one is configured, else as a child process only when the environment file allows it.
+type Agents struct {
+	// Sandbox runs the adapter in a container; nil when no container runtime, agent image or Linux build of
+	// millstream is available.
+	Sandbox *AgentSandbox
+	// AllowUnsandboxed lets the adapter run without a sandbox, as a child process of the node running Executable
+	// (agents.allowUnsandboxed); every such start is logged.
+	AllowUnsandboxed bool
+	// Executable is the millstream binary whose agent subcommand is the adapter, outside a sandbox.
+	Executable string
+	// Prices are the environment file's model prices, handed to the adapter for the model it runs.
+	Prices map[string]pipeline.Price
+}
+
+// AgentSandbox is the container the adapter runs in: Image (agents.image), with Binary, a Linux build of millstream,
+// mounted read-only at AgentBinaryPath, and the package mounted read-only at its own path.
+type AgentSandbox struct {
+	Image  string
+	Binary string
 }
 
 // Stub is the fixed outcome of a stubbed step: its outputs, or an action error when Err is set.

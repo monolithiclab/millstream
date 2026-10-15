@@ -158,6 +158,9 @@ func (c *checker) checkStep(name string, actions ActionResolver) {
 			c.warnf(joinPath(at, "action"), "image %s (%s) is not pinned in %s: run millstream lock", a.Image,
 				a.ImageDigest, LockFile)
 		}
+		if a.Agent != nil {
+			c.checkAgent(joinPath(at, "action"), a)
+		}
 	}
 
 	cfgAt := joinPath(at, "config")
@@ -174,6 +177,18 @@ func (c *checker) checkStep(name string, actions ActionResolver) {
 		c.checkConfigSchema(a, cfg, skipped, cfgAt)
 	case len(s.Config) > 0:
 		c.warnf(cfgAt, "action %s declares no config schema: config is not checked", a.Ref)
+	}
+}
+
+// checkAgent checks what an agent action needs from the pipeline: its API key secret declared, and a network to
+// reach its model from the sandbox.
+func (c *checker) checkAgent(at string, a *Action) {
+	if name := a.Agent.APIKeySecret; name != "" && !slices.Contains(c.p.Secrets, name) {
+		c.errorf(at, "action %s reads its API key from secret %s, which is not declared under secrets", a.Ref, name)
+	}
+	if len(a.Agent.Network) == 0 {
+		c.warnf(at, "action %s declares no runtime.agent.network: in its sandbox it cannot reach its model; list "+
+			"the model's endpoint there (api.anthropic.com)", a.Ref)
 	}
 }
 

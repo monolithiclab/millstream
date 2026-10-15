@@ -101,16 +101,20 @@ type Metric struct {
 	Labels   map[string]string `json:"labels,omitempty"`
 }
 
-// Done ends a delivery successfully: its staged outputs are published.
+// Done ends a delivery successfully: its staged outputs are published. Artifacts are files of the attempt itself,
+// such as an agent's transcript: kept with the delivery's attempt, never carried by its outputs.
 type Done struct {
-	Delivery string `json:"delivery"`
+	Delivery  string     `json:"delivery"`
+	Artifacts []Artifact `json:"artifacts,omitempty"`
 }
 
-// Error ends a delivery in failure; Retryable asks for a retry with backoff instead of a dead letter.
+// Error ends a delivery in failure; Retryable asks for a retry with backoff instead of a dead letter. Artifacts are
+// files of the failed attempt, kept with it as on done, so a failure can be investigated.
 type Error struct {
-	Delivery  string `json:"delivery"`
-	Message   string `json:"message"`
-	Retryable bool   `json:"retryable"`
+	Delivery  string     `json:"delivery"`
+	Message   string     `json:"message"`
+	Retryable bool       `json:"retryable"`
+	Artifacts []Artifact `json:"artifacts,omitempty"`
 }
 
 func (Hello) Type() string    { return TypeHello }

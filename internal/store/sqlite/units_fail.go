@@ -3,6 +3,7 @@ package sqlite
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"time"
 	"unicode/utf8"
 
@@ -13,10 +14,16 @@ import (
 // Fail is the Fail unit (spec section 5.11): fencing check, then a retry after backoff while attempts remain for
 // a retryable error, or dead with its dead letter.
 func (s *Store) Fail(ctx context.Context, f store.FailRequest) (store.DeliveryState, error) {
+	if err := validAttemptArtifacts(f.Artifacts); err != nil {
+		return "", fmt.Errorf("fail: %w", err)
+	}
 	var state store.DeliveryState
 	err := s.submit(ctx, unitFail, func(w *wtx) error {
 		d, err := w.leased(f.LeaseRef, f.Attempt)
 		if err != nil {
+			return err
+		}
+		if err := w.keepAttemptArtifacts(d, f.Artifacts); err != nil {
 			return err
 		}
 		run, err := w.run(d.pipeline, d.runID)

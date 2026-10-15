@@ -18,7 +18,8 @@
 //   - lateMetric: answers done, then sends a metric for the same delivery
 //   - artifact: writes the payload's "files" (path to content) in MILLSTREAM_WORKDIR, creates its "links" (path to
 //     target) as symbolic links, then emits, with the payload's "emit" list as artifacts, an output mapping each
-//     input artifact's name to its content
+//     input artifact's name to its content, and answers done with the payload's "attempt" list as the attempt's
+//     artifacts, or error with them when the payload's "fail" is true
 //
 // It lives under testdata so the module's ./... patterns skip it; exectest builds it.
 package main
@@ -170,7 +171,9 @@ func artifacts(w *protocol.Writer, it protocol.Item) error {
 	var in struct {
 		Files map[string]string   `json:"files"`
 		Links map[string]string   `json:"links"`
-		Emit  []protocol.Artifact `json:"emit"`
+		Emit    []protocol.Artifact `json:"emit"`
+		Attempt []protocol.Artifact `json:"attempt"`
+		Fail    bool                `json:"fail"`
 	}
 	if err := json.Unmarshal(it.Payload, &in); err != nil {
 		return err
@@ -205,7 +208,10 @@ func artifacts(w *protocol.Writer, it protocol.Item) error {
 	if err := w.Write(protocol.Emit{Delivery: it.Delivery, Payload: out, Artifacts: in.Emit}); err != nil {
 		return err
 	}
-	return w.Write(protocol.Done{Delivery: it.Delivery})
+	if in.Fail {
+		return w.Write(protocol.Error{Delivery: it.Delivery, Message: "failed", Retryable: true, Artifacts: in.Attempt})
+	}
+	return w.Write(protocol.Done{Delivery: it.Delivery, Artifacts: in.Attempt})
 }
 
 // hang blocks for good; a bare select{} would trip the runtime's deadlock detector and exit.

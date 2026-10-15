@@ -1,0 +1,36 @@
+{
+  "key": "425937178623f52a318b918531a0d6d01ac8878bbf294c799ecee54b33745353",
+  "harness": "api",
+  "model": "claude-sonnet-5-5",
+  "response": {
+    "text": "```json\n{\"score\": 15, \"reason\": \"Recently renovated.\"}\n```",
+    "tokensIn": 150,
+    "tokensOut": 25,
+    "turns": 1,
+    "transcript": [
+      {
+        "role": "user",
+        "text": "Score the listing at https://example.com/listings/2 in Lyon for renovation potential, from 0 to 100.\n\n\nEnd your answer with a fenced ```json block holding only your result, a JSON value valid against this JSON Schema:\n\n```\n{\"properties\":{\"reason\":{\"type\":\"string\"},\"score\":{\"maximum\":100,\"minimum\":0,\"type\":\"integer\"}},\"required\":[\"score\",\"reason\"],\"type\":\"object\"}\n```\n"
+      },
+      {
+        "role": "assistant",
+        "text": "```json\n{\"score\": 15, \"reason\": \"Recently renovated.\"}\n```",
+        "data": {
+          "content": [
+            {
+              "text": "```json\n{\"score\": 15, \"reason\": \"Recently renovated.\"}\n```",
+              "type": "text"
+            }
+          ],
+          "id": "msg_test",
+          "role": "assistant",
+          "type": "message",
+          "usage": {
+            "input_tokens": 150,
+            "output_tokens": 25
+          }
+        }
+      }
+    ]
+  }
+}

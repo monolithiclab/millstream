@@ -15,6 +15,27 @@ func (fakeRegistry) Resolve(_ *Package, ref string) (*Action, error) {
 	return &Action{Ref: ref, Name: "lab/x", Kind: KindContainer}, nil
 }
 
+// agentWith is an api agent manifest with an output schema and one more runtime.agent entry.
+func agentWith(entry string) string {
+	return "name: x\nkind: agent\noutput: { type: object }\nruntime:\n  agent:\n    harness: api\n    model: m\n    " +
+		entry + "\n"
+}
+
+// TestAgentUnavailable: what a later milestone brings is unavailable, which check reports as a warning.
+func TestAgentUnavailable(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	writeTree(t, dir, [][2]string{{"pipeline.yaml", minimalPipeline}, {"actions/x/action.yaml", agentWith("mcp: [x]")},
+		{"actions/x/prompt.md", "p"}})
+	pkg, err := Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := (Resolver{}).Resolve(pkg, "./actions/x"); !errors.Is(err, ErrUnavailable) {
+		t.Fatalf("err = %v", err)
+	}
+}
+
 func TestResolve(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
@@ -34,7 +55,10 @@ runtime: { exec: { command: [score, --fast] } }
 		{"actions/path/action.yaml", "name: p\nkind: exec\nruntime: { exec: { command: [python3, main.py] } }\n"},
 		{"actions/script/action.yaml", "name: s\nkind: exec\nruntime: { exec: { command: [./run.sh] } }\n"},
 		{"actions/script/run.sh", "#!/bin/sh\n"},
-		{"actions/agent/action.yaml", "name: g\nkind: agent\n"},
+		{"actions/agent/action.yaml", "name: g\nkind: agent\noutput: { type: object }\n" +
+			"runtime: { agent: { harness: claude-code, model: m, prompt: prompts/score.md, tools: [WebFetch], " +
+			"maxCostUsd: 0.5 } }\n"},
+		{"actions/agent/prompts/score.md", "Score it."},
 		{"actions/container/action.yaml", "name: c\nkind: container\nlifecycle: perItem\n" +
 			"runtime: { container: { image: report:dev, network: [api.example.com] } }\n"},
 	})
@@ -62,7 +86,11 @@ runtime: { exec: { command: [score, --fast] } }
 			Ref: "./actions/script", Name: "s", Kind: KindExec, Lifecycle: LifecycleLong, Dir: "actions/script",
 			Command: []string{filepath.Join(dir, "actions", "script", "run.sh")},
 		}},
-		{"./actions/agent", Action{Ref: "./actions/agent", Name: "g", Kind: KindAgent, Lifecycle: LifecyclePerItem, Dir: "actions/agent"}},
+		{"./actions/agent", Action{Ref: "./actions/agent", Name: "g", Kind: KindAgent, Lifecycle: LifecyclePerItem,
+			Dir: "actions/agent", Output: []byte(`{"type":"object"}` + "\n"), Agent: &AgentRuntime{
+				Harness: HarnessClaudeCode, Model: "m", Prompt: "actions/agent/prompts/score.md", Tools: []string{"WebFetch"},
+				MaxTurns: DefaultMaxTurns, MaxCostUSD: 0.5,
+			}}},
 		{"./actions/container", Action{
 			Ref: "./actions/container", Name: "c", Kind: KindContainer, Lifecycle: LifecyclePerItem,
 			Dir: "actions/container", Image: "report:dev", Pin: idReport, ImageDigest: idReport, Network: true,
@@ -128,12 +156,39 @@ func TestResolveErrors(t *testing.T) {
 		{"command outside the package", "./actions/x",
 			"name: x\nkind: exec\nruntime: { exec: { command: [../../../outside] } }\n", nil,
 			"../../../outside leaves the package"},
-		{"schema file missing", "./actions/x", "name: x\nkind: agent\ninput: { $ref: in.json }\n", nil,
+		{"schema file missing", "./actions/x", "name: x\nkind: container\ninput: { $ref: in.json }\n", nil,
 			"input: schema file actions/x/in.json is not in the package"},
-		{"schema file invalid", "./actions/x", "name: x\nkind: agent\noutput: { $ref: out.json }\n",
+		{"schema file invalid", "./actions/x", "name: x\nkind: container\noutput: { $ref: out.json }\n",
 			[][2]string{{"actions/x/out.json", "{"}}, "output: schema file actions/x/out.json"},
-		{"schema does not compile", "./actions/x", "name: x\nkind: agent\nconfig: { type: 3 }\n", nil, "config: compile schema"},
-		{"remote ref refused", "./actions/x", "name: x\nkind: agent\nconfig: { properties: { a: { $ref: 'https://x/s.json' } } }\n",
+		{"schema does not compile", "./actions/x", "name: x\nkind: container\nconfig: { type: 3 }\n", nil, "config: compile schema"},
+		{"agent without runtime", "./actions/x", "name: x\nkind: agent\n", nil, "an agent action needs runtime.agent"},
+		{"agent unknown key", "./actions/x", agentWith("temperature: 1"), nil, "runtime.agent.temperature: unknown key"},
+		{"agent no harness", "./actions/x", "name: x\nkind: agent\nruntime: { agent: { model: m } }\n", nil,
+			"runtime.agent.harness: is required"},
+		{"agent bad harness", "./actions/x", "name: x\nkind: agent\nruntime: { agent: { harness: gpt, model: m } }\n",
+			nil, "runtime.agent.harness: must be one of claude-code, api"},
+		{"agent empty model", "./actions/x", "name: x\nkind: agent\nruntime: { agent: { harness: api, model: \"\" } }\n",
+			nil, "runtime.agent.model: must be a non-empty string"},
+		{"agent tools", "./actions/x", agentWith("tools: WebFetch"), nil, "runtime.agent.tools: must be a list"},
+		{"agent max turns", "./actions/x", agentWith("maxTurns: 0"), nil, "runtime.agent.maxTurns: must be a positive"},
+		{"agent max turns float", "./actions/x", agentWith("maxTurns: 1.5"), nil, "runtime.agent.maxTurns"},
+		{"agent max cost", "./actions/x", agentWith("maxCostUsd: 0"), nil, "runtime.agent.maxCostUsd: must be a positive"},
+		{"agent max cost string", "./actions/x", agentWith("maxCostUsd: cheap"), nil, "runtime.agent.maxCostUsd"},
+		{"agent bad provider", "./actions/x", agentWith("provider: azure"), nil, "runtime.agent.provider: must be one of"},
+		{"provider on claude-code", "./actions/x",
+			"name: x\nkind: agent\nruntime: { agent: { harness: claude-code, model: m, provider: openai } }\n", nil,
+			"provider and baseUrl configure the api harness only"},
+		{"openai without base", "./actions/x", agentWith("provider: openai"), nil, "the openai provider needs"},
+		{"base not a URL", "./actions/x", agentWith("baseUrl: api.example.com"), nil, "must be an http or https URL"},
+		{"prompt missing", "./actions/x", agentWith(""), nil, "runtime.agent.prompt: actions/x/prompt.md is not in the package"},
+		{"prompt outside", "./actions/x", agentWith("prompt: ../../../p.md"), nil, "../../../p.md leaves the package"},
+		{"no output schema", "./actions/x", "name: x\nkind: agent\nruntime: { agent: { harness: api, model: m } }\n",
+			[][2]string{{"actions/x/prompt.md", "p"}}, "an agent action declares its output schema"},
+		{"mcp", "./actions/x", agentWith("mcp: [github]"), [][2]string{{"actions/x/prompt.md", "p"}},
+			"MCP servers arrive in a later milestone"},
+		{"api tools", "./actions/x", agentWith("tools: [WebFetch]"), [][2]string{{"actions/x/prompt.md", "p"}},
+			"api harness tools arrive later"},
+		{"remote ref refused", "./actions/x", "name: x\nkind: container\nconfig: { properties: { a: { $ref: 'https://x/s.json' } } }\n",
 			nil, "is refused"},
 	}
 	for _, tt := range tests {
