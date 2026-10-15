@@ -24,13 +24,8 @@ func agentWith(entry string) string {
 // TestAgentUnavailable: what a later milestone brings is unavailable, which check reports as a warning.
 func TestAgentUnavailable(t *testing.T) {
 	t.Parallel()
-	dir := t.TempDir()
-	writeTree(t, dir, [][2]string{{"pipeline.yaml", minimalPipeline}, {"actions/x/action.yaml", agentWith("mcp: [x]")},
-		{"actions/x/prompt.md", "p"}})
-	pkg, err := Load(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
+	pkg := memPackage(t, [][2]string{{"pipeline.yaml", minimalPipeline}, {"actions/x/action.yaml", agentWith("mcp: [x]")},
+		{"actions/x/prompt.md", "p"}}...)
 	if _, err := (Resolver{}).Resolve(pkg, "./actions/x"); !errors.Is(err, ErrUnavailable) {
 		t.Fatalf("err = %v", err)
 	}
@@ -38,8 +33,7 @@ func TestAgentUnavailable(t *testing.T) {
 
 func TestResolve(t *testing.T) {
 	t.Parallel()
-	dir := t.TempDir()
-	writeTree(t, dir, [][2]string{
+	pkg := memPackage(t, [][2]string{
 		{"pipeline.yaml", minimalPipeline},
 		{"actions/a/action.yaml", `name: lab/a
 version: 1.0.0
@@ -61,11 +55,7 @@ runtime: { exec: { command: [score, --fast] } }
 		{"actions/agent/prompts/score.md", "Score it."},
 		{"actions/container/action.yaml", "name: c\nkind: container\nlifecycle: perItem\n" +
 			"runtime: { container: { image: report:dev, network: [api.example.com] } }\n"},
-	})
-	pkg, err := Load(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
+	}...)
 	r := Resolver{Platform: "plan9-mips", Images: testImages}
 	tests := []struct {
 		ref  string
@@ -76,7 +66,7 @@ runtime: { exec: { command: [score, --fast] } }
 			Ref: "./actions/a", Name: "lab/a", Version: "1.0.0", Description: "An action", Kind: KindExec,
 			Effects: EffectsExternal, Lifecycle: LifecycleLong, Dir: "actions/a",
 			Input: []byte(`{"required":["url"],"type":"object"}` + "\n"), Output: []byte(`{"type":"object"}` + "\n"),
-			Command: []string{filepath.Join(dir, "actions", "a", "bin", "plan9-mips", "score"), "--fast"},
+			Command: []string{filepath.Join(pkg.Dir, "actions", "a", "bin", "plan9-mips", "score"), "--fast"},
 		}},
 		{"./actions/path/", Action{
 			Ref: "./actions/path/", Name: "p", Kind: KindExec, Lifecycle: LifecycleLong, Dir: "actions/path",
@@ -84,7 +74,7 @@ runtime: { exec: { command: [score, --fast] } }
 		}},
 		{"./actions/script", Action{
 			Ref: "./actions/script", Name: "s", Kind: KindExec, Lifecycle: LifecycleLong, Dir: "actions/script",
-			Command: []string{filepath.Join(dir, "actions", "script", "run.sh")},
+			Command: []string{filepath.Join(pkg.Dir, "actions", "script", "run.sh")},
 		}},
 		{"./actions/agent", Action{Ref: "./actions/agent", Name: "g", Kind: KindAgent, Lifecycle: LifecyclePerItem,
 			Dir: "actions/agent", Output: []byte(`{"type":"object"}` + "\n"), Agent: &AgentRuntime{
@@ -194,14 +184,9 @@ func TestResolveErrors(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			dir := t.TempDir()
 			files := [][2]string{{"pipeline.yaml", minimalPipeline}, {"actions/x/action.yaml", tt.manifest}}
-			writeTree(t, dir, append(files, tt.extra...))
-			pkg, err := Load(dir)
-			if err != nil {
-				t.Fatal(err)
-			}
-			_, err = Resolver{}.Resolve(pkg, tt.ref)
+			pkg := memPackage(t, append(files, tt.extra...)...)
+			_, err := Resolver{}.Resolve(pkg, tt.ref)
 			if err == nil || !strings.Contains(err.Error(), tt.want) {
 				t.Fatalf("err = %v, want %q", err, tt.want)
 			}

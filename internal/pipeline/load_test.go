@@ -77,13 +77,7 @@ func TestLoadHash(t *testing.T) {
 	}
 	hashOf := func(files [][2]string) string {
 		t.Helper()
-		dir := t.TempDir()
-		writeTree(t, dir, files)
-		pkg, err := Load(dir)
-		if err != nil {
-			t.Fatalf("Load: %v", err)
-		}
-		return pkg.Hash
+		return memPackage(t, files...).Hash
 	}
 	want := hashOf(base)
 	reversed := [][2]string{base[2], base[1], base[0]}
@@ -174,4 +168,18 @@ func TestActionDigest(t *testing.T) {
 	if pkg.ActionDigest("actions/score") == d {
 		t.Fatal("digest unchanged by a file of the action")
 	}
+}
+
+// memPackage builds a package from files (slash paths) in memory, as Load builds one from what it reads: the tests
+// of what follows the reading need no directory.
+func memPackage(t *testing.T, files ...[2]string) *Package {
+	t.Helper()
+	pkg := &Package{Dir: "/pkg", PipelineFile: FileName, Files: map[string][]byte{}}
+	for _, f := range files {
+		pkg.Files[f[0]] = []byte(f[1])
+	}
+	if err := pkg.parse(); err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	return pkg
 }

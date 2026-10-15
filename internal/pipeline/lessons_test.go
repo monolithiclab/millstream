@@ -1,8 +1,6 @@
 package pipeline
 
 import (
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -109,13 +107,8 @@ func TestCheckLessons(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			dir := t.TempDir()
-			writeTree(t, dir, append(append([][2]string{{"pipeline.yaml", checkHeader + "steps:\n" + tt.yaml}},
-				checkActions...), tt.files...))
-			pkg, err := Load(dir)
-			if err != nil {
-				t.Fatal(err)
-			}
+			pkg := memPackage(t, append(append([][2]string{{"pipeline.yaml", checkHeader + "steps:\n" + tt.yaml}},
+				checkActions...), tt.files...)...)
 			var lessons []string
 			diags := Check(pkg, Resolver{}, envOf(nil), CheckOptions{LessonsMaxTokens: tt.max})
 			for _, d := range diags {
@@ -138,18 +131,10 @@ func TestCheckLessons(t *testing.T) {
 // TestLessonsChangeTheRevision: a lessons file is part of the package hash, so editing it makes a new revision.
 func TestLessonsChangeTheRevision(t *testing.T) {
 	t.Parallel()
-	dir := t.TempDir()
-	writeTree(t, dir, [][2]string{{"pipeline.yaml", minimalPipeline}, {"lessons/x.yaml", lessonsYAML}})
-	before, err := Load(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
+	before := memPackage(t, [2]string{"pipeline.yaml", minimalPipeline}, [2]string{"lessons/x.yaml", lessonsYAML})
 	edited := strings.Replace(lessonsYAML, "score 0", "score 1", 1)
-	if err := os.WriteFile(filepath.Join(dir, "lessons", "x.yaml"), []byte(edited), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	after, err := Load(dir)
-	if err != nil || after.Hash == before.Hash {
-		t.Fatalf("hash unchanged after a lessons edit (%v)", err)
+	after := memPackage(t, [2]string{"pipeline.yaml", minimalPipeline}, [2]string{"lessons/x.yaml", edited})
+	if after.Hash == before.Hash {
+		t.Fatal("hash unchanged after a lessons edit")
 	}
 }

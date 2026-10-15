@@ -42,13 +42,7 @@ runtime: { exec: { command: [score] } }
 
 func checkPackage(t *testing.T, pipelineYAML string) *Package {
 	t.Helper()
-	dir := t.TempDir()
-	writeTree(t, dir, append([][2]string{{"pipeline.yaml", pipelineYAML}}, checkActions...))
-	pkg, err := Load(dir)
-	if err != nil {
-		t.Fatalf("Load: %v", err)
-	}
-	return pkg
+	return memPackage(t, append([][2]string{{"pipeline.yaml", pipelineYAML}}, checkActions...)...)
 }
 
 const checkHeader = "pipeline: p\ntriggers:\n  go: { manual: {} }\n"

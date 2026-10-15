@@ -53,16 +53,25 @@ func Load(path string) (*Package, error) {
 		}
 		pkg.Files[pkg.PipelineFile] = data
 	}
-	data, ok := pkg.Files[pkg.PipelineFile]
-	if !ok {
+	if _, ok := pkg.Files[pkg.PipelineFile]; !ok {
 		return nil, fmt.Errorf("load package %s: no %s", path, FileName)
 	}
-	if pkg.Pipeline, err = Parse(data); err != nil {
-		return nil, fmt.Errorf("%s: %w", filepath.Join(pkg.Dir, pkg.PipelineFile), err)
+	if err := pkg.parse(); err != nil {
+		return nil, err
 	}
-	pkg.Hash = hashFiles(pkg.Files)
-	defaultLessons(pkg)
 	return pkg, nil
+}
+
+// parse parses the pipeline file of a package whose Dir, PipelineFile and Files are read, and sets Pipeline and
+// Hash.
+func (p *Package) parse() error {
+	var err error
+	if p.Pipeline, err = Parse(p.Files[p.PipelineFile]); err != nil {
+		return fmt.Errorf("%s: %w", filepath.Join(p.Dir, p.PipelineFile), err)
+	}
+	p.Hash = hashFiles(p.Files)
+	defaultLessons(p)
+	return nil
 }
 
 // LoadAction reads a lone action directory, outside any package, as a package of that directory alone: Dir is its
