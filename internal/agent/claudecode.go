@@ -26,6 +26,13 @@ type ClaudeCode struct {
 	Env []string
 	// Dir is the CLI's working directory.
 	Dir string
+	// cli runs the CLI; nil runs it as a process. Tests answer in-process through it.
+	cli runner
+}
+
+// runner runs a CLI invocation as cmd describes it (arguments, stdin, environment, output writers) and waits for it.
+type runner interface {
+	Run(cmd *osexec.Cmd) error
 }
 
 // Args are the CLI arguments of req.
@@ -63,6 +70,14 @@ type claudeResult struct {
 	Errors []string `json:"errors"`
 }
 
+// run runs the CLI invocation cmd and waits for it.
+func (c ClaudeCode) run(cmd *osexec.Cmd) error {
+	if c.cli != nil {
+		return c.cli.Run(cmd)
+	}
+	return cmd.Run()
+}
+
 // Run implements Harness.
 func (c ClaudeCode) Run(ctx context.Context, req Request) (Response, error) {
 	cmd := osexec.CommandContext(ctx, c.Bin, c.Args(req)...) // #nosec G204 -- the claude CLI, with arguments we build
@@ -71,7 +86,7 @@ func (c ClaudeCode) Run(ctx context.Context, req Request) (Response, error) {
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &limitedWriter{w: &stdout, n: maxHarnessOutput}
 	cmd.Stderr = &limitedWriter{w: &stderr, n: 64 << 10}
-	runErr := cmd.Run()
+	runErr := c.run(cmd)
 
 	resp := Response{Transcript: []Turn{{Role: "user", Text: req.Prompt}}}
 	var result *claudeResult

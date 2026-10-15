@@ -2,36 +2,36 @@ package millstream
 
 import (
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 )
 
-// annotate reads its input artifact page.html, writes notes.txt from it and attaches it.
-func annotate(c Context, _ map[string]any) ([]string, error) {
-	in, err := c.InputArtifact("page.html")
-	if err != nil {
-		return nil, err
+// annotate reads its input artifact page.html, writes notes.txt from it in workdir and attaches it.
+func annotate(workdir string) func(Context, map[string]any) ([]string, error) {
+	return func(c Context, _ map[string]any) ([]string, error) {
+		in, err := c.InputArtifact("page.html")
+		if err != nil {
+			return nil, err
+		}
+		page, err := os.ReadFile(in) // #nosec G304 -- the path the SDK resolved inside the working directory
+		if err != nil {
+			return nil, err
+		}
+		out := filepath.Join(workdir, "notes.txt")
+		if err := os.WriteFile(out, append([]byte("notes on "), page...), 0o600); err != nil {
+			return nil, err
+		}
+		if err := c.Artifact("notes.txt", out); err != nil {
+			return nil, err
+		}
+		return []string{"annotated"}, nil
 	}
-	page, err := os.ReadFile(in) // #nosec G304 -- the path the SDK resolved inside the working directory
-	if err != nil {
-		return nil, err
-	}
-	out := filepath.Join(os.Getenv("MILLSTREAM_WORKDIR"), "notes.txt")
-	if err := os.WriteFile(out, append([]byte("notes on "), page...), 0o600); err != nil {
-		return nil, err
-	}
-	if err := c.Artifact("notes.txt", out); err != nil {
-		return nil, err
-	}
-	return []string{"annotated"}, nil
 }
 
-// TestArtifactRoundTrip runs an action process that reads an input artifact from the working directory and
-// attaches the file it writes: the emit names it by its path relative to the working directory.
-func TestArtifactRoundTrip(t *testing.T) {
-	t.Parallel()
+// artifactWorkdir returns a working directory holding the input artifact in/page.html that annotate reads.
+func artifactWorkdir(t *testing.T) string {
+	t.Helper()
 	dir := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(dir, "in"), 0o750); err != nil {
 		t.Fatal(err)
@@ -39,22 +39,13 @@ func TestArtifactRoundTrip(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "in", "page.html"), []byte("listing 42"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	itemLine := `{"type":"item","delivery":"dl_1","id":"it_1","payload":{},"artifacts":[{"name":"page.html","path":"in/page.html"}]}`
-	cmd := exec.Command(os.Args[0], "-test.run=^$") // #nosec G204 -- the test binary itself
-	cmd.Env = append(os.Environ(), helperEnv+"=artifact", "MILLSTREAM_WORKDIR="+dir)
-	cmd.Stdin = strings.NewReader(hello + "\n" + itemLine + "\n")
-	var stdout, stderr strings.Builder
-	cmd.Stdout, cmd.Stderr = &stdout, &stderr
-	if err := cmd.Run(); err != nil {
-		t.Fatalf("%v\nstderr:\n%s", err, stderr.String())
-	}
-	want := `{"type":"ready"}` + "\n" +
-		`{"type":"emit","delivery":"dl_1","payload":"annotated","artifacts":[{"name":"notes.txt","path":"notes.txt"}]}` + "\n" +
-		`{"type":"done","delivery":"dl_1"}` + "\n"
-	if stdout.String() != want {
-		t.Fatalf("stdout:\n%s\nwant:\n%s\nstderr:\n%s", stdout.String(), want, stderr.String())
-	}
-	if b, _ := os.ReadFile(filepath.Join(dir, "notes.txt")); string(b) != "notes on listing 42" {
+	return dir
+}
+
+// checkNotes checks the file annotate wrote in workdir.
+func checkNotes(t *testing.T, workdir string) {
+	t.Helper()
+	if b, _ := os.ReadFile(filepath.Join(workdir, "notes.txt")); string(b) != "notes on listing 42" { // #nosec G304 -- test file
 		t.Fatalf("notes.txt = %q", b)
 	}
 }

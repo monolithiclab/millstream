@@ -1,12 +1,14 @@
+//go:build e2e
+
 // Package e2e runs the millstream binary on the M1 fixture (examples/m1-fixture) the way a user does, as the M1
 // exit criterion: an end-to-end run with its designed dead letter and its replay after a fix, and the crash suite of
 // spec section 16, which kills the process at both failpoints of every atomic unit and at seeded random points,
 // reruns it on the same database and checks it reaches exactly the state of a run that never crashed.
 //
-// Behind the e2e build tag, the M2 exit criterion runs the M2 fixture (examples/m2-fixture), whose score step is an
-// agent replayed from committed recordings: a scored day, seven days replayed through a newly inserted dedupe, a day
-// replayed after a lessons edit, and the crash matrix on the agent path (go test -tags e2e). TestLiveScore reaches
-// the real claude CLI on request only.
+// The whole package is behind the e2e build tag (make test-e2e): it builds binaries and runs processes. The M2 exit
+// criterion runs the M2 fixture (examples/m2-fixture), whose score step is an agent replayed from committed
+// recordings: a scored day, seven days replayed through a newly inserted dedupe, a day replayed after a lessons edit,
+// and the crash matrix on the agent path. TestLiveScore reaches the real claude CLI on request only.
 //
 // TestMain builds the binary and the fixture's actions once, into a temporary directory: build output never lands
 // in the repository. Every test uses its own database, so the tests run in parallel.

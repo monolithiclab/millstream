@@ -6,72 +6,63 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
-	"os/exec"
+	"log/slog"
 	"strings"
 	"testing"
 )
 
-// helperEnv makes the test binary act as an action process, for the tests of Map and MapKeyed, which own the
-// process's stdio and exit status.
-const helperEnv = "MILLSTREAM_SDK_TEST_ACTION"
-
-func TestMain(m *testing.M) {
-	switch os.Getenv(helperEnv) {
-	case "map":
-		Map(score)
-		os.Exit(0)
-	case "mapKeyed":
-		MapKeyed(split)
-		os.Exit(0)
-	case "artifact":
-		Map(annotate)
-		os.Exit(0)
-	}
-	os.Exit(m.Run())
+// serveCase is a run of an action over stdio, with its exit status, its output and what its stderr holds.
+type serveCase struct {
+	name     string
+	handler  Handler
+	input    []string
+	env      map[string]string
+	wantCode int
+	wantOut  string
+	stderr   string
 }
 
-func TestMapProcess(t *testing.T) {
-	t.Parallel()
-	tests := []struct {
-		mode     string
-		input    []string
-		wantCode int
-		wantOut  string
-	}{
-		{"map", []string{hello, item("dl_1", `{"url":"u","price":1}`), `{"type":"shutdown"}`}, 0,
+// serveCases are the action runs TestServe makes in-process and the e2e build's TestMapProcess as processes.
+func serveCases(workdir string) []serveCase {
+	return []serveCase{
+		{"map", MapHandler(score), []string{hello, item("dl_1", `{"url":"u","price":1}`), `{"type":"shutdown"}`}, nil, 0,
 			`{"type":"ready"}` + "\n" +
 				`{"type":"metric","delivery":"dl_1","name":"scored","value":1,"labels":{"city":"Lyon"}}` + "\n" +
 				`{"type":"emit","delivery":"dl_1","payload":{"url":"u","score":2}}` + "\n" +
-				`{"type":"done","delivery":"dl_1"}` + "\n"},
-		{"mapKeyed", []string{hello, item("dl_1", `{"url":"a"}`)}, 0,
+				`{"type":"done","delivery":"dl_1"}` + "\n", ""},
+		{"mapKeyed", MapKeyedHandler(split), []string{hello, item("dl_1", `{"url":"a"}`)}, nil, 0,
 			`{"type":"ready"}` + "\n" + `{"type":"emit","delivery":"dl_1","key":"a","payload":"A"}` + "\n" +
-				`{"type":"done","delivery":"dl_1"}` + "\n"},
-		{"map", []string{"garbage"}, 1, ""},
+				`{"type":"done","delivery":"dl_1"}` + "\n", ""},
+		{"map", MapHandler(score), []string{"garbage"}, nil, 1, "", `"msg":"action stopped"`},
+		// An action reading an input artifact from the working directory and attaching the file it writes: the emit
+		// names it by its path relative to the working directory.
+		{"artifact", MapHandler(annotate(workdir)), []string{hello, `{"type":"item","delivery":"dl_1","id":"it_1",` +
+			`"payload":{},"artifacts":[{"name":"page.html","path":"in/page.html"}]}`},
+			map[string]string{"MILLSTREAM_WORKDIR": workdir}, 0,
+			`{"type":"ready"}` + "\n" + `{"type":"emit","delivery":"dl_1","payload":"annotated",` +
+				`"artifacts":[{"name":"notes.txt","path":"notes.txt"}]}` + "\n" + `{"type":"done","delivery":"dl_1"}` + "\n",
+			""},
 	}
-	for _, tt := range tests {
-		t.Run(tt.mode+fmt.Sprint(tt.wantCode), func(t *testing.T) {
-			t.Parallel()
-			cmd := exec.Command(os.Args[0], "-test.run=^$") // #nosec G204 -- the test binary itself
-			cmd.Env = append(os.Environ(), helperEnv+"="+tt.mode)
-			cmd.Stdin = strings.NewReader(strings.Join(tt.input, "\n") + "\n")
-			var stdout, stderr strings.Builder
-			cmd.Stdout, cmd.Stderr = &stdout, &stderr
-			err := cmd.Run()
-			code := 0
-			var exit *exec.ExitError
-			if errors.As(err, &exit) {
-				code = exit.ExitCode()
-			} else if err != nil {
-				t.Fatal(err)
-			}
-			if code != tt.wantCode || stdout.String() != tt.wantOut {
-				t.Fatalf("code %d, stdout:\n%s\nstderr:\n%s", code, stdout.String(), stderr.String())
-			}
-			if code != 0 && !strings.Contains(stderr.String(), `"msg":"action stopped"`) {
-				t.Fatalf("stderr must log why the action stopped: %s", stderr.String())
-			}
-		})
+}
+
+// TestServe runs actions in-process as Map and MapKeyed run them: the exit status, the output and, when the action
+// stops, the reason logged on stderr.
+func TestServe(t *testing.T) {
+	t.Parallel()
+	workdir := artifactWorkdir(t)
+	for _, tt := range serveCases(workdir) {
+		var stdout, stderr strings.Builder
+		code := serve(strings.NewReader(strings.Join(tt.input, "\n")+"\n"), &stdout, &stderr,
+			func(k string) string { return tt.env[k] }, tt.handler)
+		tt.check(t, code, stdout.String(), stderr.String())
+	}
+	checkNotes(t, workdir)
+}
+
+func (tt serveCase) check(t *testing.T, code int, stdout, stderr string) {
+	t.Helper()
+	if code != tt.wantCode || stdout != tt.wantOut || !strings.Contains(stderr, tt.stderr) {
+		t.Fatalf("%s: code %d, stdout:\n%s\nstderr:\n%s", tt.name, code, stdout, stderr)
 	}
 }
 
@@ -337,11 +328,15 @@ func TestRunWithIOWriteErrors(t *testing.T) {
 
 func TestContext(t *testing.T) {
 	t.Parallel()
-	c := &itemContext{out: &writer{w: &failingWriter{}}, logger: newLogger()}
+	var logs strings.Builder
+	c := &itemContext{out: &writer{w: &failingWriter{}}, logger: slog.New(slog.NewJSONHandler(&logs, nil))}
 	if len(c.Config()) != 0 || len(c.Vars()) != 0 {
 		t.Fatal("nil config and vars must read as empty maps")
 	}
 	c.Metric("lost", 1, nil) // a failed write is logged, not fatal
+	if !strings.Contains(logs.String(), `"msg":"send metric"`) {
+		t.Fatalf("logs = %s", logs.String())
+	}
 	c.hello.Config = map[string]any{"bad": func() {}}
 	if err := c.ConfigInto(&struct{}{}); err == nil || !strings.Contains(err.Error(), "encode config") {
 		t.Fatalf("err = %v", err)

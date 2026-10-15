@@ -47,6 +47,14 @@ type Runtime struct {
 	Env []string
 	// User is the --user of containers, uid:gid; empty runs them as the image's user.
 	User string
+	// cli runs the CLI's invocations; nil runs them as processes. Tests set it to a fake CLI that runs in-process
+	// (containertest.Fake), so they start no process.
+	cli runner
+}
+
+// runner runs a CLI invocation as cmd describes it (arguments, environment, output writers) and waits for it.
+type runner interface {
+	Run(cmd *osexec.Cmd) error
 }
 
 // Find locates the runtime's CLI on the PATH that env resolves, with the CLI's environment taken from env. ok is
@@ -79,18 +87,25 @@ func (r Runtime) command(ctx context.Context, args ...string) *osexec.Cmd {
 	return cmd
 }
 
+// run runs the CLI invocation cmd and waits for it.
+func (r Runtime) run(cmd *osexec.Cmd) error {
+	if r.cli != nil {
+		return r.cli.Run(cmd)
+	}
+	return cmd.Run()
+}
+
 // output runs the CLI and returns its standard output; a failure carries its standard error.
 func (r Runtime) output(args ...string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 	cmd := r.command(ctx, args...)
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	out, err := cmd.Output()
-	if err != nil {
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	if err := r.run(cmd); err != nil {
 		return nil, fmt.Errorf("%s %s: %w: %s", r.Name, strings.Join(args, " "), err, strings.TrimSpace(stderr.String()))
 	}
-	return out, nil
+	return stdout.Bytes(), nil
 }
 
 // Launcher implements exec.Launcher for container actions.
@@ -118,7 +133,7 @@ func (l Launcher) Command(spec exec.Spec, workdir string) (*osexec.Cmd, error) {
 func (l Launcher) Kill(_ exec.Spec, workdir string) {
 	ctx, cancel := context.WithTimeout(context.Background(), removeTimeout)
 	defer cancel()
-	_ = l.Runtime.command(ctx, "rm", "--force", Name(workdir)).Run()
+	_ = l.Runtime.run(l.Runtime.command(ctx, "rm", "--force", Name(workdir)))
 }
 
 // Args are the CLI arguments that run spec with workdir.

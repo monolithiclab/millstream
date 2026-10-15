@@ -157,10 +157,15 @@ func TestRecordings(t *testing.T) {
 		}
 	}
 	srv := fakeModel(t)
-	for _, f := range lessonsVersions {
-		record(t, srv, f, dir)
-	}
-	if *update {
+	t.Run("record", func(t *testing.T) {
+		for _, f := range lessonsVersions {
+			t.Run(filepath.Base(f), func(t *testing.T) {
+				t.Parallel() // the versions record distinct files
+				record(t, srv, f, dir)
+			})
+		}
+	})
+	if *update || t.Failed() {
 		return
 	}
 	got, _ := filepath.Glob(filepath.Join(dir, "*.json"))

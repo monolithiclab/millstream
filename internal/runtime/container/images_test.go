@@ -1,8 +1,6 @@
 package container
 
 import (
-	"os"
-	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -11,17 +9,6 @@ import (
 	"github.com/monolithiclab/millstream/internal/runtime/container/containertest"
 	"github.com/monolithiclab/millstream/internal/runtime/exec"
 )
-
-// fakeRuntime writes the fake CLI into a temporary directory and returns it with that directory.
-func fakeRuntime(t *testing.T, images map[string]containertest.Image, tags map[string][]string) (Runtime, string) {
-	t.Helper()
-	dir := t.TempDir()
-	bin, err := containertest.Write(dir, "docker", images, tags)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return Runtime{Name: pipeline.RuntimeDocker, Bin: bin, Env: []string{"PATH=/usr/bin:/bin"}}, dir
-}
 
 func TestImagesInspect(t *testing.T) {
 	t.Parallel()
@@ -58,13 +45,7 @@ func TestImagesInspectFormats(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			dir := t.TempDir()
-			bin := filepath.Join(dir, "podman")
-			script := "#!/bin/sh\ncat <<'EOF'\n" + tt.out + "\nEOF\n"
-			if err := os.WriteFile(bin, []byte(script), 0o700); err != nil { // #nosec G306 -- a fake CLI
-				t.Fatal(err)
-			}
-			img, err := Images{Runtime: Runtime{Name: pipeline.RuntimePodman, Bin: bin}}.Inspect("x")
+			img, err := Images{Runtime: rawRuntime(t, pipeline.RuntimePodman, tt.out)}.Inspect("x")
 			if (err != nil) != tt.wantErr || img.ID != tt.wantID || img.Labels["k"] != tt.wantLabel {
 				t.Fatalf("Inspect = %+v, %v", img, err)
 			}
@@ -82,15 +63,14 @@ func TestImagesTags(t *testing.T) {
 	if tags, err := (Images{Runtime: rt}).Tags("ghcr.io/x/none"); err != nil || len(tags) != 0 {
 		t.Fatalf("Tags of an unknown repository = %v, %v", tags, err)
 	}
-	broken := Runtime{Name: pipeline.RuntimeDocker, Bin: filepath.Join(t.TempDir(), "absent")}
-	if _, err := (Images{Runtime: broken}).Tags("x"); err == nil {
+	if _, err := (Images{Runtime: missingRuntime(t)}).Tags("x"); err == nil {
 		t.Fatal("Tags with a missing CLI: no error")
 	}
 }
 
 func TestLauncherCommandAndKill(t *testing.T) {
 	t.Parallel()
-	rt, dir := fakeRuntime(t, nil, nil)
+	rt, calls := fakeRuntime(t, nil, nil)
 	l := Launcher{Runtime: rt}
 	spec := exec.Spec{Action: "lab/fake", Kind: pipeline.KindContainer, Image: "sha256:abc"}
 	cmd, err := l.Command(spec, "/tmp/millstream-work-7")
@@ -102,7 +82,7 @@ func TestLauncherCommandAndKill(t *testing.T) {
 		t.Fatalf("command %q env %q", cmd.Args, cmd.Env)
 	}
 	l.Kill(spec, "/tmp/millstream-work-7")
-	if calls := containertest.Calls(dir); !slices.Equal(calls, []string{"rm --force millstream-millstream-work-7"}) {
+	if calls := calls(); !slices.Equal(calls, []string{"rm --force millstream-millstream-work-7"}) {
 		t.Fatalf("calls = %q", calls)
 	}
 }

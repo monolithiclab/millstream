@@ -2,10 +2,12 @@ package agent
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	osexec "os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -258,67 +260,26 @@ const claudeStream = `{"type":"system","subtype":"init","tools":["WebFetch"]}
 not a message
 {"type":"result","subtype":"success","is_error":false,"num_turns":3,"result":"Done.","structured_output":{"score":9},"total_cost_usd":0.042,"usage":{"input_tokens":100,"cache_read_input_tokens":50,"cache_creation_input_tokens":10,"output_tokens":40}}`
 
-// TestClaudeCode: the CLI gets the prompt on stdin and an explicit allowlist; the stream-json result's structured
-// output, usage, cost and turns come back, with every message in the transcript.
-func TestClaudeCode(t *testing.T) {
+// TestClaudeCodeArgs: the CLI gets an explicit allowlist, the schema and the budget; without tools, an empty --tools
+// disables them all and nothing is allowed. Running the CLI is the e2e build's TestClaudeCode.
+func TestClaudeCodeArgs(t *testing.T) {
 	t.Parallel()
-	bin, dir := fakeClaude(t, claudeStream, 0)
-	h := ClaudeCode{Bin: bin, Env: []string{"PATH=/usr/bin:/bin", "ANTHROPIC_API_KEY=sk"}, Dir: dir}
-	resp, err := h.Run(t.Context(), Request{Model: "claude-sonnet-5-5", Prompt: "Score {it}.", Tools: []string{"WebFetch",
-		"Read"}, MaxTurns: 7, MaxCostUSD: 0.5, Schema: json.RawMessage(`{"type":"object"}` + "\n")})
-	if err != nil {
-		t.Fatalf("Run: %v", err)
+	h := ClaudeCode{}
+	got := strings.Join(h.Args(Request{Model: "claude-sonnet-5-5", Tools: []string{"WebFetch", "Read"}, MaxTurns: 7,
+		MaxCostUSD: 0.5, Schema: json.RawMessage(`{"type":"object"}` + "\n")}), "\n") + "\n"
+	if got != claudeArgs {
+		t.Fatalf("args:\n%s", got)
 	}
-	if out, _ := Extract(resp); string(out) != `{"score":9}` || resp.Text != "Done." || resp.TokensIn != 160 ||
-		resp.TokensOut != 40 || resp.CostUSD == nil || *resp.CostUSD != 0.042 || resp.Turns != 3 || len(resp.Transcript) != 5 ||
-		resp.Transcript[0].Text != "Score {it}." || resp.Transcript[2].Role != "assistant" {
-		t.Fatalf("response %+v", resp)
-	}
-	args, _ := os.ReadFile(filepath.Join(dir, "args")) // #nosec G304 -- the test's own file
-	stdin, _ := os.ReadFile(filepath.Join(dir, "stdin"))
-	want := "--print\n--output-format\nstream-json\n--verbose\n--model\nclaude-sonnet-5-5\n--max-turns\n7\n--tools\n" +
-		"WebFetch,Read\n--strict-mcp-config\n--no-session-persistence\n--allowedTools\nWebFetch,Read\n--json-schema\n" +
-		"{\"type\":\"object\"}\n--max-budget-usd\n0.5\n"
-	if string(args) != want || string(stdin) != "Score {it}." {
-		t.Fatalf("args:\n%s\nstdin %q", args, stdin)
-	}
-	// No tools: an empty --tools disables them all, and nothing is allowed.
 	if got := strings.Join(h.Args(Request{Model: "m", MaxTurns: 1}), " "); !strings.Contains(got, "--tools  --strict") ||
 		strings.Contains(got, "allowedTools") || strings.Contains(got, "json-schema") || strings.Contains(got, "budget") {
 		t.Fatalf("args without tools: %s", got)
 	}
 }
 
-func TestClaudeCodeFailures(t *testing.T) {
-	t.Parallel()
-	tests := []struct {
-		name      string
-		out       string
-		status    int
-		retryable bool
-		message   string
-	}{
-		{"budget", `{"type":"result","subtype":"error_max_budget_usd","is_error":true,"total_cost_usd":0.51}`, 1, false,
-			"maxCostUsd"},
-		{"max turns", `{"type":"result","subtype":"error_max_turns","is_error":true,"num_turns":7}`, 1, true,
-			"error_max_turns"},
-		{"no result", `{"type":"system"}`, 0, true, "printed no result"},
-		{"crash", ``, 3, true, "exit status 3"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			bin, _ := fakeClaude(t, tt.out, tt.status)
-			resp, err := ClaudeCode{Bin: bin}.Run(t.Context(), Request{Model: "m", MaxTurns: 7, MaxCostUSD: 0.5})
-			if err == nil || isRetryable(err) != tt.retryable || !strings.Contains(err.Error(), tt.message) {
-				t.Fatalf("err = %v, want retryable %v with %q", err, tt.retryable, tt.message)
-			}
-			if tt.name == "budget" && (resp.CostUSD == nil || *resp.CostUSD != 0.51) {
-				t.Fatalf("the cost of a stopped run is lost: %+v", resp)
-			}
-		})
-	}
-}
+// claudeArgs are the CLI arguments of the request of TestClaudeCodeArgs and TestClaudeCode, one per line.
+const claudeArgs = "--print\n--output-format\nstream-json\n--verbose\n--model\nclaude-sonnet-5-5\n--max-turns\n7\n--tools\n" +
+	"WebFetch,Read\n--strict-mcp-config\n--no-session-persistence\n--allowedTools\nWebFetch,Read\n--json-schema\n" +
+	"{\"type\":\"object\"}\n--max-budget-usd\n0.5\n"
 
 // TestDefaultHarness: the manifest's harness is built with its API key; claude-code is found on the adapter's PATH
 // and receives only its own variables, USER included (its keychain login on macOS), and the key.
@@ -377,6 +338,83 @@ func TestAPIMaxCost(t *testing.T) {
 			if tt.over && (e.Retryable || !strings.HasPrefix(e.Message, "budget: ") ||
 				!strings.Contains(e.Message, "maxCostUsd")) {
 				t.Fatalf("error = %+v", e)
+			}
+		})
+	}
+}
+
+// fakeCLI answers a ClaudeCode invocation in-process, like fakeClaude's script: it records the arguments and stdin,
+// prints out and fails with status when it is not zero.
+type fakeCLI struct {
+	out    string
+	status int
+	args   []string
+	stdin  string
+}
+
+func (f *fakeCLI) Run(cmd *osexec.Cmd) error {
+	f.args = cmd.Args[1:]
+	b, err := io.ReadAll(cmd.Stdin)
+	if err != nil {
+		return err
+	}
+	f.stdin = string(b)
+	if _, err := io.WriteString(cmd.Stdout, f.out); err != nil {
+		return err
+	}
+	if f.status != 0 {
+		return fmt.Errorf("exit status %d", f.status)
+	}
+	return nil
+}
+
+// TestClaudeCodeInProcess: TestClaudeCode (harness_e2e_test.go) with the CLI answered in-process.
+func TestClaudeCodeInProcess(t *testing.T) {
+	t.Parallel()
+	cli := &fakeCLI{out: claudeStream}
+	h := ClaudeCode{Bin: "claude", Env: []string{"ANTHROPIC_API_KEY=sk"}, cli: cli}
+	resp, err := h.Run(t.Context(), Request{Model: "claude-sonnet-5-5", Prompt: "Score {it}.", Tools: []string{"WebFetch",
+		"Read"}, MaxTurns: 7, MaxCostUSD: 0.5, Schema: json.RawMessage(`{"type":"object"}` + "\n")})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if out, _ := Extract(resp); string(out) != `{"score":9}` || resp.Text != "Done." || resp.TokensIn != 160 ||
+		resp.TokensOut != 40 || resp.CostUSD == nil || *resp.CostUSD != 0.042 || resp.Turns != 3 || len(resp.Transcript) != 5 ||
+		resp.Transcript[0].Text != "Score {it}." || resp.Transcript[2].Role != "assistant" {
+		t.Fatalf("response %+v", resp)
+	}
+	if got := strings.Join(cli.args, "\n") + "\n"; got != claudeArgs || cli.stdin != "Score {it}." {
+		t.Fatalf("args:\n%s\nstdin %q", got, cli.stdin)
+	}
+}
+
+// TestClaudeCodeFailuresInProcess: TestClaudeCodeFailures (harness_e2e_test.go) with the CLI answered in-process.
+func TestClaudeCodeFailuresInProcess(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name      string
+		out       string
+		status    int
+		retryable bool
+		message   string
+	}{
+		{"budget", `{"type":"result","subtype":"error_max_budget_usd","is_error":true,"total_cost_usd":0.51}`, 1, false,
+			"maxCostUsd"},
+		{"max turns", `{"type":"result","subtype":"error_max_turns","is_error":true,"num_turns":7}`, 1, true,
+			"error_max_turns"},
+		{"no result", `{"type":"system"}`, 0, true, "printed no result"},
+		{"crash", ``, 3, true, "exit status 3"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			h := ClaudeCode{Bin: "claude", cli: &fakeCLI{out: tt.out, status: tt.status}}
+			resp, err := h.Run(t.Context(), Request{Model: "m", MaxTurns: 7, MaxCostUSD: 0.5})
+			if err == nil || isRetryable(err) != tt.retryable || !strings.Contains(err.Error(), tt.message) {
+				t.Fatalf("err = %v, want retryable %v with %q", err, tt.retryable, tt.message)
+			}
+			if tt.name == "budget" && (resp.CostUSD == nil || *resp.CostUSD != 0.51) {
+				t.Fatalf("the cost of a stopped run is lost: %+v", resp)
 			}
 		})
 	}

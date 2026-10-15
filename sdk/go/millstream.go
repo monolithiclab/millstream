@@ -153,10 +153,20 @@ func keyRule[Out any](outs []Keyed[Out]) error {
 }
 
 func run(h Handler) {
-	if err := RunWithIO(os.Stdin, os.Stdout, h); err != nil {
-		newLogger().Error("action stopped", "error", err.Error())
-		os.Exit(1)
+	if code := serve(os.Stdin, os.Stdout, os.Stderr, os.Getenv, h); code != 0 {
+		os.Exit(code)
 	}
+}
+
+// serve is run over the given stdio and environment: it runs the protocol loop and returns the exit status, logging
+// on stderr why the action stopped. The SDK's tests call it in-process.
+func serve(stdin io.Reader, stdout, stderr io.Writer, getenv func(string) string, h Handler) int {
+	logger := slog.New(slog.NewJSONHandler(stderr, nil))
+	if err := runWithIO(stdin, stdout, logger, getenv, h); err != nil {
+		logger.Error("action stopped", "error", err.Error())
+		return 1
+	}
+	return 0
 }
 
 // retryable marks an error the engine should retry.
@@ -249,10 +259,14 @@ func (w *writer) send(m any) error {
 // one at a time, until shutdown or the end of r, which return nil. A broken protocol or a failed write is an
 // error; a failed item is not, it is reported to the engine with an error message.
 func RunWithIO(r io.Reader, w io.Writer, h Handler) error {
+	return runWithIO(r, w, slog.New(slog.NewJSONHandler(os.Stderr, nil)), os.Getenv, h)
+}
+
+// runWithIO is RunWithIO with the items' logger and the environment MILLSTREAM_WORKDIR is read from.
+func runWithIO(r io.Reader, w io.Writer, logger *slog.Logger, getenv func(string) string, h Handler) error {
 	sc := bufio.NewScanner(r)
 	sc.Buffer(make([]byte, 0, 64<<10), maxLine+1)
 	out := &writer{w: w}
-	logger := newLogger()
 
 	hello, err := read(sc)
 	if err != nil {
@@ -283,7 +297,7 @@ func RunWithIO(r io.Reader, w io.Writer, h Handler) error {
 		case "shutdown":
 			return nil
 		case "item":
-			if err := handle(out, logger, hello, m, h); err != nil {
+			if err := handle(out, logger, getenv("MILLSTREAM_WORKDIR"), hello, m, h); err != nil {
 				return err
 			}
 		default:
@@ -312,8 +326,8 @@ func read(sc *bufio.Scanner) (inMsg, error) {
 }
 
 // handle processes one item and reports its outcome.
-func handle(out *writer, logger *slog.Logger, hello, item inMsg, h Handler) error {
-	c := &itemContext{hello: hello, item: item, out: out, logger: logger, workdir: os.Getenv("MILLSTREAM_WORKDIR")}
+func handle(out *writer, logger *slog.Logger, workdir string, hello, item inMsg, h Handler) error {
+	c := &itemContext{hello: hello, item: item, out: out, logger: logger, workdir: workdir}
 	outs, err := h(c, item.Payload)
 	if err != nil {
 		return out.send(errorMsg{Type: "error", Delivery: item.Delivery, Message: err.Error(), Retryable: IsRetryable(err)})
@@ -326,8 +340,6 @@ func handle(out *writer, logger *slog.Logger, hello, item inMsg, h Handler) erro
 	}
 	return out.send(doneMsg{Type: "done", Delivery: item.Delivery})
 }
-
-func newLogger() *slog.Logger { return slog.New(slog.NewJSONHandler(os.Stderr, nil)) }
 
 // itemContext is the Context of one item.
 type itemContext struct {
