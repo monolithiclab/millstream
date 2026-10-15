@@ -225,20 +225,22 @@ would mix two styles in every pipeline file. Kubernetes manifests have made came
 
 
 
-### D19. Pipelines share streams through stream triggers (2026-10-16)
+### D19. A pipeline imports another pipeline's stream by declaring it (2026-10-16)
 
-**Decision.** A producer shares a stream with named pipelines (or all); a consumer subscribes with a `stream` trigger
-and its steps read `trigger.<name>`. Each producer run opens one run in each subscriber, which receives copies of the
-items published on the stream, with the producer's item as parent, in the same transaction. Each side keeps its own
-revision, budget, retention and dead letters; `check` and `apply` enforce the stream's contract and refuse cycles
-across pipelines. Sharing stays within one instance.
+**Decision.** A consumer declares an imported stream under `streams`, with a name of its own and the producer's
+pipeline and stream; its steps read that name with `in`. No producer change and no trigger are needed: within an
+instance every stream can be imported. Each producer run opens one run in each importer, which receives copies of the
+items with the producer's item as parent, in the same transaction. Each side keeps its own revision, budget,
+retention and dead letters; `check` and `apply` enforce the producer's schema as the contract and refuse cycles across
+pipelines. Imports stay within one instance.
 
-**Evidence.** Customers chain pipelines (sourcing feeds deal flow, deal flow feeds reporting), and copying items
-between instances by hand loses lineage and durability. Reusing trigger streams adds no new kind of step, and copies
-keep data, retention and erasure per pipeline while lineage still crosses pipelines.
+**Evidence.** Customers chain pipelines (sourcing feeds deal flow, deal flow feeds reporting). Declaring the stream
+where it is consumed keeps the producer unaware of its consumers, a local name decouples the consumer from the
+producer's naming, and an instance belongs to one organisation, so an access grant would add ceremony without
+protection. Copies keep data, retention and erasure per pipeline while lineage still crosses pipelines.
 
-**Cost if wrong.** Copies duplicate storage for shared items, and a producer change is now constrained by its
-subscribers' contracts.
+**Cost if wrong.** Copies duplicate storage for imported items, any pipeline can read any stream of its instance, and a
+producer change is constrained by its importers' contracts.
 
 ## Execution
 
