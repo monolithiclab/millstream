@@ -12,14 +12,15 @@ import (
 )
 
 // TestRandomUnitSequences runs seeded random sequences of units on the fixture and checks the store's invariants
-// after every step.
+// after every step: a sequence of propertySteps steps per seed of propertySeeds, a short set by default and the long
+// run under the e2e tag.
 func TestRandomUnitSequences(t *testing.T) {
 	t.Parallel()
-	for seed := range uint64(8) {
+	for _, seed := range propertySeeds {
 		t.Run(fmt.Sprint("seed", seed), func(t *testing.T) {
 			t.Parallel()
 			m := &model{e: newEnv(t, fixture), rng: rand.New(rand.NewPCG(seed, 42))}
-			for step := range 250 {
+			for step := range propertySteps {
 				op := m.step()
 				if err := m.check(); err != nil {
 					t.Fatalf("step %d (%s): %v", step, op, err)

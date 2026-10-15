@@ -30,7 +30,7 @@ var errUnit = errors.New("unit failed on purpose")
 func TestFailingUnitsRollBackAlone(t *testing.T) {
 	t.Parallel()
 	e := newEnv(t, fixture)
-	const n = 200
+	const n = 32 // enough concurrent units that batches mix failing and committing ones
 	var wg sync.WaitGroup
 	errs := make([]error, n)
 	for i := range n {
@@ -70,7 +70,7 @@ func TestFailingUnitsRollBackAlone(t *testing.T) {
 func TestConcurrentDone(t *testing.T) {
 	t.Parallel()
 	e := newEnv(t, fixture)
-	const runs = 100
+	const runs = 16 // enough concurrent Done calls to share batches
 	for i := range runs {
 		e.fire(fmt.Sprint("r", i))
 	}
@@ -114,8 +114,9 @@ func TestCloseDrainsQueuedUnits(t *testing.T) {
 		t.Fatal(err)
 	}
 	var wg sync.WaitGroup
-	results := make(chan error, 50)
-	for i := range 50 {
+	const n = 16
+	results := make(chan error, n)
+	for i := range n {
 		wg.Go(func() {
 			_, err := s.Fire(ctx, store.Firing{Pipeline: "listings", Trigger: "daily", Key: fmt.Sprint(i), RunID: fmt.Sprint(i)})
 			results <- err

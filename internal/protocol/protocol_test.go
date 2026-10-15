@@ -101,17 +101,20 @@ func TestReadErrors(t *testing.T) {
 	}
 }
 
+// A line of exactly MaxLine bytes passes the length limit, with or without its newline. The lines are malformed
+// from their first byte, so the reader gets past the limit and refuses them cheaply as JSON: decoding a full 8 MiB
+// message is the e2e suite's TestReadLimitsFullLine.
 func TestReadLimits(t *testing.T) {
 	t.Parallel()
-	// A line of exactly MaxLine bytes is allowed, and the last line needs no newline.
-	payload := strings.Repeat("x", MaxLine-len(`{"type":"emit","payload":""}`))
-	line := `{"type":"emit","payload":"` + payload + `"}`
-	m, err := NewReader(strings.NewReader(line)).Read()
-	if err != nil {
-		t.Fatalf("Read: %v", err)
-	}
-	if e, ok := m.(Emit); !ok || len(e.Payload) != len(payload)+2 {
-		t.Fatalf("got %T", m)
+	line := "x" + strings.Repeat(" ", MaxLine-1)
+	for name, input := range map[string]string{"last line": line, "with newline": line + "\n"} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			_, err := NewReader(strings.NewReader(input)).Read()
+			if !errors.Is(err, ErrProtocol) || !strings.Contains(err.Error(), "malformed line") {
+				t.Fatalf("err = %v, want ErrProtocol for a malformed line, not for its length", err)
+			}
+		})
 	}
 }
 
@@ -153,7 +156,7 @@ func TestWriteErrors(t *testing.T) {
 	}{
 		{"write fails", failingWriter{}, Done{Delivery: "dl_1"}, "write done message: pipe closed"},
 		{"encode fails", io.Discard, badPayload{}, "encode done message"},
-		{"oversized", io.Discard, Emit{Payload: json.RawMessage(`"` + strings.Repeat("x", MaxLine) + `"`)}, "exceeds"},
+		{"oversized", io.Discard, Emit{Key: strings.Repeat("x", MaxLine), Payload: json.RawMessage(`1`)}, "exceeds"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

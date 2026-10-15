@@ -67,8 +67,31 @@ const (
 
 // Memory opens a store on a fresh temporary database file, removed by Close. A real file rather than SQLite's
 // :memory:, because each connection to :memory: is its own database and a shared-cache memory database has
-// neither WAL nor busy waiting, so the writer and the read pool could not share it.
+// neither WAL nor busy waiting, so the writer and the read pool could not share it. The file starts as a copy of a
+// database migrated once per process, so opening many (tests, millstream test) does not migrate each.
 const Memory = ":memory:"
+
+// memoryTemplate returns the contents of a freshly migrated database, built once.
+var memoryTemplate = sync.OnceValues(func() ([]byte, error) {
+	dir, err := os.MkdirTemp("", "millstream-template-")
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = os.RemoveAll(dir) }()
+	path := filepath.Join(dir, "template.db")
+	db, err := sql.Open("sqlite", path) // rollback journal: the file is whole once the migrations commit
+	if err != nil {
+		return nil, err
+	}
+	err = migrate(db)
+	if cerr := db.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
+		return nil, err
+	}
+	return os.ReadFile(path) // #nosec G304 -- our own temporary file
+})
 
 // Options configures a store. The zero value is the production configuration.
 type Options struct {
@@ -123,6 +146,10 @@ func Open(path string, opts Options) (*Store, error) {
 			return nil, fmt.Errorf("open store: %w", err)
 		}
 		s.tmp, path = dir, filepath.Join(dir, "millstream.db")
+		if err := writeTemplate(path); err != nil {
+			_ = s.closeDBs()
+			return nil, fmt.Errorf("open store: %w", err)
+		}
 	}
 	if err := s.open(path); err != nil {
 		_ = s.closeDBs() // the open error is the one to report
@@ -130,6 +157,15 @@ func Open(path string, opts Options) (*Store, error) {
 	}
 	go s.writer()
 	return s, nil
+}
+
+// writeTemplate writes the migrated template database at path.
+func writeTemplate(path string) error {
+	data, err := memoryTemplate()
+	if err != nil {
+		return fmt.Errorf("migrate template: %w", err)
+	}
+	return os.WriteFile(path, data, 0o600)
 }
 
 func (s *Store) open(path string) error {

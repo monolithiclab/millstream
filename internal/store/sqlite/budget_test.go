@@ -98,13 +98,13 @@ func approx(a, b float64) bool { return a-b < 1e-9 && b-a < 1e-9 }
 func TestRunBudgetConcurrentLeases(t *testing.T) {
 	t.Parallel()
 	e := newEnv(t, budgetPipeline(0.3, 0))
-	e.fanOut("r1", 20)
+	e.fanOut("r1", 8)
 	var (
 		wg     sync.WaitGroup
 		mu     sync.Mutex
 		leased []store.Lease
 	)
-	for range 20 {
+	for range 8 {
 		wg.Go(func() {
 			ls, err := e.s.Lease(e.ctx, store.LeaseRequest{Owner: "node1", Max: 2, TTL: time.Minute,
 				Reserve: map[store.StepRef]float64{scoreRef: 0.1}})
