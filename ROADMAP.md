@@ -12,14 +12,18 @@ Parked ideas and follow-ups. Committed scope and milestones are in the
 
 - Graphical pipeline editor writing YAML back (D7).
 - Active-active control plane: several engines dispatching at once, with job leases and an events outbox
-  (D25, D26).
-- Sharding pipelines across several Postgres stores (D20).
+  (D21, D22).
+- Sharding pipelines across several Postgres stores (D25).
 - Federation of independent instances with their own stores, for data residency.
 - Streams shared across pipelines.
 - Python SDK.
-- `collect` grouped by key or by time window, beyond one batch per run (D32).
+- Worker resource limits, memory monitoring and recycling (memory and CPU limits for containers and pods, RSS
+  sampling, recycling by memory or item count).
+- Evidence bundles pulled directly from a production deployment by a development one, instead of export and import
+  files.
+- `collect` grouped by key or by time window, beyond one batch per run (D16).
 - Vault and Kubernetes secret sources.
 - NATS JetStream store for high-throughput deployments (D2).
 - Alerting rules in the engine (v1 relies on Prometheus alerting).
-- Lessons: select examples per item by similarity instead of including them all (D14).
-- Self-improvement: auto-apply low-risk proposal classes behind a policy (D13).
+- Lessons: select examples per item by similarity instead of including them all (D28).
+- Self-improvement: auto-apply low-risk proposal classes behind a policy (D27).

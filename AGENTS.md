@@ -21,7 +21,8 @@ reasoning, and `make help` for every command.
 
 ## Where things go
 
-- Architecture decisions: a new D-entry in `docs/decisions.md`, never an edit of an old one.
+- Architecture decisions live in `docs/decisions.md`. Until the first public release the log is kept current: edit
+  an entry to match the design and remove superseded ones. From the first release on, it is append-only.
 - Specs and plans: `docs/specs/YYYYMMDD.<topic>-design.md` and `docs/plans/YYYYMMDD.<topic>.md`.
 - Parked ideas and follow-ups: `ROADMAP.md`.
 
