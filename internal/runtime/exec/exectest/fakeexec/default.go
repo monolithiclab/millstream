@@ -11,6 +11,9 @@ import (
 	"github.com/monolithiclab/millstream/internal/runtime/exec/exectest"
 )
 
+// InProcess reports that the fake action runs in-process: it needs no file, and Place writes an inert stub.
+const InProcess = true
+
 // Launchers returns the launchers that run the fake action: exectest.Serve in-process for exec actions.
 func Launchers() map[string]exec.Launcher {
 	return map[string]exec.Launcher{pipeline.KindExec: exec.FuncLauncher{F: exectest.Serve}}

@@ -4,10 +4,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"os"
 	"path"
 	"path/filepath"
+	"runtime/debug"
 	"sync/atomic"
 	"testing"
 
@@ -17,6 +19,8 @@ import (
 )
 
 func TestMain(m *testing.M) {
+	// The tests allocate heavily: a higher collector target trades memory for test time, as in the store tests.
+	debug.SetGCPercent(400)
 	code := m.Run()
 	fakeexec.Cleanup()
 	os.Exit(code)
@@ -67,20 +71,6 @@ func placeFake(t *testing.T, dir string) {
 	}
 }
 
-// options loads the package and resolves the action ref for a harness mode; exec actions run the fake action
-// in-process in the default build, as a process in the e2e build.
-func options(t *testing.T, dir, ref, mode, recordings string) Options {
-	t.Helper()
-	if ref == "./actions/echo" {
-		placeFake(t, dir)
-	}
-	pkg, err := pipeline.Load(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return pkgOptions(t, pkg, ref, mode, recordings)
-}
-
 // pkgOptions are the options of a run of the action ref of pkg.
 func pkgOptions(t *testing.T, pkg *pipeline.Package, ref, mode, recordings string) Options {
 	t.Helper()
@@ -91,6 +81,25 @@ func pkgOptions(t *testing.T, pkg *pipeline.Package, ref, mode, recordings strin
 	env := map[string]string{"PATH": os.Getenv("PATH"), "MILLSTREAM_SECRET_API_TOKEN": "sk-test"}
 	return Options{Package: pkg, Action: act, Ref: ref, Mode: mode, Dir: recordings,
 		Env: func(k string) (string, bool) { v, ok := env[k]; return v, ok }, Launchers: fakeexec.Launchers()}
+}
+
+// echoCase builds writePackage's package and returns it with the only eval case of its echo action: in memory when
+// the fake action runs in-process, which needs no file; on disk with the fake action binary otherwise (e2e build).
+func echoCase(t *testing.T, baseURL string, files map[string]string) (*pipeline.Package, *Case) {
+	t.Helper()
+	if fakeexec.InProcess {
+		all := map[string]string{"actions/echo/fakeaction": ""} // the command, which the launcher never runs
+		maps.Copy(all, files)
+		pkg := memPackage(t, baseURL, all)
+		return pkg, memCase(t, pkg, "actions/echo")
+	}
+	dir := writePackage(t, baseURL, files)
+	placeFake(t, dir)
+	pkg, err := pipeline.Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return pkg, loadOne(t, filepath.Join(dir, "actions", "echo"))
 }
 
 // loadOne loads the only case of the action directory.

@@ -63,7 +63,7 @@ func TestLoad(t *testing.T) {
 // and the score is the share that hold. One that fails to evaluate is a failure with its reason.
 func TestRunExec(t *testing.T) {
 	t.Parallel()
-	dir := writePackage(t, "http://unused", map[string]string{"actions/echo/evals/lyon.yaml": `
+	pkg, c := echoCase(t, "http://unused", map[string]string{"actions/echo/evals/lyon.yaml": `
 input: { city: Lyon, rooms: 3 }
 config: { mode: echo }
 vars: { minRooms: 2 }
@@ -73,8 +73,7 @@ assert:
   - output["in"].rooms > 5
   - output.missing == 1
 `})
-	action := filepath.Join(dir, "actions", "echo")
-	r := Run(t.Context(), options(t, dir, "./actions/echo", agent.ModeReplay, ""), loadOne(t, action))
+	r := Run(t.Context(), pkgOptions(t, pkg, "./actions/echo", agent.ModeReplay, ""), c)
 	if r.Err != "" || r.Passed != 2 || r.Total != 4 || r.Score != 0.5 || r.Passes() || len(r.Failed) != 2 ||
 		r.Failed[0] != `output["in"].rooms > 5` || !strings.Contains(r.Failed[1], "no such key") {
 		t.Fatalf("result = %+v", r)
@@ -85,11 +84,10 @@ assert:
 // run, scores 0 with the reason.
 func TestRunActionFailure(t *testing.T) {
 	t.Parallel()
-	dir := writePackage(t, "http://unused", map[string]string{
+	pkg, c := echoCase(t, "http://unused", map[string]string{
 		"actions/echo/evals/down.yaml": "config: { mode: error }\nassert: [\"true\"]\n",
 	})
-	opts := options(t, dir, "./actions/echo", agent.ModeReplay, "")
-	c := loadOne(t, filepath.Join(dir, "actions", "echo"))
+	opts := pkgOptions(t, pkg, "./actions/echo", agent.ModeReplay, "")
 	if r := Run(t.Context(), opts, c); r.Passes() || r.Score != 0 || !strings.Contains(r.Err, "portal answered 503") {
 		t.Fatalf("result = %+v", r)
 	}
@@ -140,15 +138,14 @@ func TestJudge(t *testing.T) {
 	srv, calls := fakeModel(t, "Fine.\n```json\n{\"score\": 0.5, \"reason\": \"The city is right.\"}\n```")
 	// The keyed mode's output is deterministic, unlike echo's (a pid): the judge's prompt, and its recording key,
 	// holds the output.
-	dir := writePackage(t, srv.URL, map[string]string{"actions/echo/evals/judged.yaml": `
+	pkg, c := echoCase(t, srv.URL, map[string]string{"actions/echo/evals/judged.yaml": `
 input: { city: Lyon, note: sk-test }
 config: { mode: keyed, n: 1 }
 assert: [output == 0]
 judge: { rubric: "The output is zero.", model: claude-haiku-5, baseUrl: "` + srv.URL + `", apiKeySecret: apiToken }
 `})
-	c := loadOne(t, filepath.Join(dir, "actions", "echo"))
 	recordings := t.TempDir()
-	opts := options(t, dir, "./actions/echo", agent.ModeRecord, recordings)
+	opts := pkgOptions(t, pkg, "./actions/echo", agent.ModeRecord, recordings)
 	opts.Client = srv.Client
 	r := Run(t.Context(), opts, c)
 	if !r.Passes() || r.Judge == nil || r.Judge.Score != 0.5 || r.Judge.Reason != "The city is right." || r.Score != 0.75 {

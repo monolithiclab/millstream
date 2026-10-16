@@ -21,6 +21,9 @@ var (
 	})
 )
 
+// InProcess reports that the fake action runs as the built binary, which Place puts in the package.
+const InProcess = false
+
 // Launchers returns nil: the exec runtime's own launchers, which start the built binary as a process.
 func Launchers() map[string]exec.Launcher { return nil }
 
