@@ -16,11 +16,13 @@
 package sqlite
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"embed"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"math/rand/v2"
 	"os"
@@ -253,7 +255,7 @@ func (s *Store) open(path, from string) error {
 	sep := "?"
 	if memory {
 		path, sep = fmt.Sprintf("file:/millstream-%d?vfs=memdb", memorySeq.Add(1)), "&"
-	} else if err := createFromImage(path); err != nil {
+	} else if err := createFromImage(path, bytes.NewReader(templateImage)); err != nil {
 		return fmt.Errorf("open store %s: %w", path, err)
 	}
 	busy := "_pragma=busy_timeout(" + strconv.FormatInt(s.opts.BusyTimeout.Milliseconds(), 10) + ")"
@@ -422,22 +424,55 @@ func (s *Store) clock(ctx context.Context, tx *sql.Tx) (time.Time, error) {
 	return parseTime(now)
 }
 
-// createFromImage writes the migrated template image at path when no database is there yet, so that a new store
-// starts migrated rather than running every migration; migrate then applies only those newer than the image.
-func createFromImage(path string) error {
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600) // #nosec G304 -- the store's own path
-	if errors.Is(err, fs.ErrExist) {
+// createFromImage writes the migrated template image at path when nothing is there yet, so that a new store
+// starts migrated rather than running every migration; migrate then applies only those newer than the image. The
+// image goes to a temporary file first, synced, then is hard-linked into place: a concurrent first open, or one after
+// a crash, sees either no file or the complete image, never a part of it. A link that loses the race to another
+// opener's leaves that opener's complete image in place.
+func createFromImage(path string, image io.Reader) error {
+	if _, err := os.Lstat(path); err == nil {
 		return nil
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	dir, base := filepath.Split(path)
+	if dir == "" {
+		dir = "."
+	}
+	tmp, err := os.CreateTemp(dir, "."+base+".new-*")
+	if err != nil {
+		return err
+	}
+	defer func() { _ = os.Remove(tmp.Name()) }()
+	_, err = io.Copy(tmp, image)
+	if err == nil {
+		err = fsync(tmp)
+	}
+	if cerr := tmp.Close(); err == nil {
+		err = cerr
 	}
 	if err != nil {
 		return err
 	}
-	_, err = f.Write(templateImage)
-	if cerr := f.Close(); err == nil {
-		err = cerr
+	if err := os.Link(tmp.Name(), path); err != nil && !errors.Is(err, fs.ErrExist) {
+		return err
 	}
+	return syncDir(dir)
+}
+
+// fsync flushes a file to stable storage; tests that only check what a file holds replace it, macOS's full sync
+// taking milliseconds.
+var fsync = (*os.File).Sync
+
+// syncDir makes a directory's entries durable: the link createFromImage added, here.
+func syncDir(dir string) error {
+	d, err := os.Open(dir) // #nosec G304 -- the store's own directory
 	if err != nil {
-		_ = os.Remove(path)
+		return err
+	}
+	err = fsync(d)
+	if cerr := d.Close(); err == nil {
+		err = cerr
 	}
 	return err
 }

@@ -1,11 +1,15 @@
 package sqlite
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io/fs"
+	"os"
 	"path/filepath"
 	"reflect"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -13,6 +17,7 @@ import (
 )
 
 func TestOpenFileAndReopen(t *testing.T) {
+	noFsync(t)
 	path := filepath.Join(t.TempDir(), "m.db")
 	s, err := Open(path, Options{})
 	if err != nil {
@@ -167,4 +172,70 @@ func TestReads(t *testing.T) {
 	wantErr(t, err, store.ErrNotFound)
 	_, err = e.s.PipelineState(e.ctx, "nope")
 	wantErr(t, err, store.ErrNotFound)
+}
+
+// errReader fails every read, as a write cut short would.
+type errReader struct{}
+
+func (errReader) Read([]byte) (int, error) { return 0, errors.New("disk full") }
+
+// A new store's image appears whole or not at all: a stray temporary file from a crash, two first opens racing, and
+// a write that fails each leave either the complete image at path or nothing.
+func Test_createFromImage(t *testing.T) {
+	syncs := noFsync(t)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "m.db")
+	wantImage := func(t *testing.T) {
+		t.Helper()
+		got, err := os.ReadFile(path) // #nosec G304 -- the test's own file
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(got, templateImage) {
+			t.Fatalf("the store holds %d bytes, want the %d-byte image", len(got), len(templateImage))
+		}
+		if tmps, _ := filepath.Glob(filepath.Join(dir, ".m.db.new-*")); len(tmps) != 1 { // the stray one alone
+			t.Fatalf("temporary files left: %v", tmps)
+		}
+	}
+
+	if err := os.WriteFile(filepath.Join(dir, ".m.db.new-stray"), []byte("half an ima"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := createFromImage(path, errReader{}); err == nil {
+		t.Fatal("a failed write succeeded")
+	}
+	if _, err := os.Lstat(path); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("a failed write left a file at the store's path: %v", err)
+	}
+
+	var wg sync.WaitGroup
+	errs := make([]error, 2)
+	for i := range errs {
+		wg.Go(func() { errs[i] = createFromImage(path, bytes.NewReader(templateImage)) })
+	}
+	wg.Wait()
+	if err := errors.Join(errs...); err != nil {
+		t.Fatal(err)
+	}
+	wantImage(t)
+	if n := syncs.Load(); n < 2 { // the image, then the directory, per opener that wrote one
+		t.Errorf("%d syncs, want at least 2", n)
+	}
+	// An existing database is left as it is.
+	if err := createFromImage(path, errReader{}); err != nil {
+		t.Fatal(err)
+	}
+	wantImage(t)
+}
+
+// noFsync replaces fsync, for the test, with a counter of its calls: macOS's full sync takes milliseconds, and what
+// the tests check is what the files hold, not that they survive a power cut.
+func noFsync(t *testing.T) *atomic.Int32 {
+	t.Helper()
+	saved := fsync
+	t.Cleanup(func() { fsync = saved })
+	var n atomic.Int32
+	fsync = func(*os.File) error { n.Add(1); return nil }
+	return &n
 }
