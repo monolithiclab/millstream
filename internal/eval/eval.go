@@ -412,22 +412,9 @@ Its output:
 
 Score how well the output meets the rubric, from 0 (not at all) to 1 (fully), and give the reason in one sentence.`
 
-// judge asks the case's judge for its verdict on output, through the api harness behind the recorder.
-// secretsRedactor redacts the package's secrets and the extra ones, as set in the environment, out of what the
-// judge records: its prompt carries the case's input and the action's output.
-func secretsRedactor(opts Options, extra ...string) *redact.Redactor {
-	secrets := map[string]string{}
-	for _, name := range append(slices.Clone(opts.Package.Pipeline.Secrets), extra...) {
-		if name == "" {
-			continue
-		}
-		if v, ok := opts.Env(pipeline.SecretEnv(name)); ok {
-			secrets[name] = v
-		}
-	}
-	return redact.New(secrets)
-}
-
+// judge asks the case's judge for its verdict on output, through the api harness behind the recorder, which
+// redacts the package's secrets and the judge's API key out of what it records: the prompt carries the case's input
+// and the action's output.
 func judge(ctx context.Context, opts Options, c *Case, output any) (*Verdict, error) {
 	j := c.Judge
 	in, err := json.MarshalIndent(c.Input, "", "  ")
@@ -442,9 +429,10 @@ func judge(ctx context.Context, opts Options, c *Case, output any) (*Verdict, er
 	if j.APIKeySecret != "" {
 		key, _ = opts.Env(pipeline.SecretEnv(j.APIKeySecret))
 	}
+	secrets := pipeline.SecretValues(append(slices.Clone(opts.Package.Pipeline.Secrets), j.APIKeySecret), opts.Env)
 	h := agent.Recorder{
 		Harness: agent.API{Provider: j.Provider, BaseURL: j.BaseURL, APIKey: key, Client: opts.Client},
-		Name:    pipeline.HarnessAPI, Mode: opts.Mode, Dir: opts.Dir, Redact: secretsRedactor(opts, j.APIKeySecret),
+		Name:    pipeline.HarnessAPI, Mode: opts.Mode, Dir: opts.Dir, Redact: redact.New(secrets),
 	}
 	resp, err := h.Run(ctx, agent.Request{
 		Model: j.Model, Prompt: fmt.Sprintf(judgePrompt, strings.TrimSpace(j.Rubric), in, out), Schema: judgeSchema,

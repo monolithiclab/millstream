@@ -19,9 +19,9 @@ type candidate struct {
 	lease store.Lease
 }
 
-// Lease is the Lease unit (spec section 5.11). The engine's in-memory checks (concurrency, rate, limits) arrive
-// as req.Slots and req.Exclude; paused pipelines and steps are skipped from the store's state. An agent delivery
-// (its step and revision in req.Reserve) is leased with its budget reservation, only while the budgets allow it (budgetAllows).
+// Lease is the Lease unit (spec section 5.11). The engine's in-memory checks (concurrency, rate, limits) arrive as
+// req.Slots and req.Exclude; paused pipelines and steps are skipped from the store's state. An agent delivery (its step
+// and revision in req.Reserve) is leased with its budget reservation, only while the budgets allow it (budgetAllows).
 func (s *Store) Lease(ctx context.Context, req store.LeaseRequest) ([]store.Lease, error) {
 	if req.Owner == "" || req.TTL <= 0 {
 		return nil, fmt.Errorf("lease: an owner and a positive ttl are required: %w", store.ErrInvalid)

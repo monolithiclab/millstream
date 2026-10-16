@@ -39,7 +39,7 @@ type Spec struct {
 	// Kind is the runtime that starts the process: pipeline.KindExec (also when empty) or pipeline.KindContainer.
 	// Options.Launchers maps it to a Launcher.
 	Kind string
-	// Digest identifies the action's content; with the config and the vars it keys process reuse.
+	// Digest identifies the action's content; with the rest of the spec it keys process reuse (Pool).
 	Digest string
 	// Command is the program and its arguments; for a container, the command run in the image, empty for the
 	// image's own.
@@ -264,20 +264,11 @@ func Start(ctx context.Context, spec Spec, opts Options) (*Process, error) {
 }
 
 func (p *Process) spawn() error {
-	var wait func() error
-	if starter, ok := p.launcher.(Starter); ok {
-		proc, err := starter.Start(p.spec, p.workdir)
-		if err != nil {
-			return runtimeErr(ClassCrash, "%w", err)
-		}
-		p.stdin, p.stdout, p.stderr, p.terminate, wait = proc.Stdin, proc.Stdout, proc.Stderr, proc.Kill, proc.Wait
-	} else {
-		cmd, err := p.startCommand()
-		if err != nil {
-			return err
-		}
-		p.terminate, wait = func() { KillProcessGroup(cmd.Process) }, cmd.Wait
+	proc, err := Launch(p.launcher, p.spec, p.workdir)
+	if err != nil {
+		return runtimeErr(ClassCrash, "%w", err)
 	}
+	p.stdin, p.stdout, p.stderr, p.terminate = proc.Stdin, proc.Stdout, proc.Stderr, proc.Kill
 	p.w = protocol.NewWriterLimit(p.stdin, p.opts.maxLine)
 	var readers sync.WaitGroup
 	readers.Go(p.readStdout)
@@ -285,32 +276,39 @@ func (p *Process) spawn() error {
 	go func() {
 		// Wait only once both pipes are drained, so the last lines are not lost.
 		readers.Wait()
-		p.waitErr = wait()
+		p.waitErr = proc.Wait()
 		close(p.exited)
 	}()
 	return nil
 }
 
-// startCommand starts the launcher's command in its own process group, with its pipes.
-func (p *Process) startCommand() (*osexec.Cmd, error) {
-	cmd, err := p.launcher.Command(p.spec, p.workdir)
+// Launch starts the action for spec with l, with workdir as its MILLSTREAM_WORKDIR: a Starter starts it itself;
+// otherwise l's command runs in a process group of its own, with its pipes, and Kill kills the whole group (what
+// the launcher started outside it, a container, is left to l.Kill). Wait must be called once both Stdout and
+// Stderr are drained.
+func Launch(l Launcher, spec Spec, workdir string) (*Proc, error) {
+	if starter, ok := l.(Starter); ok {
+		return starter.Start(spec, workdir)
+	}
+	cmd, err := l.Command(spec, workdir)
 	if err != nil {
-		return nil, runtimeErr(ClassCrash, "%w", err)
+		return nil, err
 	}
 	SetProcessGroup(cmd) // so kill reaches the children the action starts
-	if p.stdin, err = cmd.StdinPipe(); err != nil {
-		return nil, runtimeErr(ClassCrash, "stdin pipe: %w", err)
+	proc := &Proc{Wait: cmd.Wait, Kill: func() { KillProcessGroup(cmd.Process) }}
+	if proc.Stdin, err = cmd.StdinPipe(); err != nil {
+		return nil, fmt.Errorf("stdin pipe: %w", err)
 	}
-	if p.stdout, err = cmd.StdoutPipe(); err != nil {
-		return nil, runtimeErr(ClassCrash, "stdout pipe: %w", err)
+	if proc.Stdout, err = cmd.StdoutPipe(); err != nil {
+		return nil, fmt.Errorf("stdout pipe: %w", err)
 	}
-	if p.stderr, err = cmd.StderrPipe(); err != nil {
-		return nil, runtimeErr(ClassCrash, "stderr pipe: %w", err)
+	if proc.Stderr, err = cmd.StderrPipe(); err != nil {
+		return nil, fmt.Errorf("stderr pipe: %w", err)
 	}
 	if err := cmd.Start(); err != nil {
-		return nil, runtimeErr(ClassCrash, "start %s: %w", cmd.Path, err)
+		return nil, fmt.Errorf("start %s: %w", cmd.Path, err)
 	}
-	return cmd, nil
+	return proc, nil
 }
 
 func (p *Process) readStdout() {

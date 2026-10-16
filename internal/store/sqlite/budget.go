@@ -1,7 +1,6 @@
 package sqlite
 
 import (
-	"cmp"
 	"fmt"
 	"maps"
 	"slices"
@@ -88,19 +87,19 @@ func (w *wtx) budgetAllows(l store.Lease, reserve float64, agents map[store.Agen
 func (w *wtx) budgetReached(pipelineName, runID, scope string, limit, spent, reserved float64,
 	agents map[store.AgentStep]float64, paused map[string]bool,
 ) error {
-	var steps []string
-	for _, ref := range slices.SortedFunc(maps.Keys(agents), func(a, b store.AgentStep) int {
-		return cmp.Or(cmp.Compare(a.Pipeline, b.Pipeline), cmp.Compare(a.Step, b.Step))
-	}) {
-		if ref.Pipeline != pipelineName || slices.Contains(steps, ref.Step) { // a step of several revisions
-			continue
+	names := map[string]bool{} // agents has a key per revision of a step
+	for ref := range agents {
+		if ref.Pipeline == pipelineName {
+			names[ref.Step] = true
 		}
+	}
+	steps := slices.Sorted(maps.Keys(names))
+	for _, step := range steps {
 		if _, err := w.exec(`INSERT INTO steps_state (pipeline, step, paused, cause) VALUES (?, ?, 1, ?)
 			ON CONFLICT DO UPDATE SET paused = 1, cause = excluded.cause WHERE paused = 0`,
-			pipelineName, ref.Step, store.PauseCauseBudget+scope); err != nil {
+			pipelineName, step, store.PauseCauseBudget+scope); err != nil {
 			return err
 		}
-		steps = append(steps, ref.Step)
 	}
 	paused[pipelineName] = true
 	return w.event(pipelineName, runID, store.EventBudgetReached, map[string]any{

@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -114,41 +115,17 @@ func (r Recorder) replay(req Request) (Response, error) {
 	return rec.Response, nil
 }
 
-// redactResponse returns resp with the secret values redacted out of its text, its structured output and every
-// turn of its transcript.
-func redactResponse(red *redact.Redactor, resp Response) (Response, error) {
-	if red == nil {
-		return resp, nil
-	}
-	var err error
-	resp.Text = red.String(resp.Text)
-	if len(resp.Structured) > 0 {
-		if resp.Structured, err = red.JSON(resp.Structured); err != nil {
-			return Response{}, err
-		}
-	}
-	turns := make([]Turn, len(resp.Transcript))
-	for i, t := range resp.Transcript {
-		t.Text = red.String(t.Text)
-		if len(t.Data) > 0 {
-			if t.Data, err = red.JSON(t.Data); err != nil {
-				return Response{}, err
-			}
-		}
-		turns[i] = t
-	}
-	resp.Transcript = turns
-	return resp, nil
-}
-
 // store writes the recording through a temporary file, so a reader never sees half of one.
 func (r Recorder) store(req Request, resp Response) error {
 	key := Key(r.Name, req)
-	resp, err := redactResponse(r.Redact, resp)
-	if err != nil {
-		return fmt.Errorf("record: %w", err)
+	raw, err := json.Marshal(Recording{Key: key, Harness: r.Name, Model: req.Model, Response: resp})
+	if err == nil {
+		raw, err = r.Redact.JSON(raw) // every string, so a field added to Response is redacted too
 	}
-	data, err := json.MarshalIndent(Recording{Key: key, Harness: r.Name, Model: req.Model, Response: resp}, "", "  ")
+	var data bytes.Buffer
+	if err == nil {
+		err = json.Indent(&data, raw, "", "  ")
+	}
 	if err != nil {
 		return fmt.Errorf("record: %w", err)
 	}
@@ -159,7 +136,8 @@ func (r Recorder) store(req Request, resp Response) error {
 	if err != nil {
 		return fmt.Errorf("record: %w", err)
 	}
-	_, err = tmp.Write(append(data, '\n'))
+	data.WriteByte('\n')
+	_, err = tmp.Write(data.Bytes())
 	if cerr := tmp.Close(); err == nil {
 		err = cerr
 	}

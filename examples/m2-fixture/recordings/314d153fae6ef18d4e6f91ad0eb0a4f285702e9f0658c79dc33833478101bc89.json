@@ -1,20 +1,17 @@
 {
-  "key": "314d153fae6ef18d4e6f91ad0eb0a4f285702e9f0658c79dc33833478101bc89",
   "harness": "api",
+  "key": "314d153fae6ef18d4e6f91ad0eb0a4f285702e9f0658c79dc33833478101bc89",
   "model": "fake-scorer-1",
   "response": {
     "text": "```json\n{\"id\":\"L008\",\"city\":\"Bordeaux\",\"priceEur\":339000,\"surfaceM2\":103,\"rooms\":5,\"condition\":\"good\",\"monthlyRentEur\":1545,\"score\":80,\"reason\":\"good condition at 339000 EUR for 103 m² in Bordeaux.\"}\n```",
     "tokensIn": 276,
     "tokensOut": 51,
-    "turns": 1,
     "transcript": [
       {
         "role": "user",
         "text": "You score real estate listings as renovation opportunities, from 0 to 100.\n\nListing L008: 103 m², 5 rooms in Bordeaux,\ncondition good, asking 339000 EUR, estimated rent 1545 EUR a month.\n\nScore it from its discount to the city's market price per square metre, and from its condition: a poorer condition\nis a better opportunity. Answer with the listing as given, every field unchanged, plus `score` (an integer) and\n`reason` (one sentence).\n\n\n## Lessons from past runs\n\nRules:\n\n- A listing in poor condition hides renovation costs, so lower its score by 25 points.\n\n\nEnd your answer with a fenced ```json block holding only your result, a JSON value valid against this JSON Schema:\n\n```\n{\"properties\":{\"city\":{\"type\":\"string\"},\"condition\":{\"enum\":[\"good\",\"fair\",\"poor\"]},\"id\":{\"type\":\"string\"},\"monthlyRentEur\":{\"type\":\"integer\"},\"priceEur\":{\"type\":\"integer\"},\"reason\":{\"type\":\"string\"},\"rooms\":{\"type\":\"integer\"},\"score\":{\"maximum\":100,\"minimum\":0,\"type\":\"integer\"},\"surfaceM2\":{\"type\":\"integer\"}},\"required\":[\"id\",\"city\",\"priceEur\",\"surfaceM2\",\"rooms\",\"condition\",\"score\",\"reason\"],\"type\":\"object\"}\n```\n"
       },
       {
-        "role": "assistant",
-        "text": "```json\n{\"id\":\"L008\",\"city\":\"Bordeaux\",\"priceEur\":339000,\"surfaceM2\":103,\"rooms\":5,\"condition\":\"good\",\"monthlyRentEur\":1545,\"score\":80,\"reason\":\"good condition at 339000 EUR for 103 m² in Bordeaux.\"}\n```",
         "data": {
           "choices": [
             {
@@ -33,8 +30,11 @@
             "completion_tokens": 51,
             "prompt_tokens": 276
           }
-        }
+        },
+        "role": "assistant",
+        "text": "```json\n{\"id\":\"L008\",\"city\":\"Bordeaux\",\"priceEur\":339000,\"surfaceM2\":103,\"rooms\":5,\"condition\":\"good\",\"monthlyRentEur\":1545,\"score\":80,\"reason\":\"good condition at 339000 EUR for 103 m² in Bordeaux.\"}\n```"
       }
-    ]
+    ],
+    "turns": 1
   }
 }

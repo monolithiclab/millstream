@@ -1,20 +1,17 @@
 {
-  "key": "e1f9d9d3a437b7e48b6d8ff243b7e7bc029f89c68ac81784430683f89cbba642",
   "harness": "api",
+  "key": "e1f9d9d3a437b7e48b6d8ff243b7e7bc029f89c68ac81784430683f89cbba642",
   "model": "fake-scorer-1",
   "response": {
     "text": "```json\n{\"id\":\"L003\",\"city\":\"Lille\",\"priceEur\":79000,\"surfaceM2\":38,\"rooms\":2,\"condition\":\"good\",\"monthlyRentEur\":532,\"score\":93,\"reason\":\"good condition at 79000 EUR for 38 m² in Lille.\"}\n```",
     "tokensIn": 274,
     "tokensOut": 48,
-    "turns": 1,
     "transcript": [
       {
         "role": "user",
         "text": "You score real estate listings as renovation opportunities, from 0 to 100.\n\nListing L003: 38 m², 2 rooms in Lille,\ncondition good, asking 79000 EUR, estimated rent 532 EUR a month.\n\nScore it from its discount to the city's market price per square metre, and from its condition: a poorer condition\nis a better opportunity. Answer with the listing as given, every field unchanged, plus `score` (an integer) and\n`reason` (one sentence).\n\n\n## Lessons from past runs\n\nRules:\n\n- A listing in poor condition hides renovation costs, so lower its score by 10 points.\n\n\nEnd your answer with a fenced ```json block holding only your result, a JSON value valid against this JSON Schema:\n\n```\n{\"properties\":{\"city\":{\"type\":\"string\"},\"condition\":{\"enum\":[\"good\",\"fair\",\"poor\"]},\"id\":{\"type\":\"string\"},\"monthlyRentEur\":{\"type\":\"integer\"},\"priceEur\":{\"type\":\"integer\"},\"reason\":{\"type\":\"string\"},\"rooms\":{\"type\":\"integer\"},\"score\":{\"maximum\":100,\"minimum\":0,\"type\":\"integer\"},\"surfaceM2\":{\"type\":\"integer\"}},\"required\":[\"id\",\"city\",\"priceEur\",\"surfaceM2\",\"rooms\",\"condition\",\"score\",\"reason\"],\"type\":\"object\"}\n```\n"
       },
       {
-        "role": "assistant",
-        "text": "```json\n{\"id\":\"L003\",\"city\":\"Lille\",\"priceEur\":79000,\"surfaceM2\":38,\"rooms\":2,\"condition\":\"good\",\"monthlyRentEur\":532,\"score\":93,\"reason\":\"good condition at 79000 EUR for 38 m² in Lille.\"}\n```",
         "data": {
           "choices": [
             {
@@ -33,8 +30,11 @@
             "completion_tokens": 48,
             "prompt_tokens": 274
           }
-        }
+        },
+        "role": "assistant",
+        "text": "```json\n{\"id\":\"L003\",\"city\":\"Lille\",\"priceEur\":79000,\"surfaceM2\":38,\"rooms\":2,\"condition\":\"good\",\"monthlyRentEur\":532,\"score\":93,\"reason\":\"good condition at 79000 EUR for 38 m² in Lille.\"}\n```"
       }
-    ]
+    ],
+    "turns": 1
   }
 }

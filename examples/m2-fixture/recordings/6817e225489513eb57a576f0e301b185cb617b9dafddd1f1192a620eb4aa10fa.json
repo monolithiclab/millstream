@@ -1,20 +1,17 @@
 {
-  "key": "6817e225489513eb57a576f0e301b185cb617b9dafddd1f1192a620eb4aa10fa",
   "harness": "api",
+  "key": "6817e225489513eb57a576f0e301b185cb617b9dafddd1f1192a620eb4aa10fa",
   "model": "fake-scorer-1",
   "response": {
     "text": "```json\n{\"id\":\"L009\",\"city\":\"Grenoble\",\"priceEur\":300000,\"surfaceM2\":85,\"rooms\":4,\"condition\":\"good\",\"monthlyRentEur\":1020,\"score\":44,\"reason\":\"good condition at 300000 EUR for 85 m² in Grenoble.\"}\n```",
     "tokensIn": 276,
     "tokensOut": 50,
-    "turns": 1,
     "transcript": [
       {
         "role": "user",
         "text": "You score real estate listings as renovation opportunities, from 0 to 100.\n\nListing L009: 85 m², 4 rooms in Grenoble,\ncondition good, asking 300000 EUR, estimated rent 1020 EUR a month.\n\nScore it from its discount to the city's market price per square metre, and from its condition: a poorer condition\nis a better opportunity. Answer with the listing as given, every field unchanged, plus `score` (an integer) and\n`reason` (one sentence).\n\n\n## Lessons from past runs\n\nRules:\n\n- A listing in poor condition hides renovation costs, so lower its score by 25 points.\n\n\nEnd your answer with a fenced ```json block holding only your result, a JSON value valid against this JSON Schema:\n\n```\n{\"properties\":{\"city\":{\"type\":\"string\"},\"condition\":{\"enum\":[\"good\",\"fair\",\"poor\"]},\"id\":{\"type\":\"string\"},\"monthlyRentEur\":{\"type\":\"integer\"},\"priceEur\":{\"type\":\"integer\"},\"reason\":{\"type\":\"string\"},\"rooms\":{\"type\":\"integer\"},\"score\":{\"maximum\":100,\"minimum\":0,\"type\":\"integer\"},\"surfaceM2\":{\"type\":\"integer\"}},\"required\":[\"id\",\"city\",\"priceEur\",\"surfaceM2\",\"rooms\",\"condition\",\"score\",\"reason\"],\"type\":\"object\"}\n```\n"
       },
       {
-        "role": "assistant",
-        "text": "```json\n{\"id\":\"L009\",\"city\":\"Grenoble\",\"priceEur\":300000,\"surfaceM2\":85,\"rooms\":4,\"condition\":\"good\",\"monthlyRentEur\":1020,\"score\":44,\"reason\":\"good condition at 300000 EUR for 85 m² in Grenoble.\"}\n```",
         "data": {
           "choices": [
             {
@@ -33,8 +30,11 @@
             "completion_tokens": 50,
             "prompt_tokens": 276
           }
-        }
+        },
+        "role": "assistant",
+        "text": "```json\n{\"id\":\"L009\",\"city\":\"Grenoble\",\"priceEur\":300000,\"surfaceM2\":85,\"rooms\":4,\"condition\":\"good\",\"monthlyRentEur\":1020,\"score\":44,\"reason\":\"good condition at 300000 EUR for 85 m² in Grenoble.\"}\n```"
       }
-    ]
+    ],
+    "turns": 1
   }
 }

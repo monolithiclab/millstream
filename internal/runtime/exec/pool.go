@@ -24,9 +24,10 @@ type PoolOptions struct {
 }
 
 // Pool runs deliveries on action processes. A long-lived process is reused only for the same launch spec: action
-// digest, image, command, network, mounts, environment, config, vars and lessons (spec section 6.5), and serves one delivery at a time: concurrent deliveries of one key run on
-// as many processes. A process that fails a delivery in the runtime is dropped, so the next delivery spawns a
-// fresh one. A perItem action gets a fresh process for every delivery, closed after it.
+// digest, image, command, network, mounts, environment, config, vars and lessons (spec section 6.5), and serves one
+// delivery at a time: concurrent deliveries of one key run on as many processes. A process that fails a delivery in the
+// runtime is dropped, so the next delivery spawns a fresh one. A perItem action gets a fresh process for every
+// delivery, closed after it.
 type Pool struct {
 	opts PoolOptions
 
@@ -146,21 +147,13 @@ func (pl *Pool) closeLogged(p *Process) {
 	}
 }
 
-// poolKey hashes everything that shapes a process when it starts: what runs (kind, digest, image, command,
-// directory), what it can reach (network, mounts, environment, so rotated secrets start a new process) and what
-// hello tells it (config, vars, lessons). Two pipelines with equal actions but other secrets or mounts never share a
-// process. encoding/json sorts map keys, so equal maps encode alike; the key is a hash, so the environment's values
-// never appear in it.
+// poolKey hashes the whole spec: what runs (kind, digest, image, command, directory), what it can reach (network,
+// mounts, environment, so rotated secrets start a new process) and what hello tells it (config, vars, lessons). Two
+// pipelines with equal actions but other secrets or mounts never share a process, and a field added to Spec keys
+// reuse by default. encoding/json sorts map keys, so equal maps encode alike; the key is a hash, so the
+// environment's values never appear in it.
 func poolKey(spec Spec) (string, error) {
-	enc, err := json.Marshal(struct {
-		Kind, Digest, Image, Dir string
-		Command, Env             []string
-		Network                  bool
-		Mounts                   []Mount
-		Config, Vars             map[string]any
-		Lessons                  json.RawMessage
-	}{spec.Kind, spec.Digest, spec.Image, spec.Dir, spec.Command, spec.Env, spec.Network, spec.Mounts, spec.Config,
-		spec.Vars, spec.Lessons})
+	enc, err := json.Marshal(spec)
 	if err != nil {
 		return "", fmt.Errorf("action %s: encode its launch spec: %w", spec.Action, err)
 	}

@@ -264,8 +264,8 @@ func storeMetrics(log *slog.Logger, red *redact.Redactor, ms []protocol.Metric) 
 			log.Warn("metric dropped: too many metrics for one attempt", "metric", m.Name,
 				"max", store.MaxAttemptMetrics)
 		default:
-			var labels map[string]string
-			if m.Labels != nil {
+			labels := m.Labels
+			if red != nil && labels != nil { // a copy: the action's map is left as it sent it
 				labels = make(map[string]string, len(m.Labels))
 				for k, v := range m.Labels {
 					labels[red.String(k)] = red.String(v)

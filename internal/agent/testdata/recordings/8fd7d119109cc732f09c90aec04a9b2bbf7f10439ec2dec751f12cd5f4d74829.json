@@ -1,20 +1,17 @@
 {
-  "key": "8fd7d119109cc732f09c90aec04a9b2bbf7f10439ec2dec751f12cd5f4d74829",
   "harness": "api",
+  "key": "8fd7d119109cc732f09c90aec04a9b2bbf7f10439ec2dec751f12cd5f4d74829",
   "model": "claude-sonnet-5-5",
   "response": {
     "text": "```json\n{\"score\": 72, \"reason\": \"Dated kitchen, sound structure.\"}\n```",
     "tokensIn": 150,
     "tokensOut": 25,
-    "turns": 1,
     "transcript": [
       {
         "role": "user",
         "text": "Score the listing at https://example.com/listings/1 in Lyon for renovation potential, from 0 to 100.\n\n\nEnd your answer with a fenced ```json block holding only your result, a JSON value valid against this JSON Schema:\n\n```\n{\"properties\":{\"reason\":{\"type\":\"string\"},\"score\":{\"maximum\":100,\"minimum\":0,\"type\":\"integer\"}},\"required\":[\"score\",\"reason\"],\"type\":\"object\"}\n```\n"
       },
       {
-        "role": "assistant",
-        "text": "```json\n{\"score\": 72, \"reason\": \"Dated kitchen, sound structure.\"}\n```",
         "data": {
           "content": [
             {
@@ -29,8 +26,11 @@
             "input_tokens": 150,
             "output_tokens": 25
           }
-        }
+        },
+        "role": "assistant",
+        "text": "```json\n{\"score\": 72, \"reason\": \"Dated kitchen, sound structure.\"}\n```"
       }
-    ]
+    ],
+    "turns": 1
   }
 }

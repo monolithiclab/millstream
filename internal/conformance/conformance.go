@@ -1,7 +1,8 @@
 // Package conformance is the action protocol conformance suite (docs/protocol.md, Conformance): generic checks any
 // action must pass, whatever it computes. It drives the action's process itself, over os/exec (or an exec.Starter's
 // pipes, for in-process test actions) and the raw lines of its stdout, rather than through the exec runtime, which
-// hides what it sees as violations behind a retry: the suite reports each one. Every check is answered pass, fail or skip (when a check it needs failed), with a reason.
+// hides what it sees as violations behind a retry: the suite reports each one. Every check is answered pass, fail or
+// skip (when a check it needs failed), with a reason.
 //
 // The suite starts four processes: one for the handshake, an item, the silence between deliveries and shutdown; one
 // for hello and item messages carrying keys the action cannot know; and two for a malformed config, null and with
@@ -309,8 +310,7 @@ type process struct {
 	s         *suite
 	session   string
 	stdin     io.WriteCloser
-	wait      func() error
-	terminate func() // ends the action: its process group, or a Starter's action
+	terminate func() // ends the action and what its launcher started
 	workdir   string
 	lines     chan []byte // stdout lines; closed at the end of stdout
 	exited    chan struct{}
@@ -319,38 +319,29 @@ type process struct {
 	killOnce  sync.Once
 }
 
-// start spawns the action in a process group of its own, with a temporary MILLSTREAM_WORKDIR; a launcher that is an
-// exec.Starter (the tests' in-process actions) starts it itself.
+// start spawns the action with exec.Launch (in a process group of its own, or in-process for a Starter), with a
+// temporary MILLSTREAM_WORKDIR.
 func (s *suite) start(ctx context.Context, session string) (*process, error) {
 	workdir, err := os.MkdirTemp("", "millstream-conformance-")
 	if err != nil {
 		return nil, fmt.Errorf("create workdir: %w", err)
 	}
-	p := &process{s: s, session: session, workdir: workdir, lines: make(chan []byte, 64), exited: make(chan struct{})}
-	var stdout io.Reader
-	if starter, ok := s.t.Launcher.(exec.Starter); ok {
-		proc, err := starter.Start(s.t.Spec, workdir)
-		if err != nil {
-			_ = os.RemoveAll(workdir)
-			return nil, fmt.Errorf("start the action: %w", err)
-		}
-		p.stdin, stdout, p.terminate = proc.Stdin, proc.Stdout, proc.Kill
-		stderrDone := make(chan struct{})
-		go func() { // Wait returns once stderr is drained
-			_, _ = io.Copy(&p.stderr, proc.Stderr)
-			close(stderrDone)
-		}()
-		p.wait = func() error {
-			<-stderrDone
-			return proc.Wait()
-		}
-	} else if stdout, err = p.startCommand(); err != nil {
+	proc, err := exec.Launch(s.t.Launcher, s.t.Spec, workdir)
+	if err != nil {
 		_ = os.RemoveAll(workdir)
-		return nil, err
+		return nil, fmt.Errorf("start the action: %w", err)
 	}
+	p := &process{s: s, session: session, stdin: proc.Stdin, workdir: workdir, lines: make(chan []byte, 64),
+		exited: make(chan struct{}), terminate: func() {
+			proc.Kill()
+			s.t.Launcher.Kill(s.t.Spec, workdir)
+		}}
 	go func() {
-		p.read(stdout) // Wait closes stdout: only once it is drained, so no line is lost
-		p.waitErr = p.wait()
+		var readers sync.WaitGroup
+		readers.Go(func() { p.read(proc.Stdout) })
+		readers.Go(func() { _, _ = io.Copy(&p.stderr, proc.Stderr) })
+		readers.Wait() // Wait only once both pipes are drained, so no line is lost
+		p.waitErr = proc.Wait()
 		close(p.exited)
 	}()
 	go func() {
@@ -361,33 +352,6 @@ func (s *suite) start(ctx context.Context, session string) (*process, error) {
 		}
 	}()
 	return p, nil
-}
-
-// startCommand starts the launcher's command for the action, in a process group of its own, and returns its stdout.
-func (p *process) startCommand() (io.Reader, error) {
-	t := p.s.t
-	cmd, err := t.Launcher.Command(t.Spec, p.workdir)
-	if err != nil {
-		return nil, err
-	}
-	exec.SetProcessGroup(cmd)
-	cmd.Stderr = &p.stderr
-	stdout, err := cmd.StdoutPipe()
-	if err == nil {
-		p.stdin, err = cmd.StdinPipe()
-	}
-	if err == nil {
-		err = cmd.Start()
-	}
-	if err != nil {
-		return nil, fmt.Errorf("start the action: %w", err)
-	}
-	p.wait = cmd.Wait
-	p.terminate = func() {
-		exec.KillProcessGroup(cmd.Process)
-		t.Launcher.Kill(t.Spec, p.workdir)
-	}
-	return stdout, nil
 }
 
 // read splits stdout into lines, recording a line over the limit as a violation.

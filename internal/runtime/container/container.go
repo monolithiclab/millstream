@@ -120,7 +120,11 @@ func (l Launcher) Command(spec exec.Spec, workdir string) (*osexec.Cmd, error) {
 	if spec.Image == "" {
 		return nil, fmt.Errorf("action %s: no image", spec.Action)
 	}
-	for _, p := range append([]string{workdir}, mountPaths(spec.Mounts)...) {
+	paths := []string{workdir}
+	for _, m := range spec.Mounts {
+		paths = append(paths, m.Source, m.Target)
+	}
+	for _, p := range paths {
 		if strings.Contains(p, ",") {
 			return nil, fmt.Errorf("action %s: mount path %q holds a comma, which --mount cannot pass", spec.Action, p)
 		}
@@ -177,15 +181,6 @@ func bindMount(src, dst string, readOnly bool) string {
 		m += ",readonly"
 	}
 	return m
-}
-
-// mountPaths lists the sources and targets of mounts.
-func mountPaths(mounts []exec.Mount) []string {
-	var paths []string
-	for _, m := range mounts {
-		paths = append(paths, m.Source, m.Target)
-	}
-	return paths
 }
 
 // hasEnv reports whether the CLI's own environment sets k. The action's variables the CLI does not have are passed

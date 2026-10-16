@@ -122,3 +122,15 @@ func TestResolveReportsEveryProblem(t *testing.T) {
 		assertErr(t, err, want)
 	}
 }
+
+func TestSecretValues(t *testing.T) {
+	t.Parallel()
+	env := map[string]string{"MILLSTREAM_SECRET_API_TOKEN": "t0ken", "MILLSTREAM_SECRET_EMPTY": ""}
+	got := SecretValues([]string{"apiToken", "empty", "unset", ""}, func(k string) (string, bool) {
+		v, ok := env[k]
+		return v, ok
+	})
+	if len(got) != 2 || got["apiToken"] != "t0ken" || got["empty"] != "" {
+		t.Fatalf("SecretValues = %v", got)
+	}
+}

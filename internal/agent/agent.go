@@ -136,12 +136,7 @@ type adapter struct {
 
 func newAdapter(opts Options, hello protocol.Hello) *adapter {
 	a := &adapter{opts: opts, hello: hello}
-	secrets := map[string]string{}
-	for _, name := range opts.Secrets {
-		if v, ok := opts.Env(pipeline.SecretEnv(name)); ok {
-			secrets[name] = v
-		}
-	}
+	secrets := pipeline.SecretValues(opts.Secrets, opts.Env)
 	a.redact = redact.New(secrets)
 	a.workdir, _ = opts.Env("MILLSTREAM_WORKDIR")
 	a.setupErr = a.setup(secrets)

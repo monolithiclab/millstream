@@ -31,6 +31,21 @@ func VarEnv(name string) string { return "MILLSTREAM_VAR_" + ids.UpperSnake(name
 // MILLSTREAM_SECRET_<UPPER_SNAKE>.
 func SecretEnv(name string) string { return "MILLSTREAM_SECRET_" + ids.UpperSnake(name) }
 
+// SecretValues returns the values of the secrets named, by name, read from env (SecretEnv); an unset one, or an
+// empty name, is left out.
+func SecretValues(names []string, env func(string) (string, bool)) map[string]string {
+	secrets := map[string]string{}
+	for _, name := range names {
+		if name == "" {
+			continue
+		}
+		if v, ok := env(SecretEnv(name)); ok {
+			secrets[name] = v
+		}
+	}
+	return secrets
+}
+
 // ResolveVars resolves p's variables (spec section 4.4) and secrets (section 4.5). Each variable takes, highest
 // first, its --var flag, its MILLSTREAM_VAR_ environment variable, then its default. A value is parsed as JSON
 // unless the default is a string, and must have the default's type; a variable with a null default is required

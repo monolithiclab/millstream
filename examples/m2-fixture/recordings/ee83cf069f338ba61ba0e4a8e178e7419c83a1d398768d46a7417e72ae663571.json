@@ -1,20 +1,17 @@
 {
-  "key": "ee83cf069f338ba61ba0e4a8e178e7419c83a1d398768d46a7417e72ae663571",
   "harness": "api",
+  "key": "ee83cf069f338ba61ba0e4a8e178e7419c83a1d398768d46a7417e72ae663571",
   "model": "fake-scorer-1",
   "response": {
     "text": "```json\n{\"id\":\"L004\",\"city\":\"Grenoble\",\"priceEur\":282000,\"surfaceM2\":114,\"rooms\":5,\"condition\":\"poor\",\"monthlyRentEur\":1596,\"score\":76,\"reason\":\"poor condition at 282000 EUR for 114 m² in Grenoble. Lowered by 10 points for hidden renovation costs.\"}\n```",
     "tokensIn": 276,
     "tokensOut": 63,
-    "turns": 1,
     "transcript": [
       {
         "role": "user",
         "text": "You score real estate listings as renovation opportunities, from 0 to 100.\n\nListing L004: 114 m², 5 rooms in Grenoble,\ncondition poor, asking 282000 EUR, estimated rent 1596 EUR a month.\n\nScore it from its discount to the city's market price per square metre, and from its condition: a poorer condition\nis a better opportunity. Answer with the listing as given, every field unchanged, plus `score` (an integer) and\n`reason` (one sentence).\n\n\n## Lessons from past runs\n\nRules:\n\n- A listing in poor condition hides renovation costs, so lower its score by 10 points.\n\n\nEnd your answer with a fenced ```json block holding only your result, a JSON value valid against this JSON Schema:\n\n```\n{\"properties\":{\"city\":{\"type\":\"string\"},\"condition\":{\"enum\":[\"good\",\"fair\",\"poor\"]},\"id\":{\"type\":\"string\"},\"monthlyRentEur\":{\"type\":\"integer\"},\"priceEur\":{\"type\":\"integer\"},\"reason\":{\"type\":\"string\"},\"rooms\":{\"type\":\"integer\"},\"score\":{\"maximum\":100,\"minimum\":0,\"type\":\"integer\"},\"surfaceM2\":{\"type\":\"integer\"}},\"required\":[\"id\",\"city\",\"priceEur\",\"surfaceM2\",\"rooms\",\"condition\",\"score\",\"reason\"],\"type\":\"object\"}\n```\n"
       },
       {
-        "role": "assistant",
-        "text": "```json\n{\"id\":\"L004\",\"city\":\"Grenoble\",\"priceEur\":282000,\"surfaceM2\":114,\"rooms\":5,\"condition\":\"poor\",\"monthlyRentEur\":1596,\"score\":76,\"reason\":\"poor condition at 282000 EUR for 114 m² in Grenoble. Lowered by 10 points for hidden renovation costs.\"}\n```",
         "data": {
           "choices": [
             {
@@ -33,8 +30,11 @@
             "completion_tokens": 63,
             "prompt_tokens": 276
           }
-        }
+        },
+        "role": "assistant",
+        "text": "```json\n{\"id\":\"L004\",\"city\":\"Grenoble\",\"priceEur\":282000,\"surfaceM2\":114,\"rooms\":5,\"condition\":\"poor\",\"monthlyRentEur\":1596,\"score\":76,\"reason\":\"poor condition at 282000 EUR for 114 m² in Grenoble. Lowered by 10 points for hidden renovation costs.\"}\n```"
       }
-    ]
+    ],
+    "turns": 1
   }
 }
