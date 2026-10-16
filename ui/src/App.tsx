@@ -6,6 +6,10 @@ import type { Language } from './i18n';
 import type { EventSourceFactory } from './live/useLiveStream';
 import { PreferencesProvider, type Theme } from './preferences';
 import { InboxScreen } from './screens/inbox/InboxScreen';
+import { InsightsScreen } from './screens/insights/InsightsScreen';
+import { LessonsScreen } from './screens/lessons/LessonsScreen';
+import { LogsScreen } from './screens/logs/LogsScreen';
+import { NodesScreen } from './screens/nodes/NodesScreen';
 import { NotFound } from './screens/NotFound';
 import { Placeholder } from './screens/Placeholder';
 import { RunScreen } from './screens/runs/RunScreen';
@@ -21,6 +25,10 @@ import { AppShell } from './shell/AppShell';
 const built: Partial<Record<ScreenId, () => ReactNode>> = {
   inbox: () => <InboxScreen />,
   runs: () => <RunsScreen />,
+  insights: () => <InsightsScreen />,
+  lessons: () => <LessonsScreen />,
+  nodes: () => <NodesScreen />,
+  logs: () => <LogsScreen />,
   metrics: () => (
     <Suspense fallback={<Loading />}>
       <MetricsScreen />

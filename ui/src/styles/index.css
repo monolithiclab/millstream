@@ -36,6 +36,10 @@
   --color-hatch: var(--ms-hatch);
   --color-log-bg: var(--ms-log-bg);
   --color-log-ink: var(--ms-log-ink);
+  --color-log-dim: var(--ms-log-dim);
+  --color-log-warn: var(--ms-log-warn);
+  --color-log-bad: var(--ms-log-bad);
+  --color-log-rule: var(--ms-log-rule);
   --color-transparent: transparent;
   --color-current: currentColor;
 

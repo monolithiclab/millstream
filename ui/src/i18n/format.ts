@@ -89,12 +89,18 @@ export function formatDateTime(date: Date, language: Language, timeZone?: string
   }).format(date);
 }
 
-// A time of day, 06:31 in both languages (24-hour clock), with seconds for log lines.
-export function formatClock(date: Date, language: Language, seconds = false, timeZone?: string): string {
+// A time of day, 06:31 in both languages (24-hour clock), to the second or the millisecond for log lines.
+export function formatClock(
+  date: Date,
+  language: Language,
+  precision: 'minute' | 'second' | 'millisecond' = 'minute',
+  timeZone?: string,
+): string {
   return dateFormat(language, {
     hour: '2-digit',
     minute: '2-digit',
-    second: seconds ? '2-digit' : undefined,
+    second: precision === 'minute' ? undefined : '2-digit',
+    fractionalSecondDigits: precision === 'millisecond' ? 3 : undefined,
     hourCycle: 'h23',
     timeZone,
   }).format(date);

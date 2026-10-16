@@ -82,8 +82,9 @@ describe('formatDateTime', () => {
 describe('formatClock, formatDay and formatPercent', () => {
   const date = new Date('2026-10-15T06:31:04Z');
   it('formats times of day on a 24-hour clock', () => {
-    expect(formatClock(date, 'en', false, 'UTC')).toBe('06:31');
-    expect(formatClock(date, 'fr', true, 'UTC')).toBe('06:31:04');
+    expect(formatClock(date, 'en', 'minute', 'UTC')).toBe('06:31');
+    expect(formatClock(date, 'fr', 'second', 'UTC')).toBe('06:31:04');
+    expect(formatClock(new Date('2026-10-15T06:31:04.205Z'), 'en', 'millisecond', 'UTC')).toBe('06:31:04.205');
   });
   it('formats short days', () => {
     expect(formatDay(date, 'en', 'UTC')).toBe('Thu, Oct 15');

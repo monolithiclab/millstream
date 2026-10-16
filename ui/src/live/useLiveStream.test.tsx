@@ -176,6 +176,12 @@ describe('helpers', () => {
     demo.onopen = opened;
     vi.runAllTimers();
     expect(opened).toHaveBeenCalled();
+    const logs = demoEventSource('/api/v1/live/logs') as FakeEventSource;
+    const seen: string[] = [];
+    logs.addEventListener('log', () => seen.push('log'));
+    logs.addEventListener('gap', () => seen.push('gap'));
+    vi.runAllTimers();
+    expect(seen).toEqual(['log', 'log', 'log', 'gap', 'log', 'log', 'log']);
     expect(() => {
       FakeEventSource.reset();
       FakeEventSource.latest();

@@ -298,5 +298,139 @@
     "max": "Max",
     "asTable": "Afficher les données en tableau",
     "time": "Heure"
+  },
+  "insights": {
+    "stateLabel": "État des constats",
+    "tab": {
+      "attention": "À traiter {{count}}",
+      "resolved": "Résolus {{count}}",
+      "muted": "Masqués {{count}}"
+    },
+    "explain": "Le moteur relève des constats à partir des métriques et des revues. À vous de décider.",
+    "filters": "Filtrer les constats",
+    "byKind": "Par type",
+    "noKinds": "Aucun constat ici.",
+    "step": "Étape",
+    "allSteps": "Toutes les étapes",
+    "none": "Rien à traiter",
+    "noneBody": "Aucune étape lente, série d’échecs, dérive de coût ou tendance de revue ne ressort des derniers runs.",
+    "noneHere": "Aucun constat dans cet état",
+    "kind": {
+      "slowStep": "Étape lente",
+      "failureCluster": "Série d’échecs",
+      "cost": "Coût",
+      "reviewPattern": "Tendance de revue",
+      "unschedulable": "Non planifiable"
+    },
+    "state": {
+      "open": "Ouvert",
+      "acknowledged": "Pris en compte",
+      "resolved": "Résolu",
+      "muted": "Masqué"
+    },
+    "raised": "relevé {{when}}",
+    "title": {
+      "slowStep": "{{step}} ralentit les runs",
+      "failureCluster": "{{count}} échecs avec la même erreur à {{step}}",
+      "cost": "{{step}} a coûté {{cost}} sur la période",
+      "reviewPattern": "Comment les relecteurs décident à {{step}}",
+      "unschedulable": "Aucun nœud ne peut exécuter {{step}}"
+    },
+    "body": {
+      "slowStep": "Elle occupe {{share}} du chemin critique sur les derniers runs ({{runs}}).",
+      "cost": "Sorties sur la période : {{outputs}}.",
+      "edits": "Les relecteurs modifient surtout ces champs : {{pointers}}.",
+      "noEdits": "Les relecteurs approuvent sans modifier."
+    },
+    "figure": {
+      "p95": "Latence p95",
+      "baseline": "référence {{value}}",
+      "pathShare": "Part du chemin critique",
+      "queueShare": "Attente en file",
+      "workShare": "travail {{value}}",
+      "failures": "Échecs",
+      "dead": "lettres mortes : {{count}}",
+      "rate": "Part des essais",
+      "recovered": "Rattrapés au nouvel essai",
+      "perOutput": "Coût par sortie",
+      "perApproved": "Coût par item approuvé",
+      "schemaFailures": "Échecs de schéma",
+      "intervention": "Taux d’intervention",
+      "editRate": "Approbations modifiées",
+      "rejected": "rejetés {{value}}",
+      "agreement": "Accord sur les échantillons",
+      "decision": "décision médiane {{value}}",
+      "attempts": "Essais refusés",
+      "deliveries": "Livraisons"
+    },
+    "samples": "Items en exemple",
+    "openMetrics": "Ouvrir dans les métriques",
+    "openDeadLetters": "Ouvrir les lettres mortes",
+    "openNodes": "Ouvrir les nœuds",
+    "acknowledge": "Prendre en compte",
+    "mute": "Masquer",
+    "actionFailed": "Le constat n’a pas pu être modifié."
+  },
+  "lessons": {
+    "explain": "Lecture seule : les leçons se modifient dans le fichier de leçons de l’étape.",
+    "empty": "Aucune leçon pour l’instant",
+    "emptyBody": "Une étape agent apprend d’un fichier de leçons du package, à côté de son pipeline :",
+    "openStep": "Ouvrir dans le graphe",
+    "rules": "Règles",
+    "noRules": "Aucune règle.",
+    "examples": "Exemples",
+    "noExamples": "Aucun exemple.",
+    "input": "Entrée",
+    "output": "Sortie",
+    "added": "ajoutée le {{date}}",
+    "fromInsight": "d’après le constat {{id}}",
+    "fromReview": "d’après la revue {{id}}",
+    "fromProposal": "d’après la proposition {{id}}"
+  },
+  "nodes": {
+    "busy": "{{leases}} emplacements occupés sur {{slots}}",
+    "connected": "nœuds : {{count}}",
+    "engine": "Moteur",
+    "version": "Millstream {{version}}",
+    "engineNote": "Exécute les pipelines et un nœud intégré. Un moteur de secours arrive avec M4.",
+    "state": {
+      "active": "Actif",
+      "standby": "En attente"
+    },
+    "capacity": "Capacité libre",
+    "freeSlots": "emplacements libres pour de nouvelles livraisons",
+    "none": "Aucun nœud connecté",
+    "noneBody": "Rien ne peut s’exécuter avant qu’un nœud se connecte : millstream run en démarre un dans le moteur.",
+    "table": "Nœuds, leurs libellés, emplacements et baux",
+    "col": {
+      "node": "Nœud",
+      "state": "État",
+      "labels": "Libellés",
+      "version": "Version",
+      "slots": "Emplacements",
+      "leases": "Baux",
+      "runtimes": "Environnements"
+    },
+    "embedded": "intégré au moteur",
+    "remote": "distant",
+    "noLabels": "aucun",
+    "behind": "{{version}} · en retard",
+    "slots": "{{used}} / {{total}}",
+    "slotsFull": "{{used}} / {{total}} plein"
+  },
+  "logs": {
+    "pipeline": "Pipeline",
+    "run": "Run",
+    "step": "Étape",
+    "item": "Item",
+    "any": "tous",
+    "pause": "Suspendre le défilement",
+    "resume": "Reprendre le défilement",
+    "clear": "Effacer",
+    "tail": "Journal en direct",
+    "empty": "En attente de lignes de journal…",
+    "gap": "Connexion perdue : des lignes de ce moment peuvent manquer",
+    "gapWindow": "Connexion perdue {{from}} → {{to}} · des lignes de cette période peuvent manquer",
+    "newLines": "{{count}} nouvelles · afficher"
   }
 }

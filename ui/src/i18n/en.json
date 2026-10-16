@@ -298,5 +298,139 @@
     "max": "Max",
     "asTable": "Show the data as a table",
     "time": "Time"
+  },
+  "insights": {
+    "stateLabel": "Insight state",
+    "tab": {
+      "attention": "Needs attention {{count}}",
+      "resolved": "Resolved {{count}}",
+      "muted": "Muted {{count}}"
+    },
+    "explain": "The engine raises insights from metrics and reviews. You decide what to do.",
+    "filters": "Filter insights",
+    "byKind": "By kind",
+    "noKinds": "No insight here.",
+    "step": "Step",
+    "allSteps": "All steps",
+    "none": "Nothing needs attention",
+    "noneBody": "No slow step, failure cluster, cost drift or review pattern stands out in the last runs.",
+    "noneHere": "No insight in this state",
+    "kind": {
+      "slowStep": "Slow step",
+      "failureCluster": "Failure cluster",
+      "cost": "Cost",
+      "reviewPattern": "Review pattern",
+      "unschedulable": "Unschedulable"
+    },
+    "state": {
+      "open": "Open",
+      "acknowledged": "Acknowledged",
+      "resolved": "Resolved",
+      "muted": "Muted"
+    },
+    "raised": "raised {{when}}",
+    "title": {
+      "slowStep": "{{step}} is slowing runs down",
+      "failureCluster": "{{count}} failures with the same error at {{step}}",
+      "cost": "{{step}} cost {{cost}} over the window",
+      "reviewPattern": "How reviewers decide at {{step}}",
+      "unschedulable": "No node can run {{step}}"
+    },
+    "body": {
+      "slowStep": "It holds {{share}} of the critical path across the last runs ({{runs}}).",
+      "cost": "Outputs over the window: {{outputs}}.",
+      "edits": "Reviewers edit these fields most: {{pointers}}.",
+      "noEdits": "Reviewers approve without edits."
+    },
+    "figure": {
+      "p95": "p95 latency",
+      "baseline": "baseline {{value}}",
+      "pathShare": "Share of the critical path",
+      "queueShare": "Waiting in the queue",
+      "workShare": "working {{value}}",
+      "failures": "Failures",
+      "dead": "dead letters: {{count}}",
+      "rate": "Share of attempts",
+      "recovered": "Recovered on retry",
+      "perOutput": "Cost per output",
+      "perApproved": "Cost per approved item",
+      "schemaFailures": "Schema failures",
+      "intervention": "Intervention rate",
+      "editRate": "Edited approvals",
+      "rejected": "rejected {{value}}",
+      "agreement": "Agreement on samples",
+      "decision": "median decision {{value}}",
+      "attempts": "Attempts refused",
+      "deliveries": "Deliveries"
+    },
+    "samples": "Sample items",
+    "openMetrics": "Open in metrics",
+    "openDeadLetters": "Open dead letters",
+    "openNodes": "Open nodes",
+    "acknowledge": "Acknowledge",
+    "mute": "Mute",
+    "actionFailed": "The insight could not be changed."
+  },
+  "lessons": {
+    "explain": "Read-only: lessons change in the step's lessons file.",
+    "empty": "No lessons yet",
+    "emptyBody": "An agent step learns from a lessons file in the package, next to its pipeline:",
+    "openStep": "Open in the graph",
+    "rules": "Rules",
+    "noRules": "No rule.",
+    "examples": "Examples",
+    "noExamples": "No example.",
+    "input": "Input",
+    "output": "Output",
+    "added": "added {{date}}",
+    "fromInsight": "from insight {{id}}",
+    "fromReview": "from review {{id}}",
+    "fromProposal": "from proposal {{id}}"
+  },
+  "nodes": {
+    "busy": "{{leases}} of {{slots}} slots busy",
+    "connected": "nodes: {{count}}",
+    "engine": "Engine",
+    "version": "Millstream {{version}}",
+    "engineNote": "Runs the pipelines and an embedded node. A standby engine for failover arrives with M4.",
+    "state": {
+      "active": "Active",
+      "standby": "Standby"
+    },
+    "capacity": "Free capacity",
+    "freeSlots": "slots free for new deliveries",
+    "none": "No node connected",
+    "noneBody": "Nothing can run until a node connects: millstream run starts one inside the engine.",
+    "table": "Nodes, their labels, slots and leases",
+    "col": {
+      "node": "Node",
+      "state": "State",
+      "labels": "Labels",
+      "version": "Version",
+      "slots": "Slots",
+      "leases": "Leases",
+      "runtimes": "Runtimes"
+    },
+    "embedded": "embedded in the engine",
+    "remote": "remote",
+    "noLabels": "none",
+    "behind": "{{version}} · behind",
+    "slots": "{{used}} / {{total}}",
+    "slotsFull": "{{used}} / {{total}} full"
+  },
+  "logs": {
+    "pipeline": "Pipeline",
+    "run": "Run",
+    "step": "Step",
+    "item": "Item",
+    "any": "any",
+    "pause": "Pause scroll",
+    "resume": "Resume scroll",
+    "clear": "Clear",
+    "tail": "Live log tail",
+    "empty": "Waiting for log lines…",
+    "gap": "Connection lost: lines from this moment may be missing",
+    "gapWindow": "Connection lost {{from}} → {{to}} · lines from this window may be missing",
+    "newLines": "{{count}} new · show"
   }
 }
