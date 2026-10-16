@@ -212,7 +212,7 @@ func (c ReplayCmd) replayRun(rt *Runtime) error {
 		}
 		var run api.Run
 		status, err := cl.post(rt.Ctx, pipelinePath(c.Pipeline, "replay"), api.ReplayRequest{Step: c.Step,
-			Since: c.Since, Run: c.RunID, Where: c.Where, Revision: c.Revision, RequestID: c.RequestID}, &run)
+			Stream: c.Stream, Since: c.Since, Run: c.RunID, Where: c.Where, Revision: c.Revision, RequestID: c.RequestID}, &run)
 		id, started = run.ID, created(status)
 		return err
 	}, func(st store.Store) error {

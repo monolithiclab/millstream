@@ -1302,10 +1302,11 @@ components:
         requestId: { type: string, description: Firing the same request id again returns the same run. }
     ReplayRequest:
       type: object
-      required: [step]
+      description: Exactly one of step (a replay run of the step over past items) and stream (a back-fill of an imported stream from the producer's retained items).
       additionalProperties: false
       properties:
         step: { type: string }
+        stream: { type: string, description: An imported stream of the pipeline to back-fill; run does not apply. }
         since: { type: string, description: Only the items published within this duration (7d, 12h). }
         run: { type: string, description: Only this run's items. }
         where: { type: string, description: Only the items for which this CEL expression holds. }

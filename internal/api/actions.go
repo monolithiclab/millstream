@@ -219,9 +219,11 @@ func (s *Server) cancelRun(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-// ReplayRequest starts a replay run of a step over past items (spec section 5.7).
+// ReplayRequest starts a replay run of a step over past items (spec section 5.7), or one back-filling an imported
+// stream from the producer's retained items (spec section 4.12): exactly one of Step and Stream.
 type ReplayRequest struct {
-	Step string `json:"step"`
+	Step   string `json:"step"`
+	Stream string `json:"stream"`
 	// Since keeps the items published within this duration (7d, 12h).
 	Since     string `json:"since"`
 	Run       string `json:"run"`
@@ -236,8 +238,11 @@ func (s *Server) replay(w http.ResponseWriter, r *http.Request) error {
 	if err := s.decodeBody(w, r, &req); err != nil {
 		return err
 	}
-	if req.Step == "" {
-		return invalidf("step: required")
+	switch {
+	case (req.Step == "") == (req.Stream == ""):
+		return invalidf("step or stream: exactly one is required")
+	case req.Stream != "" && req.Run != "":
+		return invalidf("run: a back-fill selects by since and where, not by run")
 	}
 	var since time.Duration
 	if req.Since != "" {
@@ -250,7 +255,8 @@ func (s *Server) replay(w http.ResponseWriter, r *http.Request) error {
 		return fmt.Errorf("replay: no engine: %w", errUnavailable)
 	}
 	id, created, err := s.opts.Engine.Replay(r.Context(), engine.ReplayRequest{
-		Pipeline: name, Step: req.Step, Revision: store.RevisionID(req.Revision), Since: since, RunID: req.Run,
+		Pipeline: name, Step: req.Step, Stream: req.Stream, Revision: store.RevisionID(req.Revision), Since: since,
+		RunID: req.Run,
 		Where: req.Where, RequestID: req.RequestID,
 	})
 	if err != nil {

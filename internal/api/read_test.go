@@ -696,4 +696,15 @@ func TestLineageAcrossPipelines(t *testing.T) {
 	if r.Kind != "import" || r.TriggerSource != "import" || r.Producer != "listings" || r.TriggerKey != "r5" {
 		t.Errorf("import run = %+v", r)
 	}
+	// replay --stream through the API: a back-fill of the imported stream from the producer's items.
+	post := func(body string) *httptest.ResponseRecorder {
+		t.Helper()
+		return do(t, f.srv, request{method: http.MethodPost, target: "/api/v1/pipelines/deals/replay", body: body})
+	}
+	if rec := post(`{"stream":"raw","requestId":"bf1"}`); rec.Code != http.StatusCreated ||
+		!strings.Contains(rec.Body.String(), `"kind":"replay"`) {
+		t.Errorf("back-fill: %d %s", rec.Code, rec.Body.String())
+	}
+	wantError(t, post(`{"step":"notify","stream":"raw"}`), 400, codeInvalid)
+	wantError(t, post(`{"stream":"raw","run":"r5"}`), 400, codeInvalid)
 }
