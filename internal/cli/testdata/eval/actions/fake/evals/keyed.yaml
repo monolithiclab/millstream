@@ -1,0 +1,2 @@
+config: { mode: keyed, n: 1 }
+assert: [output == 0]

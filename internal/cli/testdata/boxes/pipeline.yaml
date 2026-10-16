@@ -1,0 +1,7 @@
+pipeline: boxes
+triggers: { go: { manual: {} } }
+steps:
+  report: { action: ./actions/report, in: trigger.go, out: reports }
+  score: { action: lab/score@1, in: reports, out: scored }
+  again: { action: lab/score@1, in: scored, out: rescored }
+  keep: { action: filter, in: rescored, config: { expr: "true" } }

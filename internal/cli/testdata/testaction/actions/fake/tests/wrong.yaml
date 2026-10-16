@@ -1,0 +1,2 @@
+config: { mode: keyed, n: 1 }
+expect: { outputs: [{ key: k, payload: 1 }] }

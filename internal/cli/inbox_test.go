@@ -149,10 +149,7 @@ func Test_inboxCommands(t *testing.T) {
 		"a rejection needs a reason code: one of overpriced") {
 		t.Fatalf("reject without a reason: %s", out)
 	}
-	patch := filepath.Join(t.TempDir(), "patch.json")
-	if err := os.WriteFile(patch, []byte(`[{"op":"replace","path":"/city","value":"Paris"}]`), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	patch := fixture("inbox-patch.json")
 	if out := call(user, InboxApproveCmd{deliveryRef: ref("c"), Edit: patch}); !strings.Contains(out, "is not editable") {
 		t.Fatalf("approve outside editable: %s", out)
 	}

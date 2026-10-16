@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime/debug"
@@ -62,10 +61,14 @@ func runPackage(t *testing.T, name string) string {
 	return dst
 }
 
-// sharedPackage is a copy of testdata/<name> as runPackage makes it, made once per process for the tests that do not
-// modify it.
+// sharedPackage is testdata/<name> for the tests that do not modify it: in the default build the directory itself,
+// whose fake action the in-process launcher never runs; in the e2e build a copy as runPackage makes it, with the
+// fake action binary, made once per process.
 func sharedPackage(t *testing.T, name string) string {
 	t.Helper()
+	if !e2eBuild {
+		return fixture(name)
+	}
 	f, _ := sharedPackages.LoadOrStore(name, sync.OnceValues(func() (string, error) {
 		dst := filepath.Join(testDir, "shared", name)
 		return dst, copyPackage(dst, name)
@@ -80,32 +83,17 @@ func sharedPackage(t *testing.T, name string) string {
 // sharedPackages holds a func() (string, error) per sharedPackage name.
 var sharedPackages sync.Map
 
-// copyPackage copies testdata/<name> to dst and places the fake action at actions/fake/fakeaction.
+// copyPackage copies testdata/<name> to dst with the fake action at actions/fake/fakeaction: the fixture's stub in
+// the default build, the built binary in the e2e build.
 func copyPackage(dst, name string) error {
-	src := fixture(name)
-	err := filepath.WalkDir(src, func(p string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		rel, err := filepath.Rel(src, p)
-		if err != nil {
-			return err
-		}
-		target := filepath.Join(dst, rel)
-		if d.IsDir() {
-			return os.MkdirAll(target, 0o750)
-		}
-		data, err := os.ReadFile(p) // #nosec G304 -- test fixtures
-		if err != nil {
-			return err
-		}
-		return os.WriteFile(target, data, 0o600)
-	})
-	if err != nil {
+	if err := copyTree(dst, name); err != nil || !e2eBuild {
 		return err
 	}
 	return fakeexec.Place(filepath.Join(dst, "actions", "fake", "fakeaction"))
 }
+
+// copyTree copies testdata/<name> to dst.
+func copyTree(dst, name string) error { return os.CopyFS(dst, os.DirFS(fixture(name))) }
 
 // dbPath returns a fresh database path under a temporary directory that does not exist yet.
 func dbPath(t *testing.T) string {

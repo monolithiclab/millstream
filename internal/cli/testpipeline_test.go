@@ -36,30 +36,20 @@ func Test_testPipelineErrors(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name    string
-		tests   map[string]string // tests/<name> contents; none for no tests directory
+		pkg     string // the fixture: the run package, with tests/*.yaml but in run
 		wantOut string
 		wantErr string
 	}{
-		{"no tests", nil, "", "no tests/*.yaml"},
-		{"bad yaml", map[string]string{"x.yaml": "name: ["}, "", "tests/x.yaml: yaml:"},
-		{"unknown step and trigger", map[string]string{
-			"x.yaml": "stubs: { nope: { outputs: [] } }",
-			"y.yaml": "trigger: weekly",
-		}, "FAIL tests/x.yaml\n  stub for step nope: pipeline listings has no such step\nFAIL tests/y.yaml\n" +
-			"  fire listings.weekly: ...", ""},
+		{"no tests", "run", "", "no tests/*.yaml"},
+		{"bad yaml", "tests-bad-yaml", "", "tests/x.yaml: yaml:"},
+		{"unknown step and trigger", "tests-unknown",
+			"FAIL tests/x.yaml\n  stub for step nope: pipeline listings has no such step\nFAIL tests/y.yaml\n" +
+				"  fire listings.weekly: ...", ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			pkg := sharedPackage(t, "run")
-			if tt.tests != nil {
-				pkg = runPackage(t, "run")
-				files := map[string]string{}
-				for name, body := range tt.tests {
-					files["tests/"+name] = body
-				}
-				writeFiles(t, pkg, files)
-			}
+			pkg := sharedPackage(t, tt.pkg)
 			out, errOut, err := (&state{t: t}).call(nil, TestPipelineCmd{Dir: pkg, Timeout: time.Minute})
 			if err != nil {
 				errOut += err.Error()

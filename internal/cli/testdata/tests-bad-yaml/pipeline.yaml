@@ -1,0 +1,15 @@
+pipeline: listings
+vars: { count: 3, scoreMode: echo }
+triggers:
+  adhoc: { manual: {} }
+steps:
+  crawl:
+    action: ./actions/fake
+    in: trigger.adhoc
+    out: [listings]
+    config: { mode: keyed, n: "${vars.count}" }
+  score:
+    action: ./actions/fake
+    in: listings
+    retry: { maxAttempts: 1 }
+    config: { mode: "${vars.scoreMode}", retryable: false }

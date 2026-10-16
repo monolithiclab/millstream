@@ -73,3 +73,19 @@ func Test_evalCommand(t *testing.T) {
 		t.Fatalf("failing action:\n%s", out)
 	}
 }
+
+// writeEvals writes eval cases under the fake action of a copy of the run fixture and returns the action directory.
+func writeEvals(t *testing.T, pkg string, cases map[string]string) string {
+	t.Helper()
+	action := filepath.Join(pkg, "actions", "fake")
+	for name, body := range cases {
+		p := filepath.Join(action, "evals", name)
+		if err := os.MkdirAll(filepath.Dir(p), 0o750); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return action
+}

@@ -1,0 +1,2 @@
+config: { mode: error, retryable: false }
+expect: { error: { retryable: true } }

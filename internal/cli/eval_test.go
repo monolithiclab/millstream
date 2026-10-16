@@ -2,7 +2,6 @@ package cli
 
 import (
 	"context"
-	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -11,30 +10,12 @@ import (
 	"github.com/monolithiclab/millstream/internal/eval"
 )
 
-// writeEvals writes eval cases under the fake action of a copy of the run fixture and returns the action directory.
-func writeEvals(t *testing.T, pkg string, cases map[string]string) string {
-	t.Helper()
-	action := filepath.Join(pkg, "actions", "fake")
-	for name, body := range cases {
-		p := filepath.Join(action, "evals", name)
-		if err := os.MkdirAll(filepath.Dir(p), 0o750); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
-			t.Fatal(err)
-		}
-	}
-	return action
-}
-
 // Test_evalCommandFake: eval scores the fake action's case in-process and, with --db, records the score and shows
 // the previous one; what eval cannot run exits 2 with why. Test_evalCommand (e2e) adds a judge and failing cases.
 func Test_evalCommandFake(t *testing.T) {
 	t.Parallel()
-	pkg := runPackage(t, "run")
-	action := writeEvals(t, pkg, map[string]string{"keyed.yaml": "config: { mode: keyed, n: 1 }\nassert: [output == 0]\n"})
-	lone := t.TempDir()
-	writeEvals(t, lone, map[string]string{"x.yaml": "assert: [\"true\"]\n"})
+	pkg, lone := sharedPackage(t, "eval"), fixture("eval-lone")
+	action := filepath.Join(pkg, "actions", "fake")
 	s := newEmptyState(t)
 	for i, want := range []string{`keyed\s+1/1\s+-\s+\$0\.0000\s+1\.00\s+-\n`, `keyed\s+1/1\s+-\s+\$0\.0000\s+1\.00\s+1\.00\n`} {
 		if out, _ := s.must(0, "eval", action); !regexp.MustCompile(want).MatchString(out) {

@@ -16,43 +16,21 @@ const (
 	scoreID  = "sha256:3333333333333333333333333333333333333333333333333333333333333333"
 )
 
-// containerPipeline has a local container action, a registry action read twice and an exec-free builtin.
-const containerPipeline = `pipeline: boxes
-triggers: { go: { manual: {} } }
-steps:
-  report: { action: ./actions/report, in: trigger.go, out: reports }
-  score: { action: lab/score@1, in: reports, out: scored }
-  again: { action: lab/score@1, in: scored, out: rescored }
-  keep: { action: filter, in: rescored, config: { expr: "true" } }
-`
-
 const scoreLabel = `{"name": "lab/score", "version": "1.2.0", "kind": "container", "runtime": {"container": {}}}`
 
-// containerSetup writes the container package, an environment file mapping lab and, in the e2e build, a fake docker
-// answering for report:dev with id reportImage: a shell script, so the tests that run it are in lock_e2e_test.go.
-// It returns the package, the environment file and the CLI's environment.
+// containerSetup returns the container package testdata/boxes (a local container action, a registry action read
+// twice and an exec-free builtin), the environment file testdata/environments/registries.yaml mapping lab, and the
+// CLI's environment: in the e2e build, a copy of the package, which lock writes to, and a fake docker answering for
+// report:dev with id reportImage, a shell script, so the tests that run it are in lock_e2e_test.go.
 func containerSetup(t *testing.T, reportImage string) (pkg, envFile string, env map[string]string) {
 	t.Helper()
-	pkg = t.TempDir()
-	files := map[string]string{
-		"pipeline.yaml":              containerPipeline,
-		"actions/report/action.yaml": "name: report\nkind: container\nruntime: { container: { image: report:dev } }\n",
-	}
-	for name, body := range files {
-		p := filepath.Join(pkg, filepath.FromSlash(name))
-		if err := os.MkdirAll(filepath.Dir(p), 0o750); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
-			t.Fatal(err)
-		}
-	}
-	envFile = filepath.Join(t.TempDir(), "env.yaml")
-	if err := os.WriteFile(envFile, []byte("registries: { lab: ghcr.io/lab/actions }\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	pkg, envFile = fixture("boxes"), fixture("environments/registries.yaml")
 	if !e2eBuild { // the default build's cases fail before looking for docker
 		return pkg, envFile, map[string]string{"PATH": filepath.Join(pkg, "no-bin")}
+	}
+	pkg = t.TempDir()
+	if err := copyTree(pkg, "boxes"); err != nil {
+		t.Fatal(err)
 	}
 	bin := t.TempDir()
 	if _, err := containertest.Write(bin, "docker", map[string]containertest.Image{
@@ -67,10 +45,7 @@ func containerSetup(t *testing.T, reportImage string) (pkg, envFile string, env 
 func TestLockAndEnvironmentErrors(t *testing.T) {
 	t.Parallel()
 	pkg, envFile, env := containerSetup(t, reportID)
-	bad := filepath.Join(filepath.Dir(envFile), "bad.yaml")
-	if err := os.WriteFile(bad, []byte("listen: 127.0.0.1:7070\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	bad := fixture("environments/bad.yaml")
 	tests := []struct {
 		name    string
 		env     map[string]string
