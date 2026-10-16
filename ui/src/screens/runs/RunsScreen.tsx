@@ -14,7 +14,7 @@ import { StatusBadge, useStatusLabel } from '../../common/Status';
 import { EmptyState, ErrorState, QueryView } from '../../common/States';
 import { buttons, card } from '../../common/styles';
 import { useNow } from '../../common/useNow';
-import { appendById, useLoadMore } from '../../common/useLoadMore';
+import { appendPage, useLoadMore } from '../../common/useLoadMore';
 import { useResource } from '../../common/useResource';
 import { useRunName } from './runParts';
 
@@ -48,10 +48,7 @@ export function RunsScreen() {
     key,
     mutate: runs.mutate,
     read: (cursor) => api.listRuns(pipeline, { ...query, cursor }),
-    merge: (current, page) => ({
-      items: appendById(current.items, page.items),
-      ...(page.next ? { next: page.next } : {}),
-    }),
+    merge: appendPage,
   });
   const now = useNow();
   const name = useRunName();

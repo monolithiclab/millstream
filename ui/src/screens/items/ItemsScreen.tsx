@@ -8,7 +8,7 @@ import { Id } from '../../common/Id';
 import { EmptyState, ErrorState, Loading } from '../../common/States';
 import { buttons, card, field } from '../../common/styles';
 import { useFormat } from '../../common/useFormat';
-import { appendById, useLoadMore } from '../../common/useLoadMore';
+import { appendPage, useLoadMore } from '../../common/useLoadMore';
 import { useResource } from '../../common/useResource';
 import { itemPath } from '../../routes';
 import { ScreenPage } from '../ScreenPage';
@@ -53,15 +53,13 @@ export function ItemsScreen() {
     key,
     mutate: items.mutate,
     read: (cursor) => api.listItems(pipeline, { ...filters, limit: ITEMS_PAGE, cursor }),
-    merge: (current, page) => ({
-      items: appendById(current.items, page.items),
-      ...(page.next ? { next: page.next } : {}),
-    }),
+    merge: appendPage,
   });
 
   // The run and where fields as typed, until applied; a new URL (back, a link) starts them over.
-  const [draft, setDraft] = useState({ key, run: filters.run ?? '', where: filters.where ?? '' });
-  const typed = draft.key === key ? draft : { key, run: filters.run ?? '', where: filters.where ?? '' };
+  const fromUrl = { key, run: filters.run ?? '', where: filters.where ?? '' };
+  const [draft, setDraft] = useState(fromUrl);
+  const typed = draft.key === key ? draft : fromUrl;
   const ids = { run: useId(), where: useId(), whereHint: useId(), whereError: useId(), stream: useId() };
 
   const apply = (next: Filters) => {
@@ -151,7 +149,7 @@ export function ItemsScreen() {
           <button type="submit" className={buttons.primary}>
             {t('items.apply')}
           </button>
-          {(filtered || filters.stream !== undefined) && (
+          {Object.keys(filters).length > 0 && (
             <button
               type="button"
               onClick={() => {

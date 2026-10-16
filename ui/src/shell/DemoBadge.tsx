@@ -1,8 +1,5 @@
 import { useTranslation } from 'react-i18next';
-import { removeStored } from '../storage';
-
-// The sessionStorage flag that keeps demo mode on for the tab.
-export const DEMO_KEY = 'millstream.demo';
+import { DEMO_KEY, removeStored } from '../storage';
 
 // Leaves demo mode: forgets the flag and reloads without ?demo, onto the server's API.
 export function exitDemo(location: Pick<Location, 'href' | 'assign'> = window.location): void {

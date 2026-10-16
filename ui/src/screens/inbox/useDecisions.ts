@@ -58,9 +58,7 @@ export function useDecisions(events: DecisionEvents) {
           const message = errorMessage(error);
           notice({
             kind: 'error',
-            message: conflict
-              ? tr('inbox.lateConflict', { title, message })
-              : tr('inbox.lateFailed', { title, message }),
+            message: tr(conflict ? 'inbox.lateConflict' : 'inbox.lateFailed', { title, message }),
           });
         } else if (conflict) {
           on.onConflict(decision, error);

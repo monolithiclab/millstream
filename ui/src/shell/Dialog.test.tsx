@@ -44,13 +44,13 @@ describe('Dialog', () => {
         <h2 id="t">Tall</h2>
       </Dialog>,
     );
-    expect(screen.getByRole('dialog')).toHaveClass('overflow-y-auto', 'max-h-[calc(88dvh-1rem)]');
+    expect(screen.getByRole('dialog')).toHaveClass('overflow-y-auto', 'max-h-full');
     unmount();
     render(
       <Dialog labelledBy="t" onClose={() => undefined} sheet>
         <h2 id="t">Tall</h2>
       </Dialog>,
     );
-    expect(screen.getByRole('dialog')).toHaveClass('overflow-y-auto', 'max-h-[calc(100dvh-2rem)]');
+    expect(screen.getByRole('dialog')).toHaveClass('overflow-y-auto', 'max-h-full');
   });
 });

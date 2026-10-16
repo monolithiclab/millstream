@@ -3,7 +3,8 @@ import { describe, expect, it, vi } from 'vitest';
 import { FakeApi } from '../api/fake';
 import { FakeEventSource } from '../live/fakeEventSource';
 import { renderApp } from '../test/render';
-import { DEMO_KEY, exitDemo } from './DemoBadge';
+import { DEMO_KEY } from '../storage';
+import { exitDemo } from './DemoBadge';
 
 const nav = () => within(screen.getByRole('navigation'));
 

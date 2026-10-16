@@ -19,14 +19,15 @@ import { PipelinesScreen } from './screens/pipelines/PipelinesScreen';
 import { RunScreen } from './screens/runs/RunScreen';
 import { RunsScreen } from './screens/runs/RunsScreen';
 import { Loading } from './common/States';
-import { routePattern, screens, type Screen, type ScreenId } from './routes';
+import { routePattern, screens, type ScreenId } from './routes';
 import { AppShell } from './shell/AppShell';
+import { ShellNoticeProvider } from './shell/ShellNotice';
 
 // uPlot and its stylesheet load with the metrics screen, not with every screen.
 const MetricsScreen = lazy(() => import('./screens/metrics/MetricsScreen').then((m) => ({ default: m.MetricsScreen })));
 
 // Every screen's element.
-const built: Record<ScreenId, () => ReactNode> = {
+const elements: Record<ScreenId, () => ReactNode> = {
   pipelines: () => <PipelinesScreen />,
   graph: () => <GraphScreen />,
   deadLetters: () => <DeadLettersScreen />,
@@ -44,15 +45,13 @@ const built: Record<ScreenId, () => ReactNode> = {
   ),
 };
 
-const elementFor = (screen: Screen) => built[screen.id]();
-
 export function AppRoutes() {
   return (
     <Routes>
       <Route element={<AppShell />}>
         <Route index element={<Navigate to="/pipelines" replace />} />
         {screens.map((screen) => (
-          <Route key={screen.id} path={routePattern(screen)} element={elementFor(screen)} />
+          <Route key={screen.id} path={routePattern(screen)} element={elements[screen.id]()} />
         ))}
         {/* Review notifications link to /inbox/<inbox>/<deliveryId> (spec section 8). */}
         <Route path="inbox/:inbox/:delivery?" element={<InboxScreen />} />
@@ -84,7 +83,7 @@ export function App({
   return (
     <PreferencesProvider language={language} theme={theme}>
       <ApiProvider api={api} eventSource={eventSource} demo={demo}>
-        {children}
+        <ShellNoticeProvider>{children}</ShellNoticeProvider>
       </ApiProvider>
     </PreferencesProvider>
   );

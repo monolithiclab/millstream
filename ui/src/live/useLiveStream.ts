@@ -50,8 +50,6 @@ export interface LiveOptions {
   onSnapshotRequired?: () => void;
 }
 
-export { BACKOFF_BASE_MS, BACKOFF_MAX_MS, backoffDelay, GRACE_MS, resumeUrl, STALE_MS } from './hub';
-
 // Subscribes to a server-sent event stream through the app's LiveHub: one connection per url, shared, with
 // exponential backoff and Last-Event-ID resumption. A null url subscribes to nothing.
 export function useLiveStream(url: string | null, options: LiveOptions = {}): LiveState {
@@ -68,7 +66,7 @@ export function useLiveStream(url: string | null, options: LiveOptions = {}): Li
       onMessage: (message) => optionsRef.current.onMessage?.(message),
       onReconnect: () => optionsRef.current.onReconnect?.(),
       onSnapshotRequired: () => optionsRef.current.onSnapshotRequired?.(),
-      onState: (state) => setKeyed({ url, state }),
+      onState: (state) => setKeyed((k) => (k.url === url && k.state === state ? k : { url, state })),
     });
   }, [hub, url, events, optionsRef]);
 

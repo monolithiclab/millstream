@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useLatest } from '../../useLatest';
 import type { Api } from '../../api/api';
 import { useApi } from '../../api/context';
 import type { Review, Sample } from '../../api/schema';
-import { useLoadMore } from '../../common/useLoadMore';
+import { appendBy, useLoadMore } from '../../common/useLoadMore';
 import { useResource } from '../../common/useResource';
 
 // One card of the queue: an open review, or an open review sample (an auto-approved item a person double-checks).
@@ -54,6 +54,11 @@ export interface Queue {
 
 export const hasMore = (queue: Queue) => queue.next.review !== undefined || queue.next.sample !== undefined;
 
+interface Limits {
+  review: number;
+  sample: number;
+}
+
 interface Page<T> {
   items: T[];
   next?: string;
@@ -64,7 +69,7 @@ async function page(
   api: Api,
   filters: Filters,
   cursors: Cursors | null,
-  limits = { review: PAGE, sample: PAGE },
+  limits: Limits = { review: PAGE, sample: PAGE },
 ): Promise<Queue> {
   const query = { ...filters, state: 'open' as const };
   const read = <T>(
@@ -98,10 +103,14 @@ const matches = (entry: Entry, filters: Filters) => {
 export function useInboxQueue(filters: Filters) {
   const api = useApi();
   const key = `inbox:${JSON.stringify(filters)}`;
-  const resource = useResource(key, (a) => page(a, filters, null));
-  const { mutate } = resource;
+  // How many of each list the queue shows, so a refresh reads as deep and pages loaded with "load more" stay.
+  const depth = useRef<{ key: string; limits: Limits } | null>(null);
+  const resource = useResource(key, (a) =>
+    page(a, filters, null, depth.current?.key === key ? depth.current.limits : undefined),
+  );
+  const { mutate, refresh } = resource;
   const [hidden, setHidden] = useState<ReadonlySet<string>>(new Set());
-  const latest = useLatest({ key, filters, resource });
+  const latest = useLatest({ filters });
 
   const remove = useCallback((entryKey: string) => setHidden((h) => new Set(h).add(entryKey)), []);
   const restore = useCallback(
@@ -123,33 +132,26 @@ export function useInboxQueue(filters: Filters) {
     key,
     mutate,
     read: (cursors) => page(api, filters, cursors),
-    merge: (q, next) => {
-      const known = new Set(q.entries.map((e) => e.key));
-      return { entries: [...q.entries, ...next.entries.filter((e) => !known.has(e.key))].sort(byAge), next: next.next };
-    },
+    merge: (q, next) => ({ entries: appendBy(q.entries, next.entries, (e) => e.key).sort(byAge), next: next.next }),
   });
   const loadMore = async () => {
     if (resource.status === 'ready' && hasMore(resource.data)) await more.loadMore(resource.data.next);
   };
 
-  // A silent refresh reads as many of each list as are shown, so pages loaded with "load more" stay; a failure
-  // keeps what is shown, and an answer for filters left since is dropped.
   useEffect(() => {
-    const refresh = async () => {
-      const { key: asked, filters: f, resource: r } = latest.current;
-      if (r.status !== 'ready' || document.visibilityState === 'hidden') return;
-      const count = (kind: Entry['kind']) =>
-        Math.min(MAX_PAGE, Math.max(PAGE, r.data.entries.filter((e) => e.kind === kind).length));
-      try {
-        const fresh = await page(api, f, null, { review: count('review'), sample: count('sample') });
-        if (latest.current.key === asked) mutate(() => fresh);
-      } catch {
-        // Keep the queue shown; the next refresh tries again.
-      }
-    };
-    const timer = setInterval(() => void refresh(), INBOX_REFRESH_MS);
+    if (resource.status !== 'ready') return;
+    const count = (kind: Entry['kind']) =>
+      Math.min(MAX_PAGE, Math.max(PAGE, resource.data.entries.filter((e) => e.kind === kind).length));
+    depth.current = { key, limits: { review: count('review'), sample: count('sample') } };
+  }, [key, resource]);
+
+  // A silent refresh (useResource keeps what is shown on failure and drops an answer for filters left since).
+  useEffect(() => {
+    const timer = setInterval(() => {
+      if (document.visibilityState !== 'hidden') refresh();
+    }, INBOX_REFRESH_MS);
     return () => clearInterval(timer);
-  }, [api, mutate, latest]);
+  }, [refresh]);
 
   const entries = resource.status === 'ready' ? resource.data.entries.filter((e) => !hidden.has(e.key)) : [];
   return { ...resource, entries, remove, restore, loadMore, loadingMore: more.loadingMore, moreError: more.moreError };

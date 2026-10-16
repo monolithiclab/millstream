@@ -8,6 +8,7 @@ import { useFormat } from '../../common/useFormat';
 import { useResource } from '../../common/useResource';
 import { itemPath } from '../../routes';
 import { Dialog } from '../../shell/Dialog';
+import { titleOf } from '../inbox/ReviewPanel';
 
 // A lesson citing a review opens that review's decision in a panel: who decided what, when, why, and the edit, with
 // a link to the item; not the raw JSON of the API.
@@ -50,15 +51,13 @@ function ReviewPanel({ pipeline, delivery, onClose }: { pipeline: string; delive
 function ReviewFacts({ review, onNavigate }: { review: Review; onNavigate: () => void }) {
   const { t } = useTranslation();
   const f = useFormat();
-  const [first = review.item.id, ...rest] = review.display.split('\n');
-  const decision =
-    review.decision === 'approve'
-      ? review.patch !== undefined && review.patch.length > 0
-        ? t('lessons.review.edited')
-        : t('lessons.review.approved')
-      : review.decision === 'reject'
-        ? t('lessons.review.rejected')
-        : t('lessons.review.undecided');
+  const { title, lines } = titleOf({ kind: 'review', key: review.deliveryId, at: review.parkedAt, review });
+  const edited = (review.patch?.length ?? 0) > 0;
+  const decisions = {
+    approve: edited ? t('lessons.review.edited') : t('lessons.review.approved'),
+    reject: t('lessons.review.rejected'),
+  };
+  const decision = review.decision === undefined ? t('lessons.review.undecided') : decisions[review.decision];
   const facts: [string, string][] = [[t('lessons.review.decision'), decision]];
   if (review.reviewer !== undefined) facts.push([t('lessons.review.reviewer'), review.reviewer]);
   if (review.decidedAt !== undefined) facts.push([t('lessons.review.decidedAt'), f.dateTime(review.decidedAt)]);
@@ -69,9 +68,9 @@ function ReviewFacts({ review, onNavigate }: { review: Review; onNavigate: () =>
     <div className="flex flex-col gap-4">
       <div className="flex flex-col gap-0.5">
         <Link to={itemPath(review.pipeline, review.item.id)} onClick={onNavigate} className="font-bold break-words">
-          {first}
+          {title}
         </Link>
-        {rest.length > 0 && <p className="m-0 text-small break-words text-ink-2">{rest.join(' · ')}</p>}
+        {lines.length > 0 && <p className="m-0 text-small break-words text-ink-2">{lines.join(' · ')}</p>}
       </div>
       <dl className="m-0 grid grid-cols-[minmax(0,auto)_minmax(0,1fr)] gap-x-4 gap-y-2 text-small">
         {facts.map(([label, value]) => (
@@ -81,11 +80,11 @@ function ReviewFacts({ review, onNavigate }: { review: Review; onNavigate: () =>
           </div>
         ))}
       </dl>
-      {review.patch !== undefined && review.patch.length > 0 && (
+      {edited && (
         <div className="flex flex-col gap-1.5">
           <h3 className="m-0 text-small font-bold">{t('lessons.review.changes')}</h3>
           <ul className="m-0 flex list-none flex-col gap-1 p-0 font-mono text-tiny">
-            {review.patch.map((op, i) => (
+            {(review.patch ?? []).map((op, i) => (
               <li key={i} className="break-all">
                 {String(op.op)} {String(op.path)}
                 {'value' in op && ` → ${JSON.stringify(op.value)}`}

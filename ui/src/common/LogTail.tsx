@@ -29,10 +29,26 @@ export function LogTail(props: { url: string; title: string; className?: string 
   return <Tail key={props.url} {...props} />;
 }
 
+// Appends entries in order; the first line after a gap closes its window.
+function append(list: Entry[], batch: Entry[]): Entry[] {
+  const merged = [...list];
+  for (const entry of batch) {
+    const last = merged.at(-1);
+    if (entry.kind === 'line' && last?.kind === 'gap' && last.to === undefined) {
+      merged[merged.length - 1] = { ...last, to: entry.line.ts };
+    }
+    merged.push(entry);
+  }
+  return merged;
+}
+
 function Tail({ url, title, className = 'max-h-80' }: { url: string; title: string; className?: string }) {
   const { t } = useTranslation();
-  const [{ entries, dropped }, setTail] = useState<{ entries: Entry[]; dropped: number }>({ entries: [], dropped: 0 });
-  const [frozenAt, setFrozenAt] = useState<number | null>(null);
+  const [entries, setEntries] = useState<Entry[]>([]);
+  const [paused, setPaused] = useState(false);
+  // While paused, arrivals wait here, outside React state; only their counts render.
+  const held = useRef<Entry[]>([]);
+  const [{ waiting, dropped }, setHeldCounts] = useState({ waiting: 0, dropped: 0 });
   const pending = useRef<Entry[]>([]);
   const nextId = useRef(1);
   const tail = useRef<HTMLDivElement>(null);
@@ -42,23 +58,15 @@ function Tail({ url, title, className = 'max-h-80' }: { url: string; title: stri
   const paint = useThrottle(() => {
     const batch = pending.current;
     pending.current = [];
-    setTail(({ entries: current, dropped: lost }) => {
-      const merged = [...current];
-      for (const entry of batch) {
-        const last = merged.at(-1);
-        // The first line after a gap closes its window.
-        if (entry.kind === 'line' && last?.kind === 'gap' && last.to === undefined) {
-          merged[merged.length - 1] = { ...last, to: entry.line.ts };
-        }
-        merged.push(entry);
-      }
-      if (frozenAt === null) return { entries: merged.slice(-MAX_LINES), dropped: 0 };
-      const excess = merged.length - MAX_PAUSED_LINES;
-      if (excess <= 0) return { entries: merged, dropped: lost };
-      // Paused: what is shown stays; the oldest of what arrived since makes room.
-      const since = merged.findIndex((e) => e.id > frozenAt);
-      return { entries: [...merged.slice(0, since), ...merged.slice(since + excess)], dropped: lost + excess };
-    });
+    if (!paused) {
+      setEntries((current) => append(current, batch).slice(-MAX_LINES));
+      return;
+    }
+    held.current.push(...batch);
+    // What is shown stays; past the cap, the oldest arrivals make room.
+    const excess = entries.length + held.current.length - MAX_PAUSED_LINES;
+    if (excess > 0) held.current.splice(0, excess);
+    setHeldCounts((c) => ({ waiting: held.current.length, dropped: c.dropped + Math.max(0, excess) }));
   }, PAINT_MS);
 
   const onMessage = (message: LiveMessage) => {
@@ -77,23 +85,27 @@ function Tail({ url, title, className = 'max-h-80' }: { url: string; title: stri
 
   const live = useLiveStream(url, { events: ['log', 'gap'], onMessage });
 
-  const shown = frozenAt === null ? entries : entries.filter((e) => e.id <= frozenAt);
-  const waiting = entries.length - shown.length;
-
   useEffect(() => {
-    if (frozenAt === null && tail.current) tail.current.scrollTop = tail.current.scrollHeight;
-  }, [entries, frozenAt]);
+    if (!paused && tail.current) tail.current.scrollTop = tail.current.scrollHeight;
+  }, [entries, paused]);
 
+  const release = (keep: boolean) => {
+    const waited = held.current;
+    held.current = [];
+    setHeldCounts({ waiting: 0, dropped: 0 });
+    setPaused(false);
+    return keep ? waited : [];
+  };
   const clear = () => {
     pending.current = [];
     lastTs.current = undefined;
-    setTail({ entries: [], dropped: 0 });
-    setFrozenAt(null);
+    release(false);
+    setEntries([]);
   };
   // Resuming shows the newest MAX_LINES, as a tail that never paused.
   const resume = () => {
-    setTail((tail) => ({ entries: tail.entries.slice(-MAX_LINES), dropped: 0 }));
-    setFrozenAt(null);
+    const waited = release(true);
+    setEntries((current) => append(current, waited).slice(-MAX_LINES));
   };
 
   return (
@@ -102,11 +114,11 @@ function Tail({ url, title, className = 'max-h-80' }: { url: string; title: stri
         <LiveIndicator state={live} />
         <button
           type="button"
-          aria-pressed={frozenAt !== null}
-          onClick={() => (frozenAt === null ? setFrozenAt(entries.at(-1)?.id ?? 0) : resume())}
+          aria-pressed={paused}
+          onClick={() => (paused ? resume() : setPaused(true))}
           className={buttons.secondary}
         >
-          {frozenAt === null ? t('logs.pause') : t('logs.resume')}
+          {paused ? t('logs.resume') : t('logs.pause')}
         </button>
         <button type="button" onClick={clear} className={buttons.secondary}>
           {t('logs.clear')}
@@ -120,8 +132,8 @@ function Tail({ url, title, className = 'max-h-80' }: { url: string; title: stri
           label={title}
           className={`${className} overflow-y-auto rounded-1 bg-log-bg px-3 py-2.5 font-mono text-tiny leading-[19px] text-log-ink`}
         >
-          {shown.length === 0 && <p className="m-0 text-log-dim">{t('logs.empty')}</p>}
-          {shown.map((entry) => (
+          {entries.length === 0 && <p className="m-0 text-log-dim">{t('logs.empty')}</p>}
+          {entries.map((entry) => (
             <LogRow key={entry.id} entry={entry} />
           ))}
         </ScrollRegion>

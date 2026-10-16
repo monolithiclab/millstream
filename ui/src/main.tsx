@@ -6,8 +6,7 @@ import type { Api } from './api/api';
 import { HttpApi } from './api/http';
 import { browserEventSource, type EventSourceFactory } from './live/useLiveStream';
 import { applyTheme, initialTheme } from './preferences';
-import { DEMO_KEY } from './shell/DemoBadge';
-import { readStored, writeStored } from './storage';
+import { DEMO_KEY, readStored, writeStored } from './storage';
 import './styles/index.css';
 
 // ?demo runs the UI on the in-memory FakeApi, for the end-to-end smoke test and for looking around without a
