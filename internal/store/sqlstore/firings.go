@@ -2,7 +2,6 @@ package sqlstore
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"time"
 
@@ -65,21 +64,5 @@ func (s *Store) LastFiring(ctx context.Context, pipelineName, trigger string) (t
 
 // Pipelines returns every pipeline's state, by name.
 func (s *Store) Pipelines(ctx context.Context) ([]store.PipelineState, error) {
-	names, err := scan(ctx, s.read, `SELECT id FROM pipelines ORDER BY id`, nil, func(rows *sql.Rows) (string, error) {
-		var name string
-		err := rows.Scan(&name)
-		return name, err
-	})
-	if err != nil {
-		return nil, fmt.Errorf("pipelines: %w", err)
-	}
-	out := make([]store.PipelineState, 0, len(names))
-	for _, name := range names {
-		ps, err := s.PipelineState(ctx, name)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, ps)
-	}
-	return out, nil
+	return s.pipelineStates(ctx, "")
 }

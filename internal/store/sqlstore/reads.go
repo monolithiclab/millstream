@@ -450,24 +450,53 @@ func (s *Store) StepStats(ctx context.Context, pipelineName string, since time.T
 
 // PipelineState returns the pipeline's active revision and pause state.
 func (s *Store) PipelineState(ctx context.Context, pipelineName string) (store.PipelineState, error) {
-	ps := store.PipelineState{Name: pipelineName}
-	var state string
-	if err := s.read.QueryRowContext(ctx, `SELECT active_revision, state FROM pipelines WHERE id = ?`, pipelineName).
-		Scan(&ps.ActiveRevision, &state); err != nil {
-		return ps, notFound(err, "pipeline "+pipelineName)
+	states, err := s.pipelineStates(ctx, pipelineName)
+	if err != nil {
+		return store.PipelineState{Name: pipelineName}, err
 	}
-	ps.Paused, ps.Disabled = state == "paused", state == "disabled"
-	type pausedStep struct{ step, cause string }
-	steps, err := scan(ctx, s.read, `SELECT step, cause FROM steps_state WHERE pipeline = ? AND paused = TRUE
-		ORDER BY step`, []any{pipelineName}, func(rows *sql.Rows) (pausedStep, error) {
+	if len(states) == 0 {
+		return store.PipelineState{Name: pipelineName}, fmt.Errorf("pipeline %s: %w", pipelineName, store.ErrNotFound)
+	}
+	return states[0], nil
+}
+
+// pipelineStates reads the state of the pipeline named, or of every pipeline when the name is empty, by name: two
+// queries whatever the number of pipelines, since the engine reads them all at every pull.
+func (s *Store) pipelineStates(ctx context.Context, pipelineName string) ([]store.PipelineState, error) {
+	var w where
+	w.eq("id", pipelineName)
+	out, err := scan(ctx, s.read, `SELECT id, active_revision, state FROM pipelines`+w.String()+` ORDER BY id`, w.args,
+		func(rows *sql.Rows) (store.PipelineState, error) {
+			var ps store.PipelineState
+			var state string
+			err := rows.Scan(&ps.Name, &ps.ActiveRevision, &state)
+			ps.Paused, ps.Disabled = state == "paused", state == "disabled"
+			return ps, err
+		})
+	if err != nil {
+		return nil, fmt.Errorf("pipeline states: %w", err)
+	}
+	type pausedStep struct{ pipeline, step, cause string }
+	sw := where{conds: []string{"paused = TRUE"}}
+	sw.eq("pipeline", pipelineName)
+	steps, err := scan(ctx, s.read, `SELECT pipeline, step, cause FROM steps_state`+sw.String()+
+		` ORDER BY pipeline, step`, sw.args, func(rows *sql.Rows) (pausedStep, error) {
 		var p pausedStep
-		err := rows.Scan(&p.step, &p.cause)
+		err := rows.Scan(&p.pipeline, &p.step, &p.cause)
 		return p, err
 	})
 	if err != nil {
-		return ps, fmt.Errorf("pipeline state %s: %w", pipelineName, err)
+		return nil, fmt.Errorf("pipeline states: %w", err)
+	}
+	byName := make(map[string]*store.PipelineState, len(out))
+	for i := range out {
+		byName[out[i].Name] = &out[i]
 	}
 	for _, p := range steps {
+		ps := byName[p.pipeline]
+		if ps == nil {
+			continue
+		}
 		ps.PausedSteps = append(ps.PausedSteps, p.step)
 		if p.cause != "" {
 			if ps.PauseCauses == nil {
@@ -476,7 +505,7 @@ func (s *Store) PipelineState(ctx context.Context, pipelineName string) (store.P
 			ps.PauseCauses[p.step] = p.cause
 		}
 	}
-	return ps, nil
+	return out, nil
 }
 
 // Artifacts returns the artifact store entries of a pipeline, or of every pipeline, by pipeline and hash.
