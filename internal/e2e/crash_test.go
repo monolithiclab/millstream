@@ -40,9 +40,10 @@ var reachedByRun = []string{"applyRevision", "fire", "lease", "renew", "done", "
 var slowCrawl = []string{"--var", "crawlDelayMs=1500"}
 
 // TestCrashAtFailpoints runs the builtins fixture, with a pipeline importing one of its streams, with each failpoint
-// of each atomic unit armed, and the one inside the Stream import unit, then reruns them without on the same database: whether the process died at the failpoint or never reached it, the rerun must end in
-// exactly the clean run's state (no item lost, none published twice, every run settled, the same dead letters). It
-// runs on SQLite and on Postgres, each against its own clean run.
+// of each atomic unit armed, and the one inside the Stream import unit, then reruns them without on the same
+// database: whether the process died at the failpoint or never reached it, the rerun must end in exactly the clean
+// run's state (no item lost, none published twice, every run settled, the same dead letters). It runs on SQLite and
+// on Postgres, each against its own clean run.
 func TestCrashAtFailpoints(t *testing.T) {
 	t.Parallel()
 	for _, b := range backends {

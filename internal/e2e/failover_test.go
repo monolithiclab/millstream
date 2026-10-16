@@ -11,6 +11,7 @@ import (
 	"maps"
 	"math/rand/v2"
 	"net"
+	"net/http"
 	"os"
 	osexec "os/exec"
 	"path/filepath"
@@ -31,12 +32,12 @@ import (
 )
 
 // The failover chaos suite (spec sections 5.9 and 16): two serve processes on one Postgres database, each with its
-// embedded node, run the builtins fixture fired through the active engine's API. The active one is killed at every
-// boundary of every unit (its failpoints, as the crash suite arms them) and at seeded random points, or loses its
-// database session while it lives, or is cut off from the database by a proxy; the standby takes over and finishes
-// the run, and the store must end exactly as the clean run's, with the crash suite's invariants. Each test reports
-// how long the takeovers took: from the active engine's end (its process gone, or its session ended) to the
-// standby's lock, and to its first dispatch.
+// embedded node, run the builtins fixture, with a pipeline importing one of its streams, fired through the active
+// engine's API with token auth on. The active one is killed at every boundary of every unit (its failpoints, as the
+// crash suite arms them) and at seeded random points, or loses its database session while it lives, or is cut off
+// from the database by a proxy; the standby takes over and finishes the run, and the store must end exactly as the
+// clean run's, with the crash suite's invariants. Each test reports how long the takeovers took: from the active
+// engine's end (its process gone, or its session ended) to the standby's lock, and to its first dispatch.
 
 // failoverLeaseTTL is the serve processes' lease: the dead engine's leases expire quickly on the new one.
 const failoverLeaseTTL = "1s"
@@ -44,6 +45,9 @@ const failoverLeaseTTL = "1s"
 // failoverEngine is the environment file's engine key in the suite: the write connection checked every 500 ms and
 // watched with 1 s keepalives, so a cut-off engine steps down, and its lock is released, within 2.5 s.
 const failoverEngine = "engine: { lockCheck: 500ms, keepalive: 1s }\n"
+
+// failoverToken is the deployment's auth.token: the suite runs with token auth on, the standby's API included.
+const failoverToken = "failover-s3cret"
 
 // settleTimeout bounds how long a failover test waits for the run to settle.
 const settleTimeout = 2 * time.Minute
@@ -63,14 +67,15 @@ func newFailover(t *testing.T) *failover {
 	dir, _ := pgDirs.Load(db)
 	f := &failover{t: t, db: db, dir: dir.(string), envFile: filepath.Join(dir.(string), "millstream.yaml")}
 	if err := os.WriteFile(f.envFile, []byte("store: { postgres: { dsn: { env: MILLSTREAM_DSN } } }\n"+
-		"listen: 127.0.0.1:0\n"+failoverEngine), 0o600); err != nil {
+		"listen: 127.0.0.1:0\nauth: { token: { env: MILLSTREAM_TOKEN } }\n"+failoverEngine), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	return f
 }
 
 // environ is the environment of a millstream process of the test: the test's own without MILLSTREAM_ variables,
-// the DSN, a user to record decisions under, and extra.
+// the DSN, the token (the engines' auth.token, the clients' bearer token), a user to record decisions under, and
+// extra.
 func (f *failover) environ(dsn string, extra ...string) []string {
 	var env []string
 	for _, kv := range os.Environ() {
@@ -78,7 +83,8 @@ func (f *failover) environ(dsn string, extra ...string) []string {
 			env = append(env, kv)
 		}
 	}
-	return append(env, append([]string{"MILLSTREAM_DSN=" + dsn, "USER=ops"}, extra...)...)
+	return append(env, append([]string{"MILLSTREAM_DSN=" + dsn, "MILLSTREAM_TOKEN=" + failoverToken, "USER=ops"},
+		extra...)...)
 }
 
 // engineProc is a serve process.
@@ -349,14 +355,16 @@ func (f *failover) onActive(engines []*engineProc, args ...string) result {
 	}
 }
 
-// fireRun applies the builtins fixture and fires the crash suite's run through the engines' API.
+// fireRun applies the builtins fixture and its importer, as the clean run has them, and fires the crash suite's run
+// through the engines' API.
 func (f *failover) fireRun(engines []*engineProc) {
 	f.t.Helper()
-	f.onActive(engines, "apply", fixtureBuiltins)
+	f.onActive(engines, "apply", fixtureBuiltins, fixtureImporter)
 	f.onActive(engines, "trigger", pipelineName, "adhoc", "--request-id", crashRequest)
 }
 
-// waitSettled waits until the crash suite's run settled, reading the store read-only beside the engines.
+// waitSettled waits until the crash suite's run and every run it opened settled, reading the store read-only beside
+// the engines.
 func (f *failover) waitSettled() {
 	f.t.Helper()
 	ctx := f.t.Context()
@@ -369,7 +377,11 @@ func (f *failover) waitSettled() {
 	for {
 		run, err := st.Run(ctx, pipelineName, crashRun)
 		if err == nil && !run.SettledAt.IsZero() {
-			return
+			// The importer's run settles once its own work after the producer run's is done.
+			open, err := st.Runs(ctx, store.RunFilter{Unsettled: true})
+			if err == nil && len(open) == 0 {
+				return
+			}
 		}
 		if time.Now().After(deadline) {
 			f.t.Fatalf("the run did not settle within %s: %+v, %v", settleTimeout, run, err)
@@ -609,6 +621,13 @@ func TestFailoverOnSessionLoss(t *testing.T) {
 	leading := a.waitLine(t, `"msg":"leading the deployment"`, time.Minute)
 	b := f.startEngine("b", f.db, slow)
 	b.waitLine(t, "waiting as the standby", time.Minute)
+	// Token auth on both engines: the standby refuses a request without the token, and signs the UI in.
+	for _, e := range []*engineProc{a, b} {
+		if code, _ := apiCall(t, e.url, http.MethodGet, "/api/v1/pipelines", "", nil); code != http.StatusUnauthorized {
+			t.Fatalf("engine %s without the token: %d", e.name, code)
+		}
+	}
+	session := signIn(t, b.url)
 	f.fireRun([]*engineProc{a})
 	a.waitLine(t, `"msg":"first dispatch"`, time.Minute)
 
@@ -623,6 +642,10 @@ func TestFailoverOnSessionLoss(t *testing.T) {
 		t.Fatalf("the engine that lost its session exited (%d) instead of standing by", a.code)
 	}
 	tk := measureTakeover(t, b, cut, 30*time.Second)
+	// The session the standby signed in lives on in its term as the active engine.
+	if code, body := apiCall(t, b.url, http.MethodGet, "/api/v1/session", "", session); code != http.StatusOK {
+		t.Fatalf("the standby's session once it leads: %d %s", code, body)
+	}
 	t.Logf("session ended: stepped down after %s; standby took the lock after %s, dispatched after %s",
 		logTime(t, down).Sub(cut).Round(time.Millisecond), tk.lead.Round(time.Millisecond),
 		tk.dispatch.Round(time.Millisecond))
@@ -643,6 +666,50 @@ func TestFailoverOnSessionLoss(t *testing.T) {
 	if n := a.log.count(`"msg":"leading the deployment"`); n != 2 {
 		t.Errorf("the first engine led %d times, want 2", n)
 	}
+}
+
+// apiCall makes one request of an engine's API with the given headers and returns the status and body.
+func apiCall(t *testing.T, base, method, path, body string, header map[string]string) (int, string) {
+	t.Helper()
+	req, err := http.NewRequestWithContext(t.Context(), method, base+path, strings.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if body != "" {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	for k, v := range header {
+		req.Header.Set(k, v)
+	}
+	resp, err := (&http.Client{Timeout: 10 * time.Second}).Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	b, _ := io.ReadAll(resp.Body)
+	return resp.StatusCode, string(b)
+}
+
+// signIn signs the UI in on an engine and returns the session cookie's header.
+func signIn(t *testing.T, base string) map[string]string {
+	t.Helper()
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, base+"/api/v1/session",
+		strings.NewReader(`{"token":"`+failoverToken+`"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Origin", base)
+	resp, err := (&http.Client{Timeout: 10 * time.Second}).Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK || len(resp.Cookies()) != 1 {
+		t.Fatalf("sign in on %s: %d %v", base, resp.StatusCode, resp.Cookies())
+	}
+	c := resp.Cookies()[0]
+	return map[string]string{"Cookie": c.Name + "=" + c.Value}
 }
 
 // cutProxy is a TCP proxy to Postgres that can cut the network: cut, it forwards nothing more in either direction

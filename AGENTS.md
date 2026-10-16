@@ -87,11 +87,11 @@ below) for the reasoning, and `make help` for every command.
   untagged, under the race detector, and prints the whole suite's coverage (`make test` checks the default build's
   against `COVERAGE_MIN`): the `internal/e2e` package (crash matrix on SQLite and Postgres, run with a second pipeline
   importing the fixture's stream so that it covers a Done that imports, the failover chaos suite of
-  `failover_test.go`, two `serve` processes on Postgres, M1 and M2 scenarios), the end-to-end CLI and engine tests,
-  the real-process twins of the in-process tests (under the tag, `fakeexec` runs the built fake binary), Docker and
-  Postgres tests, and the long property runs. It is slow, is not part of `make ci`, and runs in CI as its own job;
-  run it before closing a milestone and after touching the exec runtime, the node, the CLI's run path, the store's
-  concurrency or the crash recovery.
+  `failover_test.go` on the same two pipelines with token auth on, two `serve` processes on Postgres, M1 and M2
+  scenarios), the end-to-end CLI and engine tests, the real-process twins of the in-process tests (under the tag,
+  `fakeexec` runs the built fake binary), Docker and Postgres tests, and the long property runs. It is slow, is not
+  part of `make ci`, and runs in CI as its own job; run it before closing a milestone and after touching the exec
+  runtime, the node, the CLI's run path, the store's concurrency or the crash recovery.
 
 ## Web UI
 
