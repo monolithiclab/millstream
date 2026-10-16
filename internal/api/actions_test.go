@@ -1,11 +1,14 @@
 package api
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/monolithiclab/millstream/internal/store"
 )
@@ -168,5 +171,120 @@ func TestActionsUnavailable(t *testing.T) {
 		target: "/api/v1/pipelines/listings/samples/" + f.sampleDelivery + "/decision"}), 400, codeInvalid)
 	if _, err := New(Options{}); err == nil {
 		t.Error("New without a store succeeded")
+	}
+}
+
+// decisionError is the code and message of an error answer.
+func decisionError(t *testing.T, rec *httptest.ResponseRecorder) errorDetail {
+	t.Helper()
+	var body errorBody
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("error body %q: %v", rec.Body.String(), err)
+	}
+	return body.Error
+}
+
+// countItems counts the run's items on stream.
+func countItems(t *testing.T, h http.Handler, run, stream string) int {
+	t.Helper()
+	return len(get[Page[Item]](t, h, "/api/v1/pipelines/listings/items?run="+run+"&stream="+stream).Items)
+}
+
+// Review focus 1: a review times out while a reviewer has it open. The reviewer's decision is a conflict that says
+// when it timed out and what onTimeout applied, and onTimeout applied once: one item passed on, no second emit.
+func TestReviewDecisionAfterTimeout(t *testing.T) {
+	f := newFixture(t)
+	h := f.srv
+	// A listing parked with a one-hour timeout that approves (the seeded reviews have no timeout).
+	f.fire("rt")
+	f.done(f.lease("crawl"), out("t", `{"price":150}`))
+	f.done(f.lease("score"), out("", `{"price":150,"score":80}`))
+	l := f.lease("check")
+	spec := reviewSpec
+	spec.Timeout, spec.OnTimeout = time.Hour, store.DecisionApprove
+	must(f.st.Park(f.ctx, store.ParkRequest{LeaseRef: l.Ref(), Attempt: l.Attempt, Spec: spec, Display: "Listing t"}))
+	target := "/api/v1/pipelines/listings/reviews/" + l.DeliveryID
+
+	// The reviewer opens it at version 1; its deadline passes and the Review timeout unit runs.
+	opened := get[Review](t, h, target)
+	if opened.State != "open" || opened.Deadline == nil {
+		t.Fatalf("opened review = %+v", opened)
+	}
+	if n := countItems(t, h, "rt", "listings.approved"); n != 0 {
+		t.Fatalf("approved before the timeout: %d", n)
+	}
+	f.clock.Advance(time.Hour + time.Minute)
+	timedOutAt := f.clock.Now()
+	ts := must(f.st.ReviewTimeouts(f.ctx))
+	if len(ts) != 1 || ts[0].DeliveryID != l.DeliveryID || ts[0].Action != store.DecisionApprove {
+		t.Fatalf("timeouts = %+v", ts)
+	}
+
+	// The reviewer's decision, on the version they saw, is a conflict naming the timeout.
+	rec := do(t, h, request{method: http.MethodPost, target: target + "/decision",
+		body:   fmt.Sprintf(`{"decision":"reject","reason":"overpriced","version":%d}`, opened.Version),
+		header: map[string]string{UserHeader: "ana"}})
+	wantError(t, rec, http.StatusConflict, codeConflict)
+	want := fmt.Sprintf("review of delivery %s timed out at %s, applied approve", l.DeliveryID,
+		timedOutAt.Format(time.RFC3339))
+	if msg := decisionError(t, rec).Message; !strings.Contains(msg, want) {
+		t.Errorf("message %q, want %q", msg, want)
+	}
+
+	// onTimeout applied once: the review records it, one item passed on, and the unit finds nothing more.
+	rv := get[Review](t, h, target)
+	if rv.State != "timedOut" || rv.Decision != store.DecisionApprove || rv.Reviewer != "timeout" {
+		t.Errorf("timed-out review = %+v", rv)
+	}
+	if n := countItems(t, h, "rt", "listings.approved"); n != 1 {
+		t.Errorf("approved after the timeout and the late decision: %d items, want 1", n)
+	}
+	if ts := must(f.st.ReviewTimeouts(f.ctx)); len(ts) != 0 {
+		t.Errorf("timeouts again = %+v", ts)
+	}
+}
+
+// Review focus 3: two reviewers approve the same review at once. One wins; the other's answer is a conflict naming
+// the winner, and the item is passed on once.
+func TestReviewDecisionConcurrent(t *testing.T) {
+	f := newFixture(t)
+	h := f.srv
+	target := "/api/v1/pipelines/listings/reviews/" + f.reviewDelivery
+	before := countItems(t, h, "r1", "listings.approved")
+
+	reviewers := []string{"ana", "ben"}
+	recs := make([]*httptest.ResponseRecorder, len(reviewers))
+	var wg sync.WaitGroup
+	for i, who := range reviewers {
+		wg.Go(func() {
+			recs[i] = do(t, h, request{method: http.MethodPost, target: target + "/decision",
+				body: `{"decision":"approve"}`, header: map[string]string{UserHeader: who}})
+		})
+	}
+	wg.Wait()
+
+	winner, loser := -1, -1
+	for i, rec := range recs {
+		switch rec.Code {
+		case http.StatusOK:
+			winner = i
+		case http.StatusConflict:
+			loser = i
+		}
+	}
+	if winner < 0 || loser < 0 {
+		t.Fatalf("answers %d %s / %d %s, want one 200 and one 409", recs[0].Code, recs[0].Body.String(),
+			recs[1].Code, recs[1].Body.String())
+	}
+	wantError(t, recs[loser], http.StatusConflict, codeConflict)
+	want := "already decided: approve by " + reviewers[winner]
+	if msg := decisionError(t, recs[loser]).Message; !strings.Contains(msg, want) {
+		t.Errorf("loser's message %q, want %q", msg, want)
+	}
+	if rv := get[Review](t, h, target); rv.State != "decided" || rv.Reviewer != reviewers[winner] {
+		t.Errorf("decided review = %+v", rv)
+	}
+	if n := countItems(t, h, "r1", "listings.approved"); n != before+1 {
+		t.Errorf("approved items %d, want %d: one emit", n, before+1)
 	}
 }
