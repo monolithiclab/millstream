@@ -27,20 +27,34 @@ below) for the reasoning, and `make help` for every command.
   `redact` and the other packages named in the M1 plan's file structure.
 - `sdk/go/`: the Go action SDK, its own module.
 - `examples/`: fixture and example pipeline packages.
-- `make ci` is the gate: lint (golangci-lint over the default and the e2e-tagged files, govulncheck, tidy, pins,
-  shellcheck), the fast tests with `-race`, and the docs check, for the main module and the SDK module alike.
+- `make ci` is the gate: lint (golangci-lint over the e2e-tagged build, which holds every file, govulncheck, tidy,
+  pins, shellcheck), the default test suite without `-race`, and the docs check, for the main module and the SDK
+  module alike.
 
 ## Test suites
 
-- `make test` runs the default build: unit tests only, in a few hundred milliseconds of test time plus the SQLite
-  floor under `-race`. Actions run in-process (`exec.FuncLauncher` with `exectest.Serve`, wired through `fakeexec` and
-  `cli.Runtime.Launchers`); time is a fake clock or a small injected duration. No `go build`, no process, no Docker,
-  no sleep or polling: a test that needs one goes behind the `e2e` build tag, in a `*_e2e_test.go` file.
-- `make test-e2e` (`go test -race -count=1 -tags e2e ./...`, and the SDK module's) runs everything: the
-  `internal/e2e` package (crash matrix, M1 and M2 scenarios), the real-process twins of the in-process tests (under
-  the tag, `fakeexec` runs the built fake binary), Docker tests, and the long property runs. It is slow, is not part
-  of `make ci`, and runs in CI as its own job; run it before closing a milestone and after touching the exec runtime,
-  the node, the CLI's run path or the crash recovery.
+- `make test` runs the default build: in-process unit tests, without `-race`, within a budget measured without
+  `-race` by `make test-times` (`scripts/test-times`): at most 500 ms of serial-equivalent test time in total (the
+  suite run with `-p 1 -parallel 1`, each top-level test timed from the `go test -json` event timestamps), no
+  top-level test over 20 ms, and no package's wall time (`-p 1`, `t.Parallel` in effect) more than 100 ms above its
+  test binary's floor (the same binary running no test: process start, initialisation, `TestMain`). It prints the
+  slowest tests and exits 1 over budget. Compilation and binary start are not counted.
+- What keeps it there: actions run in-process (`exec.FuncLauncher` with `exectest.Serve`, wired through `fakeexec`
+  and `cli.Runtime.Launchers`); stores are `sqlite.Memory`, whose template loads from an embedded image and whose
+  closed connections, emptied, serve the next store with their statements already prepared (`Clone` is slower: it
+  prepares them all again); fixtures (packages, parsed pipelines, applied runs, insight histories) are built once
+  per process; time is a fake clock or an injected timer. No `go build`, no process, no Docker, no sleep or
+  polling, no file database but the one that tests opening a file: a test that needs one, or drives the CLI or the
+  engine end to end, goes behind the `e2e` build tag, in a `*_e2e_test.go` file. The store and insights tests run
+  serially: the transpiled SQLite allocates under one process-wide lock, so parallel tests contend instead of
+  overlapping.
+- `make test-e2e` (`go test -race -count=1 -tags e2e ./...`, and the SDK module's) runs everything, tagged and
+  untagged, under the race detector, and prints the whole suite's coverage (`make test` checks the default build's
+  against `COVERAGE_MIN`): the `internal/e2e` package (crash matrix, M1 and M2 scenarios), the end-to-end CLI and
+  engine tests, the real-process twins of the in-process tests (under the tag, `fakeexec` runs the built fake
+  binary), Docker tests, and the long property runs. It is slow, is not part of `make ci`, and runs in CI as its own
+  job; run it before closing a milestone and after touching the exec runtime, the node, the CLI's run path, the
+  store's concurrency or the crash recovery.
 
 ## Agent recordings and the live smoke test
 
