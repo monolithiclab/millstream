@@ -35,13 +35,15 @@ below) for the reasoning, and `make help` for every command.
 ## Test suites
 
 - `make test` runs the default build: in-process unit tests, without `-race`, within a budget measured without
-  `-race` by `make test-times` (`scripts/test-times`): at most 500 ms of serial-equivalent test time in total (the
-  suite run with `-p 1 -parallel 1`, each top-level test timed from the `go test -json` event timestamps), no
-  top-level test over 20 ms, and no package's wall time (`-p 1`, `t.Parallel` in effect) more than 100 ms above its
-  test binary's floor (the same binary running no test: process start, initialisation, `TestMain`). It prints the
-  slowest tests and exits 1 over budget. Compilation and binary start are not counted.
-- The working target is 350 ms, the median of three `make test-times` runs, so that new work has room under the
-  budget: a change that takes the median above 400 ms makes room in the same change.
+  `-race` by `make test-times` (`scripts/test-times`). It runs the suite serially (`-p 1 -parallel 1`) three times
+  (five with `CI=1`), times each top-level test from the `go test -json` event timestamps and takes its median: the
+  sum of the medians is at most 500 ms, no test's median is over 20 ms, and the slowest run of each listed test is
+  printed beside it. It runs the suite three more times at `-p 1` (`t.Parallel` in effect): no package's median wall
+  time, from its first test's start to its last test's end, is over 100 ms. Compilation, binary start, package
+  initialisation and `TestMain` are not counted. It says "noisy machine" when its slowest serial run took over 1.2
+  times its fastest, and exits 1 over budget.
+- The working target is 400 ms, which the script warns about: a change that takes the median total above it makes
+  room in the same change.
 - What keeps it there: actions run in-process (`exec.FuncLauncher` with `exectest.Serve`, wired through `fakeexec`
   and `cli.Runtime.Launchers`); stores are `sqlite.Memory`, whose template loads from an embedded image and whose
   closed connections, emptied, serve the next store with their statements already prepared (`Clone` is slower: it

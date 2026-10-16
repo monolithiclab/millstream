@@ -1,37 +1,48 @@
 #!/bin/sh
-# Measures the default test suite against its budget, without -race. Compilation and binary start are not counted.
-#   - Serial-equivalent test time: the suite runs one package and one test at a time (-p 1 -parallel 1), and each
-#     top-level test's time comes from the events' timestamps (test2json's Elapsed has a 10 ms resolution). The sum is
-#     at most BUDGET_TOTAL_MS, and no test takes more than BUDGET_TEST_MS.
-#   - Package wall time: the suite runs again one package at a time, with t.Parallel in effect (-p 1), and no
-#     package's Elapsed is more than BUDGET_PKG_MS above its floor: the Elapsed of its test binary running no test
-#     (-run '^$': process start, package initialisation, TestMain). Both take the fastest of three runs, macOS
-#     start-up times being noisy. An empty test binary's Elapsed, the floor of the smallest binary, is printed
-#     for reference: a larger binary takes longer to start.
+# Measures the default test suite against its budget, without -race. Compilation, binary start, package
+# initialisation and TestMain are not counted.
+#   - Serial-equivalent test time: the suite runs RUNS times (3, 5 when CI=1) one package and one test at a time
+#     (-p 1 -parallel 1). Each top-level test's time comes from the events' timestamps (test2json's Elapsed has a
+#     10 ms resolution), and its figure is the median of its runs. The total is the sum of those medians: at most
+#     BUDGET_TOTAL_MS, with a warning above TARGET_TOTAL_MS (the working target), and no test's median above
+#     BUDGET_TEST_MS. The listed tests show their median and their slowest run.
+#   - Package wall time: the suite runs three times one package at a time with t.Parallel in effect (-p 1). A
+#     package's wall time runs from its first test's start to its last test's end, read from the events, so start-up
+#     and TestMain are left out; its median is at most BUDGET_PKG_MS.
+#   - A machine whose serial totals differ by more than a fifth (slowest over fastest above 1.2) is reported noisy:
+#     the medians still decide, but read the figures with care.
 # Prints the per-package figures and the TOP slowest tests, and exits 1 when the budget is exceeded.
 # Usage: scripts/test-times [go test arguments, default ./...]   e.g. scripts/test-times -tags e2e ./internal/cli
 set -eu
 
-: "${BUDGET_TOTAL_MS:=500}" "${BUDGET_TEST_MS:=20}" "${BUDGET_PKG_MS:=100}" "${TOP:=30}"
+: "${BUDGET_TOTAL_MS:=500}" "${TARGET_TOTAL_MS:=400}" "${BUDGET_TEST_MS:=20}" "${BUDGET_PKG_MS:=100}" "${TOP:=30}"
+if [ -z "${RUNS:-}" ]; then
+	RUNS=3
+	[ "${CI:-}" != 1 ] || RUNS=5
+fi
 [ $# -gt 0 ] || set -- ./...
 
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 
-# An empty package with one empty test, in a module of its own, run three times for the fastest: macOS assesses a
-# binary the first time it runs. The suite's binaries go through that in the serial pass, which runs first.
-mkdir "$tmp/empty"
-printf 'module empty\n\ngo 1.25\n' > "$tmp/empty/go.mod"
-printf 'package empty\n\nimport "testing"\n\nfunc TestEmpty(*testing.T) {}\n' > "$tmp/empty/empty_test.go"
-for _ in 1 2 3; do (cd "$tmp/empty" && go test -count=1 -json .); done > "$tmp/empty.json"
-
 status=0
-go test -count=1 -json -p 1 -parallel 1 "$@" > "$tmp/serial.json" || status=$?
-for _ in 1 2 3; do go test -count=1 -json -p 1 -run '^$' "$@" || status=$?; done > "$tmp/floor.json"
-for _ in 1 2 3; do go test -count=1 -json -p 1 "$@" || status=$?; done > "$tmp/wall.json"
+files=""
+i=1
+while [ "$i" -le "$RUNS" ]; do
+	go test -count=1 -json -p 1 -parallel 1 "$@" > "$tmp/serial.$i.json" || status=$?
+	files="$files kind=serial run=$i $tmp/serial.$i.json"
+	i=$((i + 1))
+done
+for i in 1 2 3; do
+	go test -count=1 -json -p 1 "$@" > "$tmp/wall.$i.json" || status=$?
+	files="$files kind=wall run=$i $tmp/wall.$i.json"
+done
 
-# go test -json emits one event per line, with flat fields: a regexp per field is enough.
-awk -v total_budget="$BUDGET_TOTAL_MS" -v test_budget="$BUDGET_TEST_MS" -v pkg_budget="$BUDGET_PKG_MS" -v top="$TOP" '
+# go test -json emits one event per line, with flat fields: a regexp per field is enough. The operands alternate
+# kind=… run=… assignments and files, so each file is read knowing what it holds.
+# shellcheck disable=SC2086 # $files is a list of awk operands, none holding a space
+awk -v runs="$RUNS" -v total_budget="$BUDGET_TOTAL_MS" -v target="$TARGET_TOTAL_MS" -v test_budget="$BUDGET_TEST_MS" \
+	-v pkg_budget="$BUDGET_PKG_MS" -v top="$TOP" '
 	function field(name,   re, s) {
 		re = "\"" name "\":(\"[^\"]*\"|[^,}]*)"
 		if (!match($0, re)) return ""
@@ -44,44 +55,74 @@ awk -v total_budget="$BUDGET_TOTAL_MS" -v test_budget="$BUDGET_TEST_MS" -v pkg_b
 		split(substr(ts, 12), hms, /[:+Z-]/)
 		return hms[1] * 3600 + hms[2] * 60 + hms[3]
 	}
-	FNR == 1 { file++ }
-	{ action = field("Action"); pkg = field("Package"); test = field("Test"); ms = field("Elapsed") * 1000 }
-	action !~ /^(pass|fail)$/ && file != 2 { next }
-	file == 1 { if (test == "" && (base == "" || ms < base)) base = ms; next }
-	file == 3 { if (test == "" && (!(pkg in floor) || ms < floor[pkg])) floor[pkg] = ms; next }
-	file == 4 { if (test == "" && (!(pkg in wall) || ms < wall[pkg])) wall[pkg] = ms; next }
+	# median of v[1..n], sorted in place; its largest value goes to the global mx.
+	function median(v, n,   i, j, x) {
+		for (i = 2; i <= n; i++) {
+			x = v[i]
+			for (j = i - 1; j >= 1 && v[j] > x; j--) v[j + 1] = v[j]
+			v[j + 1] = x
+		}
+		mx = v[n]
+		return n % 2 ? v[(n + 1) / 2] : (v[n / 2] + v[n / 2 + 1]) / 2
+	}
+	function short(name) { sub(/^github.com\/monolithiclab\/millstream\//, "", name); return name }
+	FNR == 1 { lastpkg = "" }
+	{ action = field("Action"); pkg = field("Package"); test = field("Test") }
+	test == "" { next }
+	{ now = secs(field("Time")) }
+	kind == "wall" {
+		k = run SUBSEP pkg
+		if (action == "run" && !(k in first)) first[k] = now
+		if (action ~ /^(pass|fail)$/) last[k] = now
+		pkgs[pkg] = 1
+		next
+	}
 	# One test runs at a time: the time up to an event belongs to the top-level test of that event (its own or one of
 	# its subtests), unless the event starts or resumes a test: the time before it goes to the framework. A resumed
 	# test need not announce itself (go test prints no CONT line when no other test printed since), hence the
 	# attribution to the later event.
-	test == "" { next }
-	{ key = pkg " " substr(test, 1, index(test "/", "/") - 1); now = secs(field("Time")) }
-	action !~ /^(run|cont)$/ && pkg == lastpkg { d = (now - then) * 1000; took[key] += d; sum[pkg] += d; total += d }
-	!(key in took) { took[key] = 0 }
-	{ lastpkg = pkg; then = now }
+	{ key = pkg " " substr(test, 1, index(test "/", "/") - 1) }
+	action !~ /^(run|cont)$/ && pkg == lastpkg {
+		d = (now - then) * 1000
+		took[run, key] += d
+		total[run] += d
+	}
+	{ keys[key] = 1; lastpkg = pkg; then = now }
 	END {
-		printf "empty test binary: %.0f ms\n\n%-56s %7s %7s %7s %8s\n", base, "package", "wall", "floor", "over",
-			"tests"
-		for (p in wall) {
-			over = wall[p] - floor[p]
-			flag = over > pkg_budget ? "  OVER" : ""
+		printf "%-56s %7s %7s   (wall: median of 3 runs at -p 1, first test start to last test end)\n",
+			"package", "median", "max"
+		for (p in pkgs) {
+			for (r = 1; r <= 3; r++) v[r] = (r SUBSEP p) in last ? (last[r, p] - first[r, p]) * 1000 : 0
+			m = median(v, 3)
+			flag = m > pkg_budget ? "  OVER" : ""
 			if (flag != "") over_pkg++
-			name = p; sub(/^github.com\/monolithiclab\/millstream\//, "", name)
-			printf "%-56s %7.0f %7.0f %7.0f %8.1f%s\n", name, wall[p], floor[p], over, sum[p], flag | "sort -k5 -rn"
+			printf "%-56s %7.0f %7.0f%s\n", short(p), m, mx, flag | "sort -k2 -rn"
 		}
-		close("sort -k5 -rn")
-		printf "\nserial-equivalent test time: %.0f ms (budget %d ms)\n\ntop %d tests (budget %d ms each):\n",
-			total, total_budget, top, test_budget
-		for (k in took) {
-			if (took[k] > test_budget) over_test++
-			name = k; sub(/^github.com\/monolithiclab\/millstream\//, "", name)
-			printf "%8.1f  %s\n", took[k], name | ("sort -rn | head -" top)
+		close("sort -k2 -rn")
+		sum = 0
+		for (k in keys) {
+			for (r = 1; r <= runs; r++) v[r] = took[r, k] + 0
+			med[k] = median(v, runs)
+			worst[k] = mx
+			sum += med[k]
+			if (med[k] > test_budget) over_test++
 		}
+		lo = hi = total[1]
+		for (r = 2; r <= runs; r++) {
+			if (total[r] < lo) lo = total[r]
+			if (total[r] > hi) hi = total[r]
+		}
+		printf "\nserial-equivalent test time: %.0f ms, the sum of the test medians over %d runs " \
+			"(budget %d ms, target %d ms); run totals %.0f to %.0f ms\n", sum, runs, total_budget, target, lo, hi
+		if (lo > 0 && hi / lo > 1.2) printf "noisy machine: the slowest run took %.2f times the fastest\n", hi / lo
+		printf "\ntop %d tests (median and slowest run, budget %d ms on the median):\n", top, test_budget
+		for (k in keys) printf "%8.1f %8.1f  %s\n", med[k], worst[k], short(k) | ("sort -rn | head -" top)
 		close("sort -rn | head -" top)
 		bad = 0
-		if (total > total_budget) { print "\nOVER: serial-equivalent test time"; bad = 1 }
-		if (over_test) { printf "OVER: %d tests above %d ms\n", over_test, test_budget; bad = 1 }
-		if (over_pkg) { printf "OVER: %d packages above their floor + %d ms\n", over_pkg, pkg_budget; bad = 1 }
+		if (sum > total_budget) { print "\nOVER: serial-equivalent test time"; bad = 1 }
+		else if (sum > target) printf "\nWARNING: above the %d ms working target: make room in this change\n", target
+		if (over_test) { printf "OVER: %d tests with a median above %d ms\n", over_test, test_budget; bad = 1 }
+		if (over_pkg) { printf "OVER: %d packages with a median wall time above %d ms\n", over_pkg, pkg_budget; bad = 1 }
 		exit bad
-	}' "$tmp/empty.json" "$tmp/serial.json" "$tmp/floor.json" "$tmp/wall.json" || status=1
+	}' $files || status=1
 exit "$status"

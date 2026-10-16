@@ -3,10 +3,6 @@ package sqlite
 import (
 	"context"
 	"errors"
-	"os"
-	"path/filepath"
-	"regexp"
-	"strings"
 	"testing"
 
 	"github.com/monolithiclab/millstream/internal/store"
@@ -58,24 +54,23 @@ func TestMemoryPool(t *testing.T) {
 	}
 }
 
-// No query binds a bare LIMIT parameter, which would have SQLite compile its statement again at every run
-// (limitParam): the store's queries live in its non-test sources.
-func TestNoBareLimitParam(t *testing.T) {
-	files, err := filepath.Glob("*.go")
+// A store's image opens as a store holding the same history, apart from the original.
+func TestImage(t *testing.T) {
+	e := newEnv(t, fixture)
+	e.fire("r1")
+	image, err := e.s.Image()
 	if err != nil {
 		t.Fatal(err)
 	}
-	bare := regexp.MustCompile(`(?i)\bLIMIT\s+\?(\s|$|` + "`" + `)`)
-	for _, f := range files {
-		if strings.HasSuffix(f, "_test.go") {
-			continue
-		}
-		src, err := os.ReadFile(f) // #nosec G304 -- the package's own sources
-		if err != nil {
-			t.Fatal(err)
-		}
-		if loc := bare.FindIndex(src); loc != nil {
-			t.Errorf("%s: a bare LIMIT ? at offset %d: use limitParam", f, loc[0])
-		}
+	copied, err := OpenImage(image, Options{Now: e.clock.Now})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = copied.Close() }()
+	if r, err := copied.Run(e.ctx, "listings", "r1"); err != nil || r.ID != "r1" {
+		t.Fatalf("run in the image = %+v, %v", r, err)
+	}
+	if _, err := OpenImage([]byte("not a database"), Options{}); err == nil {
+		t.Error("a bad image opened")
 	}
 }

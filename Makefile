@@ -18,7 +18,14 @@ docs: ## Check Markdown links and 120-column prose
 lint-shell:
 	@shellcheck scripts/check-docs scripts/test-times
 
-lint: lint-shell
+# No store query binds a bare LIMIT parameter, which has SQLite compile the statement again at every run: the
+# queries use limitParam (internal/store/sqlite/reads.go).
+.PHONY: lint-sql
+lint-sql:
+	@if grep -nEi 'LIMIT[[:space:]]+\?([[:space:]]|`|$$)' $(filter-out %_test.go,$(wildcard internal/store/sqlite/*.go)); then \
+		echo "a bare LIMIT ? above: use limitParam"; exit 1; fi
+
+lint: lint-shell lint-sql
 ci: docs
 
 # The Go SDK is its own module (sdk/go), outside the main module's ./...: test and lint it too.

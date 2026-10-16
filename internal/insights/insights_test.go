@@ -76,23 +76,6 @@ type sim struct {
 	p     *pipeline.Pipeline
 }
 
-func newSim(t *testing.T, src string) *sim {
-	t.Helper()
-	c := &clock{t: now.Add(-30 * 24 * time.Hour)}
-	st, err := sqlite.Open(sqlite.Memory, sqlite.Options{Now: c.Now, Rand: half})
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		if err := st.Close(); err != nil {
-			t.Error(err)
-		}
-	})
-	s := simOn(t, st, c, src)
-	s.apply(src)
-	return s
-}
-
 func half() float64 { return 0.5 }
 
 // simOn returns a sim of src on st with clock c.
@@ -259,6 +242,13 @@ var built struct {
 	end time.Time
 }
 
+// historyImage is the fixture's history as a store image, committed: loading it costs a fraction of building it.
+// -update builds it again from the sims below.
+const historyImage = "testdata/history.db"
+
+// historyEnd is the fixture's clock at the end of its history: the in-progress run's firing.
+var historyEnd = now.Add(-5 * time.Second)
+
 func fixtureStore(t *testing.T) (*sqlite.Store, time.Time) {
 	t.Helper()
 	built.Lock()
@@ -266,11 +256,30 @@ func fixtureStore(t *testing.T) (*sqlite.Store, time.Time) {
 	if built.st != nil {
 		return built.st, built.end
 	}
+	if *update {
+		buildHistory(t)
+	}
+	image, err := os.ReadFile(historyImage)
+	if err != nil {
+		t.Fatal(err)
+	}
+	st, err := sqlite.OpenImage(image, sqlite.Options{Now: (&clock{t: historyEnd}).Now, Rand: half})
+	if err != nil {
+		t.Fatal(err)
+	}
+	built.st, built.end = st, historyEnd
+	return built.st, built.end
+}
+
+// buildHistory builds the fixture's history and writes its image.
+func buildHistory(t *testing.T) {
+	t.Helper()
 	c := &clock{t: now.Add(-30 * 24 * time.Hour)}
 	st, err := sqlite.Open(sqlite.Memory, sqlite.Options{Now: c.Now, Rand: half})
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer func() { _ = st.Close() }()
 	s := simOn(t, st, c, shop)
 	s.apply(shop)
 	for i := range 6 {
@@ -279,10 +288,18 @@ func fixtureStore(t *testing.T) (*sqlite.Store, time.Time) {
 	s.slowRun("slow1", now.Add(-3*time.Hour), "flaky")
 	s.slowRun("slow2", now.Add(-2*time.Hour), "deterministic")
 	s.slowRun("slow3", now.Add(-1*time.Hour), "")
-	s.fire("running", now.Add(-5*time.Second)) // a run in progress, its crawl leased
+	s.fire("running", historyEnd) // a run in progress, its crawl leased
 	s.lease("crawl")
-	built.st, built.end = st, c.Now()
-	return built.st, built.end
+	if !c.Now().Equal(historyEnd) {
+		t.Fatalf("the history ends at %s, not %s", c.Now(), historyEnd)
+	}
+	image, err := st.Image()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(historyImage, image, 0o600); err != nil {
+		t.Fatal(err)
+	}
 }
 
 // golden compares got with testdata/name, rewriting it with -update.
@@ -317,11 +334,10 @@ type goldenInsight struct {
 	Evidence json.RawMessage `json:"evidence"`
 }
 
-// The first run of a pipeline has nothing to compare with.
+// The first run of a pipeline has nothing to compare with: the fixture's oldest run.
 func TestReportWithoutHistory(t *testing.T) {
-	s := newSim(t, shop)
-	s.quickRun("only", now.Add(-time.Hour))
-	r, err := BuildReport(s.ctx, s.st, "shop", "only", now)
+	s := shared(t)
+	r, err := BuildReport(s.ctx, s.st, "shop", "base0", now)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -139,6 +139,7 @@ func restore(db *sql.DB, srcURI string) error {
 
 // rawConn is what the store uses of a modernc.org/sqlite connection beyond database/sql.
 type rawConn interface {
+	Serialize() ([]byte, error)
 	Deserialize(buf []byte) error
 	NewBackup(dstURI string) (*msqlite.Backup, error)
 	NewRestore(srcURI string) (*msqlite.Backup, error)
@@ -230,6 +231,45 @@ func (s *Store) Clone(opts Options) (*Store, error) {
 		return nil, store.ErrClosed
 	}
 	return open(Memory, s.uri, opts)
+}
+
+// OpenImage opens a Memory store holding a copy of a database Image serialised: a history built once and kept as a
+// file, which tests load instead of building it again. Migrations newer than the image apply as they would to a
+// file store.
+func OpenImage(image []byte, opts Options) (*Store, error) {
+	uri := fmt.Sprintf("file:/millstream-image-%d?vfs=memdb", memorySeq.Add(1))
+	hold, err := sql.Open("sqlite", uri) // a memdb database lives while a connection to it does
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = hold.Close() }()
+	hold.SetMaxOpenConns(1)
+	if err := hold.Ping(); err != nil {
+		return nil, err
+	}
+	if err := loadImage(image, uri); err != nil {
+		return nil, fmt.Errorf("open image: %w", err)
+	}
+	return open(Memory, uri, opts)
+}
+
+// Image serialises the store's database as committed now, for OpenImage.
+func (s *Store) Image() ([]byte, error) {
+	db, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = db.Close() }()
+	var image []byte
+	err = onRawConn(db, func(c rawConn) error {
+		if err := backup(c.NewRestore(s.uri)); err != nil {
+			return err
+		}
+		b, err := c.Serialize()
+		image = bytes.Clone(b)
+		return err
+	})
+	return image, err
 }
 
 // open opens the store at path; a Memory store starts as a copy of the database at from, or of the migrated
