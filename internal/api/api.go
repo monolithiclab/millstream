@@ -39,8 +39,8 @@ const Prefix = "/api/v1"
 // UserHeader names the person deciding a review until authentication (M4) does.
 const UserHeader = "X-Millstream-User"
 
-// maxBody bounds a request body: a decision's edit is the largest a client sends. A variable for the tests.
-var maxBody int64 = 1 << 20
+// DefaultMaxBody bounds a request body without Options.MaxBody: a decision's edit is the largest a client sends.
+const DefaultMaxBody = 1 << 20
 
 // Engine is what the actions need of the engine beyond the store: firing a trigger and starting a replay run, which
 // resolve variables against the revision.
@@ -76,11 +76,12 @@ type Options struct {
 	Heartbeat time.Duration
 	// Logger receives the errors the API answers as internal; nil discards them.
 	Logger *slog.Logger
+	// MaxBody bounds a request body; zero means DefaultMaxBody.
+	MaxBody int64
 }
 
 // Server serves the API. It is an http.Handler for the paths under Prefix.
 type Server struct {
-	st   store.Store
 	opts Options
 	log  *slog.Logger
 	mux  *http.ServeMux
@@ -158,7 +159,10 @@ func New(opts Options) (*Server, error) {
 	if opts.Logger == nil {
 		opts.Logger = slog.New(slog.DiscardHandler)
 	}
-	s := &Server{st: opts.Store, opts: opts, log: opts.Logger, mux: http.NewServeMux()}
+	if opts.MaxBody <= 0 {
+		opts.MaxBody = DefaultMaxBody
+	}
+	s := &Server{opts: opts, log: opts.Logger, mux: http.NewServeMux()}
 	var paths []string
 	for _, rt := range routes {
 		h := rt.h
@@ -247,6 +251,20 @@ const (
 	// artifactPolicy sandboxes what an action wrote, which only the UI's own pages may embed.
 	artifactPolicy = "sandbox; default-src 'none'; frame-ancestors 'self'"
 )
+
+// CheckLoopback refuses a listen address that is not a loopback one: until token authentication (M4), the API
+// changes state for whoever reaches it, so it is served to this machine only. A host name must be localhost.
+func CheckLoopback(addr string) error {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		return fmt.Errorf("listen address %q: want host:port, such as 127.0.0.1:7070: %w", addr, err)
+	}
+	if host != "" && loopbackHost(host) {
+		return nil
+	}
+	return fmt.Errorf("listen address %q is not a loopback address: the API has no authentication until token "+
+		"auth arrives (M4), so it listens on 127.0.0.1, ::1 or localhost only", addr)
+}
 
 // loopbackHost reports whether a Host header names this machine: localhost or a loopback address, with or without
 // a port.
@@ -341,8 +359,8 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 
 // decodeBody decodes the JSON body into v, refusing unknown fields and trailing data; an empty body leaves v as it
 // is.
-func decodeBody(w http.ResponseWriter, r *http.Request, v any) error {
-	r.Body = http.MaxBytesReader(w, r.Body, maxBody)
+func (s *Server) decodeBody(w http.ResponseWriter, r *http.Request, v any) error {
+	r.Body = http.MaxBytesReader(w, r.Body, s.opts.MaxBody)
 	dec := json.NewDecoder(r.Body)
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(v); err != nil {

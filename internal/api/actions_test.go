@@ -87,10 +87,9 @@ func TestActions(t *testing.T) {
 	wantError(t, post(review, `{"decision":"approve","version":1,"patch":{"op":"add"}}`, nil), 400, codeInvalid)
 	wantError(t, post(review, `{"decision":"approve","version":1,"patch":[{"op":"add","path":"/price","value":1}]}`,
 		nil), 400, codeInvalid)
-	defer func(n int64) { maxBody = n }(maxBody)
-	maxBody = 64
-	wantError(t, post(review, `{"decision":"approve","text":"`+strings.Repeat("x", 64)+`"}`, nil), 413, codeTooLarge)
-	maxBody = 1 << 20
+	small := must(New(Options{Store: f.st, MaxBody: 64}))
+	wantError(t, do(t, small, request{method: http.MethodPost, target: review,
+		body: `{"decision":"approve","text":"` + strings.Repeat("x", 64) + `"}`}), 413, codeTooLarge)
 	rec = post(review, `{"decision":"approve","version":1,"patch":[{"op":"replace","path":"/score","value":75}]}`,
 		map[string]string{UserHeader: "ana"})
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"reviewer":"ana"`) ||

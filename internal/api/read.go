@@ -119,12 +119,20 @@ func activePipeline(ctx context.Context, st store.Store, name string) (store.Pip
 	if err != nil {
 		return ps, store.Revision{}, nil, err
 	}
-	rev, err := st.Revision(ctx, ps.ActiveRevision)
+	rev, p, err := decodedRevision(ctx, st, ps.ActiveRevision)
+	return ps, rev, p, err
+}
+
+// decodedRevision reads a revision and decodes its pipeline.
+func decodedRevision(ctx context.Context, st store.Store, id store.RevisionID) (store.Revision, *pipeline.Pipeline,
+	error,
+) {
+	rev, err := st.Revision(ctx, id)
 	if err != nil {
-		return ps, rev, nil, err
+		return rev, nil, err
 	}
 	p, err := rev.Decode()
-	return ps, rev, p, err
+	return rev, p, err
 }
 
 // pageOf makes a page of the first n of rows, read n+1 at most: a row past n means a next page, whose cursor is
@@ -140,20 +148,6 @@ func pageOf[T, U any](rows []T, n int, conv func(T) U, cursor func(T) string) Pa
 	return page
 }
 
-// pipelineState returns the state of the pipeline the request names, and its active revision decoded.
-func (s *Server) pipelineState(ctx context.Context, name string) (store.PipelineState, *pipeline.Pipeline, error) {
-	ps, _, p, err := activePipeline(ctx, s.st, name)
-	return ps, p, err
-}
-
-func (s *Server) decodeRevision(ctx context.Context, id store.RevisionID) (*pipeline.Pipeline, error) {
-	rev, err := s.st.Revision(ctx, id)
-	if err != nil {
-		return nil, err
-	}
-	return rev.Decode()
-}
-
 func (s *Server) pipeline(ctx context.Context, ps store.PipelineState, p *pipeline.Pipeline) (Pipeline, error) {
 	g := graph(p, &ps)
 	out := Pipeline{Name: ps.Name, Description: g.Description, State: "active", Revision: int64(ps.ActiveRevision),
@@ -161,7 +155,7 @@ func (s *Server) pipeline(ctx context.Context, ps store.PipelineState, p *pipeli
 	if ps.Paused {
 		out.State = "paused"
 	}
-	runs, err := s.st.Runs(ctx, store.RunFilter{Pipeline: ps.Name, Limit: 1})
+	runs, err := s.opts.Store.Runs(ctx, store.RunFilter{Pipeline: ps.Name, Limit: 1})
 	if err != nil {
 		return out, err
 	}
@@ -169,11 +163,11 @@ func (s *Server) pipeline(ctx context.Context, ps store.PipelineState, p *pipeli
 		r := runs[0]
 		out.LastRun = &RunSummary{ID: r.ID, State: string(r.State), StartedAt: r.StartedAt, SettledAt: timePtr(r.SettledAt)}
 	}
-	dls, err := s.st.DeadLetters(ctx, store.DeadLetterFilter{Pipeline: ps.Name, State: store.DeadLetterOpen})
+	dls, err := s.opts.Store.DeadLetters(ctx, store.DeadLetterFilter{Pipeline: ps.Name, State: store.DeadLetterOpen})
 	if err != nil {
 		return out, err
 	}
-	reviews, err := s.st.Reviews(ctx, store.ReviewFilter{Pipeline: ps.Name})
+	reviews, err := s.opts.Store.Reviews(ctx, store.ReviewFilter{Pipeline: ps.Name})
 	if err != nil {
 		return out, err
 	}
@@ -182,13 +176,13 @@ func (s *Server) pipeline(ctx context.Context, ps store.PipelineState, p *pipeli
 }
 
 func (s *Server) listPipelines(w http.ResponseWriter, r *http.Request) error {
-	states, err := s.st.Pipelines(r.Context())
+	states, err := s.opts.Store.Pipelines(r.Context())
 	if err != nil {
 		return err
 	}
 	out := make([]Pipeline, 0, len(states))
 	for _, ps := range states {
-		p, err := s.decodeRevision(r.Context(), ps.ActiveRevision)
+		_, p, err := decodedRevision(r.Context(), s.opts.Store, ps.ActiveRevision)
 		if err != nil {
 			return err
 		}
@@ -203,7 +197,7 @@ func (s *Server) listPipelines(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (s *Server) getPipeline(w http.ResponseWriter, r *http.Request) error {
-	ps, p, err := s.pipelineState(r.Context(), r.PathValue("pipeline"))
+	ps, _, p, err := activePipeline(r.Context(), s.opts.Store, r.PathValue("pipeline"))
 	if err != nil {
 		return err
 	}
@@ -217,11 +211,11 @@ func (s *Server) getPipeline(w http.ResponseWriter, r *http.Request) error {
 
 func (s *Server) listRevisions(w http.ResponseWriter, r *http.Request) error {
 	name := r.PathValue("pipeline")
-	active, err := s.st.ActiveRevision(r.Context(), name)
+	active, err := s.opts.Store.ActiveRevision(r.Context(), name)
 	if err != nil {
 		return err
 	}
-	revs, err := s.st.Revisions(r.Context(), name)
+	revs, err := s.opts.Store.Revisions(r.Context(), name)
 	if err != nil {
 		return err
 	}
@@ -239,11 +233,11 @@ func (s *Server) getRevision(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return invalidf("revision %q: want a number", r.PathValue("revision"))
 	}
-	active, err := s.st.ActiveRevision(r.Context(), name)
+	active, err := s.opts.Store.ActiveRevision(r.Context(), name)
 	if err != nil {
 		return err
 	}
-	rev, err := s.st.Revision(r.Context(), store.RevisionID(id))
+	rev, err := s.opts.Store.Revision(r.Context(), store.RevisionID(id))
 	if err != nil {
 		return err
 	}
@@ -263,11 +257,11 @@ func (s *Server) getRevision(w http.ResponseWriter, r *http.Request) error {
 
 func (s *Server) listStreams(w http.ResponseWriter, r *http.Request) error {
 	name := r.PathValue("pipeline")
-	_, p, err := s.pipelineState(r.Context(), name)
+	_, _, p, err := activePipeline(r.Context(), s.opts.Store, name)
 	if err != nil {
 		return err
 	}
-	counts, err := s.st.StreamCounts(r.Context(), name, "")
+	counts, err := s.opts.Store.StreamCounts(r.Context(), name, "")
 	if err != nil {
 		return err
 	}
@@ -305,7 +299,7 @@ func (s *Server) listStreams(w http.ResponseWriter, r *http.Request) error {
 
 func (s *Server) listRuns(w http.ResponseWriter, r *http.Request) error {
 	name := r.PathValue("pipeline")
-	if _, err := s.st.ActiveRevision(r.Context(), name); err != nil {
+	if _, err := s.opts.Store.ActiveRevision(r.Context(), name); err != nil {
 		return err
 	}
 	n, err := limit(r)
@@ -322,7 +316,7 @@ func (s *Server) listRuns(w http.ResponseWriter, r *http.Request) error {
 	}
 	f := store.RunFilter{Pipeline: name, State: state, Limit: n + 1,
 		After: store.RunPosition{StartedAt: time.Unix(0, cur[0]).UTC(), Seq: cur[1]}}
-	runs, err := s.st.Runs(r.Context(), f)
+	runs, err := s.opts.Store.Runs(r.Context(), f)
 	if err != nil {
 		return err
 	}
@@ -333,15 +327,15 @@ func (s *Server) listRuns(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (s *Server) getRun(w http.ResponseWriter, r *http.Request) error {
-	run, err := s.st.Run(r.Context(), r.PathValue("pipeline"), r.PathValue("run"))
+	run, err := s.opts.Store.Run(r.Context(), r.PathValue("pipeline"), r.PathValue("run"))
 	if err != nil {
 		return err
 	}
-	counts, err := s.st.StreamCounts(r.Context(), run.Pipeline, run.ID)
+	counts, err := s.opts.Store.StreamCounts(r.Context(), run.Pipeline, run.ID)
 	if err != nil {
 		return err
 	}
-	dls, err := s.st.DeadLetters(r.Context(), store.DeadLetterFilter{Pipeline: run.Pipeline, RunID: run.ID,
+	dls, err := s.opts.Store.DeadLetters(r.Context(), store.DeadLetterFilter{Pipeline: run.Pipeline, RunID: run.ID,
 		State: store.DeadLetterOpen})
 	if err != nil {
 		return err
@@ -355,7 +349,7 @@ func (s *Server) getRun(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (s *Server) getRunReport(w http.ResponseWriter, r *http.Request) error {
-	rep, err := insights.BuildReport(r.Context(), s.st, r.PathValue("pipeline"), r.PathValue("run"), s.opts.Clock.Now())
+	rep, err := insights.BuildReport(r.Context(), s.opts.Store, r.PathValue("pipeline"), r.PathValue("run"), s.opts.Clock.Now())
 	if err != nil {
 		return err
 	}
@@ -364,7 +358,7 @@ func (s *Server) getRunReport(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (s *Server) listRunDeliveries(w http.ResponseWriter, r *http.Request) error {
-	run, err := s.st.Run(r.Context(), r.PathValue("pipeline"), r.PathValue("run"))
+	run, err := s.opts.Store.Run(r.Context(), r.PathValue("pipeline"), r.PathValue("run"))
 	if err != nil {
 		return err
 	}
@@ -377,7 +371,7 @@ func (s *Server) writeDeliveries(w http.ResponseWriter, r *http.Request, f store
 		return err
 	}
 	f.Step, f.State = r.URL.Query().Get("step"), state
-	ds, err := s.st.Deliveries(r.Context(), f)
+	ds, err := s.opts.Store.Deliveries(r.Context(), f)
 	if err != nil {
 		return err
 	}
@@ -407,11 +401,11 @@ func (f *itemFilter) keep(ctx context.Context, it store.Item) (bool, error) {
 	}
 	ir, ok := f.runs[it.RunID]
 	if !ok {
-		run, err := f.s.st.Run(ctx, it.Pipeline, it.RunID)
+		run, err := f.s.opts.Store.Run(ctx, it.Pipeline, it.RunID)
 		if err != nil {
 			return false, err
 		}
-		rev, err := f.s.st.Revision(ctx, run.Revision)
+		rev, err := f.s.opts.Store.Revision(ctx, run.Revision)
 		if err != nil {
 			return false, err
 		}
@@ -431,7 +425,7 @@ func (f *itemFilter) keep(ctx context.Context, it store.Item) (bool, error) {
 
 func (s *Server) listItems(w http.ResponseWriter, r *http.Request) error {
 	name := r.PathValue("pipeline")
-	if _, err := s.st.ActiveRevision(r.Context(), name); err != nil {
+	if _, err := s.opts.Store.ActiveRevision(r.Context(), name); err != nil {
 		return err
 	}
 	n, err := limit(r)
@@ -455,7 +449,7 @@ func (s *Server) listItems(w http.ResponseWriter, r *http.Request) error {
 	}
 	page := Page[Item]{Items: []Item{}}
 	for scanned := 0; ; {
-		items, err := s.st.Items(r.Context(), f)
+		items, err := s.opts.Store.Items(r.Context(), f)
 		if err != nil {
 			return err
 		}
@@ -491,7 +485,7 @@ func (s *Server) listItems(w http.ResponseWriter, r *http.Request) error {
 
 // item returns the item the request names.
 func (s *Server) item(ctx context.Context, pipelineName, id string) (store.Item, error) {
-	items, err := s.st.Items(ctx, store.ItemFilter{Pipeline: pipelineName, IDs: []string{id}})
+	items, err := s.opts.Store.Items(ctx, store.ItemFilter{Pipeline: pipelineName, IDs: []string{id}})
 	if err != nil {
 		return store.Item{}, err
 	}
@@ -532,7 +526,7 @@ func (s *Server) getLineage(w http.ResponseWriter, r *http.Request) error {
 		if len(ids) == 0 {
 			break
 		}
-		parents, err := s.st.Items(r.Context(), store.ItemFilter{Pipeline: name, IDs: ids})
+		parents, err := s.opts.Store.Items(r.Context(), store.ItemFilter{Pipeline: name, IDs: ids})
 		if err != nil {
 			return err
 		}
@@ -558,7 +552,7 @@ func (s *Server) getLineage(w http.ResponseWriter, r *http.Request) error {
 	capped := false
 	for d := 0; d < depth && len(level) > 0; d++ {
 		var next []string
-		children, err := s.st.Items(r.Context(), store.ItemFilter{Pipeline: name, Parents: level})
+		children, err := s.opts.Store.Items(r.Context(), store.ItemFilter{Pipeline: name, Parents: level})
 		if err != nil {
 			return err
 		}
@@ -609,7 +603,7 @@ func (s *Server) getItemArtifact(w http.ResponseWriter, r *http.Request) error {
 
 // delivery returns the delivery the request names.
 func (s *Server) delivery(ctx context.Context, pipelineName, id string) (store.Delivery, error) {
-	ds, err := s.st.Deliveries(ctx, store.DeliveryFilter{Pipeline: pipelineName, ID: id})
+	ds, err := s.opts.Store.Deliveries(ctx, store.DeliveryFilter{Pipeline: pipelineName, ID: id})
 	if err != nil {
 		return store.Delivery{}, err
 	}
@@ -639,11 +633,11 @@ type attemptEvent struct {
 
 // attempts reads a delivery's attempts from its run's events, oldest first, with the artifacts each kept.
 func (s *Server) attempts(ctx context.Context, d store.Delivery) ([]Attempt, error) {
-	evs, err := s.st.PipelineEvents(ctx, store.EventFilter{Pipeline: d.Pipeline, RunID: d.RunID, Kinds: attemptKinds})
+	evs, err := s.opts.Store.PipelineEvents(ctx, store.EventFilter{Pipeline: d.Pipeline, RunID: d.RunID, Kinds: attemptKinds})
 	if err != nil {
 		return nil, err
 	}
-	arts, err := s.st.AttemptArtifacts(ctx, d.Pipeline, d.ID)
+	arts, err := s.opts.Store.AttemptArtifacts(ctx, d.Pipeline, d.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -720,7 +714,7 @@ func (s *Server) getAttemptArtifact(w http.ResponseWriter, r *http.Request) erro
 	if err != nil {
 		return invalidf("attempt %q: want a number", r.PathValue("attempt"))
 	}
-	arts, err := s.st.AttemptArtifacts(r.Context(), name, d.ID)
+	arts, err := s.opts.Store.AttemptArtifacts(r.Context(), name, d.ID)
 	if err != nil {
 		return err
 	}
@@ -772,7 +766,7 @@ func (s *Server) serveArtifact(w http.ResponseWriter, r *http.Request, pipelineN
 
 func (s *Server) listDeadLetters(w http.ResponseWriter, r *http.Request) error {
 	name := r.PathValue("pipeline")
-	if _, err := s.st.ActiveRevision(r.Context(), name); err != nil {
+	if _, err := s.opts.Store.ActiveRevision(r.Context(), name); err != nil {
 		return err
 	}
 	f := store.DeadLetterFilter{Pipeline: name, State: store.DeadLetterOpen}
@@ -785,7 +779,7 @@ func (s *Server) listDeadLetters(w http.ResponseWriter, r *http.Request) error {
 	default:
 		return invalidf("state %q: want open, replayed, discarded or all", st)
 	}
-	dls, err := s.st.DeadLetters(r.Context(), f)
+	dls, err := s.opts.Store.DeadLetters(r.Context(), f)
 	if err != nil {
 		return err
 	}
@@ -837,11 +831,11 @@ func groupDeadLetters(dls []store.DeadLetter) []*DeadLetterGroup {
 
 func (s *Server) listLessons(w http.ResponseWriter, r *http.Request) error {
 	name := r.PathValue("pipeline")
-	_, rev, p, err := activePipeline(r.Context(), s.st, name)
+	_, rev, p, err := activePipeline(r.Context(), s.opts.Store, name)
 	if err != nil {
 		return err
 	}
-	bundle, err := s.st.Package(r.Context(), rev.PackageHash)
+	bundle, err := s.opts.Store.Package(r.Context(), rev.PackageHash)
 	if err != nil {
 		return err
 	}
@@ -866,7 +860,7 @@ func (s *Server) listLessons(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (s *Server) getReview(w http.ResponseWriter, r *http.Request) error {
-	rv, err := s.st.Review(r.Context(), r.PathValue("pipeline"), r.PathValue("delivery"))
+	rv, err := s.opts.Store.Review(r.Context(), r.PathValue("pipeline"), r.PathValue("delivery"))
 	if err != nil {
 		return err
 	}
@@ -875,7 +869,7 @@ func (s *Server) getReview(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (s *Server) getSample(w http.ResponseWriter, r *http.Request) error {
-	sm, err := s.st.ReviewSample(r.Context(), r.PathValue("pipeline"), r.PathValue("delivery"))
+	sm, err := s.opts.Store.ReviewSample(r.Context(), r.PathValue("pipeline"), r.PathValue("delivery"))
 	if err != nil {
 		return err
 	}
@@ -897,7 +891,7 @@ func (s *Server) listInbox(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	q := r.URL.Query()
-	reviews, err := s.st.Reviews(r.Context(), store.ReviewFilter{Pipeline: q.Get("pipeline"), Inbox: q.Get("inbox"),
+	reviews, err := s.opts.Store.Reviews(r.Context(), store.ReviewFilter{Pipeline: q.Get("pipeline"), Inbox: q.Get("inbox"),
 		Step: q.Get("step"), State: state, After: cur[0], Limit: n + 1})
 	if err != nil {
 		return err
@@ -922,7 +916,7 @@ func (s *Server) listSamples(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	q := r.URL.Query()
-	samples, err := s.st.ReviewSamples(r.Context(), store.SampleFilter{Pipeline: q.Get("pipeline"),
+	samples, err := s.opts.Store.ReviewSamples(r.Context(), store.SampleFilter{Pipeline: q.Get("pipeline"),
 		Inbox: q.Get("inbox"), Step: q.Get("step"), State: state, After: cur[0], Limit: n + 1})
 	if err != nil {
 		return err
@@ -938,7 +932,7 @@ func (s *Server) listInsights(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	ins, err := s.st.Insights(r.Context(), store.InsightFilter{Pipeline: r.URL.Query().Get("pipeline"), State: state})
+	ins, err := s.opts.Store.Insights(r.Context(), store.InsightFilter{Pipeline: r.URL.Query().Get("pipeline"), State: state})
 	if err != nil {
 		return err
 	}
@@ -993,7 +987,7 @@ func (s *Server) getMetrics(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	rollups, err := s.st.MetricRollups(r.Context(), store.MetricFilter{Pipeline: q.Get("pipeline"), Name: name,
+	rollups, err := s.opts.Store.MetricRollups(r.Context(), store.MetricFilter{Pipeline: q.Get("pipeline"), Name: name,
 		Since: from.Truncate(time.Minute)})
 	if err != nil {
 		return err
@@ -1043,7 +1037,7 @@ func (s *Server) listMetricNames(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	rollups, err := s.st.MetricRollups(r.Context(), store.MetricFilter{Pipeline: r.URL.Query().Get("pipeline"),
+	rollups, err := s.opts.Store.MetricRollups(r.Context(), store.MetricFilter{Pipeline: r.URL.Query().Get("pipeline"),
 		Since: from.Truncate(time.Minute)})
 	if err != nil {
 		return err
@@ -1059,7 +1053,7 @@ func (s *Server) listMetricNames(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (s *Server) listNodes(w http.ResponseWriter, r *http.Request) error {
-	leased, err := s.st.Deliveries(r.Context(), store.DeliveryFilter{State: store.DeliveryLeased})
+	leased, err := s.opts.Store.Deliveries(r.Context(), store.DeliveryFilter{State: store.DeliveryLeased})
 	if err != nil {
 		return err
 	}

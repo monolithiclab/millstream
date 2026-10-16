@@ -201,7 +201,7 @@ func (s *Server) liveRun(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	run, err := s.st.Run(r.Context(), p, r.PathValue("run"))
+	run, err := s.opts.Store.Run(r.Context(), p, r.PathValue("run"))
 	if err != nil {
 		return err
 	}

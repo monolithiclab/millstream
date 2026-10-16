@@ -35,14 +35,14 @@ func (s *Server) resumeStep(w http.ResponseWriter, r *http.Request) error {
 // setPaused pauses or resumes the pipeline, or one of its active revision's steps.
 func (s *Server) setPaused(w http.ResponseWriter, r *http.Request, step string, paused bool) error {
 	name := r.PathValue("pipeline")
-	_, p, err := s.pipelineState(r.Context(), name)
+	_, _, p, err := activePipeline(r.Context(), s.opts.Store, name)
 	if err != nil {
 		return err
 	}
 	if _, ok := p.Steps[step]; step != "" && !ok {
 		return fmt.Errorf("step %s of %s: %w", step, name, store.ErrNotFound)
 	}
-	if err := s.st.SetPaused(r.Context(), name, step, paused); err != nil {
+	if err := s.opts.Store.SetPaused(r.Context(), name, step, paused); err != nil {
 		return err
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -60,14 +60,14 @@ type TriggerRequest struct {
 func (s *Server) triggerRun(w http.ResponseWriter, r *http.Request) error {
 	name := r.PathValue("pipeline")
 	var req TriggerRequest
-	if err := decodeBody(w, r, &req); err != nil {
+	if err := s.decodeBody(w, r, &req); err != nil {
 		return err
 	}
 	if s.opts.Engine == nil {
 		return fmt.Errorf("trigger: no engine: %w", errUnavailable)
 	}
 	if req.Trigger == "" {
-		_, p, err := s.pipelineState(r.Context(), name)
+		_, _, p, err := activePipeline(r.Context(), s.opts.Store, name)
 		if err != nil {
 			return err
 		}
@@ -88,7 +88,7 @@ func (s *Server) triggerRun(w http.ResponseWriter, r *http.Request) error {
 
 // writeRun answers a run an action started: 201 when it did, 200 when the request had already started it.
 func (s *Server) writeRun(w http.ResponseWriter, r *http.Request, pipelineName, id string, created bool) error {
-	run, err := s.st.Run(r.Context(), pipelineName, id)
+	run, err := s.opts.Store.Run(r.Context(), pipelineName, id)
 	if err != nil {
 		return err
 	}
@@ -101,7 +101,7 @@ func (s *Server) writeRun(w http.ResponseWriter, r *http.Request, pipelineName, 
 }
 
 func (s *Server) cancelRun(w http.ResponseWriter, r *http.Request) error {
-	if err := s.st.Cancel(r.Context(), r.PathValue("pipeline"), r.PathValue("run")); err != nil {
+	if err := s.opts.Store.Cancel(r.Context(), r.PathValue("pipeline"), r.PathValue("run")); err != nil {
 		return err
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -122,7 +122,7 @@ type ReplayRequest struct {
 func (s *Server) replay(w http.ResponseWriter, r *http.Request) error {
 	name := r.PathValue("pipeline")
 	var req ReplayRequest
-	if err := decodeBody(w, r, &req); err != nil {
+	if err := s.decodeBody(w, r, &req); err != nil {
 		return err
 	}
 	if req.Step == "" {
@@ -165,7 +165,7 @@ func (s *Server) selectDeadLetters(w http.ResponseWriter, r *http.Request) ([]st
 ) {
 	name := r.PathValue("pipeline")
 	var sel DeadLetterSelection
-	if err := decodeBody(w, r, &sel); err != nil {
+	if err := s.decodeBody(w, r, &sel); err != nil {
 		return nil, sel, err
 	}
 	n := 0
@@ -177,10 +177,10 @@ func (s *Server) selectDeadLetters(w http.ResponseWriter, r *http.Request) ([]st
 	if n != 1 {
 		return nil, sel, invalidf("name the dead letters with exactly one of ids, fingerprint and all")
 	}
-	if _, err := s.st.ActiveRevision(r.Context(), name); err != nil {
+	if _, err := s.opts.Store.ActiveRevision(r.Context(), name); err != nil {
 		return nil, sel, err
 	}
-	open, err := s.st.DeadLetters(r.Context(), store.DeadLetterFilter{Pipeline: name, State: store.DeadLetterOpen})
+	open, err := s.opts.Store.DeadLetters(r.Context(), store.DeadLetterFilter{Pipeline: name, State: store.DeadLetterOpen})
 	if err != nil {
 		return nil, sel, err
 	}
@@ -223,7 +223,7 @@ func (s *Server) replayDeadLetters(w http.ResponseWriter, r *http.Request) error
 	}
 	total := 0
 	for _, run := range slices.Sorted(maps.Keys(byRun)) {
-		n, err := s.st.ReplayDeadLetters(r.Context(), r.PathValue("pipeline"), run, byRun[run], sel.Migrate)
+		n, err := s.opts.Store.ReplayDeadLetters(r.Context(), r.PathValue("pipeline"), run, byRun[run], sel.Migrate)
 		if err != nil {
 			return err
 		}
@@ -245,7 +245,7 @@ func (s *Server) discardDeadLetters(w http.ResponseWriter, r *http.Request) erro
 	for i, dl := range dls {
 		ids[i] = dl.ID
 	}
-	n, err := s.st.DiscardDeadLetters(r.Context(), r.PathValue("pipeline"), ids)
+	n, err := s.opts.Store.DiscardDeadLetters(r.Context(), r.PathValue("pipeline"), ids)
 	if err != nil {
 		return err
 	}
@@ -268,7 +268,7 @@ type ReviewDecision struct {
 func (s *Server) decideReview(w http.ResponseWriter, r *http.Request) error {
 	name, delivery := r.PathValue("pipeline"), r.PathValue("delivery")
 	var req ReviewDecision
-	if err := decodeBody(w, r, &req); err != nil {
+	if err := s.decodeBody(w, r, &req); err != nil {
 		return err
 	}
 	if string(req.Patch) == "null" { // the store checks the decision and the edit
@@ -281,7 +281,7 @@ func (s *Server) decideReview(w http.ResponseWriter, r *http.Request) error {
 	if req.Version < 1 {
 		return invalidf("version: required, the version of the review you saw")
 	}
-	if _, err := s.st.DecideReview(r.Context(), store.ReviewDecisionRequest{Pipeline: name, DeliveryID: delivery,
+	if _, err := s.opts.Store.DecideReview(r.Context(), store.ReviewDecisionRequest{Pipeline: name, DeliveryID: delivery,
 		Version: req.Version, Decision: req.Decision, Patch: req.Patch, Reviewer: reviewer, Reason: req.Reason,
 		Text: req.Text}); err != nil {
 		return err
@@ -297,7 +297,7 @@ type SampleDecision struct {
 
 func (s *Server) decideSample(w http.ResponseWriter, r *http.Request) error {
 	var req SampleDecision
-	if err := decodeBody(w, r, &req); err != nil {
+	if err := s.decodeBody(w, r, &req); err != nil {
 		return err
 	}
 	if req.Decision != store.SampleAgree && req.Decision != store.SampleDisagree {
@@ -307,7 +307,7 @@ func (s *Server) decideSample(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	if err := s.st.DecideSample(r.Context(), store.SampleDecisionRequest{Pipeline: r.PathValue("pipeline"),
+	if err := s.opts.Store.DecideSample(r.Context(), store.SampleDecisionRequest{Pipeline: r.PathValue("pipeline"),
 		DeliveryID: r.PathValue("delivery"), Decision: req.Decision, Reviewer: reviewer, Reason: req.Reason}); err != nil {
 		return err
 	}
@@ -323,7 +323,7 @@ func (s *Server) muteInsight(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (s *Server) setInsightState(w http.ResponseWriter, r *http.Request, state store.InsightState) error {
-	if err := s.st.SetInsightState(r.Context(), r.PathValue("pipeline"), r.PathValue("insight"), state); err != nil {
+	if err := s.opts.Store.SetInsightState(r.Context(), r.PathValue("pipeline"), r.PathValue("insight"), state); err != nil {
 		return err
 	}
 	w.WriteHeader(http.StatusNoContent)
