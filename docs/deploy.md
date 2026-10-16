@@ -68,9 +68,10 @@ docker compose up -d
 
 With `auth.token` set, every API request carries the token: the CLI sends `MILLSTREAM_TOKEN` as a bearer token, and
 the web UI asks for it once on a sign-in screen, then holds a session cookie (12 hours, `HttpOnly`,
-`SameSite=Strict`, `Secure` behind HTTPS) until **Sign out** in its menu. Sessions live in the engine's memory: a
-restart, and so a token change or a failover, signs the UI out. Every decision made through the API is recorded
-under `auth.user` (`operator` by default): the open-source edition is single-user.
+`SameSite=Strict`, `Secure` behind HTTPS) until **Sign out** in its menu. Sessions live in the engine process's
+memory: a restart, and so a token change, or a failover to the other engine signs the UI out; the standby asks for
+the token too. Every decision made through the API is recorded under `auth.user` (`operator` by default): the
+open-source edition is single-user.
 
 Prometheus scrapes `/metrics` on the same listener, with the token as a bearer token (`authorization: { credentials:
 … }` in its scrape configuration), or without it when `metrics: { public: true }`. It serves the metric rollups and

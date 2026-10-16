@@ -99,7 +99,7 @@ func apiAuth(rt *Runtime, env *pipeline.Environment, listen string) (*api.Auth, 
 		return nil, fmt.Errorf("auth.token: %w", err)
 	}
 	a := &api.Auth{Token: token, User: env.AuthUser, MetricsPublic: env.MetricsPublic,
-		SecureCookie: env.TLS != nil || api.CheckLoopback(listen) != nil}
+		SecureCookie: env.TLS != nil || api.CheckLoopback(listen) != nil, Sessions: api.NewSessions()}
 	if host, _, err := net.SplitHostPort(listen); err == nil && host != "" {
 		if ip := net.ParseIP(host); ip == nil || !ip.IsUnspecified() {
 			a.Hosts = append(a.Hosts, host)

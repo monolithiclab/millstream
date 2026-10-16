@@ -92,9 +92,10 @@ earlier designs are in the git history of the spec.
   next match).
 - Token auth (M4 Task 7): sign-in attempts are not rate limited (the token is long and random, and compared in
   constant time; a lockout or backoff per client would slow a guessing attack further); sessions live in the
-  engine's memory, so a restart or a failover to the standby signs the UI out (shared sessions in the store would
-  survive it); `/metrics` reads every rollup series on each scrape, aggregated in SQL (an incremental total would
-  serve a store holding many months of rollups more cheaply).
+  engine process's memory, kept across its own terms (standby, then active again), so a restart or a failover to
+  another engine signs the UI out (shared sessions in the store would survive it); `/metrics` reads every rollup
+  series on each scrape, aggregated in SQL (an incremental total would serve a store holding many months of rollups
+  more cheaply).
 - Live events: the broker wakes on this process's commits and polls every 15 seconds for other processes' writes on
   the same SQLite file; Postgres (M4) can wake it with `LISTEN`/`NOTIFY` instead. The live log tail relays the
   embedded node only; remote nodes stream their lines with M4's node endpoint. Event retention (M4) is what makes a

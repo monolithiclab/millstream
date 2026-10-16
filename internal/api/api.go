@@ -130,7 +130,6 @@ type Server struct {
 	opts     Options
 	log      *slog.Logger
 	mux      *http.ServeMux
-	sessions sessions
 	tokenSum [32]byte // the SHA-256 of Auth.Token
 }
 
@@ -233,10 +232,12 @@ func New(opts Options) (*Server, error) {
 		for i, o := range opts.Auth.Origins {
 			a.Origins[i] = strings.ToLower(strings.TrimSuffix(o, "/"))
 		}
+		if a.Sessions == nil {
+			a.Sessions = NewSessions()
+		}
 		opts.Auth = &a
 	}
-	s := &Server{opts: opts, log: opts.Logger, mux: http.NewServeMux(),
-		sessions: sessions{byID: map[[32]byte]time.Time{}}}
+	s := &Server{opts: opts, log: opts.Logger, mux: http.NewServeMux()}
 	if opts.Auth != nil {
 		s.tokenSum = sha256.Sum256([]byte(opts.Auth.Token))
 	}
@@ -254,7 +255,8 @@ func New(opts Options) (*Server, error) {
 					"a POST carries Content-Type: application/json, an empty object when it has nothing to say")
 				return
 			}
-			if r.Method == http.MethodPost && s.opts.Standby {
+			// A standby refuses actions, but signs the UI in: it enforces the token as the active engine does.
+			if r.Method == http.MethodPost && s.opts.Standby && rt.path != "/session" {
 				s.refuseStandby(w, r)
 				return
 			}

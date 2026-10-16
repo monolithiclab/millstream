@@ -267,6 +267,12 @@ func TestAPIAuth(t *testing.T) {
 			api.Auth{Token: "s3cret", Hosts: []string{"localhost"}, SecureCookie: true}},
 	} {
 		got, err := apiAuth(rt, &tt.env, tt.listen)
+		if err == nil && got.Sessions == nil {
+			t.Errorf("%s: no session table", tt.listen)
+		}
+		if err == nil {
+			got.Sessions = nil // shared by the process's terms; its content is the api package's
+		}
 		if err != nil || !reflect.DeepEqual(*got, tt.want) {
 			t.Errorf("%s: %+v, %v; want %+v", tt.listen, got, err, tt.want)
 		}

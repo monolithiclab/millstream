@@ -137,7 +137,7 @@ func TestNoTokenSession(t *testing.T) {
 
 // Sessions are bounded: beyond maxSessions, expired ones go first, then the oldest.
 func TestSessionsBounded(t *testing.T) {
-	ss := sessions{byID: map[[32]byte]time.Time{}}
+	ss := NewSessions()
 	first := ss.create(t0, t0.Add(time.Minute))
 	for i := range maxSessions - 1 {
 		ss.create(t0, t0.Add(time.Hour+time.Duration(i)))
@@ -150,4 +150,32 @@ func TestSessionsBounded(t *testing.T) {
 	if len(ss.byID) != 2 {
 		t.Fatalf("after expiry: %d sessions", len(ss.byID))
 	}
+}
+
+// A standby's read-only API enforces the token too, and signs the UI in although it refuses actions; a session
+// outlives the term it started in when the process's servers share their sessions (serve's terms).
+func TestStandbyAuth(t *testing.T) {
+	f := readFixture(t)
+	auth := &Auth{Token: "s3cret", Sessions: NewSessions()}
+	standby := must(New(Options{Store: f.st, User: "tester", Auth: auth, Standby: true}))
+	wantError(t, do(t, standby, request{target: "/api/v1/pipelines"}), http.StatusUnauthorized, codeUnauthorized)
+	rec := do(t, standby, request{method: http.MethodPost, target: "/api/v1/session", body: `{"token":"s3cret"}`})
+	cookies := rec.Result().Cookies()
+	if rec.Code != http.StatusOK || len(cookies) != 1 {
+		t.Fatalf("sign in on the standby: %d %s", rec.Code, rec.Body)
+	}
+	session := map[string]string{"Cookie": SessionCookie + "=" + cookies[0].Value}
+	if rec := do(t, standby, request{target: "/api/v1/pipelines", header: session}); rec.Code != http.StatusOK {
+		t.Fatalf("a read on the standby with the session: %d %s", rec.Code, rec.Body)
+	}
+	wantError(t, do(t, standby, request{method: http.MethodPost, target: "/api/v1/pipelines/listings/pause",
+		header: map[string]string{"Authorization": "Bearer s3cret"}}), http.StatusServiceUnavailable, codeUnavailable)
+
+	active := must(New(Options{Store: f.st, User: "tester", Auth: auth}))
+	if rec := do(t, active, request{target: "/api/v1/session", header: session}); rec.Code != http.StatusOK {
+		t.Fatalf("the session in the next term: %d %s", rec.Code, rec.Body)
+	}
+	other := must(New(Options{Store: f.st, User: "tester", Auth: &Auth{Token: "s3cret"}}))
+	wantError(t, do(t, other, request{target: "/api/v1/session", header: session}), http.StatusUnauthorized,
+		codeUnauthorized)
 }

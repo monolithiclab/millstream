@@ -17,8 +17,9 @@ import (
 
 // Token authentication (spec sections 12.1 and 15.2). With Options.Auth, every request under /api/v1 (and /metrics,
 // unless it is public) carries the deployment's token: as a bearer token (the CLI, scripts, Prometheus), or as the
-// session cookie the UI gets by posting the token to /api/v1/session. Sessions live in the server's memory: a
-// restart, and so a token change, signs everyone out.
+// session cookie the UI gets by posting the token to /api/v1/session. Sessions live in the process's memory
+// (Auth.Sessions), shared by the servers serve builds for each of its terms, active or standby: a restart, and so a
+// token change, signs everyone out, and so does a failover to another engine's process.
 //
 // Cross-site requests: the session cookie is SameSite=Strict, so a page elsewhere never sends it; every POST
 // carries a JSON content type, which a page elsewhere cannot send without a CORS preflight the server never grants;
@@ -54,6 +55,9 @@ type Auth struct {
 	SessionTTL time.Duration
 	// MetricsPublic serves /metrics without the token (metrics.public).
 	MetricsPublic bool
+	// Sessions holds the UI's sessions; the servers of one process share it so that a session outlives the term it
+	// started in. Nil gives the server sessions of its own.
+	Sessions *Sessions
 }
 
 // credential is how a request authenticated.
@@ -65,14 +69,17 @@ const (
 	cookieCredential
 )
 
-// sessions are the UI's sessions, by the SHA-256 of their id, with their expiry.
-type sessions struct {
+// Sessions are the UI's sessions, by the SHA-256 of their id, with their expiry.
+type Sessions struct {
 	mu   sync.Mutex
 	byID map[[32]byte]time.Time
 }
 
+// NewSessions returns an empty session table.
+func NewSessions() *Sessions { return &Sessions{byID: map[[32]byte]time.Time{}} }
+
 // create starts a session expiring at expires and returns its id: 32 random bytes, URL-safe base64.
-func (ss *sessions) create(now, expires time.Time) string {
+func (ss *Sessions) create(now, expires time.Time) string {
 	b := make([]byte, 32)
 	_, _ = rand.Read(b) // crypto/rand never fails on the platforms Go supports
 	id := base64.RawURLEncoding.EncodeToString(b)
@@ -96,14 +103,14 @@ func (ss *sessions) create(now, expires time.Time) string {
 }
 
 // valid reports whether id names a session that has not expired.
-func (ss *sessions) valid(id string, now time.Time) bool {
+func (ss *Sessions) valid(id string, now time.Time) bool {
 	ss.mu.Lock()
 	defer ss.mu.Unlock()
 	exp, ok := ss.byID[sha256.Sum256([]byte(id))]
 	return ok && exp.After(now)
 }
 
-func (ss *sessions) remove(id string) {
+func (ss *Sessions) remove(id string) {
 	ss.mu.Lock()
 	defer ss.mu.Unlock()
 	delete(ss.byID, sha256.Sum256([]byte(id)))
@@ -126,7 +133,7 @@ func (s *Server) credential(r *http.Request) credential {
 		}
 		return noCredential
 	}
-	if c, err := r.Cookie(SessionCookie); err == nil && s.sessions.valid(c.Value, s.opts.Clock.Now()) {
+	if c, err := r.Cookie(SessionCookie); err == nil && s.opts.Auth.Sessions.valid(c.Value, s.opts.Clock.Now()) {
 		return cookieCredential
 	}
 	return noCredential
@@ -210,7 +217,7 @@ func (s *Server) createSession(w http.ResponseWriter, r *http.Request) error {
 	}
 	now := s.opts.Clock.Now()
 	ttl := s.opts.Auth.SessionTTL
-	id := s.sessions.create(now, now.Add(ttl))
+	id := s.opts.Auth.Sessions.create(now, now.Add(ttl))
 	http.SetCookie(w, sessionCookie(id, int(ttl/time.Second), s.opts.Auth.SecureCookie))
 	writeJSON(w, http.StatusOK, Session{Auth: true, User: s.opts.Auth.User})
 	return nil
@@ -221,7 +228,7 @@ func (s *Server) deleteSession(w http.ResponseWriter, r *http.Request) error {
 	secure := false
 	if s.opts.Auth != nil {
 		if c, err := r.Cookie(SessionCookie); err == nil {
-			s.sessions.remove(c.Value)
+			s.opts.Auth.Sessions.remove(c.Value)
 		}
 		secure = s.opts.Auth.SecureCookie
 	}
