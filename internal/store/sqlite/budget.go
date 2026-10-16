@@ -18,20 +18,21 @@ func within(spent, reserve, limit float64) bool {
 	return spent < limit && spent+reserve <= limit+budgetSlack
 }
 
-// budgetAllows reports whether the agent delivery l may be leased with its reservation: its run's spend and
-// reservations plus its own within budget.runUsd of the run's revision, and its pipeline's for the day within
-// budget.dayUsd of the active revision (spec section 7.5). The first delivery a budget stops at its current limit
-// pauses the pipeline's agent steps, named by agents, with a budgetReached event; paused records the pipelines
-// paused during this Lease, whose agent deliveries are held back for the rest of it.
-func (w *wtx) budgetAllows(l store.Lease, reserve float64, agents map[store.StepRef]float64,
+// budgetAllows returns the budget that holds back the agent delivery l, store.BudgetRun or store.BudgetDay, or ""
+// when it may be leased with its reservation: its run's spend and reservations plus its own within budget.runUsd of
+// the run's revision, and its pipeline's for the day within budget.dayUsd of the active revision (spec section
+// 7.5). The first delivery a budget stops at its current limit pauses the pipeline's agent steps, named by agents,
+// with a budgetReached event; paused records the pipelines paused during this Lease, whose agent deliveries are
+// held back for the rest of it (as by a day budget: the whole step).
+func (w *wtx) budgetAllows(l store.Lease, reserve float64, agents map[store.AgentStep]float64,
 	paused map[string]bool,
-) (bool, error) {
+) (string, error) {
 	if paused[l.Pipeline] {
-		return false, nil
+		return store.BudgetDay, nil
 	}
 	rev, err := w.revision(l.Revision)
 	if err != nil {
-		return false, err
+		return "", err
 	}
 	if limit := rev.p.Budget.RunUSD; limit > 0 {
 		var spent, reserved, reached float64
@@ -39,25 +40,25 @@ func (w *wtx) budgetAllows(l store.Lease, reserve float64, agents map[store.Step
 			WHERE d.pipeline = r.pipeline AND d.run_id = r.id AND d.state = ?), 0), r.budget_reached_usd
 			FROM runs r WHERE r.pipeline = ? AND r.id = ?`, store.DeliveryLeased, l.Pipeline, l.RunID).
 			Scan(&spent, &reserved, &reached); err != nil {
-			return false, notFound(err, "run "+l.RunID)
+			return "", notFound(err, "run "+l.RunID)
 		}
 		if !within(spent+reserved, reserve, limit) {
 			if reached < limit {
 				if _, err := w.exec(`UPDATE runs SET budget_reached_usd = ? WHERE pipeline = ? AND id = ?`,
 					limit, l.Pipeline, l.RunID); err != nil {
-					return false, err
+					return "", err
 				}
 				err = w.budgetReached(l.Pipeline, l.RunID, store.BudgetRun, limit, spent, reserved, agents, paused)
 			}
-			return false, err
+			return store.BudgetRun, err
 		}
 	}
 	var active store.RevisionID
 	if err := w.queryRow(`SELECT active_revision FROM pipelines WHERE id = ?`, l.Pipeline).Scan(&active); err != nil {
-		return false, notFound(err, "pipeline "+l.Pipeline)
+		return "", notFound(err, "pipeline "+l.Pipeline)
 	}
 	if rev, err = w.revision(active); err != nil {
-		return false, err
+		return "", err
 	}
 	if limit := rev.p.Budget.DayUSD; limit > 0 {
 		var spent, reserved, reached float64
@@ -66,32 +67,32 @@ func (w *wtx) budgetAllows(l store.Lease, reserve float64, agents map[store.Step
 			COALESCE((SELECT SUM(reserved_usd) FROM deliveries WHERE pipeline = ?1 AND state = ?3), 0),
 			COALESCE((SELECT reached_usd FROM budget_days WHERE pipeline = ?1 AND day = ?2), 0)`,
 			l.Pipeline, w.day(), store.DeliveryLeased).Scan(&spent, &reserved, &reached); err != nil {
-			return false, fmt.Errorf("read day budget: %w", err)
+			return "", fmt.Errorf("read day budget: %w", err)
 		}
 		if !within(spent+reserved, reserve, limit) {
 			if reached < limit {
 				if _, err := w.exec(`INSERT INTO budget_days (pipeline, day, reached_usd) VALUES (?, ?, ?)
 					ON CONFLICT DO UPDATE SET reached_usd = excluded.reached_usd`, l.Pipeline, w.day(), limit); err != nil {
-					return false, err
+					return "", err
 				}
 				err = w.budgetReached(l.Pipeline, "", store.BudgetDay, limit, spent, reserved, agents, paused)
 			}
-			return false, err
+			return store.BudgetDay, err
 		}
 	}
-	return true, nil
+	return "", nil
 }
 
 // budgetReached pauses every agent step of the pipeline with the budget as its cause, leaving the steps a user
 // paused as they are, and records the budgetReached event.
 func (w *wtx) budgetReached(pipelineName, runID, scope string, limit, spent, reserved float64,
-	agents map[store.StepRef]float64, paused map[string]bool,
+	agents map[store.AgentStep]float64, paused map[string]bool,
 ) error {
 	var steps []string
-	for _, ref := range slices.SortedFunc(maps.Keys(agents), func(a, b store.StepRef) int {
+	for _, ref := range slices.SortedFunc(maps.Keys(agents), func(a, b store.AgentStep) int {
 		return cmp.Or(cmp.Compare(a.Pipeline, b.Pipeline), cmp.Compare(a.Step, b.Step))
 	}) {
-		if ref.Pipeline != pipelineName {
+		if ref.Pipeline != pipelineName || slices.Contains(steps, ref.Step) { // a step of several revisions
 			continue
 		}
 		if _, err := w.exec(`INSERT INTO steps_state (pipeline, step, paused, cause) VALUES (?, ?, 1, ?)

@@ -106,11 +106,12 @@ func (e *Engine) lease(ctx context.Context, owner string, maxN int) ([]store.Lea
 }
 
 // limitSources returns each pipeline's active revision, whose limits apply, the definition each step's concurrency
-// and rate come from, and the agent steps with the budget reservation of each delivery (its action's maxCostUsd).
-// A step's definition is the active revision's, or, for a step only older revisions have, that of the newest
-// revision with unsettled runs that has it, so its remaining deliveries are still limited.
+// and rate come from, and the agent steps of each revision with the budget reservation of each delivery (the
+// maxCostUsd of its action in its run's revision, as budget.runUsd is that revision's). A step's definition is the
+// active revision's, or, for a step only older revisions have, that of the newest revision with unsettled runs that
+// has it, so its remaining deliveries are still limited.
 func (e *Engine) limitSources(ctx context.Context) ([]*revision, map[store.StepRef]pipeline.Step,
-	map[store.StepRef]float64, error,
+	map[store.AgentStep]float64, error,
 ) {
 	pipelines, err := e.st.Pipelines(ctx)
 	if err != nil {
@@ -122,16 +123,15 @@ func (e *Engine) limitSources(ctx context.Context) ([]*revision, map[store.StepR
 	}
 	active := make([]*revision, 0, len(pipelines))
 	steps := map[store.StepRef]pipeline.Step{}
-	reserve := map[store.StepRef]float64{}
+	reserve := map[store.AgentStep]float64{}
 	add := func(rev *revision) {
 		for name, step := range rev.p.Steps {
 			ref := store.StepRef{Pipeline: rev.p.Name, Step: name}
-			if _, ok := steps[ref]; ok {
-				continue
-			}
-			steps[ref] = step
 			if ra := e.action(rev, step.Action); ra.err == nil && ra.a.Kind == pipeline.KindAgent {
-				reserve[ref] = ra.a.Agent.MaxCostUSD
+				reserve[store.AgentStep{StepRef: ref, Revision: rev.id}] = ra.a.Agent.MaxCostUSD
+			}
+			if _, ok := steps[ref]; !ok {
+				steps[ref] = step
 			}
 		}
 	}

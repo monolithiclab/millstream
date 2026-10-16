@@ -36,6 +36,13 @@ func agentAssignment(t *testing.T, agents Agents, environ map[string]string) (no
 func agentRun(t *testing.T, agents Agents, environ, extra map[string]string, settings string) (*env, string) {
 	t.Helper()
 	v := newEnv(t, Options{Env: func(k string) (string, bool) { s, ok := environ[k]; return s, ok }, Agents: agents})
+	v.apply(agentPackage(t, extra, settings))
+	return v, v.fire("p", "adhoc", "k")
+}
+
+// agentPackage is agentRun's package. Its hash is the pipeline file's: settings, not extra, tell two apart.
+func agentPackage(t *testing.T, extra map[string]string, settings string) *pipeline.Package {
+	t.Helper()
 	pkg := newPackage(t, "pipeline: p\nsecrets: [key]\n"+settings+"triggers:\n  adhoc: { manual: {} }\nsteps:\n"+
 		"  score: { action: ./actions/score, in: trigger.adhoc, config: { rooms: 2 } }\n")
 	files := map[string]string{"actions/score/action.yaml": agentManifest, "actions/score/prompt.md": "Score {{ .Payload }}.\n"}
@@ -50,8 +57,7 @@ func agentRun(t *testing.T, agents Agents, environ, extra map[string]string, set
 		s.Lessons = "lessons/score.yaml" // as Load sets it when the file exists
 		pkg.Pipeline.Steps["score"] = s
 	}
-	v.apply(pkg)
-	return v, v.fire("p", "adhoc", "k")
+	return pkg
 }
 
 // TestAgentAssignmentLessons: the step's lessons file reaches the adapter in hello, as JSON; one that does not
@@ -181,5 +187,36 @@ func TestAgentBudgetWithoutMaxCost(t *testing.T) {
 	if d.State != store.DeliveryDead || d.ErrorClass != ClassConfig ||
 		!strings.Contains(d.ErrorMessage, "runtime.agent.maxCostUsd is required") {
 		t.Fatalf("delivery %+v", d)
+	}
+}
+
+// TestAgentReservationOfTheRunRevision: a delivery reserves the maxCostUsd of its run's revision, as budget.runUsd is
+// that revision's, not the active revision's.
+func TestAgentReservationOfTheRunRevision(t *testing.T) {
+	t.Parallel()
+	agents := Agents{AllowUnsandboxed: true, Executable: "/usr/local/bin/millstream"}
+	environ := map[string]string{"MILLSTREAM_SECRET_KEY": "sk-0123456789"}
+	manifest := func(cost string) map[string]string {
+		return map[string]string{"actions/score/action.yaml": strings.Replace(agentManifest, "apiKeySecret: key",
+			"apiKeySecret: key, maxCostUsd: "+cost, 1)}
+	}
+	v, old := agentRun(t, agents, environ, manifest("0.5"), "budget: { dayUsd: 5 }\n")
+	v.apply(agentPackage(t, manifest("0.25"), "budget: { dayUsd: 6 }\n"))
+	current := v.fire("p", "adhoc", "k2")
+	for _, want := range []struct {
+		run     string
+		reserve float64
+	}{{old, 0.5}, {current, 0.25}} { // one at a time: the step's concurrency is 1
+		as, err := v.e.Pull(v.ctx, "node-a", 1)
+		if err != nil || len(as) != 1 || as[0].Lease.RunID != want.run {
+			t.Fatalf("Pull = %+v, %v; want run %s", as, err, want.run)
+		}
+		if got := v.deliveries(want.run)[0].ReservedUSD; got != want.reserve {
+			t.Errorf("run %s's delivery reserved %g, want its revision's maxCostUsd %g", want.run, got, want.reserve)
+		}
+		l := as[0].Lease
+		if err := v.e.Done(v.ctx, store.DoneRequest{LeaseRef: l.Ref(), Attempt: l.Attempt}); err != nil {
+			t.Fatal(err)
+		}
 	}
 }

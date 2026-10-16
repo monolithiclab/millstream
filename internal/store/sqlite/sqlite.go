@@ -199,6 +199,9 @@ type Store struct {
 	rr     int                  // round-robin offset across pipelines
 	stmts  map[string]*sql.Stmt // prepared write statements by query; see wtx.stmt
 	unseen map[string]bool      // queries of the last batch to prepare once it ends
+
+	// leasePassHook, set by tests before the store is used, sees each pass of a Lease unit with its candidates.
+	leasePassHook func(queues map[string][]candidate)
 }
 
 var _ store.Store = (*Store)(nil)

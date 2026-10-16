@@ -51,7 +51,7 @@ func TestBudgetSkipsPastHeldBackDeliveries(t *testing.T) {
 	e.fanOut("r1", 3)
 	e.fanOut("r2", 3)
 	req := store.LeaseRequest{Owner: "node1", Max: 1, TTL: time.Minute,
-		Reserve: map[store.StepRef]float64{scoreRef: 0.1}, Slots: map[store.StepRef]int{scoreRef: 1}}
+		Reserve: map[store.AgentStep]float64{scoreAgent: 0.1}, Slots: map[store.StepRef]int{scoreRef: 1}}
 	first, err := e.s.Lease(e.ctx, req)
 	if err != nil || len(first) != 1 || first[0].RunID != "r1" {
 		t.Fatalf("first lease = %+v, %v", first, err)

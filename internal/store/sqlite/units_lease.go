@@ -21,7 +21,7 @@ type candidate struct {
 
 // Lease is the Lease unit (spec section 5.11). The engine's in-memory checks (concurrency, rate, limits) arrive
 // as req.Slots and req.Exclude; paused pipelines and steps are skipped from the store's state. An agent delivery
-// (its step in req.Reserve) is leased with its budget reservation, only while the budgets allow it (budgetAllows).
+// (its step and revision in req.Reserve) is leased with its budget reservation, only while the budgets allow it (budgetAllows).
 func (s *Store) Lease(ctx context.Context, req store.LeaseRequest) ([]store.Lease, error) {
 	if req.Owner == "" || req.TTL <= 0 {
 		return nil, fmt.Errorf("lease: an owner and a positive ttl are required: %w", store.ErrInvalid)
@@ -41,17 +41,38 @@ func (s *Store) Lease(ctx context.Context, req store.LeaseRequest) ([]store.Leas
 	return leases, nil
 }
 
-// leasePass is what one pass of the Lease unit has left to lease, and the deliveries a budget held back.
+// leasePass is what one pass of the Lease unit has left to lease, and what a budget held back. A denial holds for
+// the rest of the lease, spend only growing within it: a run budget holds back every delivery of the run's step, a
+// day budget (or a pipeline a budget paused) every delivery of the step of that revision, whose maxCostUsd the
+// reservation is. The next passes exclude them in the due query, so held-back deliveries are read once.
 type leasePass struct {
-	req     store.LeaseRequest
-	skipped map[store.StepRef]map[string]bool // delivery ids per step
-	paused  map[string]bool                   // pipelines a budget paused during this lease
+	req        store.LeaseRequest
+	deniedRuns map[store.StepRef][]string           // run ids per step
+	deniedRevs map[store.StepRef][]store.RevisionID // revisions per step
+	paused     map[string]bool                      // pipelines a budget paused during this lease
+}
+
+// deny records that the budget scope (store.BudgetRun or store.BudgetDay) held back l, a delivery of ref.
+func (p *leasePass) deny(ref store.StepRef, l store.Lease, scope string) {
+	if scope == store.BudgetRun {
+		p.deniedRuns[ref] = append(p.deniedRuns[ref], l.RunID)
+	} else {
+		p.deniedRevs[ref] = append(p.deniedRevs[ref], l.Revision)
+	}
+}
+
+// heldBack reports whether a budget already held back a delivery like l, of ref, during this lease.
+func (p *leasePass) heldBack(ref store.StepRef, l store.Lease) bool {
+	return slices.Contains(p.deniedRuns[ref], l.RunID) || slices.Contains(p.deniedRevs[ref], l.Revision)
 }
 
 // lease leases due deliveries in passes: a delivery a budget holds back does not use its step's slot, so the next
-// pass looks past it, until a pass skips nothing or nothing is left to lease.
+// pass looks past it, excluding what the budgets denied, until a pass is denied nothing or nothing is left to lease.
+// Every pass but the last adds a denial, so the passes are bounded by the runs and revisions held back, not by
+// their deliveries.
 func (w *wtx) lease(req store.LeaseRequest) ([]store.Lease, error) {
-	p := &leasePass{req: req, skipped: map[store.StepRef]map[string]bool{}, paused: map[string]bool{}}
+	p := &leasePass{req: req, deniedRuns: map[store.StepRef][]string{},
+		deniedRevs: map[store.StepRef][]store.RevisionID{}, paused: map[string]bool{}}
 	if req.Slots != nil {
 		p.req.Slots = maps.Clone(req.Slots)
 	}
@@ -65,21 +86,25 @@ func (w *wtx) lease(req store.LeaseRequest) ([]store.Lease, error) {
 		if err != nil {
 			return nil, err
 		}
+		if hook := w.s.leasePassHook; hook != nil {
+			hook(queues)
+		}
 		skipped := false
 		for _, c := range w.s.roundRobin(queues, p.req.Max) {
 			l := c.lease
 			ref := store.StepRef{Pipeline: l.Pipeline, Step: l.Step}
-			reserve, agent := req.Reserve[ref]
+			reserve, agent := req.Reserve[store.AgentStep{StepRef: ref, Revision: l.Revision}]
 			if agent {
-				ok, err := w.budgetAllows(l, reserve, req.Reserve, p.paused)
+				if p.heldBack(ref, l) {
+					skipped = true
+					continue
+				}
+				scope, err := w.budgetAllows(l, reserve, req.Reserve, p.paused)
 				if err != nil {
 					return nil, err
 				}
-				if !ok { // stays pending until the budget allows it, once a user resumed the step
-					if p.skipped[ref] == nil {
-						p.skipped[ref] = map[string]bool{}
-					}
-					p.skipped[ref][l.DeliveryID] = true
+				if scope != "" { // stays pending until the budget allows it, once a user resumed the step
+					p.deny(ref, l, scope)
 					skipped = true
 					continue
 				}
@@ -120,7 +145,7 @@ func (w *wtx) lease(req store.LeaseRequest) ([]store.Lease, error) {
 }
 
 // dueQueues returns, per pipeline, the due pending deliveries the pass may pick, oldest first, at most the step's
-// slots and the pass's Max per step, past the deliveries a budget skipped.
+// slots and the pass's Max per step, past the runs and revisions a budget denied.
 func (w *wtx) dueQueues(p *leasePass) (map[string][]candidate, error) {
 	req := p.req
 	rows, err := w.query(`SELECT DISTINCT d.pipeline, d.step FROM deliveries d
@@ -155,13 +180,11 @@ func (w *wtx) dueQueues(p *leasePass) (map[string][]candidate, error) {
 		if n <= 0 {
 			continue
 		}
-		skipped := p.skipped[ref]
-		cs, err := w.dueDeliveries(ref, n+len(skipped))
+		cs, err := w.dueDeliveries(ref, n, p.deniedRuns[ref], p.deniedRevs[ref])
 		if err != nil {
 			return nil, err
 		}
-		cs = slices.DeleteFunc(cs, func(c candidate) bool { return skipped[c.lease.DeliveryID] })
-		queues[ref.Pipeline] = append(queues[ref.Pipeline], cs[:min(len(cs), n)]...)
+		queues[ref.Pipeline] = append(queues[ref.Pipeline], cs...)
 	}
 	for name, q := range queues {
 		slices.SortFunc(q, func(a, b candidate) int { return cmp.Compare(a.rowid, b.rowid) })
@@ -181,14 +204,17 @@ func excluded(exclude []store.StepRef, ref store.StepRef) bool {
 	return false
 }
 
-func (w *wtx) dueDeliveries(ref store.StepRef, n int) ([]candidate, error) {
+// dueDeliveries returns the step's n oldest due deliveries, but those of the runs and revisions given.
+func (w *wtx) dueDeliveries(ref store.StepRef, n int, runs []string, revs []store.RevisionID) ([]candidate, error) {
 	rows, err := w.query(`SELECT d.rowid, d.next_attempt_at, d.id, d.run_id, r.revision, d.generation, d.attempt,
 		i.id, i.run_id, i.stream, i.step, i.key, i.parents, i.generation, i.ts, i.payload, i.artifacts
 		FROM deliveries d
 		JOIN runs r ON r.pipeline = d.pipeline AND r.id = d.run_id
 		JOIN items i ON i.pipeline = d.pipeline AND i.id = d.item_id
 		WHERE d.pipeline = ? AND d.step = ? AND d.state = ? AND d.next_attempt_at <= ?
-		ORDER BY d.rowid LIMIT ?`, ref.Pipeline, ref.Step, store.DeliveryPending, w.ts(), n)
+			AND d.run_id NOT IN (SELECT value FROM json_each(?)) AND r.revision NOT IN (SELECT value FROM json_each(?))
+		ORDER BY d.rowid LIMIT ?`, ref.Pipeline, ref.Step, store.DeliveryPending, w.ts(), jsonList(runs),
+		jsonList(revs), n)
 	if err != nil {
 		return nil, err
 	}
@@ -216,6 +242,16 @@ func (w *wtx) dueDeliveries(ref store.StepRef, n int) ([]candidate, error) {
 		out = append(out, c)
 	}
 	return out, closeRows(rows)
+}
+
+// jsonList encodes vs as a JSON array for json_each, [] when empty: json_each of null yields a row, which NOT IN
+// would compare as unknown and so exclude everything.
+func jsonList[T any](vs []T) string {
+	if len(vs) == 0 {
+		return "[]"
+	}
+	b, _ := json.Marshal(vs) // run ids and revision ids always encode
+	return string(b)
 }
 
 // roundRobin takes up to n candidates, one pipeline at a time, starting one pipeline further at every call so no

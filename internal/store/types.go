@@ -231,11 +231,19 @@ type LeaseRequest struct {
 	// PipelineSlots caps the deliveries leased per pipeline in this call, across its steps (free limits.concurrency),
 	// with the same nil and absent rules as Slots.
 	PipelineSlots map[string]int
-	// Reserve names the agent steps, with the reservation each delivery of them takes when leased: the action's
-	// maxCostUsd, zero when it sets none (spec section 5.9). A delivery of a step in Reserve is leased only while its
-	// run's spend and reservations plus its own stay within budget.runUsd, and the pipeline's for the day within
-	// budget.dayUsd; the first delivery a budget stops pauses every agent step of its pipeline named here.
-	Reserve map[StepRef]float64
+	// Reserve names the agent steps of each revision, with the reservation each delivery of them takes when leased:
+	// the maxCostUsd of the action in its run's revision, zero when it sets none (spec section 5.9). A delivery of a
+	// step in Reserve is leased only while its run's spend and reservations plus its own stay within budget.runUsd,
+	// and the pipeline's for the day within budget.dayUsd; the first delivery a budget stops pauses every agent step
+	// of its pipeline named here.
+	Reserve map[AgentStep]float64
+}
+
+// AgentStep is an agent step of one revision of a pipeline: what a budget reservation is keyed by, since another
+// revision may set another maxCostUsd.
+type AgentStep struct {
+	StepRef
+	Revision RevisionID
 }
 
 // Lease is a leased delivery with what a node needs to run it.

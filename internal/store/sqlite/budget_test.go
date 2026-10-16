@@ -3,6 +3,7 @@ package sqlite
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -30,7 +31,10 @@ steps:
 
 func budgetPipeline(runUSD, dayUSD float64) string { return fmt.Sprintf(budgeted, runUSD, dayUSD) }
 
-var scoreRef = store.StepRef{Pipeline: "listings", Step: "score"}
+var (
+	scoreRef   = store.StepRef{Pipeline: "listings", Step: "score"}
+	scoreAgent = store.AgentStep{StepRef: scoreRef, Revision: 1} // the score step of the first revision applied
+)
 
 // fanOut fires run runID and completes its crawl with n listings, so n score deliveries are due.
 func (e *env) fanOut(runID string, n int) {
@@ -52,7 +56,7 @@ func (e *env) fanOut(runID string, n int) {
 func (e *env) leaseAgent(n int, reserve float64) []store.Lease {
 	e.t.Helper()
 	ls, err := e.s.Lease(e.ctx, store.LeaseRequest{Owner: "node1", Max: n, TTL: time.Minute,
-		Reserve: map[store.StepRef]float64{scoreRef: reserve}})
+		Reserve: map[store.AgentStep]float64{scoreAgent: reserve}})
 	if err != nil {
 		e.t.Fatalf("Lease: %v", err)
 	}
@@ -106,7 +110,7 @@ func TestRunBudgetConcurrentLeases(t *testing.T) {
 	for range concurrentLeases {
 		wg.Go(func() {
 			ls, err := e.s.Lease(e.ctx, store.LeaseRequest{Owner: "node1", Max: 2, TTL: time.Minute,
-				Reserve: map[store.StepRef]float64{scoreRef: 0.1}})
+				Reserve: map[store.AgentStep]float64{scoreAgent: 0.1}})
 			if err != nil {
 				t.Errorf("Lease: %v", err)
 			}
@@ -241,7 +245,7 @@ func TestBudgetLeavesUserPauses(t *testing.T) {
 		t.Fatal(err)
 	}
 	ls, err := e.s.Lease(e.ctx, store.LeaseRequest{Owner: "node1", Max: 1, TTL: time.Minute,
-		Reserve: map[store.StepRef]float64{scoreRef: 0.1, {Pipeline: "listings", Step: "crawl"}: 0.1}})
+		Reserve: map[store.AgentStep]float64{scoreAgent: 0.1, {StepRef: store.StepRef{Pipeline: "listings", Step: "crawl"}, Revision: 1}: 0.1}})
 	if err != nil || len(ls) != 0 {
 		t.Fatalf("Lease = %+v, %v", ls, err)
 	}
@@ -255,5 +259,54 @@ func TestBudgetLeavesUserPauses(t *testing.T) {
 	}
 	if ps := e.state(); strings.Join(ps.PausedSteps, ",") != "crawl" {
 		t.Fatalf("after resume = %+v", ps)
+	}
+}
+
+// Deliveries a run budget holds back are read once per lease, not once per pass: with 200 of them due, a lease
+// takes two passes (one denies the run, the next excludes it) and reads a bounded number of rows, and another run's
+// agent delivery and another step's delivery still lease.
+func TestBudgetHeldBackDeliveriesReadOnce(t *testing.T) {
+	e := newEnv(t, budgetPipeline(0.1, 0))
+	e.fanOut("r1", 2)
+	if ls := e.leaseAgent(1, 0.1); len(ls) != 1 {
+		t.Fatalf("first lease = %+v", ls)
+	}
+	if ls := e.leaseAgent(1, 0.1); len(ls) != 0 { // reaches r1's budget, pausing the step
+		t.Fatalf("lease past r1's budget = %+v", ls)
+	}
+	if err := e.s.SetPaused(e.ctx, "listings", "", false); err != nil {
+		t.Fatal(err)
+	}
+	// 199 more of r1's score deliveries, copies of its pending one under later generations: written directly, a
+	// crawl emitting 200 items taking longer than the budget of a test.
+	if _, err := e.s.write.ExecContext(e.ctx, `WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 199)
+		INSERT INTO deliveries (pipeline, id, run_id, step, item_id, generation, state, attempt, next_attempt_at)
+		SELECT d.pipeline, d.id || '-' || n.i, d.run_id, d.step, d.item_id, d.generation + n.i, d.state, d.attempt,
+			d.next_attempt_at
+		FROM deliveries d, n WHERE d.step = 'score' AND d.state = ?`, store.DeliveryPending); err != nil {
+		t.Fatal(err)
+	}
+	e.fanOut("r2", 1)
+	e.firePipeline("listings", "daily", "r3") // its crawl is due
+
+	var passes, rows int
+	e.s.leasePassHook = func(queues map[string][]candidate) {
+		passes++
+		for _, q := range queues {
+			rows += len(q)
+		}
+	}
+	defer func() { e.s.leasePassHook = nil }()
+	ls := e.leaseAgent(10, 0.1)
+	var got []string
+	for _, l := range ls {
+		got = append(got, l.RunID+"/"+l.Step)
+	}
+	slices.Sort(got)
+	if !slices.Equal(got, []string{"r2/score", "r3/crawl"}) {
+		t.Fatalf("leased %v, want r2's score and r3's crawl", got)
+	}
+	if passes > 2 || rows > 2*10+2 {
+		t.Fatalf("%d passes read %d candidates, want at most 2 passes and 22 candidates", passes, rows)
 	}
 }
