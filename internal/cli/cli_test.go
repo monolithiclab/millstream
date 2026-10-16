@@ -3,8 +3,12 @@ package cli
 import (
 	"bytes"
 	"context"
+	"io"
+	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/alecthomas/kong"
 )
 
 func runCLI(t *testing.T, version string, argv ...string) (code int, stdout, stderr string) {
@@ -57,5 +61,40 @@ func Test_configureSeamAdjustsRuntime(t *testing.T) {
 	})
 	if code != 0 || out.String() != "millstream x\n" {
 		t.Fatalf("code=%d out=%q", code, out.String())
+	}
+}
+
+// The parser skips kong's hooks (parser.parse): no type of the command tree may define one, or it would never run.
+// Kong's own --help flag, whose hook parse handles, is the exception.
+func TestNoKongHooks(t *testing.T) {
+	t.Parallel()
+	p, err := takeParser(&Runtime{Ctx: context.Background(), IO: IO{Out: io.Discard, Err: io.Discard}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.release()
+	seen := 0
+	_ = kong.Visit(p.k.Model, func(n kong.Visitable, next kong.Next) error {
+		var target reflect.Value
+		switch n := n.(type) {
+		case *kong.Application:
+			target = n.Target
+		case *kong.Node:
+			target = n.Target
+		case *kong.Value:
+			target = n.Target
+		}
+		if target.IsValid() && target.Type().PkgPath() != reflect.TypeFor[kong.Kong]().PkgPath() {
+			seen++
+			for _, hook := range []string{"BeforeReset", "BeforeResolve", "BeforeApply", "AfterApply", "AfterRun"} {
+				if _, ok := reflect.PointerTo(target.Type()).MethodByName(hook); ok {
+					t.Errorf("%s defines %s, which the parser never calls", target.Type(), hook)
+				}
+			}
+		}
+		return next(nil)
+	})
+	if seen < 40 {
+		t.Fatalf("visited %d targets: the walk missed the command tree", seen)
 	}
 }

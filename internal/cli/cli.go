@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sync"
 
 	"github.com/alecthomas/kong"
 
@@ -131,24 +132,18 @@ func Run(ctx context.Context, argv []string, stdio IO, version string, configure
 		}
 	}()
 
-	var tree CLI
-	parser, err := kong.New(&tree,
-		kong.Name("millstream"),
-		kong.Description("Pipelines of actions connected by persisted streams."),
-		kong.Writers(rt.IO.Out, rt.IO.Err),
-		kong.Exit(func(c int) { panic(exitSignal(c)) }),
-		kong.BindTo(rt.Ctx, (*context.Context)(nil)),
-		kong.Bind(rt),
-	)
+	p, err := takeParser(rt)
 	if err != nil {
 		fmt.Fprintf(rt.IO.Err, "millstream: %v\n", err)
 		return exitFail
 	}
-	kctx, err := parser.Parse(argv)
-	rt.DB, rt.EnvFile = tree.DB, tree.EnvFile
+	defer p.release()
+	parser := p.k
+	kctx, err := p.parse(argv)
+	rt.DB, rt.EnvFile = p.tree.DB, p.tree.EnvFile
 	if kctx != nil {
-		for _, p := range kctx.Path {
-			rt.DBSet = rt.DBSet || p.Flag != nil && p.Flag.Name == "db"
+		for _, e := range kctx.Path {
+			rt.DBSet = rt.DBSet || e.Flag != nil && e.Flag.Name == "db"
 		}
 	}
 	if err != nil {
@@ -170,4 +165,90 @@ func Run(ctx context.Context, argv []string, stdio IO, version string, configure
 		return exitFail
 	}
 	return exitOK
+}
+
+// parser is a Kong parser over a command tree of its own, and the Runtime of the run using it. Building one walks
+// the tree by reflection and interpolates every tag, which costs more than running most commands (0.5 ms, 8,000
+// allocations): Run takes one from parsers and gives it back, so a process running command after command (the tests)
+// builds one per concurrent run instead of one per run.
+type parser struct {
+	k    *kong.Kong
+	tree CLI
+	rt   *Runtime
+}
+
+// parsers holds the idle parsers.
+var parsers sync.Pool
+
+// takeParser returns an idle parser, or a new one, bound to rt and ready to parse.
+func takeParser(rt *Runtime) (*parser, error) {
+	p, _ := parsers.Get().(*parser)
+	if p == nil {
+		p = &parser{}
+		k, err := kong.New(&p.tree,
+			kong.Name("millstream"),
+			kong.Description("Pipelines of actions connected by persisted streams."),
+			kong.Exit(func(c int) { panic(exitSignal(c)) }),
+			kong.BindToProvider(func() (context.Context, error) { return p.rt.Ctx, nil }),
+			kong.BindToProvider(func() (*Runtime, error) { return p.rt, nil }),
+		)
+		if err != nil {
+			return nil, err
+		}
+		p.k = k
+	}
+	p.rt = rt
+	p.k.Stdout, p.k.Stderr = rt.IO.Out, rt.IO.Err
+	// Parse resets every value to its default, but not the marks a parse leaves on the model: which values were set
+	// and which nodes were on the parsed path. New leaves them all unset.
+	_ = kong.Visit(p.k.Model, func(n kong.Visitable, next kong.Next) error {
+		switch n := n.(type) {
+		case *kong.Application:
+			n.Active = false
+		case *kong.Node:
+			n.Active = false
+		case *kong.Value:
+			n.Active, n.Set = false, false
+		}
+		return next(nil)
+	})
+	return p, nil
+}
+
+// release gives p back to parsers, without the run's Runtime and streams.
+func (p *parser) release() {
+	p.rt, p.k.Stdout, p.k.Stderr = nil, nil, nil
+	parsers.Put(p)
+}
+
+// parse is kong's Parse without its hooks. Parse runs four, each walking the whole command tree and cloning its
+// bindings at every node, for hook methods none of our types has (TestNoKongHooks keeps it so): 0.09 ms of the 0.1
+// ms a parse takes. The one hook a parse can meet, kong's --help flag, is handled here as kong would.
+func (p *parser) parse(argv []string) (*kong.Context, error) {
+	kctx, err := kong.Trace(p.k, argv)
+	if err != nil {
+		return nil, err
+	}
+	if kctx.Error != nil {
+		return nil, kctx.Error
+	}
+	for _, e := range kctx.Path {
+		if e.Flag != nil && e.Flag.Name == "help" {
+			_ = kctx.PrintUsage(false)
+			p.k.Exit(exitOK)
+		}
+	}
+	if err := kctx.Reset(); err != nil {
+		return nil, err
+	}
+	if err := kctx.Resolve(); err != nil {
+		return nil, err
+	}
+	if _, err := kctx.Apply(); err != nil {
+		return nil, err
+	}
+	if err := kctx.Validate(); err != nil {
+		return nil, err
+	}
+	return kctx, nil
 }
