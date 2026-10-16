@@ -147,18 +147,11 @@ var reviewClean reference
 
 func reviewCleanRun(t *testing.T) snapshot {
 	t.Helper()
-	reviewClean.once.Do(func() {
-		reviewClean.failed = true
-		db := dbPath(t)
+	return reviewClean.compute(t, sqliteBackend, "review crash", func(db string) {
 		mustExit(t, 1, db, nil, runOnce(fixtureReview)...)
 		decideAll(t, db, nil, 0)
 		mustExit(t, 1, db, nil, runOnce(fixtureReview)...)
-		reviewClean.snap, reviewClean.failed = readSnapshot(t, db), t.Failed()
 	})
-	if reviewClean.failed {
-		t.Fatal("the review crash reference failed")
-	}
-	return reviewClean.snap
 }
 
 // reviewTimedOut is the timeout fixture's crash reference: run once, left until the reviews time out, run again.
@@ -169,18 +162,11 @@ const reviewWait = 1200 * time.Millisecond
 
 func reviewTimedOutRun(t *testing.T) snapshot {
 	t.Helper()
-	reviewTimedOut.once.Do(func() {
-		reviewTimedOut.failed = true
-		db := dbPath(t)
+	return reviewTimedOut.compute(t, sqliteBackend, "review timeout crash", func(db string) {
 		mustExit(t, 1, db, nil, runOnce(fixtureReviewTimeout)...)
 		time.Sleep(reviewWait)
 		mustExit(t, 1, db, nil, runOnce(fixtureReviewTimeout)...)
-		reviewTimedOut.snap, reviewTimedOut.failed = readSnapshot(t, db), t.Failed()
 	})
-	if reviewTimedOut.failed {
-		t.Fatal("the review timeout crash reference failed")
-	}
-	return reviewTimedOut.snap
 }
 
 // TestReviewCrash covers the four review units at both failpoints: Park in the run that parks, Review decision and

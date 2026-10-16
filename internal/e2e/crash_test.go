@@ -21,7 +21,6 @@ import (
 
 	"github.com/monolithiclab/millstream/internal/failpoint"
 	"github.com/monolithiclab/millstream/internal/store"
-	"github.com/monolithiclab/millstream/internal/store/sqlite"
 	"github.com/monolithiclab/millstream/internal/store/sqlstore"
 )
 
@@ -42,10 +41,20 @@ var slowCrawl = []string{"--var", "crawlDelayMs=1500"}
 
 // TestCrashAtFailpoints runs the builtins fixture with each failpoint of each atomic unit armed, then reruns it
 // without on the same database: whether the process died at the failpoint or never reached it, the rerun must end in
-// exactly the clean run's state (no item lost, none published twice, every run settled, the same dead letters).
+// exactly the clean run's state (no item lost, none published twice, every run settled, the same dead letters). It
+// runs on SQLite and on Postgres, each against its own clean run.
 func TestCrashAtFailpoints(t *testing.T) {
 	t.Parallel()
-	want := cleanBuiltinsRun(t)
+	for _, b := range backends {
+		t.Run(b.name, func(t *testing.T) {
+			t.Parallel()
+			crashAtFailpoints(t, b)
+		})
+	}
+}
+
+func crashAtFailpoints(t *testing.T, b backend) {
+	want := cleanBuiltinsRunOn(t, b)
 	var (
 		mu  sync.Mutex
 		hit = map[string]bool{}
@@ -56,7 +65,7 @@ func TestCrashAtFailpoints(t *testing.T) {
 				name := unit + "." + phase
 				t.Run(name, func(t *testing.T) {
 					t.Parallel()
-					db := dbPath(t)
+					db := b.newDB(t)
 					var flags []string
 					if unit == "renew" {
 						flags = slowCrawl
@@ -100,14 +109,23 @@ func TestCrashAtFailpoints(t *testing.T) {
 
 // TestCrashInCommands covers the units a run does not reach on its own, through the commands that apply them, with
 // each failpoint armed in that command's process: the command dies, is run again, and the end state is the one the
-// commands reach without a crash.
+// commands reach without a crash. It runs on SQLite and on Postgres.
 func TestCrashInCommands(t *testing.T) {
 	t.Parallel()
+	for _, b := range backends {
+		t.Run(b.name, func(t *testing.T) {
+			t.Parallel()
+			crashInCommands(t, b)
+		})
+	}
+}
+
+func crashInCommands(t *testing.T, b backend) {
 	for _, phase := range phases {
 		t.Run("cancel."+phase, func(t *testing.T) {
 			t.Parallel()
-			want := cleanRun(t)
-			db := dbPath(t)
+			want := cleanRunOn(t, b)
+			db := b.newDB(t)
 			mustExit(t, 1, db, nil, runOnce(fixtureV1)...)
 			// A second run, fired with no engine running: its delivery stays pending until cancelled.
 			const extra = "run_extra_adhoc"
@@ -134,8 +152,8 @@ func TestCrashInCommands(t *testing.T) {
 
 		t.Run("replay."+phase, func(t *testing.T) {
 			t.Parallel()
-			want := replayedRun(t)
-			db := dbPath(t)
+			want := replayedRunOn(t, b)
+			db := b.newDB(t)
 			mustExit(t, 1, db, nil, runOnce(fixtureV1)...)
 			mustExit(t, 1, db, nil, runOnce(fixtureV2)...)
 			mustExit(t, failpoint.ExitCode, db, failpointEnv("replay."+phase), replayArgs()...)
@@ -150,8 +168,8 @@ func TestCrashInCommands(t *testing.T) {
 
 		t.Run("startReplay."+phase, func(t *testing.T) {
 			t.Parallel()
-			want := replayedStepRun(t)
-			db := dbPath(t)
+			want := replayedStepRunOn(t, b)
+			db := b.newDB(t)
 			mustExit(t, 1, db, nil, runOnce(fixtureV1)...)
 			mustExit(t, failpoint.ExitCode, db, failpointEnv("startReplay."+phase), replayStepArgs()...)
 			r := mustExit(t, 0, db, nil, replayStepArgs()...)
@@ -165,8 +183,8 @@ func TestCrashInCommands(t *testing.T) {
 
 		t.Run("discard."+phase, func(t *testing.T) {
 			t.Parallel()
-			want := cleanRun(t)
-			db := dbPath(t)
+			want := cleanRunOn(t, b)
+			db := b.newDB(t)
 			mustExit(t, 1, db, nil, runOnce(fixtureV1)...)
 			ids := slices.Collect(maps.Keys(want.DeadLetters))
 			discard := append([]string{"dlq", "discard", "--pipeline", pipelineName}, ids...)
@@ -199,13 +217,10 @@ func TestCrashInCommands(t *testing.T) {
 					"assert: [\"output.score >= 0 && output.score <= 100\"]\n"), 0o600); err != nil {
 				t.Fatal(err)
 			}
-			db := dbPath(t)
+			db := b.newDB(t)
 			mustExit(t, failpoint.ExitCode, db, failpointEnv("recordEval."+phase), "eval", action)
 			mustExit(t, 0, db, nil, "eval", action)
-			st, err := sqlite.Open(db, sqlite.Options{})
-			if err != nil {
-				t.Fatal(err)
-			}
+			st := openStore(t, db)
 			defer func() { _ = st.Close() }()
 			// Committed before the crash, the first scores stay; rolled back, only the rerun's are there.
 			want := map[string]int{"beforeCommit": 1, "afterCommit": 2}[phase]
@@ -216,8 +231,8 @@ func TestCrashInCommands(t *testing.T) {
 
 		t.Run("setPaused."+phase, func(t *testing.T) {
 			t.Parallel()
-			want := cleanRun(t)
-			db := dbPath(t)
+			want := cleanRunOn(t, b)
+			db := b.newDB(t)
 			// Applying the package needs a run; the pipeline exists from then on.
 			mustExit(t, 1, db, nil, runOnce(fixtureV1)...)
 			mustExit(t, failpoint.ExitCode, db, failpointEnv("setPaused."+phase), "pause", pipelineName)
@@ -348,4 +363,11 @@ func (d *doneWatcher) Write(p []byte) (int, error) {
 		close(d.reached)
 	}
 	return d.w.Write(p)
+}
+
+// TestBackendsAgree: the clean runs end in the same state on SQLite and on Postgres.
+func TestBackendsAgree(t *testing.T) {
+	t.Parallel()
+	wantSame(t, cleanBuiltinsRunOn(t, postgresBackend), cleanBuiltinsRunOn(t, sqliteBackend))
+	wantSame(t, cleanRunOn(t, postgresBackend), cleanRunOn(t, sqliteBackend))
 }

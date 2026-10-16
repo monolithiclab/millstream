@@ -16,7 +16,6 @@ import (
 
 	"github.com/monolithiclab/millstream/internal/ids"
 	"github.com/monolithiclab/millstream/internal/store"
-	"github.com/monolithiclab/millstream/internal/store/sqlite"
 )
 
 const pipelineName = "m1-fixture"
@@ -73,10 +72,7 @@ func (s snapshot) counts() map[string]int {
 // key on one stream (an output published twice).
 func readSnapshot(t *testing.T, db string) snapshot {
 	t.Helper()
-	st, err := sqlite.Open(db, sqlite.Options{})
-	if err != nil {
-		t.Fatalf("open %s: %v", db, err)
-	}
+	st := openStore(t, db)
 	defer func() { _ = st.Close() }()
 	ctx := context.Background()
 	s := snapshot{
@@ -165,7 +161,7 @@ func readSnapshot(t *testing.T, db string) snapshot {
 		}
 		delete(s.Refcounts, sha)
 	}
-	checkLedgers(t, db)
+	checkLedgers(t, st)
 	return s
 }
 
@@ -173,17 +169,18 @@ func readSnapshot(t *testing.T, db string) snapshot {
 // lease; what the day budgets were charged, the runs' costs and the deliveries' costs add up to the same; and the
 // dedupe keys hold one row per key let through, the row naming the item of a done delivery of its step. The last
 // assumes no dedupe window elapses during a test, so no key passes twice.
-func checkLedgers(t *testing.T, db string) {
+func checkLedgers(t *testing.T, st store.Store) {
 	t.Helper()
-	conn, err := sql.Open("sqlite", "file:"+db+"?mode=ro")
-	if err != nil {
-		t.Fatal(err)
+	conn, ok := st.(interface {
+		QueryRow(ctx context.Context, query string, args ...any) *sql.Row
+	})
+	if !ok {
+		t.Fatalf("%T has no QueryRow", st)
 	}
-	defer func() { _ = conn.Close() }()
 	count := func(query string) float64 {
 		t.Helper()
 		var n float64
-		if err := conn.QueryRow(query).Scan(&n); err != nil {
+		if err := conn.QueryRow(t.Context(), query).Scan(&n); err != nil {
 			t.Fatalf("%s: %v", query, err)
 		}
 		return n
@@ -279,11 +276,45 @@ func runOnce(dir string, flags ...string) []string {
 		[]string{dir})
 }
 
-// reference is an outcome computed once and shared by the tests that compare against it.
+// reference is an outcome computed once per backend and shared by the tests that compare against it.
 type reference struct {
+	mu   sync.Mutex
+	runs map[string]*referenceRun // by backend
+}
+
+type referenceRun struct {
 	once   sync.Once
 	snap   snapshot
 	failed bool
+}
+
+// on returns the reference's run on b.
+func (r *reference) on(b backend) *referenceRun {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.runs == nil {
+		r.runs = map[string]*referenceRun{}
+	}
+	if r.runs[b.name] == nil {
+		r.runs[b.name] = &referenceRun{}
+	}
+	return r.runs[b.name]
+}
+
+// compute runs fn once per backend, the first time the reference is asked for on it, and returns its outcome.
+func (r *reference) compute(t *testing.T, b backend, what string, fn func(db string)) snapshot {
+	t.Helper()
+	run := r.on(b)
+	run.once.Do(func() {
+		run.failed = true
+		db := b.newDB(t)
+		fn(db)
+		run.snap, run.failed = readSnapshot(t, db), t.Failed()
+	})
+	if run.failed {
+		t.Fatalf("the %s reference on %s failed", what, b.name)
+	}
+	return run.snap
 }
 
 var (
@@ -297,68 +328,59 @@ var (
 	replayedStep reference
 )
 
-// cleanRun returns the clean reference.
+// cleanRun returns the clean reference on SQLite.
 func cleanRun(t *testing.T) snapshot {
 	t.Helper()
-	return clean.get(t, fixtureV1)
+	return cleanRunOn(t, sqliteBackend)
 }
 
-// cleanBuiltinsRun returns the clean reference of the builtins fixture.
+// cleanRunOn returns the clean reference on b.
+func cleanRunOn(t *testing.T, b backend) snapshot {
+	t.Helper()
+	return clean.compute(t, b, "clean", func(db string) { mustExit(t, 1, db, nil, runOnce(fixtureV1)...) })
+}
+
+// cleanBuiltinsRun returns the clean reference of the builtins fixture on SQLite.
 func cleanBuiltinsRun(t *testing.T) snapshot {
 	t.Helper()
-	return cleanBuiltins.get(t, fixtureBuiltins)
+	return cleanBuiltinsRunOn(t, sqliteBackend)
 }
 
-// get runs dir once, the first time it is asked for, and returns its outcome.
-func (r *reference) get(t *testing.T, dir string) snapshot {
+// cleanBuiltinsRunOn returns the clean reference of the builtins fixture on b.
+func cleanBuiltinsRunOn(t *testing.T, b backend) snapshot {
 	t.Helper()
-	r.once.Do(func() {
-		r.failed = true
-		db := dbPath(t)
-		mustExit(t, 1, db, nil, runOnce(dir)...)
-		r.snap, r.failed = readSnapshot(t, db), t.Failed()
+	return cleanBuiltins.compute(t, b, "clean builtins", func(db string) {
+		mustExit(t, 1, db, nil, runOnce(fixtureBuiltins)...)
 	})
-	if r.failed {
-		t.Fatal("the clean reference run failed")
-	}
-	return r.snap
 }
 
-// replayedRun returns the replayed reference.
-func replayedRun(t *testing.T) snapshot {
+// replayedRunOn returns the replayed reference on b.
+func replayedRunOn(t *testing.T, b backend) snapshot {
 	t.Helper()
-	replayed.once.Do(func() {
-		replayed.failed = true
-		db := dbPath(t)
+	return replayed.compute(t, b, "replayed", func(db string) {
 		mustExit(t, 1, db, nil, runOnce(fixtureV1)...)
 		mustExit(t, 1, db, nil, runOnce(fixtureV2)...)
 		mustExit(t, 0, db, nil, replayArgs()...)
 		mustExit(t, 0, db, nil, runOnce(fixtureV2)...)
-		replayed.snap, replayed.failed = readSnapshot(t, db), t.Failed()
 	})
-	if replayed.failed {
-		t.Fatal("the replayed reference run failed")
-	}
-	return replayed.snap
 }
 
-// replayedStepRun returns the replayedStep reference.
+// replayedStepRun returns the replayedStep reference on SQLite.
 func replayedStepRun(t *testing.T) snapshot {
 	t.Helper()
-	replayedStep.once.Do(func() {
-		replayedStep.failed = true
-		db := dbPath(t)
+	return replayedStepRunOn(t, sqliteBackend)
+}
+
+// replayedStepRunOn returns the replayedStep reference on b.
+func replayedStepRunOn(t *testing.T, b backend) snapshot {
+	t.Helper()
+	return replayedStep.compute(t, b, "replayed step", func(db string) {
 		mustExit(t, 1, db, nil, runOnce(fixtureV1)...)
 		if r := mustExit(t, 0, db, nil, replayStepArgs()...); r.stdout != replayStepRun+"\n" {
 			t.Errorf("replay printed %q, want the replay run id", r.stdout)
 		}
 		mustExit(t, 1, db, nil, runOnce(fixtureV1)...)
-		replayedStep.snap, replayedStep.failed = readSnapshot(t, db), t.Failed()
 	})
-	if replayedStep.failed {
-		t.Fatal("the replayed step reference failed")
-	}
-	return replayedStep.snap
 }
 
 // replayStepRun is the id of the replay run replayStepArgs starts.

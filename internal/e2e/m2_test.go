@@ -22,7 +22,6 @@ import (
 	"github.com/monolithiclab/millstream/internal/ids"
 	"github.com/monolithiclab/millstream/internal/pipeline"
 	"github.com/monolithiclab/millstream/internal/store"
-	"github.com/monolithiclab/millstream/internal/store/sqlite"
 )
 
 // The M2 fixture's names, model and thresholds, as examples/m2-fixture sets them.
@@ -125,10 +124,7 @@ func jsonEqual(t *testing.T, a, b any) bool {
 // exactly one transcript.json attempt artifact, read from the artifact store next to the database.
 func transcripts(t *testing.T, db, runID string) map[string]agent.Transcript {
 	t.Helper()
-	st, err := sqlite.Open(db, sqlite.Options{})
-	if err != nil {
-		t.Fatal(err)
-	}
+	st := openStore(t, db)
 	defer func() { _ = st.Close() }()
 	ds, err := st.Deliveries(t.Context(), store.DeliveryFilter{Pipeline: m2Pipeline})
 	if err != nil {
@@ -192,10 +188,7 @@ func TestM2Scoring(t *testing.T) {
 		t.Fatalf("%d score deliveries, want %d", len(trs), want["listings.scored"])
 	}
 
-	st, err := sqlite.Open(db, sqlite.Options{})
-	if err != nil {
-		t.Fatal(err)
-	}
+	st := openStore(t, db)
 	defer func() { _ = st.Close() }()
 	run, err := st.Run(t.Context(), m2Pipeline, runID)
 	if err != nil || math.Abs(run.CostUSD-cost) > 1e-9 {
@@ -400,16 +393,9 @@ var m2Clean reference
 // m2CleanRun returns the M2 crash reference.
 func m2CleanRun(t *testing.T) snapshot {
 	t.Helper()
-	m2Clean.once.Do(func() {
-		m2Clean.failed = true
-		db := dbPath(t)
+	return m2Clean.compute(t, sqliteBackend, "M2 crash", func(db string) {
 		mustExit(t, 1, db, m2Env(m2CrashRecordings), m2Run(fixtureM2, crashRequest, 1)...)
-		m2Clean.snap, m2Clean.failed = readSnapshot(t, db), t.Failed()
 	})
-	if m2Clean.failed {
-		t.Fatal("the M2 crash reference failed")
-	}
-	return m2Clean.snap
 }
 
 // TestM2CrashAtFailpoints extends the crash matrix to the M2 fixture: each failpoint of the units its run reaches is

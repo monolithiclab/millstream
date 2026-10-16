@@ -24,8 +24,14 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"time"
+
+	"github.com/monolithiclab/millstream/internal/pipeline"
+	"github.com/monolithiclab/millstream/internal/store"
+	"github.com/monolithiclab/millstream/internal/store/postgres/pgtest"
+	"github.com/monolithiclab/millstream/internal/store/stores"
 )
 
 // The fixture's package directories, built by TestMain: v1 is examples/m1-fixture as committed; v2 is the same
@@ -49,6 +55,7 @@ var extraBuilds []func(root, dir string) error
 func TestMain(m *testing.M) { os.Exit(runTests(m)) }
 
 func runTests(m *testing.M) int {
+	defer pgtest.Stop()
 	dir, err := os.MkdirTemp("", "millstream-e2e-")
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -59,7 +66,58 @@ func runTests(m *testing.M) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
+	pgEnvFile = filepath.Join(dir, "postgres.yaml")
+	if err := os.WriteFile(pgEnvFile, []byte("store: { postgres: { dsn: { env: MILLSTREAM_DSN } } }\n"), 0o600); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
 	return m.Run()
+}
+
+// backend is a store the tests run the binary on: a database is a SQLite path, or a Postgres DSN.
+type backend struct {
+	name  string
+	newDB func(t *testing.T) string
+}
+
+var (
+	sqliteBackend   = backend{"sqlite", dbPath}
+	postgresBackend = backend{"postgres", pgDB}
+	// backends are the stores the crash suite runs on.
+	backends = []backend{sqliteBackend, postgresBackend}
+)
+
+// pgEnvFile is the environment file the binary reads on a Postgres database: the store key, the DSN in
+// MILLSTREAM_DSN.
+var pgEnvFile string
+
+// pgDirs maps each Postgres database of a test to the directory its commands run in, where the binary keeps what
+// lives next to the state database (the artifacts).
+var pgDirs sync.Map
+
+// pgDB returns a new Postgres database for the test (skipping it without Docker), with a working directory.
+func pgDB(t *testing.T) string {
+	t.Helper()
+	dsn := pgtest.DSN(t)
+	pgDirs.Store(dsn, t.TempDir())
+	return dsn
+}
+
+// isPostgres reports whether db is a Postgres database.
+func isPostgres(db string) bool { return strings.HasPrefix(db, "postgres://") }
+
+// openStore opens db as a store, for the checks that read it once the commands ended.
+func openStore(t *testing.T, db string) store.Store {
+	t.Helper()
+	cfg := pipeline.StoreConfig{SQLitePath: db}
+	if isPostgres(db) {
+		cfg = pipeline.StoreConfig{PostgresDSN: &pipeline.SecretSource{Env: "MILLSTREAM_DSN"}}
+	}
+	st, err := stores.Open(t.Context(), cfg, db, func(string) (string, bool) { return db, true })
+	if err != nil {
+		t.Fatalf("open %s: %v", db, err)
+	}
+	return st
 }
 
 // repoRoot returns the repository root, two levels above this file.
@@ -244,17 +302,28 @@ func lastLines(s string, n int) string {
 }
 
 // command returns a millstream invocation on db, with the environment of the test process minus every
-// MILLSTREAM_ variable, plus env.
+// MILLSTREAM_ variable, plus env. On a Postgres database, the store key of pgEnvFile names it, and the command runs
+// in the database's directory.
 func command(ctx context.Context, db string, env []string, args ...string) (*osexec.Cmd, *bytes.Buffer,
 	*bytes.Buffer,
 ) {
-	cmd := osexec.CommandContext(ctx, binary, append([]string{"--db", db}, args...)...) // #nosec G204 -- test binary
+	global := []string{"--db", db}
+	if isPostgres(db) {
+		global = []string{"--env-file", pgEnvFile}
+	}
+	cmd := osexec.CommandContext(ctx, binary, append(global, args...)...) // #nosec G204 -- test binary
 	for _, kv := range os.Environ() {
 		if !strings.HasPrefix(kv, "MILLSTREAM_") {
 			cmd.Env = append(cmd.Env, kv)
 		}
 	}
 	cmd.Env = append(cmd.Env, env...)
+	if isPostgres(db) {
+		cmd.Env = append(cmd.Env, "MILLSTREAM_DSN="+db)
+		if dir, ok := pgDirs.Load(db); ok {
+			cmd.Dir = dir.(string)
+		}
+	}
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	cmd.WaitDelay = 10 * time.Second
