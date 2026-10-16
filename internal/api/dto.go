@@ -60,6 +60,7 @@ type Revision struct {
 	Pipeline    string    `json:"pipeline"`
 	PackageHash string    `json:"packageHash"`
 	AppliedAt   time.Time `json:"appliedAt"`
+	Message     string    `json:"message,omitempty"`
 	Active      bool      `json:"active"`
 	Graph       *Graph    `json:"graph,omitempty"`
 }
@@ -350,7 +351,8 @@ func nonNilMap[V any](m map[string]V) map[string]V {
 
 func toRevision(rev store.Revision, active store.RevisionID) Revision {
 	return Revision{ID: int64(rev.ID), Pipeline: rev.Pipeline, PackageHash: rev.PackageHash, AppliedAt: rev.AppliedAt,
-		Active: rev.ID == active}
+		Message: rev.Message,
+		Active:  rev.ID == active}
 }
 
 func toItem(it store.Item) Item {
@@ -433,7 +435,7 @@ func graph(p *pipeline.Pipeline, ps *store.PipelineState) Graph {
 		step := Step{Name: name, Action: st.Action, Builtin: pipeline.IsBuiltin(st.Action), In: orEmpty(st.In),
 			Out: orEmpty(st.Out.Targets()), DLQ: st.DLQ, Concurrency: max(st.Concurrency, 1)}
 		if ps != nil {
-			step.Paused = ps.Paused || slices.Contains(ps.PausedSteps, name)
+			step.Paused = ps.Holds() || slices.Contains(ps.PausedSteps, name)
 			step.PauseCause = ps.PauseCauses[name]
 		}
 		for _, s := range step.In {

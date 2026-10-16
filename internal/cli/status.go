@@ -35,8 +35,11 @@ func (c StatusCmd) Run(rt *Runtime) error {
 				continue
 			}
 			state, paused := "active", "-"
-			if ps.Paused {
+			switch {
+			case ps.Paused:
 				state = "paused"
+			case ps.Disabled:
+				state = "disabled"
 			}
 			if len(ps.PausedSteps) > 0 {
 				steps := make([]string, len(ps.PausedSteps))

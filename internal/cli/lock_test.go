@@ -56,7 +56,7 @@ func TestLockAndEnvironmentErrors(t *testing.T) {
 		{"missing environment file", env, []string{"--env-file", filepath.Join(pkg, "absent.yaml"), "check", pkg}, 1,
 			"environment file:"},
 		{"bad environment file", env, []string{"--env-file", bad, "run", "--once", pkg}, 1,
-			"listen: is not supported by this build yet"},
+			"listen: want host:port"},
 		{"bad environment file for lock", env, []string{"--env-file", bad, "lock", pkg}, 1, "listen"},
 		{"bad environment file for test", env, []string{"--env-file", bad, "test", "pipeline", pkg}, 1, "listen"},
 		{"no container runtime", nil, []string{"--env-file", envFile, "lock", pkg}, 1, "needs Docker or Podman"},

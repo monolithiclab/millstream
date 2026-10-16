@@ -150,7 +150,14 @@ func (c InsightsMuteCmd) Run(rt *Runtime) error { return c.set(rt, store.Insight
 
 // set finds the insight, in --pipeline or in the one pipeline that has it, and sets its state.
 func (c insightRef) set(rt *Runtime, state store.InsightState) error {
-	return withStore(rt, func(st store.Store) error {
+	err := changeState(rt, func(cl *apiClient) error {
+		if c.Pipeline == "" {
+			return errRemotePipeline("insight")
+		}
+		verb := map[store.InsightState]string{store.InsightAcknowledged: "acknowledge", store.InsightMuted: "mute"}[state]
+		_, err := cl.post(rt.Ctx, pipelinePath(c.Pipeline, "insights", c.ID, verb), nil, nil)
+		return err
+	}, func(st store.Store) error {
 		ins, err := st.Insights(rt.Ctx, store.InsightFilter{Pipeline: c.Pipeline})
 		if err != nil {
 			return err
@@ -169,12 +176,13 @@ func (c insightRef) set(rt *Runtime, state store.InsightState) error {
 			return usageError(fmt.Sprintf("insight %s exists in %s: name one with --pipeline", c.ID,
 				strings.Join(owners, ", ")))
 		}
-		if err := st.SetInsightState(rt.Ctx, owners[0], c.ID, state); err != nil {
-			return err
-		}
-		_, err = fmt.Fprintf(rt.IO.Out, "%s %s\n", c.ID, state)
-		return err
+		return st.SetInsightState(rt.Ctx, owners[0], c.ID, state)
 	})
+	if err != nil {
+		return err
+	}
+	_, err = fmt.Fprintf(rt.IO.Out, "%s %s\n", c.ID, state)
+	return err
 }
 
 // RunReportCmd is "millstream run report".

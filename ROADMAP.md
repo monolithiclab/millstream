@@ -59,8 +59,15 @@ earlier designs are in the git history of the spec.
   the item's lineage (M3 divides a step's cost by every approval of the pipeline's review steps).
 - Container mounts: `--mount` refuses a path holding a comma, and never creates a missing source; quote such paths
   if Docker and Podman both accept a quoted CSV field.
-- HTTP API: rollback, disable and node drain or revoke arrive with the M4 commands they share a unit with; a
-  pipeline's items and cost today, and unschedulable deliveries on the nodes view, are not computed yet.
+- HTTP API: node drain or revoke arrive with the M4 commands they share a unit with (Task 4); a pipeline's items and
+  cost today, and unschedulable deliveries on the nodes view, are not computed yet.
+- Apply (M4 Task 2): each package of one apply is its own unit, so a store failure part-way leaves the earlier ones
+  applied; one unit for the whole apply would make it atomic. Apply re-checks every other pipeline's active package,
+  so a pipeline broken by a change of the deployment (a secret unmapped) blocks every apply until it is fixed or
+  applied again; `--force` does not bypass check errors. The package cache (`packages/` beside the artifact store) is
+  never pruned (Task 8's bounded caches).
+- CLI through `--server`: `trigger` and `replay --step` refuse `--var` (the API takes no variables), the inbox
+  decisions and insight states need `--pipeline`, and `eval` records scores only from its own process (no API).
 - HTTP API: an item's descendants are found by scanning its pipeline's items' parents (`json_each`); an index of
   parent to child (or reading the deliveries of the item) before volumes grow.
 - HTTP API reads to tighten before volumes grow: count queries instead of reading open dead letters and reviews to
@@ -80,10 +87,9 @@ earlier designs are in the git history of the spec.
   the same SQLite file; Postgres (M4) can wake it with `LISTEN`/`NOTIFY` instead. The live log tail relays the
   embedded node only; remote nodes stream their lines with M4's node endpoint. Event retention (M4) is what makes a
   cursor too old besides the 10,000-event resume limit.
-- Postgres store (M4 Task 1): every command opening a Postgres store takes the deployment's leadership lock, so a
-  CLI command waits while an engine runs; the commands reach a served engine through its API, or open read-only,
-  with `serve` (Task 2). Session keepalives and failover orchestration (stepping down on `Lost`, the standby
-  rebuilding its state) are Task 3; until then an idle store notices a dead session by its 5-second ping.
+- Postgres store: session keepalives and failover orchestration (the standby rebuilding its state and taking over;
+  M4 Task 2's `serve` only exits when its store is `Lost`) are Task 3; until then an idle store notices a dead
+  session by its 5-second ping.
 - Postgres store: its indexes mirror SQLite's, plus a queue index for Lease; tune them on the section 16 benchmark,
   with a profile. The writer's statements rely on pgx's statement cache rather than preparing them as on SQLite.
 - Crash suite on Postgres: the failpoint matrices (run and commands) run on both stores; the seeded random kill

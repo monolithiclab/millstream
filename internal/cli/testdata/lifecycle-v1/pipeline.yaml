@@ -1,0 +1,3 @@
+pipeline: extra
+triggers: { adhoc: { manual: {} } }
+steps: { pass: { action: filter, in: trigger.adhoc, config: { expr: "true" } } }

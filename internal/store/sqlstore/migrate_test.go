@@ -62,3 +62,36 @@ func TestMigrate(t *testing.T) {
 		t.Fatalf("a database newer than the build = %v", err)
 	}
 }
+
+// CheckVersion accepts a database at the newest migration's version only, and changes nothing.
+func TestCheckVersion(t *testing.T) {
+	ctx := context.Background()
+	db, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	db.SetMaxOpenConns(1)
+	migrations := fstest.MapFS{
+		"migrations/001_init.sql": {Data: []byte(`CREATE TABLE a (x INTEGER);`)},
+		"migrations/002_more.sql": {Data: []byte(`CREATE TABLE b (y INTEGER);`)},
+	}
+	if err := CheckVersion(ctx, db, migrations); err == nil || !strings.Contains(err.Error(), "has an engine opened") {
+		t.Fatalf("an empty database: %v", err)
+	}
+	if _, err := db.ExecContext(ctx, `CREATE TABLE schema_version (version INTEGER NOT NULL); INSERT INTO schema_version VALUES (1)`); err != nil {
+		t.Fatal(err)
+	}
+	if err := CheckVersion(ctx, db, migrations); err == nil || !strings.Contains(err.Error(), "schema version 1, this build's is 2") {
+		t.Fatalf("an older database: %v", err)
+	}
+	if _, err := db.ExecContext(ctx, `INSERT INTO schema_version VALUES (2)`); err != nil {
+		t.Fatal(err)
+	}
+	if err := CheckVersion(ctx, db, migrations); err != nil {
+		t.Fatal(err)
+	}
+	if err := CheckVersion(ctx, db, fstest.MapFS{"migrations/x_bad.sql": {}}); err == nil {
+		t.Fatal("a bad migration name: no error")
+	}
+}

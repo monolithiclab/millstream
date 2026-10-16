@@ -41,6 +41,9 @@ type wtx struct {
 // submit queues a unit and waits until the batch holding it commits or fails. Once queued, the unit's outcome is
 // always awaited, so a nil error means it committed and an error means it left no trace.
 func (s *Store) submit(ctx context.Context, unit string, fn func(*wtx) error) error {
+	if s.cfg.ReadOnly {
+		return fmt.Errorf("%s: %w", unit, store.ErrReadOnly)
+	}
 	s.mu.RLock()
 	if s.closed {
 		s.mu.RUnlock()

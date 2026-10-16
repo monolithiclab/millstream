@@ -4,11 +4,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"maps"
+	"net/http"
 	"slices"
 	"strings"
 	"text/tabwriter"
 	"time"
 
+	"github.com/monolithiclab/millstream/internal/api"
 	"github.com/monolithiclab/millstream/internal/engine"
 	"github.com/monolithiclab/millstream/internal/pipeline"
 	"github.com/monolithiclab/millstream/internal/store"
@@ -29,25 +31,41 @@ func (c TriggerCmd) Run(rt *Runtime) error {
 	if !json.Valid([]byte(c.Payload)) {
 		return usageError("--payload: not valid JSON")
 	}
-	return withStore(rt, func(st store.Store) error {
+	var id string
+	var fired bool
+	err := changeState(rt, func(cl *apiClient) error {
+		if len(c.Var) > 0 {
+			return errNoVarsRemote
+		}
+		var run api.Run
+		status, err := cl.post(rt.Ctx, pipelinePath(c.Pipeline, "runs"), api.TriggerRequest{Trigger: c.Trigger,
+			Payload: json.RawMessage(c.Payload), RequestID: c.RequestID}, &run)
+		id, fired = run.ID, created(status)
+		return err
+	}, func(st store.Store) error {
 		if err := checkFlagsDeclared(rt, st, c.Pipeline, c.Var); err != nil {
 			return err
 		}
-		e, err := engine.New(engine.Options{Store: st, Env: rt.Env, Flags: c.Var})
+		env, err := environment(rt)
 		if err != nil {
 			return err
 		}
-		id, created, err := e.Fire(rt.Ctx, c.Pipeline, c.Trigger, c.RequestID, json.RawMessage(c.Payload))
+		e, err := engine.New(engine.Options{Store: st, Env: rt.Env, Secrets: secrets(rt, env), Flags: c.Var})
 		if err != nil {
 			return err
 		}
-		suffix := ""
-		if !created {
-			suffix = " (already fired)"
-		}
-		_, err = fmt.Fprintf(rt.IO.Out, "%s%s\n", id, suffix)
+		id, fired, err = e.Fire(rt.Ctx, c.Pipeline, c.Trigger, c.RequestID, json.RawMessage(c.Payload))
 		return err
 	})
+	if err != nil {
+		return err
+	}
+	suffix := ""
+	if !fired {
+		suffix = " (already fired)"
+	}
+	_, err = fmt.Fprintf(rt.IO.Out, "%s%s\n", id, suffix)
+	return err
 }
 
 // checkFlagsDeclared fails when a --var names a variable the pipeline's active revision does not declare.
@@ -83,13 +101,15 @@ type CancelCmd struct {
 
 // Run cancels the run.
 func (c CancelCmd) Run(rt *Runtime) error {
-	return withStore(rt, func(st store.Store) error {
-		if err := st.Cancel(rt.Ctx, c.Pipeline, c.RunID); err != nil {
-			return err
-		}
-		_, err := fmt.Fprintf(rt.IO.Out, "%s cancelled\n", c.RunID)
+	err := changeState(rt, func(cl *apiClient) error {
+		_, err := cl.post(rt.Ctx, pipelinePath(c.Pipeline, "runs", c.RunID, "cancel"), nil, nil)
 		return err
-	})
+	}, func(st store.Store) error { return st.Cancel(rt.Ctx, c.Pipeline, c.RunID) })
+	if err != nil {
+		return err
+	}
+	_, err = fmt.Fprintf(rt.IO.Out, "%s cancelled\n", c.RunID)
+	return err
 }
 
 // ReplayCmd is "millstream replay": dead-letter replay into the origin run (--from dlq, spec section 5.6), or a
@@ -132,14 +152,40 @@ func (c ReplayCmd) deadLetters(rt *Runtime) error {
 	case c.Since != "" || c.Where != "" || c.Revision != 0 || c.RequestID != "" || len(c.Var) > 0:
 		return usageError("--since, --where, --revision, --request-id and --var go with --step, not --from dlq")
 	}
-	return withStore(rt, func(st store.Store) error {
-		n, err := st.ReplayDeadLetters(rt.Ctx, c.Pipeline, c.RunID, c.IDs, c.Migrate)
-		if err != nil {
-			return err
+	var n int
+	err := changeState(rt, func(cl *apiClient) error {
+		ids := c.IDs
+		if len(ids) == 0 { // the run's open dead letters, as the store's unit takes them
+			var groups []api.DeadLetterGroup
+			if _, err := cl.do(rt.Ctx, http.MethodGet, pipelinePath(c.Pipeline, "dead-letters"), nil, &groups); err != nil {
+				return err
+			}
+			for _, g := range groups {
+				for _, dl := range g.DeadLetters {
+					if dl.RunID == c.RunID {
+						ids = append(ids, dl.ID)
+					}
+				}
+			}
+			if len(ids) == 0 {
+				return nil
+			}
 		}
-		_, err = fmt.Fprintf(rt.IO.Out, "%s replayed\n", plural(n, "dead letter"))
+		var count api.Count
+		_, err := cl.post(rt.Ctx, pipelinePath(c.Pipeline, "dead-letters", "replay"),
+			api.DeadLetterSelection{IDs: ids, Migrate: c.Migrate}, &count)
+		n = count.Count
+		return err
+	}, func(st store.Store) error {
+		var err error
+		n, err = st.ReplayDeadLetters(rt.Ctx, c.Pipeline, c.RunID, c.IDs, c.Migrate)
 		return err
 	})
+	if err != nil {
+		return err
+	}
+	_, err = fmt.Fprintf(rt.IO.Out, "%s replayed\n", plural(n, "dead letter"))
+	return err
 }
 
 func (c ReplayCmd) replayStep(rt *Runtime) error {
@@ -153,28 +199,44 @@ func (c ReplayCmd) replayStep(rt *Runtime) error {
 			return usageError("--since: " + err.Error())
 		}
 	}
-	return withStore(rt, func(st store.Store) error {
+	var id string
+	var started bool
+	err := changeState(rt, func(cl *apiClient) error {
+		if len(c.Var) > 0 {
+			return errNoVarsRemote
+		}
+		var run api.Run
+		status, err := cl.post(rt.Ctx, pipelinePath(c.Pipeline, "replay"), api.ReplayRequest{Step: c.Step,
+			Since: c.Since, Run: c.RunID, Where: c.Where, Revision: c.Revision, RequestID: c.RequestID}, &run)
+		id, started = run.ID, created(status)
+		return err
+	}, func(st store.Store) error {
 		if err := checkFlagsDeclared(rt, st, c.Pipeline, c.Var); err != nil {
 			return err
 		}
-		e, err := engine.New(engine.Options{Store: st, Env: rt.Env, Flags: c.Var})
+		env, err := environment(rt)
 		if err != nil {
 			return err
 		}
-		id, created, err := e.Replay(rt.Ctx, engine.ReplayRequest{
+		e, err := engine.New(engine.Options{Store: st, Env: rt.Env, Secrets: secrets(rt, env), Flags: c.Var})
+		if err != nil {
+			return err
+		}
+		id, started, err = e.Replay(rt.Ctx, engine.ReplayRequest{
 			Pipeline: c.Pipeline, Step: c.Step, Revision: store.RevisionID(c.Revision), Since: since, RunID: c.RunID,
 			Where: c.Where, RequestID: c.RequestID,
 		})
-		if err != nil {
-			return err
-		}
-		suffix := ""
-		if !created {
-			suffix = " (already started)"
-		}
-		_, err = fmt.Fprintf(rt.IO.Out, "%s%s\n", id, suffix)
 		return err
 	})
+	if err != nil {
+		return err
+	}
+	suffix := ""
+	if !started {
+		suffix = " (already started)"
+	}
+	_, err = fmt.Fprintf(rt.IO.Out, "%s%s\n", id, suffix)
+	return err
 }
 
 // DLQCmd is "millstream dlq".
@@ -228,14 +290,23 @@ type DLQDiscardCmd struct {
 
 // Run discards the dead letters.
 func (c DLQDiscardCmd) Run(rt *Runtime) error {
-	return withStore(rt, func(st store.Store) error {
-		n, err := st.DiscardDeadLetters(rt.Ctx, c.Pipeline, c.IDs)
-		if err != nil {
-			return err
-		}
-		_, err = fmt.Fprintf(rt.IO.Out, "%s discarded\n", plural(n, "dead letter"))
+	var n int
+	err := changeState(rt, func(cl *apiClient) error {
+		var count api.Count
+		_, err := cl.post(rt.Ctx, pipelinePath(c.Pipeline, "dead-letters", "discard"), api.DeadLetterSelection{IDs: c.IDs},
+			&count)
+		n = count.Count
+		return err
+	}, func(st store.Store) error {
+		var err error
+		n, err = st.DiscardDeadLetters(rt.Ctx, c.Pipeline, c.IDs)
 		return err
 	})
+	if err != nil {
+		return err
+	}
+	_, err = fmt.Fprintf(rt.IO.Out, "%s discarded\n", plural(n, "dead letter"))
+	return err
 }
 
 // PauseCmd is "millstream pause".
@@ -253,22 +324,28 @@ type ResumeCmd struct {
 	Step     string `arg:"" optional:"" help:"Step name; the whole pipeline when omitted."`
 }
 
-// Run resumes the pipeline or step.
+// Run resumes the pipeline or step; resuming a disabled pipeline enables it.
 func (c ResumeCmd) Run(rt *Runtime) error { return setPaused(rt, c.Pipeline, c.Step, false) }
 
 func setPaused(rt *Runtime, pipelineName, step string, paused bool) error {
-	return withStore(rt, func(st store.Store) error {
-		if err := st.SetPaused(rt.Ctx, pipelineName, step, paused); err != nil {
-			return err
-		}
-		what, verb := pipelineName, "resumed"
+	what, verb := pipelineName, "resume"
+	if paused {
+		verb = "pause"
+	}
+	err := changeState(rt, func(cl *apiClient) error {
+		path := pipelinePath(pipelineName, verb)
 		if step != "" {
-			what += "." + step
+			path = pipelinePath(pipelineName, "steps", step, verb)
 		}
-		if paused {
-			verb = "paused"
-		}
-		_, err := fmt.Fprintf(rt.IO.Out, "%s %s\n", what, verb)
+		_, err := cl.post(rt.Ctx, path, nil, nil)
 		return err
-	})
+	}, func(st store.Store) error { return st.SetPaused(rt.Ctx, pipelineName, step, paused) })
+	if err != nil {
+		return err
+	}
+	if step != "" {
+		what += "." + step
+	}
+	_, err = fmt.Fprintf(rt.IO.Out, "%s %sd\n", what, verb)
+	return err
 }

@@ -25,6 +25,9 @@ var (
 	ErrInvalid = errors.New("invalid request")
 	// ErrClosed means the store was closed.
 	ErrClosed = errors.New("store closed")
+	// ErrReadOnly means the store was opened for reading only (a CLI command on Postgres, which never takes the
+	// leadership lock): on Postgres the active engine is the only writer, and state changes go through its API.
+	ErrReadOnly = errors.New("store opened read-only")
 	// ErrWriteLost means the store lost its write connection, and on Postgres the leadership lock it held (spec
 	// section 5.9): it can no longer write, and the engine steps down.
 	ErrWriteLost = errors.New("write connection lost")
@@ -99,8 +102,16 @@ type Store interface {
 	// after backoff while attempts remain, dead otherwise, cancelled for a cancelled run. It returns the leases it
 	// ended, with the fencing token each was held under.
 	ExpireLeases(ctx context.Context) ([]LeaseRef, error)
-	// SetPaused pauses or resumes a step, or the whole pipeline when step is empty.
+	// SetPaused pauses or resumes a step, or the whole pipeline when step is empty. Resuming the pipeline also
+	// enables a disabled one; pausing a disabled pipeline is ErrConflict.
 	SetPaused(ctx context.Context, pipeline, step string, paused bool) error
+	// Disable is the Disable unit: the pipeline's triggers stop firing and its deliveries wait until it is resumed
+	// (spec section 13). Disabling a disabled pipeline is a no-op.
+	Disable(ctx context.Context, pipeline string) error
+	// Rollback is the Rollback unit: it reactivates revision to of the pipeline, or, when to is zero, the newest
+	// revision older than the active one, and returns it. Runs already started keep their revision (spec section
+	// 5.7). A revision of another pipeline is ErrNotFound, the active revision or no older one ErrConflict.
+	Rollback(ctx context.Context, pipeline string, to RevisionID) (RevisionID, error)
 	// RecordEval stores the scores of an eval run, all in one unit, at the store clock's instant.
 	RecordEval(ctx context.Context, results []EvalResult) error
 	// SkipFirings records each scheduled time of the cron trigger that catch-up none passed over (spec section

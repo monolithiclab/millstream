@@ -3,11 +3,13 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"strings"
 	"text/tabwriter"
 	"time"
 
+	"github.com/monolithiclab/millstream/internal/api"
 	"github.com/monolithiclab/millstream/internal/review"
 	"github.com/monolithiclab/millstream/internal/store"
 )
@@ -265,25 +267,51 @@ func decide(rt *Runtime, ref deliveryRef, who reviewerFlag, req store.ReviewDeci
 	if err != nil {
 		return err
 	}
-	return withStore(rt, func(st store.Store) error {
+	current := func(version int64) {
+		fmt.Fprintf(rt.IO.Err, "Deciding version %d of the review, its current one: pass --version to decide the "+
+			"version you saw.\n", version)
+	}
+	var state string
+	err = changeState(rt, func(cl *apiClient) error {
+		if ref.Pipeline == "" {
+			return errRemotePipeline("delivery")
+		}
+		path := pipelinePath(ref.Pipeline, "reviews", ref.Delivery)
+		if req.Version == 0 {
+			var r api.Review
+			if _, err := cl.do(rt.Ctx, http.MethodGet, path, nil, &r); err != nil {
+				return err
+			}
+			req.Version = r.Version
+			current(r.Version)
+		}
+		cl.user = reviewer // the API answers the review, not its delivery's state
+		_, err := cl.post(rt.Ctx, path+"/decision", api.ReviewDecision{Decision: req.Decision, Version: req.Version,
+			Patch: req.Patch, Reason: req.Reason, Text: req.Text}, nil)
+		return err
+	}, func(st store.Store) error {
 		r, err := st.Review(rt.Ctx, ref.Pipeline, ref.Delivery)
 		if err != nil {
 			return err
 		}
 		if req.Version == 0 {
 			req.Version = r.Version
-			fmt.Fprintf(rt.IO.Err, "Deciding version %d of the review, its current one: pass --version to decide "+
-				"the version you saw.\n", r.Version)
+			current(r.Version)
 		}
 		req.Pipeline, req.DeliveryID, req.Reviewer = r.Pipeline, r.DeliveryID, reviewer
-		state, err := st.DecideReview(rt.Ctx, req)
-		if err != nil {
-			return err
-		}
-		verb := map[string]string{store.DecisionApprove: "approved", store.DecisionReject: "rejected"}[req.Decision]
-		_, err = fmt.Fprintf(rt.IO.Out, "%s %s (delivery %s)\n", r.DeliveryID, verb, state)
+		s, err := st.DecideReview(rt.Ctx, req)
+		state = string(s)
 		return err
 	})
+	if err != nil {
+		return err
+	}
+	verb := map[string]string{store.DecisionApprove: "approved", store.DecisionReject: "rejected"}[req.Decision]
+	if state != "" {
+		verb += " (delivery " + state + ")"
+	}
+	_, err = fmt.Fprintf(rt.IO.Out, "%s %s\n", ref.Delivery, verb)
+	return err
 }
 
 // InboxSamplesCmd is "millstream inbox samples".
@@ -357,16 +385,25 @@ func (c InboxSampleCmd) Run(rt *Runtime) error {
 	if err != nil {
 		return err
 	}
-	return withStore(rt, func(st store.Store) error {
+	err = changeState(rt, func(cl *apiClient) error {
+		if c.Pipeline == "" {
+			return errRemotePipeline("delivery")
+		}
+		cl.user = reviewer
+		_, err := cl.post(rt.Ctx, pipelinePath(c.Pipeline, "samples", c.Delivery, "decision"),
+			api.SampleDecision{Decision: c.Decision, Reason: c.Reason}, nil)
+		return err
+	}, func(st store.Store) error {
 		s, err := st.ReviewSample(rt.Ctx, c.Pipeline, c.Delivery)
 		if err != nil {
 			return err
 		}
-		if err := st.DecideSample(rt.Ctx, store.SampleDecisionRequest{Pipeline: s.Pipeline, DeliveryID: s.DeliveryID,
-			Decision: c.Decision, Reviewer: reviewer, Reason: c.Reason}); err != nil {
-			return err
-		}
-		_, err = fmt.Fprintf(rt.IO.Out, "%s %s\n", s.DeliveryID, c.Decision)
-		return err
+		return st.DecideSample(rt.Ctx, store.SampleDecisionRequest{Pipeline: s.Pipeline, DeliveryID: s.DeliveryID,
+			Decision: c.Decision, Reviewer: reviewer, Reason: c.Reason})
 	})
+	if err != nil {
+		return err
+	}
+	_, err = fmt.Fprintf(rt.IO.Out, "%s %s\n", c.Delivery, c.Decision)
+	return err
 }

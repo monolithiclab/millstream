@@ -68,7 +68,7 @@ func (e *Engine) fire(ctx context.Context, f store.Firing) (string, bool, error)
 		return fail(fmt.Errorf("%w: pipeline %s has no trigger %q: %w", ErrFiringConfig, f.Pipeline, f.Trigger,
 			store.ErrInvalid))
 	}
-	res, err := pipeline.ResolveVars(rev.p, e.declaredFlags(rev.p), e.opts.Env)
+	res, err := pipeline.ResolveVarsWith(rev.p, e.declaredFlags(rev.p), e.opts.Env, e.secrets(rev.p.Name))
 	if err != nil {
 		return fail(fmt.Errorf("%w: %w", ErrFiringConfig, err))
 	}

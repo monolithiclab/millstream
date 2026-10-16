@@ -119,7 +119,7 @@ func actionOptions(rt *Runtime, dir, pkgDir string, standalone bool) (eval.Optio
 		return eval.Options{}, usageError(fmt.Sprintf("agent action %s runs in its package: name it with --package", dir))
 	}
 	opts := eval.Options{
-		Package: pkg, Action: act, Ref: ref, Env: rt.Env,
+		Package: pkg, Action: act, Ref: ref, Env: env.SecretEnvLookup(pkg.Pipeline.Name, rt.Env),
 		Logger: slog.New(slog.NewTextHandler(rt.IO.Err, nil)), Launchers: launchers(rt, env),
 	}
 	if act.Agent != nil {
@@ -186,7 +186,7 @@ func recordsEvals(rt *Runtime) (bool, error) {
 // recordEval records the scores in the state database and returns each case's previous score.
 func recordEval(rt *Runtime, opts eval.Options, results []eval.Result) (map[string]float64, error) {
 	previous := map[string]float64{}
-	err := withStore(rt, func(st store.Store) error {
+	err := withWriter(rt, func(st store.Store) error {
 		past, err := st.EvalResults(rt.Ctx, opts.Action.Name)
 		if err != nil {
 			return err

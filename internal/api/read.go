@@ -18,6 +18,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/monolithiclab/millstream/internal/engine"
 	"github.com/monolithiclab/millstream/internal/expr"
 	"github.com/monolithiclab/millstream/internal/insights"
 	"github.com/monolithiclab/millstream/internal/pipeline"
@@ -152,8 +153,11 @@ func (s *Server) pipeline(ctx context.Context, ps store.PipelineState, p *pipeli
 	g := graph(p, &ps)
 	out := Pipeline{Name: ps.Name, Description: g.Description, State: "active", Revision: int64(ps.ActiveRevision),
 		Steps: g.Steps, Triggers: g.Triggers, Streams: g.Streams}
-	if ps.Paused {
+	switch {
+	case ps.Paused:
 		out.State = "paused"
+	case ps.Disabled:
+		out.State = "disabled"
 	}
 	runs, err := s.opts.Store.Runs(ctx, store.RunFilter{Pipeline: ps.Name, Limit: 1})
 	if err != nil {
@@ -841,7 +845,7 @@ func (s *Server) listLessons(w http.ResponseWriter, r *http.Request) error {
 	}
 	pkg := &pipeline.Package{Pipeline: p}
 	if len(bundle) > 0 {
-		if err := json.Unmarshal(bundle, &pkg.Files); err != nil {
+		if pkg.Files, err = engine.DecodeBundle(bundle); err != nil {
 			return fmt.Errorf("package %s: %w", rev.PackageHash, err)
 		}
 	}

@@ -137,6 +137,8 @@ const (
 	EventRunSettled             = "runSettled"
 	EventPaused                 = "paused"
 	EventResumed                = "resumed"
+	EventDisabled               = "disabled"
+	EventRolledBack             = "rolledBack"
 	EventFiringSkipped          = "firingSkipped"
 	EventBudgetReached          = "budgetReached"
 	EventInsightOpened          = "insightOpened"
@@ -167,6 +169,8 @@ type PackageRecord struct {
 	Hash     string
 	Bundle   []byte
 	Pipeline *pipeline.Pipeline
+	// Message says why the revision was applied (apply --message); it is kept with the revision.
+	Message string
 }
 
 // Revision is an applied revision.
@@ -175,6 +179,7 @@ type Revision struct {
 	Pipeline    string
 	PackageHash string
 	AppliedAt   time.Time
+	Message     string
 	// PipelineJSON is the pipeline as stored; Decode parses it.
 	PipelineJSON []byte
 }
@@ -188,16 +193,21 @@ func (r Revision) Decode() (*pipeline.Pipeline, error) {
 	return p, nil
 }
 
-// PipelineState is a pipeline's active revision and pause state.
+// PipelineState is a pipeline's active revision and state: active, paused (its triggers fire, its deliveries wait)
+// or disabled (neither: spec section 13).
 type PipelineState struct {
 	Name           string
 	ActiveRevision RevisionID
 	Paused         bool
+	Disabled       bool
 	PausedSteps    []string
 	// PauseCauses says why a paused step was paused when a user did not ask for it (budget.run, budget.day), by
 	// step; nil when no step is.
 	PauseCauses map[string]string
 }
+
+// Holds reports whether the pipeline's deliveries wait: it is paused or disabled.
+func (ps PipelineState) Holds() bool { return ps.Paused || ps.Disabled }
 
 // Firing is one trigger firing (spec section 4.6).
 type Firing struct {

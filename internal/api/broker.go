@@ -515,10 +515,10 @@ func (b *Broker) snapshot(ctx context.Context, pipelineName string) (PipelineSna
 	for _, st := range stats {
 		byStep[st.Step] = st
 	}
-	snap := PipelineSnapshot{Pipeline: pipelineName, At: now, Seq: seq, Paused: ps.Paused, Steps: []StepSnapshot{}}
+	snap := PipelineSnapshot{Pipeline: pipelineName, At: now, Seq: seq, Paused: ps.Holds(), Steps: []StepSnapshot{}}
 	for _, name := range slices.Sorted(maps.Keys(byStep)) {
 		st := byStep[name]
-		step := StepSnapshot{Step: name, Paused: ps.Paused || slices.Contains(ps.PausedSteps, name),
+		step := StepSnapshot{Step: name, Paused: ps.Holds() || slices.Contains(ps.PausedSteps, name),
 			Queued: st.Pending, InFlight: st.Leased, AwaitingReview: st.AwaitingReview,
 			ThroughputPerMin: float64(st.Finished) / b.opts.Window.Minutes()}
 		if st.Finished > 0 {

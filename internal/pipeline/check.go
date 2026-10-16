@@ -47,6 +47,9 @@ var builtinKeys = map[string][]string{
 type CheckOptions struct {
 	// LessonsMaxTokens is lessons.maxTokens; zero means DefaultLessonsMaxTokens.
 	LessonsMaxTokens int
+	// Secrets resolves the package's secrets, the environment file's grant (Environment.SecretLookup); nil reads
+	// MILLSTREAM_SECRET_<NAME> through Check's env.
+	Secrets func(pipelineName string) SecretLookup
 }
 
 // Check validates a parsed package (spec section 4.8) and returns every finding, sorted by path, then severity,
@@ -96,11 +99,16 @@ func (c *checker) errorf(at, format string, args ...any) { c.add(SeverityError, 
 
 func (c *checker) warnf(at, format string, args ...any) { c.add(SeverityWarning, at, format, args...) }
 
-// checkSecrets fails on a declared secret the environment cannot resolve.
+// checkSecrets fails on a declared secret the environment cannot resolve: unmapped for the pipeline, or unset.
 func (c *checker) checkSecrets() {
+	secrets := c.opts.Secrets
+	if secrets == nil {
+		secrets = EnvSecrets(c.env)
+	}
+	lookup := secrets(c.p.Name)
 	for i, name := range c.p.Secrets {
-		if _, ok := c.env(SecretEnv(name)); !ok {
-			c.errorf(indexPath("secrets", i), "secret %s is not set: set %s", name, SecretEnv(name))
+		if _, err := lookup(name); err != nil {
+			c.errorf(indexPath("secrets", i), "%v", err)
 		}
 	}
 }

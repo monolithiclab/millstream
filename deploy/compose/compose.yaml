@@ -3,9 +3,10 @@
 #   docker compose up -d
 # docs/deploy.md is the guide: TLS in front, backups, upgrades. Secrets come from .env, never from this file.
 #
-# M4 status: `millstream serve` (M4 Task 2), the standby takeover (Task 3) and `millstream node --join` (Task 4) are
-# not built yet. The services marked "Task N" reference those commands and start once that task lands; until then
-# `docker compose config` validates the file and `docker compose up postgres` runs the database alone.
+# M4 status: `millstream serve` is in (M4 Task 2), but refuses the environment file's non-loopback listen until token
+# auth (Task 7); the standby takeover (Task 3) and `millstream node --join` (Task 4) are not built yet. The services
+# marked "Task N" start once that task lands; until then `docker compose config` validates the file and
+# `docker compose up postgres` runs the database alone.
 
 name: millstream
 
@@ -19,7 +20,7 @@ x-millstream: &millstream
 
 x-engine: &engine
   <<: *millstream
-  # Task 2: serve runs the engine from the environment file.
+  # serve runs the engine from the environment file; the packages come from the store (millstream apply --server).
   command: ["serve", "--env-file", "/etc/millstream/millstream.yaml"]
   environment:
     MILLSTREAM_DSN: postgres://millstream:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/millstream?sslmode=disable

@@ -27,7 +27,14 @@ below) for the reasoning, and `make help` for every command.
   `redact` and the other packages named in the M1 plan's file structure.
 - `internal/store/`: the log store interface; `sqlstore` is its implementation on `database/sql` (the writer loop,
   every unit, the reads), shared by `sqlite` and `postgres`, which open, migrate and hold the connections and give a
-  `sqlstore.Dialect` for what the databases spell differently; `storetest` is the conformance suite both pass.
+  `sqlstore.Dialect` for what the databases spell differently; `storetest` is the conformance suite both pass;
+  `stores` opens the one the environment file names, in one of two modes: `Open` for an engine or a command writing
+  from its own process (on Postgres it takes the leadership lock), `OpenReader` for a command that only reads (on
+  Postgres read-only, without the lock, its units refused with `store.ErrReadOnly`).
+- CLI writes (`internal/cli`): a command that changes state goes through `changeState`, which calls the served
+  engine's API when `--server`/`MILLSTREAM_SERVER` names one (`remote.go`), else `withWriter` (SQLite, or Postgres
+  with `--direct`); reads use `withStore`, engines (`run`, `serve`) `withStoreMode(engineStore)`. A new command that
+  changes state follows the same split.
 - `sdk/go/`: the Go action SDK, its own module.
 - `ui/`: the web UI, built and tested only in containers (see Web UI).
 - `examples/`: fixture and example pipeline packages.
@@ -174,9 +181,10 @@ below) for the reasoning, and `make help` for every command.
   each, checksums and local images in `dist/`, nothing signed or pushed. GoReleaser and syft are pinned in their own
   tools module, `tools/release/go.mod`, so their dependencies never move the linters' in `tools/go.mod`; bump them
   with `go get -tool -modfile=tools/release/go.mod <module>@<version>`.
-- `deploy/compose/millstream.yaml` and the units reference `serve` (M4 Task 2) and `node --join` (Task 4) before
-  they exist: a task that changes those commands or the environment file's keys updates `deploy/` and
-  `docs/deploy.md` in the same commit.
+- `deploy/compose/millstream.yaml` and the units reference `node --join` (M4 Task 4) before it exists, and the
+  Compose engines' non-loopback `listen`, which `serve` refuses until token auth (Task 7): a task that changes
+  those commands or the environment file's keys updates `deploy/` and `docs/deploy.md` in the same commit.
+  `TestDeployEnvironmentParses` (`internal/pipeline`) parses the Compose environment file strictly.
 
 ## Where things go
 

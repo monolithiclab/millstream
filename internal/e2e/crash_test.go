@@ -246,6 +246,37 @@ func crashInCommands(t *testing.T, b backend) {
 			mustExit(t, 1, db, nil, runOnce(fixtureV1)...)
 			wantSame(t, readSnapshot(t, db), want)
 		})
+
+		t.Run("disable."+phase, func(t *testing.T) {
+			t.Parallel()
+			want := cleanRunOn(t, b)
+			db := b.newDB(t)
+			mustExit(t, 1, db, nil, runOnce(fixtureV1)...)
+			mustExit(t, failpoint.ExitCode, db, failpointEnv("disable."+phase), "disable", pipelineName)
+			mustExit(t, 0, db, nil, "disable", pipelineName) // disabling a disabled pipeline is a no-op
+			if st := mustExit(t, 0, db, nil, "status"); !regexp.MustCompile(`(?m)^m1-fixture\s+disabled\s`).
+				MatchString(st.stdout) {
+				t.Fatalf("status after disabling:\n%s", st.stdout)
+			}
+			mustExit(t, 0, db, nil, "resume", pipelineName)
+			mustExit(t, 1, db, nil, runOnce(fixtureV1)...)
+			wantSame(t, readSnapshot(t, db), want)
+		})
+
+		t.Run("rollback."+phase, func(t *testing.T) {
+			t.Parallel()
+			db := b.newDB(t)
+			mustExit(t, 1, db, nil, runOnce(fixtureV1)...)
+			mustExit(t, 1, db, nil, runOnce(fixtureV2)...)
+			mustExit(t, failpoint.ExitCode, db, failpointEnv("rollback."+phase), "rollback", pipelineName)
+			// Rolled back before the crash, the rerun finds no revision older than the first: a conflict.
+			wantCode := map[string]int{"beforeCommit": 0, "afterCommit": 1}[phase]
+			mustExit(t, wantCode, db, nil, "rollback", pipelineName)
+			if st := mustExit(t, 0, db, nil, "status"); !regexp.MustCompile(`(?m)^m1-fixture\s+active\s+1\s`).
+				MatchString(st.stdout) {
+				t.Fatalf("status after rolling back:\n%s", st.stdout)
+			}
+		})
 	}
 }
 

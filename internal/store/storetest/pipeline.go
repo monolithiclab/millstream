@@ -148,6 +148,83 @@ func TestSetPaused(t *testing.T, open Opener) {
 	wantErr(t, e.s.SetPaused(e.ctx, "nope", "", true), store.ErrNotFound)
 }
 
+// A disabled pipeline neither fires nor leases until it is resumed, and is not paused meanwhile.
+func TestDisable(t *testing.T, open Opener) {
+	e := newEnv(t, open, fixture)
+	e.fire("r1")
+	if err := e.s.Disable(e.ctx, "listings"); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.s.Disable(e.ctx, "listings"); err != nil {
+		t.Fatalf("disabling again: %v", err)
+	}
+	if ps, _ := e.s.PipelineState(e.ctx, "listings"); !ps.Disabled || ps.Paused {
+		t.Fatalf("PipelineState = %+v, want disabled", ps)
+	}
+	if ls := e.lease(10); len(ls) != 0 {
+		t.Fatalf("leased %d deliveries of a disabled pipeline", len(ls))
+	}
+	_, err := e.s.Fire(e.ctx, store.Firing{Pipeline: "listings", Trigger: "daily", Key: "r2", RunID: "r2"})
+	wantErr(t, err, store.ErrConflict)
+	wantErr(t, e.s.SetPaused(e.ctx, "listings", "", true), store.ErrConflict)
+	if err := e.s.SetPaused(e.ctx, "listings", "", false); err != nil {
+		t.Fatal(err)
+	}
+	if ps, _ := e.s.PipelineState(e.ctx, "listings"); ps.Disabled || ps.Paused {
+		t.Fatalf("PipelineState after resume = %+v", ps)
+	}
+	if ls := e.lease(10); len(ls) != 1 {
+		t.Fatalf("leased %d after resume, want 1", len(ls))
+	}
+	wantState(t, "disabled events", len(e.eventKinds(store.EventDisabled)), 1)
+	wantErr(t, e.s.Disable(e.ctx, "nope"), store.ErrNotFound)
+}
+
+// Rollback reactivates an earlier revision, the previous one by default, without a new revision; runs started
+// before keep theirs.
+func TestRollback(t *testing.T, open Opener) {
+	e := newEnv(t, open)
+	first := e.apply(fixture)
+	e.fire("r1")
+	second, err := e.s.ApplyRevision(e.ctx, store.PackageRecord{Hash: hashOf(fixtureFixed), Pipeline: parse(t, fixtureFixed),
+		Message: "fix the audit"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rev, _ := e.s.Revision(e.ctx, second); rev.Message != "fix the audit" {
+		t.Fatalf("message = %q", rev.Message)
+	}
+	back, err := e.s.Rollback(e.ctx, "listings", 0)
+	if err != nil || back != first {
+		t.Fatalf("Rollback = %d, %v; want %d", back, err, first)
+	}
+	if active, _ := e.s.ActiveRevision(e.ctx, "listings"); active != first {
+		t.Fatalf("active = %d, want %d", active, first)
+	}
+	if revs, _ := e.s.Revisions(e.ctx, "listings"); len(revs) != 2 {
+		t.Fatalf("%d revisions after a rollback, want 2: a rollback adds none", len(revs))
+	}
+	if r, _ := e.s.Run(e.ctx, "listings", "r1"); r.Revision != first {
+		t.Fatalf("run r1 on revision %d", r.Revision)
+	}
+	_, err = e.s.Rollback(e.ctx, "listings", 0)
+	wantErr(t, err, store.ErrConflict) // nothing older than the first
+	_, err = e.s.Rollback(e.ctx, "listings", first)
+	wantErr(t, err, store.ErrConflict) // already active
+	if fwd, err := e.s.Rollback(e.ctx, "listings", second); err != nil || fwd != second {
+		t.Fatalf("Rollback to %d = %d, %v", second, fwd, err)
+	}
+	_, err = e.s.Rollback(e.ctx, "listings", 99)
+	wantErr(t, err, store.ErrNotFound)
+	_, err = e.s.Rollback(e.ctx, "nope", 0)
+	wantErr(t, err, store.ErrNotFound)
+	wantState(t, "rolledBack events", len(e.eventKinds(store.EventRolledBack)), 2)
+	// Applying the package of a revision rolled away from makes a new revision of it.
+	if again := e.apply(fixture); again == first || again == second {
+		t.Fatalf("re-applied revision %d", again)
+	}
+}
+
 // A revision whose unit crashed before its commit gives its number back: applied again, it is numbered as it would
 // have been, on every store, so a revision's number never depends on a crash (spec section 9.1).
 func TestRevisionNumbersSurviveACrash(t *testing.T, open Opener) {

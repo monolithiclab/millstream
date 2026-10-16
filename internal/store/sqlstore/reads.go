@@ -329,8 +329,8 @@ func (s *Store) Revision(ctx context.Context, id store.RevisionID) (store.Revisi
 	var data string
 	var appliedAt TimeCol
 	err := s.read.QueryRowContext(ctx,
-		`SELECT id, pipeline, package_hash, pipeline_json, applied_at FROM revisions WHERE id = ?`, id).
-		Scan(&r.ID, &r.Pipeline, &r.PackageHash, &data, &appliedAt)
+		`SELECT id, pipeline, package_hash, pipeline_json, applied_at, message FROM revisions WHERE id = ?`, id).
+		Scan(&r.ID, &r.Pipeline, &r.PackageHash, &data, &appliedAt, &r.Message)
 	if err != nil {
 		return r, notFound(err, fmt.Sprintf("revision %d", id))
 	}
@@ -340,12 +340,12 @@ func (s *Store) Revision(ctx context.Context, id store.RevisionID) (store.Revisi
 
 // Revisions returns a pipeline's revisions, newest first.
 func (s *Store) Revisions(ctx context.Context, pipelineName string) ([]store.Revision, error) {
-	revs, err := scan(ctx, s.read, `SELECT id, pipeline, package_hash, pipeline_json, applied_at FROM revisions
+	revs, err := scan(ctx, s.read, `SELECT id, pipeline, package_hash, pipeline_json, applied_at, message FROM revisions
 		WHERE pipeline = ? ORDER BY id DESC`, []any{pipelineName}, func(rows *sql.Rows) (store.Revision, error) {
 		var r store.Revision
 		var data string
 		var appliedAt TimeCol
-		if err := rows.Scan(&r.ID, &r.Pipeline, &r.PackageHash, &data, &appliedAt); err != nil {
+		if err := rows.Scan(&r.ID, &r.Pipeline, &r.PackageHash, &data, &appliedAt, &r.Message); err != nil {
 			return r, fmt.Errorf("scan revision: %w", err)
 		}
 		r.PipelineJSON, r.AppliedAt = []byte(data), appliedAt.Time
@@ -441,7 +441,7 @@ func (s *Store) PipelineState(ctx context.Context, pipelineName string) (store.P
 		Scan(&ps.ActiveRevision, &state); err != nil {
 		return ps, notFound(err, "pipeline "+pipelineName)
 	}
-	ps.Paused = state == "paused"
+	ps.Paused, ps.Disabled = state == "paused", state == "disabled"
 	type pausedStep struct{ step, cause string }
 	steps, err := scan(ctx, s.read, `SELECT step, cause FROM steps_state WHERE pipeline = ? AND paused = TRUE
 		ORDER BY step`, []any{pipelineName}, func(rows *sql.Rows) (pausedStep, error) {

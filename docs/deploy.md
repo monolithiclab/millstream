@@ -4,11 +4,12 @@ One binary is the engine, the CLI and a node, with the web UI embedded. It runs 
 environment file, `millstream.yaml`, says where (spec section 14). This guide covers the three targets: a laptop, a
 VPS with Docker Compose, and a VPS with systemd.
 
-> **M4 status.** The packaging is in place before the server commands it runs. `millstream serve` and the environment
-> file's `store`, `listen`, `auth`, `node` and `artifacts` keys arrive with Task 2 of the
-> [M4 plan](plans/20261016.m4-server.md), the standby takeover with Task 3, `millstream node --join` and node TLS
-> with Task 4, token auth with Task 7, retention with Task 8. Until then the Compose services and systemd units that
-> call them do not start; the laptop target works today.
+> **M4 status.** `millstream serve`, `apply`, `rollback` and `disable` and every key of the environment file are in
+> (Task 2 of the [M4 plan](plans/20261016.m4-server.md)). Still to come: the standby's takeover with Task 3 (a
+> second `serve` already waits on the lock, as the standby), `millstream node --join`, node TLS and the S3 artifact
+> store with Task 4, token auth with Task 7 (until then `serve` refuses a non-loopback `listen`, so the Compose
+> engines, which listen on `0.0.0.0` for the published port, do not start yet), retention with Task 8. The laptop
+> target and a systemd engine listening on loopback work today.
 
 ## The artefacts
 
@@ -64,6 +65,25 @@ docker compose up -d
 - **Nodes** run exec actions as static binaries only (see Laptop). For container actions, run nodes on hosts of
   their own with systemd.
 
+## Applying packages
+
+A server runs the packages applied to its store, never a directory. From a checkout of the packages, on the engine
+host or through an SSH tunnel to its loopback port:
+
+```sh
+export MILLSTREAM_SERVER=http://127.0.0.1:7070 MILLSTREAM_TOKEN=…   # the token from .env or millstream.env
+millstream apply ./property-sourcing ./deal-flow --message "lower the score threshold"
+millstream rollback property-sourcing          # the revision before the active one, or name one
+millstream disable deal-flow                   # until: millstream resume deal-flow
+```
+
+`apply` checks each package and every other pipeline of the deployment before it uploads anything; the server keeps
+each package by content hash and writes it under `packages/`, beside the local artifact store, when a delivery first
+needs it. On Postgres, a command that changes state goes through `--server` (the active engine is the only writer)
+unless `--direct` takes the leadership lock itself while no engine runs; `status`, `tail`, `inbox list`, `metrics`
+and the other commands that only read open the database read-only, beside the running engine, with the same
+environment file.
+
 ## VPS with systemd
 
 On the engine host, Postgres 17 running locally or reachable:
@@ -93,7 +113,8 @@ A standby is a second host with the same files and the same DSN. A node host ins
 ## Security
 
 - **API token.** The API listens on loopback unless `listen` says otherwise, and refuses a non-loopback address
-  without `auth.token`. Expose it through a reverse proxy that terminates TLS (Caddy, nginx), never as plain HTTP.
+  without `auth.token` (and, until Task 7 checks the token, refuses one with it too). Expose it through a reverse
+  proxy that terminates TLS (Caddy, nginx), never as plain HTTP.
   Tokens are compared in constant time and never logged.
 - **Node token and TLS.** Nodes present the deployment's node token, over TLS except on loopback (spec section 15.7).
   A node can fetch packages and artifacts only for the deliveries it holds. `millstream nodes revoke <id>` refuses

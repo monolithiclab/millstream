@@ -17,11 +17,11 @@ package engine
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/robfig/cron/v3"
@@ -58,6 +58,9 @@ type Options struct {
 	// Env looks up environment variables: variables (MILLSTREAM_VAR_*), secrets (MILLSTREAM_SECRET_*) and the
 	// PATH, HOME and TMPDIR action processes receive. Nil means an empty environment.
 	Env func(string) (string, bool)
+	// Secrets resolves each pipeline's secrets: the environment file's grant (pipeline.Environment.SecretLookup);
+	// nil reads MILLSTREAM_SECRET_<NAME> through Env.
+	Secrets func(pipelineName string) pipeline.SecretLookup
 	// Flags are --var values. A flag naming a variable a pipeline does not declare is ignored for that pipeline:
 	// with several packages, callers check each flag against all of them.
 	Flags map[string]string
@@ -74,6 +77,12 @@ type Options struct {
 	Agents Agents
 	// Notifier posts the notifications of review steps with a notify webhook (spec section 8); nil sends none.
 	Notifier *review.Notifier
+	// PackageDir is where the engine writes the packages it loads from the store's bundles, one directory per
+	// content hash: an engine run from the store (serve) loads each revision's package so. Empty loads none: a
+	// revision runs only if Apply gave the engine its package.
+	PackageDir string
+	// Check is what ApplyPackages checks packages with; its Secrets default to Secrets.
+	Check pipeline.CheckOptions
 }
 
 // Agents says how the engine runs the agent adapter of agent steps (spec section 7.3): in a container sandbox when
@@ -151,6 +160,7 @@ type revision struct {
 	hash      string
 	appliedAt time.Time
 	p         *pipeline.Pipeline
+	loaded    atomic.Bool // its package is in the engine's packages: loadPackage has nothing to do
 }
 
 // flight is a delivery leased through the engine and not yet reported, under its fencing token.
@@ -189,7 +199,12 @@ func New(opts Options) (*Engine, error) {
 	if opts.Resolver == nil {
 		opts.Resolver = pipeline.Resolver{}
 	}
-	return &Engine{
+	e := &Engine{}
+	if opts.Check.Secrets == nil {
+		opts.Check.Secrets = e.secrets // resolved when called: tests replace Env after New
+	}
+
+	*e = Engine{
 		st: opts.Store, opts: opts, log: opts.Logger,
 		packages: map[string]*pipeline.Package{}, revs: map[store.RevisionID]*revision{},
 		actions:  map[actionKey]*resolvedAction{},
@@ -197,20 +212,35 @@ func New(opts Options) (*Engine, error) {
 		builtins: map[builtinKey]*builtin{}, maxDue: maxDue,
 		crons: map[[2]string]*cronState{}, ready: make(chan struct{}), lastInsights: map[string]time.Time{},
 		parser: cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor),
-	}, nil
+	}
+	return e, nil
+}
+
+// secrets returns how a pipeline's secrets resolve: Options.Secrets, else MILLSTREAM_SECRET_<NAME> through Env.
+func (e *Engine) secrets(pipelineName string) pipeline.SecretLookup {
+	if e.opts.Secrets != nil {
+		return e.opts.Secrets(pipelineName)
+	}
+	return pipeline.EnvSecrets(e.opts.Env)(pipelineName)
 }
 
 // LeaseTTL is the lease duration the engine leases with; nodes heartbeat well within it.
 func (e *Engine) LeaseTTL() time.Duration { return e.opts.LeaseTTL }
 
 // Apply stores the package as a revision of its pipeline, made active, and keeps the package so its deliveries can
-// run. The bundle stored with the revision is the package's files as a JSON object of base64 contents.
+// run. The bundle stored with the revision is the package's files as a JSON object of base64 contents
+// (EncodeBundle). It does not check the package: ApplyPackages does.
 func (e *Engine) Apply(ctx context.Context, pkg *pipeline.Package) (store.RevisionID, error) {
-	bundle, err := json.Marshal(pkg.Files)
+	return e.apply(ctx, pkg, "")
+}
+
+func (e *Engine) apply(ctx context.Context, pkg *pipeline.Package, message string) (store.RevisionID, error) {
+	bundle, err := EncodeBundle(pkg.Files)
 	if err != nil {
 		return 0, fmt.Errorf("apply %s: encode bundle: %w", pkg.Pipeline.Name, err)
 	}
-	id, err := e.st.ApplyRevision(ctx, store.PackageRecord{Hash: pkg.Hash, Bundle: bundle, Pipeline: pkg.Pipeline})
+	id, err := e.st.ApplyRevision(ctx, store.PackageRecord{Hash: pkg.Hash, Bundle: bundle, Pipeline: pkg.Pipeline,
+		Message: message})
 	if err != nil {
 		return 0, fmt.Errorf("apply %s: %w", pkg.Pipeline.Name, err)
 	}
@@ -353,6 +383,7 @@ func (e *Engine) revision(ctx context.Context, id store.RevisionID) (*revision, 
 	r := e.revs[id]
 	e.mu.Unlock()
 	if r != nil {
+		e.loadPackage(ctx, r)
 		return r, nil
 	}
 	rec, err := e.st.Revision(ctx, id)
@@ -367,5 +398,21 @@ func (e *Engine) revision(ctx context.Context, id store.RevisionID) (*revision, 
 	e.mu.Lock()
 	e.revs[id] = r
 	e.mu.Unlock()
+	e.loadPackage(ctx, r)
 	return r, nil
+}
+
+// loadPackage loads a revision's package from the store when the engine has a PackageDir and not the package yet.
+// A failure is logged: the revision's deliveries fail as retryable until a later attempt loads it.
+func (e *Engine) loadPackage(ctx context.Context, r *revision) {
+	if e.opts.PackageDir == "" || r.loaded.Load() {
+		return
+	}
+	if _, err := e.pkg(ctx, r.hash); err != nil {
+		if ctx.Err() == nil {
+			e.log.Error("load package", "revision", int64(r.id), "packageHash", r.hash, "error", err.Error())
+		}
+		return
+	}
+	r.loaded.Store(true)
 }

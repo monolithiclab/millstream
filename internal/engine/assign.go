@@ -99,11 +99,11 @@ func (e *Engine) assign(ctx context.Context, l store.Lease) (node.Assignment, er
 		return node.Assignment{}, dispatchErr(ClassEngine, true, "read run %s: %w", l.RunID, err)
 	}
 	secrets := map[string]string{}
+	lookup := e.secrets(rev.p.Name)
 	for _, name := range rev.p.Secrets {
-		v, ok := e.opts.Env(pipeline.SecretEnv(name))
-		if !ok {
-			return node.Assignment{}, dispatchErr(ClassConfig, false, "secret %s is not set: set %s", name,
-				pipeline.SecretEnv(name))
+		v, err := lookup(name)
+		if err != nil {
+			return node.Assignment{}, dispatchErr(ClassConfig, false, "%w", err)
 		}
 		secrets[name] = v
 	}

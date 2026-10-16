@@ -3,8 +3,10 @@ package pipeline
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestParseEnvironment(t *testing.T) {
@@ -29,8 +31,112 @@ ui: { baseUrl: "https://millstream.example", listen: "127.0.0.1:8080" }
 	}
 	empty, err := ParseEnvironment(nil)
 	if err != nil || empty.ContainerRuntime != RuntimeDocker || empty.Registries != nil ||
-		empty.LessonsMaxTokens != 0 {
+		empty.LessonsMaxTokens != 0 || !empty.NodeEmbedded || empty.Secrets != nil || empty.Mode != "" {
 		t.Fatalf("empty environment %+v, %v", empty, err)
+	}
+}
+
+// TestParseEnvironmentServerKeys reads every key the server uses, each to its field.
+func TestParseEnvironmentServerKeys(t *testing.T) {
+	env, err := ParseEnvironment([]byte(`
+environment: development
+artifacts: { s3: { bucket: arts, endpoint: "https://s3.example", region: fr-par, prefix: m/,
+  accessKeyId: { env: S3_KEY }, secretAccessKey: { file: s3.secret } } }
+listen: 0.0.0.0:7070
+auth: { token: { env: MILLSTREAM_TOKEN } }
+node: { embedded: false, token: { file: node.token } }
+secrets:
+  property-sourcing: { homesiteToken: { env: HOMESITE_TOKEN }, apiKey: { file: key } }
+  other: {}
+retention: { events: 90d, transcripts: 30d, rollups: 400d }
+improve:
+  enabled: true
+  harness: api
+  minSeverity: warning
+  publish: apply
+  budget: { dayUsd: 5 }
+  evidence: { sample: 500, ttl: 30d }
+  backtest: { sample: 200 }
+  distill: { minDeliveries: 500, language: go, minAgreement: 0.98, minCoverage: 0.6 }
+  filter: { maxFalseDrop: 0.01 }
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	day := 24 * time.Hour
+	want := &Environment{
+		ContainerRuntime: RuntimeDocker, Mode: ModeDevelopment, Listen: "0.0.0.0:7070",
+		Artifacts: ArtifactsConfig{S3: &S3Config{Bucket: "arts", Endpoint: "https://s3.example", Region: "fr-par",
+			Prefix: "m/", AccessKeyID: &SecretSource{Env: "S3_KEY"}, SecretAccessKey: &SecretSource{File: "s3.secret"}}},
+		AuthToken: &SecretSource{Env: "MILLSTREAM_TOKEN"}, NodeToken: &SecretSource{File: "node.token"},
+		Secrets: map[string]map[string]SecretSource{
+			"property-sourcing": {"homesiteToken": {Env: "HOMESITE_TOKEN"}, "apiKey": {File: "key"}}, "other": {},
+		},
+		Retention: Retention{Events: 90 * day, Transcripts: 30 * day, Rollups: 400 * day},
+		Improve: Improve{Enabled: true, Harness: "api", MinSeverity: "warning", Publish: PublishApply, BudgetDayUSD: 5,
+			EvidenceSample: 500, EvidenceTTL: 30 * day, BacktestSample: 200, DistillMinDeliveries: 500,
+			DistillLanguage: "go", DistillMinAgreement: 0.98, DistillMinCoverage: 0.6, FilterMaxFalseDrop: 0.01},
+	}
+	if !reflect.DeepEqual(env, want) {
+		t.Fatalf("environment\n%+v\nwant\n%+v", env, want)
+	}
+	local, err := ParseEnvironment([]byte("artifacts: { local: { path: arts } }\n"))
+	if err != nil || local.Artifacts.LocalPath != "arts" || local.Artifacts.S3 != nil {
+		t.Fatalf("local artifacts %+v, %v", local, err)
+	}
+	if err := env.CheckMode(ModeProduction); err != nil {
+		t.Fatalf("development, explicit: %v", err)
+	}
+	env.Mode = ""
+	if err := env.CheckMode(ModeProduction); err == nil {
+		t.Fatal("improve.enabled under a production default: no error")
+	}
+}
+
+// TestDeployEnvironmentParses: the Compose deployment's environment file parses strictly.
+func TestDeployEnvironmentParses(t *testing.T) {
+	env, err := LoadEnvironment(filepath.Join("..", "..", "deploy", "compose", "millstream.yaml"), true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if env.Store.PostgresDSN == nil || env.AuthToken == nil || env.NodeEmbedded || env.Listen != "0.0.0.0:7070" {
+		t.Fatalf("deploy environment %+v", env)
+	}
+}
+
+func TestSecretLookup(t *testing.T) {
+	vars := map[string]string{"MILLSTREAM_SECRET_API_KEY": "from-default", "HOMESITE": "mapped"}
+	lookup := func(k string) (string, bool) { v, ok := vars[k]; return v, ok }
+	bare := EnvSecrets(lookup)("p")
+	if v, err := bare("apiKey"); v != "from-default" || err != nil {
+		t.Fatalf("without a secrets key: %q, %v", v, err)
+	}
+	if _, err := bare("other"); err == nil || !strings.Contains(err.Error(), "MILLSTREAM_SECRET_OTHER") {
+		t.Fatalf("unset: %v", err)
+	}
+	env := &Environment{Secrets: map[string]map[string]SecretSource{"p": {"token": {Env: "HOMESITE"}, "gone": {Env: "NOPE"}}}}
+	mapped := env.SecretLookup("p", lookup)
+	if v, err := mapped("token"); v != "mapped" || err != nil {
+		t.Fatalf("mapped: %q, %v", v, err)
+	}
+	if _, err := mapped("apiKey"); err == nil || !strings.Contains(err.Error(), "not mapped for pipeline p") {
+		t.Fatalf("unmapped, the default variable set: %v", err)
+	}
+	if _, err := mapped("gone"); err == nil || !strings.Contains(err.Error(), "NOPE is not set") {
+		t.Fatalf("mapped to an unset variable: %v", err)
+	}
+	if _, err := env.SecretLookup("q", lookup)("token"); err == nil {
+		t.Fatal("another pipeline's grant: no error")
+	}
+	envLookup := env.SecretEnvLookup("p", lookup)
+	if v, ok := envLookup("MILLSTREAM_SECRET_TOKEN"); v != "mapped" || !ok {
+		t.Fatalf("the mapped secret's variable: %q, %v", v, ok)
+	}
+	if _, ok := envLookup("MILLSTREAM_SECRET_API_KEY"); ok {
+		t.Fatal("an unmapped secret's variable resolved")
+	}
+	if v, ok := envLookup("HOMESITE"); v != "mapped" || !ok {
+		t.Fatalf("another variable: %q, %v", v, ok)
 	}
 }
 
@@ -38,7 +144,42 @@ func TestParseEnvironmentErrors(t *testing.T) {
 	t.Parallel()
 	tests := map[string]struct{ src, want string }{
 		"unknown key":       {"registry: {}\n", "line 1: registry: unknown key"},
-		"later key":         {"auth: { token: { env: T } }\n", "line 1: auth: is not supported by this build yet"},
+		"environment":       {"environment: staging\n", "environment: must be one of production, development"},
+		"listen":            {"listen: 7070\n", "listen: want host:port"},
+		"listen empty":      {"listen: \"\"\n", "listen: must not be empty"},
+		"artifacts none":    {"artifacts: {}\n", "artifacts: want exactly one of local and s3"},
+		"artifacts both":    {"artifacts: { local: { path: a }, s3: { bucket: b } }\n", "artifacts: want exactly one"},
+		"artifacts key":     {"artifacts: { gcs: {} }\n", "artifacts.gcs: unknown key"},
+		"local no path":     {"artifacts: { local: {} }\n", "artifacts.local.path: is required"},
+		"s3 no bucket":      {"artifacts: { s3: { region: fr-par } }\n", "artifacts.s3.bucket: is required"},
+		"s3 endpoint":       {"artifacts: { s3: { bucket: b, endpoint: s3.example } }\n", "artifacts.s3.endpoint: want an http"},
+		"s3 key":            {"artifacts: { s3: { bucket: b, acl: private } }\n", "artifacts.s3.acl: unknown key"},
+		"s3 inline key":     {"artifacts: { s3: { bucket: b, accessKeyId: AKIA } }\n", "artifacts.s3.accessKeyId: want { env: NAME }"},
+		"s3 half creds":     {"artifacts: { s3: { bucket: b, accessKeyId: { env: K } } }\n", "artifacts.s3: set both"},
+		"auth empty":        {"auth: {}\n", "auth.token: is required"},
+		"auth inline":       {"auth: { token: s3cret }\n", "auth.token: want { env: NAME }"},
+		"auth key":          {"auth: { oidc: {} }\n", "auth.oidc: unknown key"},
+		"node embedded":     {"node: { embedded: maybe }\n", "node.embedded: must be true or false"},
+		"node token":        {"node: { token: { env: \"a b\" } }\n", "node.token.env: want an environment"},
+		"node key":          {"node: { tls: {} }\n", "node.tls: unknown key"},
+		"secrets scalar":    {"secrets: x\n", "secrets: must be a mapping"},
+		"secrets pipeline":  {"secrets: { p: [a] }\n", "secrets.p: must be a mapping"},
+		"secret inline":     {"secrets: { p: { token: abc } }\n", "secrets.p.token: want { env: NAME }"},
+		"secret source":     {"secrets: { p: { token: { vault: x } } }\n", "secrets.p.token.vault: unknown key"},
+		"retention":         {"retention: { events: forever }\n", "retention.events:"},
+		"retention key":     {"retention: { items: 3d }\n", "retention.items: unknown key"},
+		"improve key":       {"improve: { autoApply: true }\n", "improve.autoApply: unknown key"},
+		"improve harness":   {"improve: { harness: gpt }\n", "improve.harness: must be one of claude-code, api"},
+		"improve publish":   {"improve: { publish: email }\n", "improve.publish: must be one of apply"},
+		"improve severity":  {"improve: { minSeverity: high }\n", "improve.minSeverity: must be one of"},
+		"improve sample":    {"improve: { evidence: { sample: 0 } }\n", "improve.evidence.sample: must be a positive"},
+		"improve ttl":       {"improve: { evidence: { ttl: soon } }\n", "improve.evidence.ttl:"},
+		"improve evidence":  {"improve: { evidence: { size: 3 } }\n", "improve.evidence.size: unknown key"},
+		"improve budget":    {"improve: { budget: { dayUsd: -1 } }\n", "improve.budget.dayUsd: must be a non-negative"},
+		"improve agreement": {"improve: { distill: { minAgreement: 2 } }\n", "improve.distill.minAgreement: must be a number from 0 to 1"},
+		"improve filter":    {"improve: { filter: 3 }\n", "improve.filter: must be a mapping"},
+		"improve prod":      {"environment: production\nimprove: { enabled: true }\n", "improve: enabled: the improve pipeline runs in development"},
+		"improve prod pub":  {"environment: production\nimprove: { publish: apply }\n", "improve: publish: apply is refused in production"},
 		"store both":        {"store: { sqlite: { path: a }, postgres: { dsn: { env: D } } }\n", "store: want exactly one"},
 		"store none":        {"store: {}\n", "store: want exactly one of sqlite and postgres"},
 		"store scalar":      {"store: sqlite\n", "store: must be a mapping"},
@@ -169,6 +310,9 @@ func TestLoadEnvironment(t *testing.T) {
 	for src, want := range map[string]func(*Environment) string{
 		"store: { sqlite: { path: state/m.db } }\n":             func(e *Environment) string { return e.Store.SQLitePath },
 		"store: { postgres: { dsn: { file: secrets/dsn } } }\n": func(e *Environment) string { return e.Store.PostgresDSN.File },
+		"artifacts: { local: { path: arts } }\n":                func(e *Environment) string { return e.Artifacts.LocalPath },
+		"auth: { token: { file: tok } }\n":                      func(e *Environment) string { return e.AuthToken.File },
+		"secrets: { p: { k: { file: k.txt } } }\n":              func(e *Environment) string { return e.Secrets["p"]["k"].File },
 	} {
 		if err := os.WriteFile(rel, []byte(src), 0o600); err != nil {
 			t.Fatal(err)
@@ -262,5 +406,27 @@ func TestParseLockErrors(t *testing.T) {
 				t.Fatalf("err = %v, want %q", err, tt.want)
 			}
 		})
+	}
+}
+
+func TestCheckInstance(t *testing.T) {
+	a := &Package{Pipeline: &Pipeline{Name: "a"}}
+	b := &Package{Pipeline: &Pipeline{Name: "b"}}
+	if got := CheckInstance([]*Package{a, b}, nil, false); len(got) != 0 {
+		t.Fatalf("two pipelines: %v", got)
+	}
+	got := CheckInstance([]*Package{a, b, a}, []*Package{b}, false)
+	if len(got["a"]) != 1 || !strings.Contains(got["a"][0].Message, "two packages of pipeline a") {
+		t.Fatalf("one pipeline twice: %v", got)
+	}
+}
+
+func TestStoreConfig(t *testing.T) {
+	if (StoreConfig{}).Set() || (StoreConfig{}).Path("d.db") != "d.db" {
+		t.Fatal("the zero store config")
+	}
+	c := StoreConfig{SQLitePath: "s.db"}
+	if !c.Set() || c.Path("d.db") != "s.db" {
+		t.Fatal("a SQLite path")
 	}
 }

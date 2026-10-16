@@ -59,7 +59,7 @@ func (e *Engine) Replay(ctx context.Context, req ReplayRequest) (string, bool, e
 	if !ok {
 		return fail(fmt.Errorf("revision %d has no step %q: %w", revID, req.Step, store.ErrInvalid))
 	}
-	res, err := pipeline.ResolveVars(rev.p, e.declaredFlags(rev.p), e.opts.Env)
+	res, err := pipeline.ResolveVarsWith(rev.p, e.declaredFlags(rev.p), e.opts.Env, e.secrets(rev.p.Name))
 	if err != nil {
 		return fail(fmt.Errorf("%w: %w", ErrFiringConfig, err))
 	}

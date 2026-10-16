@@ -42,12 +42,17 @@ func TestOpenNeverPrintsTheDSN(t *testing.T) {
 		"postgres://millstream:s3cret-pw@db.invalid:notaport/millstream",
 		"host=127.0.0.1 port=1 user=millstream password=s3cret-pw dbname=millstream connect_timeout=1",
 	} {
-		_, err := Open(ctx, dsn, Options{})
-		if err == nil {
-			t.Fatalf("Open(%q) succeeded", dsn)
-		}
-		if strings.Contains(err.Error(), "s3cret-pw") {
-			t.Errorf("Open's error shows the password: %v", err)
+		for name, open := range map[string]func() error{
+			"Open":         func() error { _, err := Open(ctx, dsn, Options{}); return err },
+			"OpenReadOnly": func() error { _, err := OpenReadOnly(ctx, dsn, Options{}); return err },
+		} {
+			err := open()
+			if err == nil {
+				t.Fatalf("%s(%q) succeeded", name, dsn)
+			}
+			if strings.Contains(err.Error(), "s3cret-pw") {
+				t.Errorf("%s's error shows the password: %v", name, err)
+			}
 		}
 	}
 }

@@ -15,6 +15,7 @@ import (
 
 	"github.com/monolithiclab/millstream/internal/runtime/exec/exectest/fakeexec"
 	"github.com/monolithiclab/millstream/internal/store"
+	"github.com/monolithiclab/millstream/internal/store/postgres/pgtest"
 	"github.com/monolithiclab/millstream/internal/store/sqlite"
 )
 
@@ -42,6 +43,7 @@ func runTests(m *testing.M) int {
 	}
 	defer func() { _ = os.RemoveAll(dir) }()
 	defer fakeexec.Cleanup()
+	defer pgtest.Stop() // the e2e build's Postgres container, if a test started one
 	testDir = dir
 	if testdata, err = filepath.Abs("testdata"); err != nil {
 		fmt.Fprintln(os.Stderr, err)

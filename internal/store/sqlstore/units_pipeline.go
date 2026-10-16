@@ -48,9 +48,9 @@ func (s *Store) ApplyRevision(ctx context.Context, pkg store.PackageRecord) (sto
 		}
 		// Numbered after the last revision, as events are: a revision rolled back gives its number back, where a
 		// Postgres sequence would leave a gap and number the next one differently after a crash.
-		rev, err := w.insertKey(`INSERT INTO revisions (id, pipeline, package_hash, pipeline_json, applied_at, state)
-			VALUES ((SELECT COALESCE(MAX(id), 0) + 1 FROM revisions), ?, ?, ?, ?, 'active')`, "id",
-			name, pkg.Hash, string(data), w.ts())
+		rev, err := w.insertKey(`INSERT INTO revisions (id, pipeline, package_hash, pipeline_json, applied_at, message,
+			state) VALUES ((SELECT COALESCE(MAX(id), 0) + 1 FROM revisions), ?, ?, ?, ?, ?, 'active')`, "id",
+			name, pkg.Hash, string(data), w.ts(), pkg.Message)
 		if err != nil {
 			return fmt.Errorf("insert revision: %w", err)
 		}
@@ -119,6 +119,14 @@ func (s *Store) Fire(ctx context.Context, f store.Firing) (bool, error) {
 				return notFound(err, "pipeline "+f.Pipeline)
 			}
 		}
+		state, err := w.pipelineState(f.Pipeline)
+		if err != nil {
+			return err
+		}
+		if state == "disabled" {
+			return fmt.Errorf("pipeline %s is disabled: its triggers do not fire until it is resumed: %w", f.Pipeline,
+				store.ErrConflict)
+		}
 		rev, err := w.revision(revID)
 		if err != nil {
 			return err
@@ -157,21 +165,21 @@ func (s *Store) Fire(ctx context.Context, f store.Firing) (bool, error) {
 }
 
 // SetPaused pauses or resumes a step, or the whole pipeline when step is empty. Resuming the pipeline also resumes
-// the steps a budget paused; a step a user paused stays paused until resumed by name.
+// the steps a budget paused, and enables a disabled pipeline; a step a user paused stays paused until resumed by
+// name. A disabled pipeline is not paused: it is resumed first.
 func (s *Store) SetPaused(ctx context.Context, pipelineName, step string, paused bool) error {
 	state, kind := "active", store.EventResumed
 	if paused {
 		state, kind = "paused", store.EventPaused
 	}
 	return s.submit(ctx, unitSetPaused, func(w *wtx) error {
-		var exists int
-		if err := w.queryRow(`SELECT COUNT(*) FROM pipelines WHERE id = ?`, pipelineName).Scan(&exists); err != nil {
-			return fmt.Errorf("read pipeline: %w", err)
+		current, err := w.pipelineState(pipelineName)
+		if err != nil {
+			return err
 		}
-		if exists == 0 {
-			return fmt.Errorf("pipeline %s: %w", pipelineName, store.ErrNotFound)
+		if paused && step == "" && current == "disabled" {
+			return fmt.Errorf("pipeline %s is disabled: resume it before pausing it: %w", pipelineName, store.ErrConflict)
 		}
-		var err error
 		switch {
 		case step != "":
 			_, err = w.exec(`INSERT INTO steps_state (pipeline, step, paused, cause) VALUES (?, ?, ?, '')
@@ -189,6 +197,73 @@ func (s *Store) SetPaused(ctx context.Context, pipelineName, step string, paused
 		}
 		return w.event(pipelineName, "", kind, map[string]any{"step": step})
 	})
+}
+
+// pipelineState reads a pipeline's state: active, paused or disabled.
+func (w *wtx) pipelineState(pipelineName string) (string, error) {
+	var state string
+	if err := w.queryRow(`SELECT state FROM pipelines WHERE id = ?`, pipelineName).Scan(&state); err != nil {
+		return "", notFound(err, "pipeline "+pipelineName)
+	}
+	return state, nil
+}
+
+// Disable is the Disable unit: the pipeline's triggers stop firing and its deliveries wait until it is resumed.
+func (s *Store) Disable(ctx context.Context, pipelineName string) error {
+	return s.submit(ctx, unitDisable, func(w *wtx) error {
+		state, err := w.pipelineState(pipelineName)
+		if err != nil || state == "disabled" {
+			return err
+		}
+		if _, err := w.exec(`UPDATE pipelines SET state = 'disabled' WHERE id = ?`, pipelineName); err != nil {
+			return err
+		}
+		return w.event(pipelineName, "", store.EventDisabled, map[string]any{})
+	})
+}
+
+// Rollback is the Rollback unit: it makes an earlier revision of the pipeline its active one again. Runs keep the
+// revision they started on; the runs started from now on take the one reactivated.
+func (s *Store) Rollback(ctx context.Context, pipelineName string, to store.RevisionID) (store.RevisionID, error) {
+	var id store.RevisionID
+	err := s.submit(ctx, unitRollback, func(w *wtx) error {
+		var active store.RevisionID
+		if err := w.queryRow(`SELECT active_revision FROM pipelines WHERE id = ?`, pipelineName).Scan(&active); err != nil {
+			return notFound(err, "pipeline "+pipelineName)
+		}
+		id = to
+		if id == 0 {
+			err := w.queryRow(`SELECT id FROM revisions WHERE pipeline = ? AND id < ? ORDER BY id DESC LIMIT 1`,
+				pipelineName, active).Scan(&id)
+			if errors.Is(err, sql.ErrNoRows) {
+				return fmt.Errorf("pipeline %s has no revision older than the active one, %d: %w", pipelineName, active,
+					store.ErrConflict)
+			}
+			if err != nil {
+				return err
+			}
+		}
+		var one int
+		if err := w.queryRow(`SELECT 1 FROM revisions WHERE id = ? AND pipeline = ?`, id, pipelineName).
+			Scan(&one); err != nil {
+			return notFound(err, fmt.Sprintf("revision %d of %s", id, pipelineName))
+		}
+		if id == active {
+			return fmt.Errorf("revision %d is already the active revision of %s: %w", id, pipelineName, store.ErrConflict)
+		}
+		if _, err := w.exec(`UPDATE revisions SET state = 'superseded' WHERE pipeline = ? AND state = 'active'`,
+			pipelineName); err != nil {
+			return err
+		}
+		if _, err := w.exec(`UPDATE revisions SET state = 'active' WHERE id = ?`, id); err != nil {
+			return err
+		}
+		if _, err := w.exec(`UPDATE pipelines SET active_revision = ? WHERE id = ?`, id, pipelineName); err != nil {
+			return err
+		}
+		return w.event(pipelineName, "", store.EventRolledBack, map[string]any{"revision": id, "from": active})
+	})
+	return id, err
 }
 
 func nonNil[V any](m map[string]V) map[string]V {

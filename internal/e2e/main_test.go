@@ -302,14 +302,15 @@ func lastLines(s string, n int) string {
 }
 
 // command returns a millstream invocation on db, with the environment of the test process minus every
-// MILLSTREAM_ variable, plus env. On a Postgres database, the store key of pgEnvFile names it, and the command runs
-// in the database's directory.
+// MILLSTREAM_ variable, plus env. On a Postgres database, the store key of pgEnvFile names it, the command runs in
+// the database's directory, and --direct lets a command that changes state write from its own process, taking the
+// leadership lock: the suite runs its commands while no engine runs.
 func command(ctx context.Context, db string, env []string, args ...string) (*osexec.Cmd, *bytes.Buffer,
 	*bytes.Buffer,
 ) {
 	global := []string{"--db", db}
 	if isPostgres(db) {
-		global = []string{"--env-file", pgEnvFile}
+		global = []string{"--env-file", pgEnvFile, "--direct"}
 	}
 	cmd := osexec.CommandContext(ctx, binary, append(global, args...)...) // #nosec G204 -- test binary
 	for _, kv := range os.Environ() {

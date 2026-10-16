@@ -30,6 +30,7 @@ import (
 
 	"github.com/monolithiclab/millstream/internal/artifacts"
 	"github.com/monolithiclab/millstream/internal/engine"
+	"github.com/monolithiclab/millstream/internal/pipeline"
 	"github.com/monolithiclab/millstream/internal/store"
 )
 
@@ -42,11 +43,17 @@ const UserHeader = "X-Millstream-User"
 // DefaultMaxBody bounds a request body without Options.MaxBody: a decision's edit is the largest a client sends.
 const DefaultMaxBody = 1 << 20
 
+// DefaultMaxPackagesBody bounds an apply's body, its packages' files, without Options.MaxPackagesBody.
+const DefaultMaxPackagesBody = 64 << 20
+
 // Engine is what the actions need of the engine beyond the store: firing a trigger and starting a replay run, which
-// resolve variables against the revision.
+// resolve variables against the revision, and applying packages, which the engine checks and keeps.
 type Engine interface {
 	Fire(ctx context.Context, pipeline, trigger, key string, payload json.RawMessage) (string, bool, error)
 	Replay(ctx context.Context, req engine.ReplayRequest) (string, bool, error)
+	PackageFromFiles(files map[string][]byte) (*pipeline.Package, error)
+	ApplyPackages(ctx context.Context, pkgs []*pipeline.Package, opts engine.ApplyOptions) ([]engine.Applied,
+		[]engine.Finding, error)
 }
 
 // Options configure a Server. Store is required.
@@ -78,6 +85,8 @@ type Options struct {
 	Logger *slog.Logger
 	// MaxBody bounds a request body; zero means DefaultMaxBody.
 	MaxBody int64
+	// MaxPackagesBody bounds an apply's body; zero means DefaultMaxPackagesBody.
+	MaxPackagesBody int64
 }
 
 // Server serves the API. It is an http.Handler for the paths under Prefix.
@@ -103,6 +112,9 @@ var routes = []route{
 	{http.MethodGet, "/pipelines/{pipeline}", (*Server).getPipeline},
 	{http.MethodPost, "/pipelines/{pipeline}/pause", (*Server).pausePipeline},
 	{http.MethodPost, "/pipelines/{pipeline}/resume", (*Server).resumePipeline},
+	{http.MethodPost, "/pipelines/{pipeline}/disable", (*Server).disablePipeline},
+	{http.MethodPost, "/pipelines/{pipeline}/rollback", (*Server).rollbackPipeline},
+	{http.MethodPost, "/revisions", (*Server).applyPackages},
 	{http.MethodPost, "/pipelines/{pipeline}/steps/{step}/pause", (*Server).pauseStep},
 	{http.MethodPost, "/pipelines/{pipeline}/steps/{step}/resume", (*Server).resumeStep},
 	{http.MethodGet, "/pipelines/{pipeline}/revisions", (*Server).listRevisions},
@@ -161,6 +173,9 @@ func New(opts Options) (*Server, error) {
 	}
 	if opts.MaxBody <= 0 {
 		opts.MaxBody = DefaultMaxBody
+	}
+	if opts.MaxPackagesBody <= 0 {
+		opts.MaxPackagesBody = DefaultMaxPackagesBody
 	}
 	s := &Server{opts: opts, log: opts.Logger, mux: http.NewServeMux()}
 	var paths []string
@@ -360,7 +375,12 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 // decodeBody decodes the JSON body into v, refusing unknown fields and trailing data; an empty body leaves v as it
 // is.
 func (s *Server) decodeBody(w http.ResponseWriter, r *http.Request, v any) error {
-	r.Body = http.MaxBytesReader(w, r.Body, s.opts.MaxBody)
+	return s.decodeBodyMax(w, r, v, s.opts.MaxBody)
+}
+
+// decodeBodyMax is decodeBody with a body of at most limit bytes.
+func (s *Server) decodeBodyMax(w http.ResponseWriter, r *http.Request, v any, limit int64) error {
+	r.Body = http.MaxBytesReader(w, r.Body, limit)
 	dec := json.NewDecoder(r.Body)
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(v); err != nil {

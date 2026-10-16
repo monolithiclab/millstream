@@ -35,14 +35,12 @@ func Migrate(ctx context.Context, db Migrator, d Dialect, migrations fs.FS) erro
 		return fmt.Errorf("migrate: %w", err)
 	}
 	slices.Sort(names)
-	latest := 0
+	latest, err := latestVersion(migrations)
+	if err != nil {
+		return err
+	}
 	for _, name := range names {
-		base := path.Base(name)
-		version, err := strconv.Atoi(strings.SplitN(base, "_", 2)[0])
-		if err != nil {
-			return fmt.Errorf("migrate: bad migration name %s", base)
-		}
-		latest = max(latest, version)
+		version, _ := strconv.Atoi(strings.SplitN(path.Base(name), "_", 2)[0]) // latestVersion parsed every name
 		if version <= current {
 			continue
 		}
@@ -51,7 +49,7 @@ func Migrate(ctx context.Context, db Migrator, d Dialect, migrations fs.FS) erro
 			return fmt.Errorf("migrate: %w", err)
 		}
 		if err := applyMigration(ctx, db, d, version, string(body)); err != nil {
-			return fmt.Errorf("migrate %s: %w", base, err)
+			return fmt.Errorf("migrate %s: %w", path.Base(name), err)
 		}
 	}
 	if current > latest {
@@ -59,6 +57,41 @@ func Migrate(ctx context.Context, db Migrator, d Dialect, migrations fs.FS) erro
 			"another build of millstream; start from a new database", current, latest)
 	}
 	return nil
+}
+
+// CheckVersion fails unless the database is at the schema version of the newest of migrations, without changing
+// it: what a store opened read-only checks, since it cannot migrate.
+func CheckVersion(ctx context.Context, db *sql.DB, migrations fs.FS) error {
+	var current int
+	if err := db.QueryRowContext(ctx, `SELECT COALESCE(MAX(version), 0) FROM schema_version`).Scan(&current); err != nil {
+		return fmt.Errorf("check the schema version: %w (has an engine opened this database yet?)", err)
+	}
+	latest, err := latestVersion(migrations)
+	if err != nil {
+		return err
+	}
+	if current != latest {
+		return fmt.Errorf("the database is at schema version %d, this build's is %d: open it with an engine of this "+
+			"build first", current, latest)
+	}
+	return nil
+}
+
+// latestVersion is the version of the newest of migrations.
+func latestVersion(migrations fs.FS) (int, error) {
+	names, err := fs.Glob(migrations, "migrations/*.sql")
+	if err != nil {
+		return 0, fmt.Errorf("migrate: %w", err)
+	}
+	latest := 0
+	for _, name := range names {
+		version, err := strconv.Atoi(strings.SplitN(path.Base(name), "_", 2)[0])
+		if err != nil {
+			return 0, fmt.Errorf("migrate: bad migration name %s", path.Base(name))
+		}
+		latest = max(latest, version)
+	}
+	return latest, nil
 }
 
 func applyMigration(ctx context.Context, db Migrator, d Dialect, version int, body string) error {

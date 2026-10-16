@@ -30,7 +30,8 @@ type cronState struct {
 }
 
 // schedule fires every cron trigger due by the engine's clock, across the active revision of every pipeline.
-// Firing ignores pause state: a paused pipeline or step keeps its deliveries pending (spec section 5.3).
+// Firing ignores pause state: a paused pipeline or step keeps its deliveries pending (spec section 5.3). A disabled
+// pipeline's triggers do not fire: their times pass as skipped, so resuming it does not catch them up.
 func (e *Engine) schedule(ctx context.Context) {
 	pipelines, err := e.st.Pipelines(ctx)
 	if err != nil {
@@ -48,14 +49,14 @@ func (e *Engine) schedule(ctx context.Context) {
 		}
 		for _, name := range slices.Sorted(maps.Keys(rev.p.Triggers)) {
 			if spec := rev.p.Triggers[name].Cron; spec != nil {
-				e.scheduleTrigger(ctx, rev, name, *spec, now)
+				e.scheduleTrigger(ctx, rev, name, *spec, now, ps.Disabled)
 			}
 		}
 	}
 }
 
 func (e *Engine) scheduleTrigger(ctx context.Context, rev *revision, name string, spec pipeline.CronSpec,
-	now time.Time,
+	now time.Time, disabled bool,
 ) {
 	log := e.log.With("pipeline", rev.p.Name, "trigger", name)
 	k := [2]string{rev.p.Name, name}
@@ -91,6 +92,15 @@ func (e *Engine) scheduleTrigger(ctx context.Context, rev *revision, name string
 	}
 	due := slices.Concat(missed, onTime) // ascending
 	if len(due) == 0 {
+		return
+	}
+	if disabled {
+		if err := e.st.SkipFirings(ctx, rev.p.Name, name, due); err != nil {
+			log.Error("scheduler: record skipped firings", "error", err.Error())
+			return
+		}
+		log.Info("cron firings skipped: the pipeline is disabled", "count", len(due))
+		st.last = due[len(due)-1]
 		return
 	}
 	fire := onTime

@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/monolithiclab/millstream/internal/pipeline"
+	"github.com/monolithiclab/millstream/internal/store"
 	"github.com/monolithiclab/millstream/internal/store/postgres/pgtest"
 	"github.com/monolithiclab/millstream/internal/store/sqlite"
 )
@@ -25,8 +26,12 @@ func TestMain(m *testing.M) {
 // Without a store key, the store is SQLite at the default path; with one, at its path. Memory stands for a path
 // here: the default build opens no database file.
 func TestOpenSQLite(t *testing.T) {
-	for _, cfg := range []pipeline.StoreConfig{{}, {SQLitePath: sqlite.Memory}} {
-		st, err := Open(context.Background(), cfg, sqlite.Memory, func(string) (string, bool) { return "", false })
+	for i, cfg := range []pipeline.StoreConfig{{}, {SQLitePath: sqlite.Memory}, {}} {
+		open := Open
+		if i == 2 { // a reader on SQLite opens as a writer does: the file's locking serialises the writers
+			open = OpenReader
+		}
+		st, err := open(context.Background(), cfg, sqlite.Memory, func(string) (string, bool) { return "", false })
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -42,8 +47,11 @@ func TestOpenSQLite(t *testing.T) {
 // A Postgres store whose DSN variable is unset is refused before any connection, naming the variable.
 func TestOpenPostgresWithoutDSN(t *testing.T) {
 	cfg := pipeline.StoreConfig{PostgresDSN: &pipeline.SecretSource{Env: "MILLSTREAM_DSN"}}
-	_, err := Open(context.Background(), cfg, "unused.db", func(string) (string, bool) { return "", false })
-	if err == nil || !strings.Contains(err.Error(), "store.postgres.dsn: environment variable MILLSTREAM_DSN") {
-		t.Fatalf("Open = %v", err)
+	for _, open := range []func(context.Context, pipeline.StoreConfig, string, func(string) (string, bool)) (
+		store.Store, error){Open, OpenReader} {
+		_, err := open(context.Background(), cfg, "unused.db", func(string) (string, bool) { return "", false })
+		if err == nil || !strings.Contains(err.Error(), "store.postgres.dsn: environment variable MILLSTREAM_DSN") {
+			t.Fatalf("Open = %v", err)
+		}
 	}
 }

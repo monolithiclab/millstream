@@ -221,3 +221,29 @@ func TestScheduleRetriesStoreErrors(t *testing.T) {
 	e.schedule(v.ctx)
 	v.run("listings", "run_2026-10-15T06:00Z_daily")
 }
+
+// A disabled pipeline's cron times pass as skipped, and resuming it fires the next one on time, without catch-up.
+func TestDisabledPipelineDoesNotFire(t *testing.T) {
+	v := newEnv(t, Options{})
+	v.clock.Set(time.Date(2026, 10, 10, 5, 0, 0, 0, time.UTC))
+	v.apply(newPackage(t, cronPipeline("all", ""), "crawl"))
+	if err := v.st.Disable(v.ctx, "listings"); err != nil {
+		t.Fatal(err)
+	}
+	v.clock.Set(time.Date(2026, 10, 11, 6, 0, 10, 0, time.UTC))
+	v.e.schedule(v.ctx)
+	if rs := v.runs("listings"); len(rs) != 0 {
+		t.Fatalf("a disabled pipeline fired %v", runIDs(rs))
+	}
+	if n := len(v.events(store.EventFiringSkipped)); n != 2 {
+		t.Fatalf("%d firingSkipped events, want 2", n)
+	}
+	if err := v.st.SetPaused(v.ctx, "listings", "", false); err != nil {
+		t.Fatal(err)
+	}
+	v.clock.Set(time.Date(2026, 10, 12, 6, 0, 10, 0, time.UTC))
+	v.e.schedule(v.ctx)
+	if got := runIDs(v.runs("listings")); !slices.Equal(got, []string{"run_2026-10-12T06:00Z_daily"}) {
+		t.Fatalf("runs after resuming = %v", got)
+	}
+}

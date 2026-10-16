@@ -4,11 +4,13 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"net"
 	"os"
 	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
+	"time"
 
 	"go.yaml.in/yaml/v3"
 )
@@ -51,6 +53,181 @@ type Environment struct {
 	UIListen string
 	// Store is the store key: the log store the commands and the engine use (spec section 14).
 	Store StoreConfig
+	// Mode is the environment key: production or development (spec section 11.2); empty means the command's
+	// default (EffectiveMode).
+	Mode string
+	// Artifacts is the artifacts key: where artifacts are kept (spec section 9.2).
+	Artifacts ArtifactsConfig
+	// Listen is the listen key: the address serve (and run, after ui.listen) serves the API and the UI on.
+	Listen string
+	// AuthToken is auth.token: where the API's bearer token is read from; nil means no token. A non-loopback
+	// listener requires it (spec section 15.2); the token check itself arrives with M4 Task 7.
+	AuthToken *SecretSource
+	// NodeEmbedded is node.embedded: whether serve runs a node inside the engine (default true).
+	NodeEmbedded bool
+	// NodeToken is node.token: where the node token remote nodes join with is read from (M4 Task 4).
+	NodeToken *SecretSource
+	// Secrets maps each pipeline to its secrets' sources, by secret name: the grant of section 4.5. Nil when the
+	// file has no secrets key: secrets then resolve from MILLSTREAM_SECRET_<NAME>, as without an environment file.
+	Secrets map[string]map[string]SecretSource
+	// Retention is the retention key (spec section 9.3), applied by M4 Task 8.
+	Retention Retention
+	// Improve is the improve key (spec sections 11.2 and 11.3), kept for the improve pipeline (M5).
+	Improve Improve
+}
+
+// Environment modes (spec section 11.2).
+const (
+	ModeProduction  = "production"
+	ModeDevelopment = "development"
+)
+
+// EffectiveMode is the environment key, else def: serve defaults to production, run to development.
+func (e *Environment) EffectiveMode(def string) string {
+	if e.Mode != "" {
+		return e.Mode
+	}
+	return def
+}
+
+// CheckMode refuses what the mode forbids (spec section 11.2): in production the improve pipeline does not run, so
+// improve.enabled and improve.publish: apply are refused.
+func (e *Environment) CheckMode(def string) error {
+	if e.EffectiveMode(def) != ModeProduction {
+		return nil
+	}
+	switch {
+	case e.Improve.Enabled:
+		return errors.New("improve.enabled: the improve pipeline runs in development deployments only")
+	case e.Improve.Publish == PublishApply:
+		return errors.New("improve.publish: apply is refused in production")
+	}
+	return nil
+}
+
+// SecretLookup returns how a pipeline's secrets resolve (spec section 4.5): through the secrets key, which is also
+// the grant, when the file has one, an unmapped name resolving to nothing; else from MILLSTREAM_SECRET_<NAME>
+// through env. The error of a mapped source that cannot be read names the source, never a value.
+func (e *Environment) SecretLookup(pipelineName string, env func(string) (string, bool)) SecretLookup {
+	if e == nil || e.Secrets == nil {
+		return func(name string) (string, error) {
+			if v, ok := env(SecretEnv(name)); ok {
+				return v, nil
+			}
+			return "", fmt.Errorf("secret %s is not set: set %s", name, SecretEnv(name))
+		}
+	}
+	sources := e.Secrets[pipelineName]
+	return func(name string) (string, error) {
+		src, ok := sources[name]
+		if !ok {
+			return "", fmt.Errorf("secret %s is not mapped for pipeline %s: map it under secrets.%s in the environment "+
+				"file", name, pipelineName, pipelineName)
+		}
+		v, err := src.Value(env)
+		if err != nil {
+			return "", fmt.Errorf("secret %s: %w", name, err)
+		}
+		return v, nil
+	}
+}
+
+// SecretLookupFor is SecretLookup for every pipeline: what CheckOptions.Secrets and the engine take.
+func (e *Environment) SecretLookupFor(env func(string) (string, bool)) func(pipelineName string) SecretLookup {
+	return func(pipelineName string) SecretLookup { return e.SecretLookup(pipelineName, env) }
+}
+
+// SecretEnvLookup is env with the variables MILLSTREAM_SECRET_<NAME> of a pipeline's secrets resolved through the
+// secrets key, when the file has one: what a tool that hands secrets to an action through its environment (eval,
+// the agent adapter) looks up. An unmapped or unreadable secret is unset.
+func (e *Environment) SecretEnvLookup(pipelineName string, env func(string) (string, bool)) func(string) (string, bool) {
+	if e == nil || e.Secrets == nil {
+		return env
+	}
+	lookup := e.SecretLookup(pipelineName, env)
+	return func(k string) (string, bool) {
+		if !strings.HasPrefix(k, "MILLSTREAM_SECRET_") {
+			return env(k)
+		}
+		for name := range e.Secrets[pipelineName] {
+			if SecretEnv(name) == k {
+				v, err := lookup(name)
+				return v, err == nil
+			}
+		}
+		return "", false
+	}
+}
+
+// SecretLookup resolves a secret of one pipeline by name.
+type SecretLookup func(name string) (string, error)
+
+// EnvSecrets resolves secrets from MILLSTREAM_SECRET_<NAME> through env: the lookup without an environment file.
+func EnvSecrets(env func(string) (string, bool)) func(pipelineName string) SecretLookup {
+	return (*Environment)(nil).SecretLookupFor(env)
+}
+
+// ArtifactsConfig is the artifacts key: a local directory, or an S3-compatible bucket. The zero value is the local
+// directory next to the state database.
+type ArtifactsConfig struct {
+	// LocalPath is artifacts.local.path, relative to the environment file.
+	LocalPath string
+	// S3 is artifacts.s3; nil without it. The S3 store itself arrives with remote nodes (M4 Task 4).
+	S3 *S3Config
+}
+
+// S3Config is artifacts.s3: a bucket of an S3-compatible store, its credentials read from sources.
+type S3Config struct {
+	Bucket string
+	// Endpoint is the store's URL; empty means AWS's endpoint for Region.
+	Endpoint string
+	Region   string
+	// Prefix is the key prefix under which artifacts are kept.
+	Prefix string
+	// AccessKeyID and SecretAccessKey are where the credentials are read from; nil means the AWS_ACCESS_KEY_ID and
+	// AWS_SECRET_ACCESS_KEY variables.
+	AccessKeyID     *SecretSource
+	SecretAccessKey *SecretSource
+}
+
+// Retention is the retention key: how long events, agent transcripts and metric rollups are kept; zero keeps them
+// for ever (spec section 9.3).
+type Retention struct {
+	Events      time.Duration
+	Transcripts time.Duration
+	Rollups     time.Duration
+}
+
+// Publishers of accepted proposals (spec section 11.3).
+const (
+	PublishApply     = "apply"
+	PublishPatchFile = "patch-file"
+	PublishGitPRGH   = "git-pr-gh"
+	PublishGitPRGLab = "git-pr-glab"
+)
+
+// Improve is the improve key (spec sections 11.2 to 11.6): the improve pipeline's settings, parsed now and used from
+// M5 on. Zero values mean the spec's defaults.
+type Improve struct {
+	Enabled bool
+	// Harness is the agent harness drafting proposals: claude-code or api.
+	Harness     string
+	MinSeverity string
+	// Publish is the publisher of accepted proposals: apply, patch-file, git-pr-gh or git-pr-glab.
+	Publish      string
+	BudgetDayUSD float64
+	// EvidenceSample and EvidenceTTL are improve.evidence: the items an evidence bundle samples, and its expiry.
+	EvidenceSample int
+	EvidenceTTL    time.Duration
+	// BacktestSample is improve.backtest.sample.
+	BacktestSample int
+	// Distill is improve.distill (section 11.5).
+	DistillMinDeliveries int
+	DistillLanguage      string
+	DistillMinAgreement  float64
+	DistillMinCoverage   float64
+	// FilterMaxFalseDrop is improve.filter.maxFalseDrop.
+	FilterMaxFalseDrop float64
 }
 
 // StoreConfig is the store key: SQLite at a path, or Postgres at a DSN read from a source, never written in the
@@ -108,16 +285,12 @@ type Price struct {
 	OutPerMtok float64
 }
 
-// laterEnvironmentKeys are keys of the environment file in spec section 14 that this build does not read yet.
-var laterEnvironmentKeys = []string{"environment", "artifacts", "listen", "auth", "node", "secrets", "retention",
-	"improve"}
-
 // LoadEnvironment reads the environment file at path. A missing file is an empty environment when required is
 // false, an error otherwise.
 func LoadEnvironment(path string, required bool) (*Environment, error) {
 	data, err := os.ReadFile(path) // #nosec G304 -- the operator names the environment file
 	if errors.Is(err, fs.ErrNotExist) && !required {
-		return &Environment{ContainerRuntime: RuntimeDocker}, nil
+		return newEnvironment(), nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("environment file: %w", err)
@@ -133,16 +306,37 @@ func LoadEnvironment(path string, required bool) (*Environment, error) {
 	}
 	abs(&env.AgentBinary)
 	abs(&env.Store.SQLitePath)
-	if env.Store.PostgresDSN != nil {
-		abs(&env.Store.PostgresDSN.File)
+	abs(&env.Artifacts.LocalPath)
+	for _, src := range env.sources() {
+		abs(&src.File)
+	}
+	for _, sources := range env.Secrets {
+		for name, src := range sources {
+			abs(&src.File)
+			sources[name] = src
+		}
 	}
 	return env, nil
 }
 
-// ParseEnvironment parses an environment file strictly: an unknown key, or a key of spec section 14 this build
-// does not read yet, is an error located by its key path.
+// newEnvironment is the environment without a file: every key at its default.
+func newEnvironment() *Environment {
+	return &Environment{ContainerRuntime: RuntimeDocker, NodeEmbedded: true}
+}
+
+// sources returns the secret sources of the file but the pipelines' secrets, for LoadEnvironment to resolve their
+// files.
+func (e *Environment) sources() []*SecretSource {
+	out := []*SecretSource{e.Store.PostgresDSN, e.AuthToken, e.NodeToken}
+	if s3 := e.Artifacts.S3; s3 != nil {
+		out = append(out, s3.AccessKeyID, s3.SecretAccessKey)
+	}
+	return slices.DeleteFunc(out, func(s *SecretSource) bool { return s == nil })
+}
+
+// ParseEnvironment parses an environment file strictly: an unknown key is an error located by its key path.
 func ParseEnvironment(data []byte) (*Environment, error) {
-	env := &Environment{ContainerRuntime: RuntimeDocker}
+	env := newEnvironment()
 	var doc yaml.Node
 	if err := yaml.Unmarshal(data, &doc); err != nil {
 		return nil, fmt.Errorf("parse YAML: %w", err)
@@ -154,22 +348,26 @@ func ParseEnvironment(data []byte) (*Environment, error) {
 	if err != nil {
 		return nil, err
 	}
-	for _, k := range f.keys {
-		if slices.Contains(laterEnvironmentKeys, k.Value) {
-			return nil, errAt(k, k.Value, "is not supported by this build yet")
-		}
-	}
-	if err := f.allow("registries", "runtime", "prices", "agents", "lessons", "ui", "store"); err != nil {
+	if err := f.allow("environment", "store", "artifacts", "listen", "auth", "node", "registries", "secrets",
+		"retention", "lessons", "ui", "improve", "prices", "runtime", "agents"); err != nil {
 		return nil, err
 	}
 	for _, err := range []error{
+		optional(f, "environment", &env.Mode, oneOf(ModeProduction, ModeDevelopment)),
+		readStore(f, env),
+		readArtifacts(f, env),
+		optional(f, "listen", &env.Listen, hostPort),
+		readAuth(f, env),
+		readNode(f, env),
 		optional(f, "registries", &env.Registries, registries),
-		readRuntime(f, env),
-		optional(f, "prices", &env.Prices, prices),
-		readAgents(f, env),
+		optional(f, "secrets", &env.Secrets, secretsByPipeline),
+		readRetention(f, env),
 		readLessons(f, env),
 		readUI(f, env),
-		readStore(f, env),
+		readImprove(f, env),
+		optional(f, "prices", &env.Prices, prices),
+		readRuntime(f, env),
+		readAgents(f, env),
 	} {
 		if err != nil {
 			return nil, err
@@ -380,3 +578,221 @@ func secretSource(n *yaml.Node, path string) (SecretSource, error) {
 
 // envName is an environment variable's name.
 var envName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+
+// hostPort reads a listen address: host:port.
+func hostPort(n *yaml.Node, path string) (string, error) {
+	s, err := nonEmptyStr(n, path)
+	if err != nil {
+		return "", err
+	}
+	if _, _, err := net.SplitHostPort(s); err != nil {
+		return "", errAt(n, path, "want host:port, such as 127.0.0.1:7070")
+	}
+	return s, nil
+}
+
+// readArtifacts reads artifacts: exactly one of local: { path } and s3: { bucket, endpoint, region, prefix,
+// accessKeyId, secretAccessKey }.
+func readArtifacts(f *fields, env *Environment) error {
+	n := f.get("artifacts")
+	if isNull(n) {
+		return nil
+	}
+	af, err := mapping(n, f.sub("artifacts"))
+	if err != nil {
+		return err
+	}
+	if err := af.allow("local", "s3"); err != nil {
+		return err
+	}
+	if len(af.keys) != 1 {
+		return errAt(af.node, af.path, "want exactly one of local and s3")
+	}
+	if v := af.get("local"); v != nil {
+		lf, err := mapping(v, af.sub("local"))
+		if err != nil {
+			return err
+		}
+		if err := lf.allow("path"); err != nil {
+			return err
+		}
+		env.Artifacts.LocalPath, err = lf.requiredStr("path")
+		return err
+	}
+	sf, err := mapping(af.get("s3"), af.sub("s3"))
+	if err != nil {
+		return err
+	}
+	if err := sf.allow("bucket", "endpoint", "region", "prefix", "accessKeyId", "secretAccessKey"); err != nil {
+		return err
+	}
+	s3 := &S3Config{}
+	for _, err := range []error{
+		required(sf, "bucket", &s3.Bucket, nonEmptyStr),
+		optional(sf, "endpoint", &s3.Endpoint, nonEmptyStr),
+		optional(sf, "region", &s3.Region, nonEmptyStr),
+		optional(sf, "prefix", &s3.Prefix, nonEmptyStr),
+		optionalSource(sf, "accessKeyId", &s3.AccessKeyID),
+		optionalSource(sf, "secretAccessKey", &s3.SecretAccessKey),
+	} {
+		if err != nil {
+			return err
+		}
+	}
+	if s3.Endpoint != "" && !httpURL(s3.Endpoint) {
+		return errAt(sf.get("endpoint"), sf.sub("endpoint"), "want an http or https URL such as https://s3.fr-par.scw.cloud")
+	}
+	if (s3.AccessKeyID == nil) != (s3.SecretAccessKey == nil) {
+		return errAt(sf.node, sf.path, "set both accessKeyId and secretAccessKey, or neither")
+	}
+	env.Artifacts.S3 = s3
+	return nil
+}
+
+// optionalSource reads key as a secret source when it is set.
+func optionalSource(f *fields, key string, dst **SecretSource) error {
+	v := f.get(key)
+	if isNull(v) {
+		return nil
+	}
+	src, err := secretSource(v, f.sub(key))
+	if err != nil {
+		return err
+	}
+	*dst = &src
+	return nil
+}
+
+func readAuth(f *fields, env *Environment) error {
+	return section(f, "auth", []string{"token"}, func(af *fields) []error {
+		if _, err := af.require("token"); err != nil {
+			return []error{err}
+		}
+		return []error{optionalSource(af, "token", &env.AuthToken)}
+	})
+}
+
+func readNode(f *fields, env *Environment) error {
+	return section(f, "node", []string{"embedded", "token"}, func(nf *fields) []error {
+		return []error{optional(nf, "embedded", &env.NodeEmbedded, boolean), optionalSource(nf, "token", &env.NodeToken)}
+	})
+}
+
+// secretsByPipeline reads secrets: per pipeline, each secret's source.
+func secretsByPipeline(n *yaml.Node, path string) (map[string]map[string]SecretSource, error) {
+	f, err := mapping(n, path)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]map[string]SecretSource, len(f.keys))
+	for _, k := range f.keys {
+		pf, err := mapping(f.get(k.Value), f.sub(k.Value))
+		if err != nil {
+			return nil, err
+		}
+		sources := make(map[string]SecretSource, len(pf.keys))
+		for _, sk := range pf.keys {
+			if sources[sk.Value], err = secretSource(pf.get(sk.Value), pf.sub(sk.Value)); err != nil {
+				return nil, err
+			}
+		}
+		out[k.Value] = sources
+	}
+	return out, nil
+}
+
+func readRetention(f *fields, env *Environment) error {
+	return section(f, "retention", []string{"events", "transcripts", "rollups"}, func(rf *fields) []error {
+		return []error{
+			optional(rf, "events", &env.Retention.Events, duration),
+			optional(rf, "transcripts", &env.Retention.Transcripts, duration),
+			optional(rf, "rollups", &env.Retention.Rollups, duration),
+		}
+	})
+}
+
+// section reads the mapping under key, when it is set, allowing only the keys given, with read; the first of read's
+// errors is returned.
+func section(f *fields, key string, allowed []string, read func(*fields) []error) error {
+	n := f.get(key)
+	if isNull(n) {
+		return nil
+	}
+	sf, err := mapping(n, f.sub(key))
+	if err != nil {
+		return err
+	}
+	if err := sf.allow(allowed...); err != nil {
+		return err
+	}
+	for _, err := range read(sf) {
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// fraction reads a number from 0 to 1.
+func fraction(n *yaml.Node, path string) (float64, error) {
+	v, err := nonNegativeNumber(n, path)
+	if err != nil || v > 1 {
+		return 0, errAt(deref(n), path, "must be a number from 0 to 1")
+	}
+	return v, nil
+}
+
+// readImprove reads improve (spec sections 11.2 to 11.6).
+func readImprove(f *fields, env *Environment) error {
+	n := f.get("improve")
+	if isNull(n) {
+		return nil
+	}
+	imf, err := mapping(n, f.sub("improve"))
+	if err != nil {
+		return err
+	}
+	if err := imf.allow("enabled", "harness", "minSeverity", "publish", "budget", "evidence", "backtest", "distill",
+		"filter"); err != nil {
+		return err
+	}
+	im := &env.Improve
+	sub := func(key string, allowed []string, read func(*fields) []error) error {
+		return section(imf, key, allowed, read)
+	}
+	for _, err := range []error{
+		optional(imf, "enabled", &im.Enabled, boolean),
+		optional(imf, "harness", &im.Harness, oneOf("claude-code", "api")),
+		optional(imf, "minSeverity", &im.MinSeverity, oneOf("info", "warning", "error")),
+		optional(imf, "publish", &im.Publish, oneOf(PublishApply, PublishPatchFile, PublishGitPRGH, PublishGitPRGLab)),
+		sub("budget", []string{"dayUsd"}, func(sf *fields) []error {
+			return []error{optional(sf, "dayUsd", &im.BudgetDayUSD, nonNegativeNumber)}
+		}),
+		sub("evidence", []string{"sample", "ttl"}, func(sf *fields) []error {
+			return []error{optional(sf, "sample", &im.EvidenceSample, positiveInt),
+				optional(sf, "ttl", &im.EvidenceTTL, duration)}
+		}),
+		sub("backtest", []string{"sample"}, func(sf *fields) []error {
+			return []error{optional(sf, "sample", &im.BacktestSample, positiveInt)}
+		}),
+		sub("distill", []string{"minDeliveries", "language", "minAgreement", "minCoverage"}, func(sf *fields) []error {
+			return []error{optional(sf, "minDeliveries", &im.DistillMinDeliveries, positiveInt),
+				optional(sf, "language", &im.DistillLanguage, nonEmptyStr),
+				optional(sf, "minAgreement", &im.DistillMinAgreement, fraction),
+				optional(sf, "minCoverage", &im.DistillMinCoverage, fraction)}
+		}),
+		sub("filter", []string{"maxFalseDrop"}, func(sf *fields) []error {
+			return []error{optional(sf, "maxFalseDrop", &im.FilterMaxFalseDrop, fraction)}
+		}),
+	} {
+		if err != nil {
+			return err
+		}
+	}
+	if env.Mode != "" {
+		if err := env.CheckMode(""); err != nil {
+			return errAt(imf.node, imf.path, "%s", strings.TrimPrefix(err.Error(), "improve."))
+		}
+	}
+	return nil
+}

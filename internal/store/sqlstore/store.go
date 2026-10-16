@@ -34,7 +34,7 @@ var Units = []string{
 	unitApplyRevision, unitFire, unitLease, unitRenew, unitDone, unitFail, unitCancel,
 	unitReplay, unitDiscard, unitExpireLeases, unitSetPaused, unitSkipFirings, unitFilter, unitDedupe,
 	unitStartReplay, unitRecordEval, unitRollup, unitRecordInsights, unitSetInsightState, unitPark,
-	unitReviewDecision, unitSampleDecision, unitReviewTimeout,
+	unitReviewDecision, unitSampleDecision, unitReviewTimeout, unitDisable, unitRollback,
 }
 
 const (
@@ -61,6 +61,8 @@ const (
 	unitReviewDecision  = "reviewDecision"
 	unitSampleDecision  = "sampleDecision"
 	unitReviewTimeout   = "reviewTimeout"
+	unitDisable         = "disable"
+	unitRollback        = "rollback"
 )
 
 // Dialect is what the SQLite and Postgres stores spell differently under the shared SQL.
@@ -114,6 +116,8 @@ type Config struct {
 	// touches the connection.
 	Check      func(ctx context.Context) error
 	CheckEvery time.Duration
+	// ReadOnly makes every unit fail with store.ErrReadOnly: a store opened for reading only, Write nil.
+	ReadOnly bool
 }
 
 // Store applies the units and serves the reads. It is safe for concurrent use. The store that created it owns the

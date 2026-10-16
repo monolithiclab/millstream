@@ -63,8 +63,13 @@ func agents(rt *Runtime, env *pipeline.Environment) engine.Agents {
 }
 
 // checkOptions are the environment file's settings check applies.
-func checkOptions(env *pipeline.Environment) pipeline.CheckOptions {
-	return pipeline.CheckOptions{LessonsMaxTokens: env.LessonsMaxTokens}
+func checkOptions(rt *Runtime, env *pipeline.Environment) pipeline.CheckOptions {
+	return pipeline.CheckOptions{LessonsMaxTokens: env.LessonsMaxTokens, Secrets: secrets(rt, env)}
+}
+
+// secrets resolves each pipeline's secrets as the environment file maps them (spec section 4.5).
+func secrets(rt *Runtime, env *pipeline.Environment) func(string) pipeline.SecretLookup {
+	return env.SecretLookupFor(rt.Env)
 }
 
 // notifier returns the notifier of review webhooks, with inbox links under ui.baseUrl.

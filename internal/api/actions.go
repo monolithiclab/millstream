@@ -49,6 +49,117 @@ func (s *Server) setPaused(w http.ResponseWriter, r *http.Request, step string, 
 	return nil
 }
 
+func (s *Server) disablePipeline(w http.ResponseWriter, r *http.Request) error {
+	if err := s.opts.Store.Disable(r.Context(), r.PathValue("pipeline")); err != nil {
+		return err
+	}
+	w.WriteHeader(http.StatusNoContent)
+	return nil
+}
+
+// RollbackRequest names the revision a rollback reactivates; zero, or absent, means the one before the active one.
+type RollbackRequest struct {
+	Revision int64 `json:"revision"`
+}
+
+// rollbackPipeline reactivates an earlier revision and answers it, now active.
+func (s *Server) rollbackPipeline(w http.ResponseWriter, r *http.Request) error {
+	name := r.PathValue("pipeline")
+	var req RollbackRequest
+	if err := s.decodeBody(w, r, &req); err != nil {
+		return err
+	}
+	if req.Revision < 0 {
+		return invalidf("revision %d: want a revision number", req.Revision)
+	}
+	id, err := s.opts.Store.Rollback(r.Context(), name, store.RevisionID(req.Revision))
+	if err != nil {
+		return err
+	}
+	rev, err := s.opts.Store.Revision(r.Context(), id)
+	if err != nil {
+		return err
+	}
+	writeJSON(w, http.StatusOK, toRevision(rev, id))
+	return nil
+}
+
+// ApplyRequest applies packages as new revisions (millstream apply): each package's files, by slash-separated path,
+// as base64 in JSON.
+type ApplyRequest struct {
+	Packages []PackageFiles `json:"packages"`
+	// Force lets through what only --force accepts: breaking an importer's contract.
+	Force   bool   `json:"force"`
+	Message string `json:"message"`
+}
+
+// PackageFiles is one package of an apply.
+type PackageFiles struct {
+	Files map[string][]byte `json:"files"`
+}
+
+// ApplyResponse is what an apply did: a revision per package, and the check's warnings.
+type ApplyResponse struct {
+	Revisions []AppliedRevision `json:"revisions"`
+	Warnings  []Finding         `json:"warnings"`
+}
+
+// AppliedRevision is the revision of one package an apply applied; created is false when the package was already
+// the pipeline's active one.
+type AppliedRevision struct {
+	Pipeline    string `json:"pipeline"`
+	Revision    int64  `json:"revision"`
+	PackageHash string `json:"packageHash"`
+	Created     bool   `json:"created"`
+}
+
+// Finding is a check finding of a pipeline.
+type Finding struct {
+	Pipeline string `json:"pipeline"`
+	Severity string `json:"severity"`
+	Path     string `json:"path"`
+	Message  string `json:"message"`
+}
+
+// applyPackages checks the packages against the whole deployment and applies each as a new revision. A check
+// error refuses them all (invalid, the errors in its message).
+func (s *Server) applyPackages(w http.ResponseWriter, r *http.Request) error {
+	var req ApplyRequest
+	if err := s.decodeBodyMax(w, r, &req, s.opts.MaxPackagesBody); err != nil {
+		return err
+	}
+	if len(req.Packages) == 0 {
+		return invalidf("packages: name at least one")
+	}
+	if s.opts.Engine == nil {
+		return fmt.Errorf("apply: no engine: %w", errUnavailable)
+	}
+	pkgs := make([]*pipeline.Package, 0, len(req.Packages))
+	for i, p := range req.Packages {
+		pkg, err := s.opts.Engine.PackageFromFiles(p.Files)
+		if err != nil {
+			return invalidf("packages[%d]: %s", i, err.Error())
+		}
+		pkgs = append(pkgs, pkg)
+	}
+	applied, findings, err := s.opts.Engine.ApplyPackages(r.Context(), pkgs, engine.ApplyOptions{Force: req.Force,
+		Message: req.Message})
+	if err != nil {
+		return err
+	}
+	out := ApplyResponse{Revisions: make([]AppliedRevision, 0, len(applied)), Warnings: make([]Finding, 0, len(findings))}
+	for _, a := range applied {
+		out.Revisions = append(out.Revisions, AppliedRevision{Pipeline: a.Pipeline, Revision: int64(a.Revision),
+			PackageHash: a.PackageHash, Created: a.Created})
+	}
+	for _, f := range findings {
+		out.Warnings = append(out.Warnings, Finding{Pipeline: f.Pipeline, Severity: f.Severity, Path: f.Path,
+			Message: f.Message})
+	}
+	writeJSON(w, http.StatusOK, out)
+	return nil
+}
+
 // TriggerRequest fires a trigger by hand.
 type TriggerRequest struct {
 	// Trigger defaults to the pipeline's first manual trigger, by name.

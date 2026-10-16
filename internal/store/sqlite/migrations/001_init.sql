@@ -18,6 +18,7 @@ CREATE TABLE revisions (
     package_hash  TEXT NOT NULL REFERENCES packages (hash),
     pipeline_json TEXT NOT NULL,
     applied_at    TEXT NOT NULL,
+    message       TEXT NOT NULL DEFAULT '', -- apply --message
     state         TEXT NOT NULL -- active | superseded
 );
 

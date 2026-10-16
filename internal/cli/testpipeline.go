@@ -67,7 +67,7 @@ func (c TestPipelineCmd) Run(rt *Runtime) error {
 		return err
 	}
 	actions := resolver(rt, env, false)
-	if diags := pipeline.Check(pkg, actions, rt.Env, checkOptions(env)); pipeline.HasErrors(diags) {
+	if diags := pipeline.Check(pkg, actions, rt.Env, checkOptions(rt, env)); pipeline.HasErrors(diags) {
 		for _, d := range diags {
 			fmt.Fprintf(rt.IO.Err, "%s: %s\n", pkg.Pipeline.Name, d)
 		}
@@ -147,7 +147,7 @@ func (c TestPipelineCmd) runTest(rt *Runtime, pkg *pipeline.Package, tc pipeline
 		return nil, err
 	}
 	defer func() { _ = st.Close() }()
-	e, err := engine.New(engine.Options{Store: st, Env: rt.Env, NoCron: true, Stubs: stubs,
+	e, err := engine.New(engine.Options{Store: st, Env: rt.Env, Secrets: secrets(rt, env), NoCron: true, Stubs: stubs,
 		Artifacts: artifacts.New(artifactsDir), Resolver: actions, Agents: agents(rt, env)})
 	if err != nil {
 		return nil, err

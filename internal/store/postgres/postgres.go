@@ -47,6 +47,9 @@ type Options struct {
 	Deployment string
 	// CheckEvery is how often the idle writer pings its session; zero means 5 seconds.
 	CheckEvery time.Duration
+	// Waiting, when set, is called once when Open finds the leadership lock held by another engine, before it waits
+	// for it: the moment a standby starts waiting.
+	Waiting func()
 }
 
 // Store is the Postgres log store. It is safe for concurrent use.
@@ -125,6 +128,32 @@ func Open(ctx context.Context, dsn string, opts Options) (*Store, error) {
 	return s, nil
 }
 
+// OpenReadOnly connects to the database dsn names for reading only: the read pool, without the leadership lock or
+// a write connection, so it never waits for an engine and never stands in its way. Every unit fails with
+// store.ErrReadOnly: on Postgres the active engine is the only writer (spec section 5.9). The database must be at
+// this build's schema version, which an engine migrated it to. What CLI commands that only read open.
+func OpenReadOnly(ctx context.Context, dsn string, opts Options) (*Store, error) {
+	s := &Store{key: LockKey(opts.Deployment)}
+	if opts.ReadConns == 0 {
+		opts.ReadConns = 2
+	}
+	secrets := []string{dsn}
+	if cfg, err := pgx.ParseConfig(dsn); err == nil {
+		secrets = append(secrets, cfg.Password)
+	}
+	if err := s.openReads(ctx, dsn, opts, secrets); err != nil {
+		_ = s.closeDBs()
+		return nil, fmt.Errorf("open postgres store read-only: %w", err)
+	}
+	if err := sqlstore.CheckVersion(ctx, s.reads, migrations); err != nil {
+		_ = s.closeDBs()
+		return nil, fmt.Errorf("open postgres store read-only: %w", redact(err, secrets...))
+	}
+	s.Store = sqlstore.New(sqlstore.Config{Dialect: dialect, Read: s.read, ReadOnly: true,
+		Options: sqlstore.Options{Now: opts.Now, Rand: opts.Rand}})
+	return s, nil
+}
+
 func (s *Store) open(ctx context.Context, dsn string, opts Options) error {
 	cfg, err := pgx.ParseConfig(dsn)
 	if err != nil {
@@ -140,12 +169,26 @@ func (s *Store) open(ctx context.Context, dsn string, opts Options) error {
 	if s.conn, err = s.write.Conn(ctx); err != nil {
 		return fmt.Errorf("connect: %w", redact(err, secrets...))
 	}
-	if _, err := s.conn.ExecContext(ctx, `SELECT pg_advisory_lock($1)`, s.key); err != nil {
+	var took bool
+	if err := s.conn.QueryRowContext(ctx, `SELECT pg_try_advisory_lock($1)`, s.key).Scan(&took); err != nil {
 		return fmt.Errorf("take the leadership lock: %w", redact(err, secrets...))
+	}
+	if !took {
+		if opts.Waiting != nil {
+			opts.Waiting()
+		}
+		if _, err := s.conn.ExecContext(ctx, `SELECT pg_advisory_lock($1)`, s.key); err != nil {
+			return fmt.Errorf("take the leadership lock: %w", redact(err, secrets...))
+		}
 	}
 	if err := sqlstore.Migrate(ctx, s.conn, dialect, migrations); err != nil {
 		return err
 	}
+	return s.openReads(ctx, dsn, opts, secrets)
+}
+
+// openReads opens the read pool, whose sessions are read-only.
+func (s *Store) openReads(ctx context.Context, dsn string, opts Options, secrets []string) error {
 	pcfg, err := pgxpool.ParseConfig(dsn)
 	if err != nil {
 		return fmt.Errorf("parse the DSN: %w", redact(err, secrets...))

@@ -1,8 +1,7 @@
 # The Millstream engine (spec section 14, VPS target): `millstream serve` from the environment file.
 # Install: docs/deploy.md, "systemd". The binary goes in /usr/local/bin, the environment file in
 # /etc/millstream/millstream.yaml, its secrets in /etc/millstream/millstream.env (root-owned, mode 0600).
-# M4 status: `serve` arrives with Task 2 of the M4 plan; the unit is shipped ahead of it.
-# A second host running the same unit against the same Postgres is the standby (Task 3).
+# A second host running the same unit against the same Postgres waits as the standby; its takeover is M4 Task 3.
 
 [Unit]
 Description=Millstream engine
@@ -23,7 +22,7 @@ Restart=on-failure
 RestartSec=5s
 
 # A transient user per start, no login, no home: the only writable path is the state directory,
-# /var/lib/millstream (the local artifact directory and, without Postgres, the SQLite store).
+# /var/lib/millstream (the local artifact directory, the package cache and, without Postgres, the SQLite store).
 DynamicUser=yes
 StateDirectory=millstream
 StateDirectoryMode=0700

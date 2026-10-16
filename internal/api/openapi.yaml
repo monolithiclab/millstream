@@ -61,22 +61,77 @@ paths:
     parameters: [{ $ref: "#/components/parameters/pipeline" }]
     post:
       operationId: pausePipeline
-      summary: Pause the pipeline; its deliveries stay pending.
+      summary: Pause the pipeline; its deliveries stay pending. A disabled pipeline is resumed first (conflict).
       responses:
         default: { $ref: "#/components/responses/Error" }
         "415": { $ref: "#/components/responses/Error" }
         "204": { description: Paused. }
         "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
   /pipelines/{pipeline}/resume:
     parameters: [{ $ref: "#/components/parameters/pipeline" }]
     post:
       operationId: resumePipeline
-      summary: Resume the pipeline, lifting the pauses a budget made too.
+      summary: Resume a paused or disabled pipeline, lifting the pauses a budget made too.
       responses:
         default: { $ref: "#/components/responses/Error" }
         "415": { $ref: "#/components/responses/Error" }
         "204": { description: Resumed. }
         "404": { $ref: "#/components/responses/Error" }
+  /pipelines/{pipeline}/disable:
+    parameters: [{ $ref: "#/components/parameters/pipeline" }]
+    post:
+      operationId: disablePipeline
+      summary: Disable the pipeline; its triggers stop firing and its deliveries wait until it is resumed.
+      responses:
+        default: { $ref: "#/components/responses/Error" }
+        "415": { $ref: "#/components/responses/Error" }
+        "204": { description: Disabled (or disabled already). }
+        "404": { $ref: "#/components/responses/Error" }
+  /pipelines/{pipeline}/rollback:
+    parameters: [{ $ref: "#/components/parameters/pipeline" }]
+    post:
+      operationId: rollbackPipeline
+      summary: >-
+        Reactivate an earlier revision, the one before the active one by default. Runs already started finish on their
+        own revision.
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RollbackRequest" }
+      responses:
+        default: { $ref: "#/components/responses/Error" }
+        "415": { $ref: "#/components/responses/Error" }
+        "200":
+          description: The revision now active.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Revision" }
+        "400": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+  /revisions:
+    post:
+      operationId: applyPackages
+      summary: >-
+        Apply packages as new revisions (millstream apply). Each package is checked, and so is every other pipeline of
+        the deployment; a check error refuses them all (invalid). The body may be up to 64 MiB.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ApplyRequest" }
+      responses:
+        default: { $ref: "#/components/responses/Error" }
+        "415": { $ref: "#/components/responses/Error" }
+        "200":
+          description: The revision of each package, and the check's warnings.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ApplyResponse" }
+        "400": { $ref: "#/components/responses/Error" }
+        "413": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
   /pipelines/{pipeline}/steps/{step}/pause:
     parameters: [{ $ref: "#/components/parameters/pipeline" }, { $ref: "#/components/parameters/step" }]
     post:
@@ -178,6 +233,7 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Run" }
         "400": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
         "503": { $ref: "#/components/responses/Error" }
   /pipelines/{pipeline}/runs/{run}:
@@ -786,7 +842,7 @@ components:
       properties:
         name: { type: string }
         description: { type: string }
-        state: { type: string, enum: [active, paused] }
+        state: { type: string, enum: [active, paused, disabled] }
         revision: { type: integer }
         steps: { type: array, items: { $ref: "#/components/schemas/Step" } }
         triggers: { type: array, items: { $ref: "#/components/schemas/Trigger" } }
@@ -826,6 +882,7 @@ components:
         pipeline: { type: string }
         packageHash: { type: string }
         appliedAt: { type: string, format: date-time }
+        message: { type: string, description: Why it was applied (apply --message). }
         active: { type: boolean }
         graph: { $ref: "#/components/schemas/Graph" }
     Graph:
@@ -1109,6 +1166,57 @@ components:
       additionalProperties: false
       properties:
         count: { type: integer }
+    RollbackRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        revision: { type: integer, minimum: 0, description: "The revision to reactivate; 0 or absent: the one before the active one." }
+    ApplyRequest:
+      type: object
+      required: [packages]
+      additionalProperties: false
+      properties:
+        packages:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            required: [files]
+            additionalProperties: false
+            properties:
+              files:
+                type: object
+                description: The package's files by slash-separated path, each base64.
+                additionalProperties: { type: string, contentEncoding: base64 }
+        force: { type: boolean, description: Let through breaking an importer's contract. }
+        message: { type: string, description: Why, kept with each revision. }
+    ApplyResponse:
+      type: object
+      required: [revisions, warnings]
+      additionalProperties: false
+      properties:
+        revisions:
+          type: array
+          items:
+            type: object
+            required: [pipeline, revision, packageHash, created]
+            additionalProperties: false
+            properties:
+              pipeline: { type: string }
+              revision: { type: integer }
+              packageHash: { type: string }
+              created: { type: boolean, description: False when the package was the active one already. }
+        warnings:
+          type: array
+          items:
+            type: object
+            required: [pipeline, severity, path, message]
+            additionalProperties: false
+            properties:
+              pipeline: { type: string }
+              severity: { type: string }
+              path: { type: string }
+              message: { type: string }
     TriggerRequest:
       type: object
       additionalProperties: false

@@ -50,6 +50,11 @@ type Runtime struct {
 	// EnvFile is the environment file named by the global --env-file flag; empty reads ./millstream.yaml when it
 	// exists.
 	EnvFile string
+	// Server is the served engine's API URL, from the global --server flag (else $MILLSTREAM_SERVER): commands that
+	// change state go through it.
+	Server string
+	// Direct is the global --direct flag: commands that change state write to the store from this process.
+	Direct bool
 	// Launchers, when set, replace the launchers the environment selects: tests run actions in-process with them.
 	Launchers map[string]exec.Launcher
 	// HTTPClient, when set, posts review notifications instead of a default client: tests point it at httptest.
@@ -111,8 +116,14 @@ type exitSignal int
 type CLI struct {
 	DB      string `name:"db" default:".millstream/millstream.db" help:"State database path (created with its directory)."`
 	EnvFile string `name:"env-file" type:"path" help:"Environment file (default: ./millstream.yaml when it exists)."`
+	Server  string `name:"server" placeholder:"URL" help:"Change state through the API of the engine serving at this URL (default: $MILLSTREAM_SERVER; token: $MILLSTREAM_TOKEN)."`
+	Direct  bool   `name:"direct" help:"Change state from this process, not through --server; on Postgres this takes the leadership lock, waiting while an engine runs."`
 
 	Run      RunCmd      `cmd:"" help:"Apply packages and run the engine with an embedded node; run report prints a run's report."`
+	Serve    ServeCmd    `cmd:"" help:"Run an engine from the environment file; a second one on the same Postgres store waits as the standby."`
+	Apply    ApplyCmd    `cmd:"" help:"Check packages against the whole deployment and upload them as new revisions."`
+	Rollback RollbackCmd `cmd:"" help:"Reactivate an earlier revision of a pipeline."`
+	Disable  DisableCmd  `cmd:"" help:"Disable a pipeline: its triggers stop firing and its deliveries wait until resume."`
 	Check    CheckCmd    `cmd:"" help:"Validate a pipeline package."`
 	Lock     LockCmd     `cmd:"" help:"Pin a package's container and registry actions by image digest in millstream.lock."`
 	Graph    GraphCmd    `cmd:"" help:"Print a package's graph as Mermaid or DOT."`
@@ -165,7 +176,7 @@ func Run(ctx context.Context, argv []string, stdio IO, version string, configure
 	defer p.release()
 	parser := p.k
 	kctx, err := p.parse(argv)
-	rt.DB, rt.EnvFile = p.tree.DB, p.tree.EnvFile
+	rt.DB, rt.EnvFile, rt.Server, rt.Direct = p.tree.DB, p.tree.EnvFile, p.tree.Server, p.tree.Direct
 	if kctx != nil {
 		for _, e := range kctx.Path {
 			rt.DBSet = rt.DBSet || e.Flag != nil && e.Flag.Name == "db"

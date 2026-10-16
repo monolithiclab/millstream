@@ -52,6 +52,13 @@ func SecretValues(names []string, env func(string) (string, bool)) map[string]st
 // and takes any JSON value, or the raw text when it is not JSON. Every problem is reported in one error, and the
 // returned Resolved holds everything that did resolve, so callers such as `millstream vars` can still show it.
 func ResolveVars(p *Pipeline, flags map[string]string, env func(string) (string, bool)) (Resolved, error) {
+	return ResolveVarsWith(p, flags, env, EnvSecrets(env)(p.Name))
+}
+
+// ResolveVarsWith is ResolveVars with the pipeline's secrets resolved through secrets: the environment file's
+// mapping (Environment.SecretLookup).
+func ResolveVarsWith(p *Pipeline, flags map[string]string, env func(string) (string, bool), secrets SecretLookup,
+) (Resolved, error) {
 	r := Resolved{Vars: map[string]any{}, Sources: map[string]string{}, Secrets: map[string]string{}}
 	var problems []string
 	for _, name := range slices.Sorted(maps.Keys(flags)) {
@@ -84,9 +91,9 @@ func ResolveVars(p *Pipeline, flags map[string]string, env func(string) (string,
 		r.Vars[name], r.Sources[name] = v, source
 	}
 	for _, name := range p.Secrets {
-		v, ok := env(SecretEnv(name))
-		if !ok {
-			problems = append(problems, fmt.Sprintf("secret %s is not set: set %s", name, SecretEnv(name)))
+		v, err := secrets(name)
+		if err != nil {
+			problems = append(problems, err.Error())
 			continue
 		}
 		r.Secrets[name] = v

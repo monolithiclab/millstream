@@ -139,7 +139,7 @@ func (e *Engine) notify(webhook, secret string, n review.Notification) {
 		return
 	}
 	if secret != "" {
-		webhook = pipeline.SecretValues([]string{secret}, e.opts.Env)[secret]
+		webhook, _ = e.secrets(n.Pipeline)(secret) // an unresolved secret posts nowhere; the notifier says so
 	}
 	n.URL, n.Secret = webhook, secret
 	e.opts.Notifier.Notify(n)
