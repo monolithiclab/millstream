@@ -46,3 +46,27 @@ func TestDiscardBeforeSettlement(t *testing.T) {
 	e.drain()
 	wantState(t, "run", e.run("r1").State, store.RunCompletedWithErrors)
 }
+
+func TestReplayDead(t *testing.T) {
+	e, l := deadRun(t)
+	n, err := e.s.ReplayDeadLetters(e.ctx, "listings", "r1", nil, false)
+	if err != nil || n != 1 {
+		t.Fatalf("Replay = %d, %v", n, err)
+	}
+	r := e.run("r1")
+	if r.State != store.RunRunning || !r.SettledAt.IsZero() {
+		t.Fatalf("run = %+v; want reopened", r)
+	}
+	if dl := e.deadLetters("r1")[0]; dl.State != store.DeadLetterReplayed {
+		t.Fatalf("dead letter %s", dl.State)
+	}
+	again := e.leaseStep("crawl")
+	if again.DeliveryID != l.DeliveryID || again.Attempt != 1 || again.FencingToken != l.FencingToken+1 {
+		t.Fatalf("replayed lease = %+v; want the same delivery, attempt 1", again)
+	}
+	e.done(again, out("a", `{"score":90}`))
+	e.drain()
+	wantState(t, "run", e.run("r1").State, store.RunSucceeded)
+	wantState(t, "reopened events", len(e.eventKinds(store.EventRunReopened)), 1)
+	wantState(t, "replayed events", len(e.eventKinds(store.EventDeadLetterReplayed)), 1)
+}
