@@ -57,7 +57,10 @@ const screens: ScreenCase[] = [
   {
     name: 'graph',
     path: async () => '/p/listings-daily/graph',
-    ready: (page) => expect(page.locator('[data-step="price-check"]')).toBeVisible(),
+    ready: async (page) => {
+      await expect(page.locator('[data-step="price-check"]')).toBeVisible();
+      await expect(page.getByRole('region', { name: 'Webhooks' })).toBeVisible();
+    },
     open: async (page) => {
       await page.locator('[data-step="price-check"]').click();
       await expect(page.getByRole('complementary')).toBeVisible();
@@ -194,6 +197,28 @@ test('open the graph, select a step, open an item, replay a dead letter', async 
 
   // The replay fails the same way: a new dead letter comes back, and the replayed one is kept as replayed.
   await expect(page.getByRole('button', { name: /^Replayed [1-9]/ })).toBeVisible();
+});
+
+test('rotate a webhook token from the graph and see the new one once', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto('/p/listings-daily/graph');
+  const webhooks = page.getByRole('region', { name: 'Webhooks' });
+  await expect(webhooks.getByText(/\/hooks\/listings-daily\/listing$/)).toBeVisible();
+
+  const rotate = webhooks.getByRole('button', { name: 'Rotate token of listing' });
+  await rotate.click();
+  const confirm = page.getByRole('dialog', { name: 'Rotate the token of listing?' });
+  await expect(confirm).toContainText('stops working immediately');
+  await confirm.getByRole('button', { name: 'Rotate token' }).click();
+
+  const dialog = page.getByRole('dialog', { name: 'New token for listing' });
+  await expect(dialog.getByTestId('trigger-token')).toHaveText(/^\S{20,}$/);
+  await expect(dialog).toContainText('it will not be shown again');
+  await expectNoViolations(page);
+  await expectNoClipping(page);
+  await dialog.getByRole('button', { name: 'Done' }).click();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(rotate).toBeFocused();
 });
 
 test('the items list filters a stream with CEL and opens an item', async ({ page }) => {

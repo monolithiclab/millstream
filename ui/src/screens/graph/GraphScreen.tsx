@@ -43,6 +43,7 @@ import {
   type TriggerNodeType,
 } from './nodes';
 import { StepPanel } from './StepPanel';
+import { WebhooksSection } from './WebhooksSection';
 import './graph.css';
 
 const nodeTypes: NodeTypes = { step: StepNode, filter: FilterNode, trigger: TriggerNode };
@@ -571,6 +572,7 @@ export function GraphScreen() {
                 )}
                 <RunStrip pipeline={ready.pipeline} run={ready.run} />
                 <StepTable model={model} order={positions.order} />
+                <WebhooksSection pipeline={pipeline} triggers={ready.pipeline.triggers} setNotice={setNotice} />
               </div>
               {selectedModel !== undefined && (
                 <StepPanel

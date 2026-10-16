@@ -27,6 +27,7 @@ import type {
   StepLessons,
   Stream,
   TriggerRequest,
+  TriggerToken,
 } from './schema';
 
 // The query parameters of an operation, as the OpenAPI document declares them.
@@ -113,6 +114,8 @@ export interface Api {
   decideSample(pipeline: string, delivery: string, decision: SampleDecision, options?: SendOptions): Promise<Sample>;
   acknowledgeInsight(pipeline: string, insight: string): Promise<void>;
   muteInsight(pipeline: string, insight: string): Promise<void>;
+  // Replaces a webhook trigger's token and returns the new one, shown once: the old one stops working at once.
+  rotateTriggerToken(pipeline: string, trigger: string): Promise<TriggerToken>;
 
   // Whether the server requires its token, and who decides; unauthorized (401) until signed in on one that does.
   getSession(): Promise<Session>;

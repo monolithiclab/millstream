@@ -86,7 +86,10 @@ const demoPipelines: Pipeline[] = [
     state: 'active',
     revision: 14,
     steps: listingSteps,
-    triggers: [{ name: 'daily', kind: 'cron', schedule: '0 6 * * *', stream: 'trigger' }],
+    triggers: [
+      { name: 'daily', kind: 'cron', schedule: '0 6 * * *', stream: 'trigger' },
+      { name: 'listing', kind: 'webhook', stream: 'trigger', path: `/hooks/${PIPELINE}/listing`, rate: '60/min' },
+    ],
     streams: ['trigger', 'raw', 'parsed', 'unique', 'located', 'enriched', 'scored', 'approved', 'pdf'],
     lastRun: { id: 'run_0600', state: 'running', startedAt: at('06:00') },
     openDeadLetters: 3,

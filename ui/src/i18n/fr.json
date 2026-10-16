@@ -239,7 +239,27 @@
     "paused": "{{step}} en pause : ses livraisons attendent que vous la repreniez.",
     "resumed": "{{step}} a repris.",
     "pauseFailed": "Impossible de mettre {{step}} en pause : {{message}} Rien n’a changé.",
-    "resumeFailed": "Impossible de reprendre {{step}} : {{message}} Rien n’a changé."
+    "resumeFailed": "Impossible de reprendre {{step}} : {{message}} Rien n’a changé.",
+    "webhooks": {
+      "title": "Webhooks",
+      "intro": "Un service lance un run en envoyant une requête POST à l’URL d’un déclencheur avec son jeton : en jeton porteur dans l’en-tête {{header}}, ou dans le paramètre de requête {{param}} (préférez l’en-tête, car les proxys journalisent les URL). millstream apply affiche chaque nouveau jeton une seule fois.",
+      "rate": "Jusqu’à {{rate}}",
+      "copyUrl": "Copier l’URL",
+      "rotate": "Renouveler le jeton",
+      "rotateName": "Renouveler le jeton de {{trigger}}",
+      "rotateTitle": "Renouveler le jeton de {{trigger}} ?",
+      "rotateNew": "Un nouveau jeton est généré pour {{trigger}}.",
+      "rotateOld": "Le jeton actuel cesse de fonctionner immédiatement : les requêtes qui l’envoient sont refusées.",
+      "rotateSenders": "Chaque service qui appelle ce webhook doit être mis à jour avec le nouveau jeton.",
+      "rotateOnce": "Le nouveau jeton n’est affiché qu’une seule fois, juste après.",
+      "rotateFailed": "Impossible de renouveler le jeton de {{trigger}} : {{message}} Le jeton actuel fonctionne toujours.",
+      "tokenTitle": "Nouveau jeton de {{trigger}}",
+      "tokenOnce": "Conservez-le maintenant : il ne sera plus affiché.",
+      "tokenLost": "Millstream n’en garde que l’empreinte ; s’il est perdu, renouvelez le jeton.",
+      "copyToken": "Copier le jeton",
+      "usage": "Envoyez-le avec chaque requête au webhook :",
+      "done": "Terminé"
+    }
   },
   "deadLetters": {
     "migrate": "Passer d’abord leurs exécutions à la révision active {{revision}}",
