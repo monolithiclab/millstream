@@ -10,7 +10,6 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/monolithiclab/millstream/internal/store"
 )
@@ -18,56 +17,90 @@ import (
 // Namespace prefixes every metric name in the Prometheus exposition.
 const Namespace = "millstream_"
 
-// series is one metric and label set, aggregated over the rollups' minutes.
-type series struct {
-	name   string
-	labels map[string]string // the pipeline included
-	count  int64
-	sum    float64
-	last   time.Time // a gauge's latest minute, whose mean it shows
-	lastV  float64
+// Prometheus writes rollups in the Prometheus text exposition format (version 0.0.4), aggregated over their
+// minutes: Exposition of their Totals, without engine families.
+func Prometheus(w io.Writer, rollups []store.MetricRollup) error {
+	return Exposition(w, Totals(rollups), nil)
 }
 
-// Prometheus writes rollups in the Prometheus text exposition format (version 0.0.4), aggregated over their
-// minutes: a counter as <name>_total, the sum of its points; a gauge as its mean over its latest minute; a
-// distribution as a summary without quantiles (<name>_sum, <name>_count); a histogram with its cumulative buckets.
-// Every series is labelled with its pipeline. Names and label names are sanitised to [a-zA-Z0-9_], and the output
-// is sorted, so equal rollups render equally.
-func Prometheus(w io.Writer, rollups []store.MetricRollup) error {
-	agg := map[string]*series{}
+// Totals aggregates rollups into one series per pipeline, metric and label set, as the store's MetricTotals does.
+func Totals(rollups []store.MetricRollup) []store.MetricTotal {
+	agg := map[string]*store.MetricTotal{}
+	var keys []string
 	for _, r := range rollups {
-		labels := maps.Clone(r.Labels)
+		key := r.Pipeline + "\x00" + r.Name + "\x00" + labelString(r.Labels)
+		t := agg[key]
+		if t == nil {
+			t = &store.MetricTotal{Pipeline: r.Pipeline, Name: r.Name, Labels: r.Labels}
+			agg[key] = t
+			keys = append(keys, key)
+		}
+		t.Count += r.Count
+		t.Sum += r.Sum
+		if t.Last.IsZero() || r.Minute.After(t.Last) {
+			t.Last, t.LastCount, t.LastSum = r.Minute, r.Count, r.Sum
+		}
+	}
+	out := make([]store.MetricTotal, 0, len(keys))
+	for _, k := range keys {
+		out = append(out, *agg[k])
+	}
+	return out
+}
+
+// Family is a metric the engine measures itself rather than rolls up from events (spec section 10.2): leases held,
+// writer batch sizes, review notification failures, eval scores. Its samples carry their own labels and, for a
+// histogram, their series suffix (_bucket, _sum, _count).
+type Family struct {
+	// Name is the metric's name, without the namespace and, for a counter, without _total.
+	Name    string
+	Kind    Kind
+	Samples []Sample
+}
+
+// Sample is one series of a Family.
+type Sample struct {
+	Suffix string
+	Labels map[string]string
+	Value  float64
+}
+
+// Exposition writes the rollups' series and the engine's families in the Prometheus text exposition format
+// (version 0.0.4): a counter as <name>_total, the sum of its minutes; a gauge as its mean over its latest minute; a
+// distribution as a summary without quantiles (<name>_sum, <name>_count); a histogram with its cumulative buckets.
+// Every rollup series is labelled with its pipeline. Names and label names are sanitised to [a-zA-Z0-9_], and the
+// output is sorted by family, so equal inputs render equally. An engine family hides a rollup family exposed under
+// the same name (an action's metric, whose name sanitises to it).
+func Exposition(w io.Writer, totals []store.MetricTotal, engine []Family) error {
+	families := map[string][]store.MetricTotal{} // by family name: a histogram's buckets join its family
+	for _, t := range totals {
+		labels := maps.Clone(t.Labels)
 		if labels == nil {
 			labels = map[string]string{}
 		}
-		labels["pipeline"] = r.Pipeline
-		key := r.Name + "\x00" + labelString(labels)
-		s := agg[key]
-		if s == nil {
-			s = &series{name: r.Name, labels: labels}
-			agg[key] = s
+		labels["pipeline"] = t.Pipeline
+		t.Labels = labels
+		family, _ := strings.CutSuffix(t.Name, BucketSuffix)
+		if family != t.Name && kinds[family] != Histogram {
+			family = t.Name
 		}
-		s.count += r.Count
-		s.sum += r.Sum
-		if r.Minute.After(s.last) || s.last.IsZero() {
-			s.last, s.lastV = r.Minute, r.Sum/float64(max(r.Count, 1))
-		}
+		families[family] = append(families[family], t)
 	}
-	families := map[string][]*series{} // by family name: a histogram's buckets join its family
-	for _, s := range agg {
-		family, _ := strings.CutSuffix(s.name, BucketSuffix)
-		if family != s.name && kinds[family] != Histogram {
-			family = s.name
-		}
-		families[family] = append(families[family], s)
+	blocks := map[string]string{} // by exposed name
+	for family, ts := range families {
+		slices.SortFunc(ts, func(a, b store.MetricTotal) int {
+			return cmp.Or(cmp.Compare(a.Name, b.Name), compareLabels(a.Labels, b.Labels))
+		})
+		name, block := rollupFamily(family, ts)
+		blocks[name] = block
+	}
+	for _, f := range engine {
+		name, block := engineFamily(f)
+		blocks[name] = block
 	}
 	bw := bufio.NewWriter(w)
-	for _, family := range slices.Sorted(maps.Keys(families)) {
-		ss := families[family]
-		slices.SortFunc(ss, func(a, b *series) int {
-			return cmp.Or(cmp.Compare(a.name, b.name), compareLabels(a.labels, b.labels))
-		})
-		writeFamily(bw, family, ss)
+	for _, name := range slices.Sorted(maps.Keys(blocks)) {
+		_, _ = bw.WriteString(blocks[name])
 	}
 	if err := bw.Flush(); err != nil {
 		return fmt.Errorf("write metrics: %w", err)
@@ -75,40 +108,54 @@ func Prometheus(w io.Writer, rollups []store.MetricRollup) error {
 	return nil
 }
 
-func writeFamily(w *bufio.Writer, family string, ss []*series) {
+// exposedName is a family's name in the exposition and its TYPE.
+func exposedName(family string, kind Kind) (string, string) {
 	name := Namespace + sanitize(family)
-	switch KindOf(family) {
+	switch kind {
 	case Counter:
-		fmt.Fprintf(w, "# TYPE %s_total counter\n", name)
-		for _, s := range ss {
-			fmt.Fprintf(w, "%s_total%s %s\n", name, labelString(s.labels), number(s.sum))
-		}
+		return name + "_total", "counter"
 	case Gauge:
-		fmt.Fprintf(w, "# TYPE %s gauge\n", name)
-		for _, s := range ss {
-			fmt.Fprintf(w, "%s%s %s\n", name, labelString(s.labels), number(s.lastV))
-		}
+		return name, "gauge"
 	case Histogram:
-		fmt.Fprintf(w, "# TYPE %s histogram\n", name)
-		for _, s := range ss {
-			if s.name != family { // a bucket: its count is the number of values at or under its bound
-				fmt.Fprintf(w, "%s_bucket%s %d\n", name, labelString(s.labels), s.count)
-			}
-		}
-		writeSumCount(w, name, ss, family)
-	default:
-		fmt.Fprintf(w, "# TYPE %s summary\n", name)
-		writeSumCount(w, name, ss, family)
+		return name, "histogram"
 	}
+	return name, "summary"
 }
 
-func writeSumCount(w *bufio.Writer, name string, ss []*series, family string) {
-	for _, s := range ss {
-		if s.name == family {
-			fmt.Fprintf(w, "%s_sum%s %s\n", name, labelString(s.labels), number(s.sum))
-			fmt.Fprintf(w, "%s_count%s %d\n", name, labelString(s.labels), s.count)
+func rollupFamily(family string, ts []store.MetricTotal) (string, string) {
+	kind := KindOf(family)
+	name, typ := exposedName(family, kind)
+	var b strings.Builder
+	fmt.Fprintf(&b, "# TYPE %s %s\n", name, typ)
+	for _, t := range ts {
+		switch {
+		case kind == Counter:
+			fmt.Fprintf(&b, "%s%s %s\n", name, labelString(t.Labels), number(t.Sum))
+		case kind == Gauge:
+			fmt.Fprintf(&b, "%s%s %s\n", name, labelString(t.Labels), number(t.LastSum/float64(max(t.LastCount, 1))))
+		case kind == Histogram && t.Name != family: // a bucket: its count is the number of values at or under its bound
+			fmt.Fprintf(&b, "%s_bucket%s %d\n", name, labelString(t.Labels), t.Count)
 		}
 	}
+	if kind == Histogram || kind == Distribution {
+		for _, t := range ts {
+			if t.Name == family {
+				fmt.Fprintf(&b, "%s_sum%s %s\n", name, labelString(t.Labels), number(t.Sum))
+				fmt.Fprintf(&b, "%s_count%s %d\n", name, labelString(t.Labels), t.Count)
+			}
+		}
+	}
+	return name, b.String()
+}
+
+func engineFamily(f Family) (string, string) {
+	name, typ := exposedName(f.Name, f.Kind)
+	var b strings.Builder
+	fmt.Fprintf(&b, "# TYPE %s %s\n", name, typ)
+	for _, s := range f.Samples {
+		fmt.Fprintf(&b, "%s%s%s %s\n", name, s.Suffix, labelString(s.Labels), number(s.Value))
+	}
+	return name, b.String()
 }
 
 // labelString renders labels as {k="v",…}, sorted by name, values escaped.

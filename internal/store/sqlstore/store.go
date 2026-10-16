@@ -134,6 +134,8 @@ type Store struct {
 	opts Options
 	read *ReadDB
 
+	batches batchSizes // the writer's batch sizes, read by WriterBatches
+
 	// onCommit, when set, is told the last event sequence number of each batch that recorded events; see OnCommit.
 	onCommit atomic.Pointer[func(lastSeq int64)]
 

@@ -13,7 +13,17 @@
     "search": "Search items, runs, steps",
     "preferences": "Preferences",
     "demo": "Demo data",
-    "exitDemo": "Exit demo"
+    "exitDemo": "Exit demo",
+    "signOut": "Sign out"
+  },
+  "signIn": {
+    "title": "Sign in",
+    "explain": "This server asks for its access token, the value of auth.token in its environment file. Ask whoever runs it.",
+    "token": "Token",
+    "submit": "Sign in",
+    "signingIn": "Signing in…",
+    "wrongToken": "This token does not match the server's.",
+    "failed": "Signing in failed: {{message}}"
   },
   "switcher": {
     "label": "Switch pipeline, showing {{name}}",
@@ -61,7 +71,8 @@
     "useDark": "Use the dark theme",
     "useSystem": "Follow the system theme",
     "switchLanguage": "Passer en français",
-    "showShortcuts": "Show keyboard shortcuts"
+    "showShortcuts": "Show keyboard shortcuts",
+    "signOut": "Sign out"
   },
   "shortcuts": {
     "title": "Keyboard shortcuts",

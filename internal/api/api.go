@@ -10,12 +10,15 @@
 // the last page. The OpenAPI document is the contract: the package's tests check that every route is documented and
 // that every response they see validates against the document's schemas.
 //
-// Authentication arrives with M4: until then the server is reached on a loopback address only (CheckLoopback), and
-// a decision is recorded under the X-Millstream-User header, else $USER.
+// Without Options.Auth the server is reached on a loopback address only (CheckLoopback), and a decision is recorded
+// under the X-Millstream-User header, else $USER. With it, every request carries the deployment's token, as a bearer
+// token or the UI's session cookie (auth.go), and the reviewer is Auth.User.
 package api
 
 import (
+	"cmp"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -37,7 +40,10 @@ import (
 // Prefix is where the API is mounted.
 const Prefix = "/api/v1"
 
-// UserHeader names the person deciding a review until authentication (M4) does.
+// MetricsPath is where the Prometheus exposition is served, beside the API.
+const MetricsPath = "/metrics"
+
+// UserHeader names the person deciding a review on a server without token authentication.
 const UserHeader = "X-Millstream-User"
 
 // DefaultMaxBody bounds a request body without Options.MaxBody: a decision's edit is the largest a client sends.
@@ -101,9 +107,12 @@ type Options struct {
 	Standby bool
 	// NotificationFailures counts the engine's failed review notifications; nil reports none.
 	NotificationFailures func() int64
-	// User is who decides when a request names nobody (the server's user until authentication, M4); empty makes a
-	// request name its reviewer.
+	// User is who decides when a request names nobody (the server's user, without Auth); empty makes a request
+	// name its reviewer.
 	User string
+	// Auth requires the deployment's token on every request (spec section 15.2); nil serves loopback clients
+	// without one.
+	Auth *Auth
 	// Clock is the clock of relative ranges, run reports and the live streams' heartbeats; nil means SystemClock.
 	Clock Clock
 	// Heartbeat is how often a quiet live stream sends a comment; zero means DefaultHeartbeat.
@@ -118,9 +127,11 @@ type Options struct {
 
 // Server serves the API. It is an http.Handler for the paths under Prefix.
 type Server struct {
-	opts Options
-	log  *slog.Logger
-	mux  *http.ServeMux
+	opts     Options
+	log      *slog.Logger
+	mux      *http.ServeMux
+	sessions sessions
+	tokenSum [32]byte // the SHA-256 of Auth.Token
 }
 
 // handler is a route's handler: an error is answered by writeError.
@@ -135,6 +146,9 @@ type route struct {
 // routes are the API's operations. The OpenAPI document documents each one (TestRoutesDocumented).
 var routes = []route{
 	{http.MethodGet, "/openapi.yaml", (*Server).openAPI},
+	{http.MethodGet, "/session", (*Server).getSession},
+	{http.MethodPost, "/session", (*Server).createSession},
+	{http.MethodDelete, "/session", (*Server).deleteSession},
 	{http.MethodGet, "/pipelines", (*Server).listPipelines},
 	{http.MethodGet, "/pipelines/{pipeline}", (*Server).getPipeline},
 	{http.MethodPost, "/pipelines/{pipeline}/pause", (*Server).pausePipeline},
@@ -204,7 +218,33 @@ func New(opts Options) (*Server, error) {
 	if opts.MaxPackagesBody <= 0 {
 		opts.MaxPackagesBody = DefaultMaxPackagesBody
 	}
-	s := &Server{opts: opts, log: opts.Logger, mux: http.NewServeMux()}
+	if opts.Auth != nil {
+		if opts.Auth.Token == "" {
+			return nil, errors.New("api: an empty token")
+		}
+		a := *opts.Auth
+		a.User = cmp.Or(a.User, pipeline.DefaultAuthUser)
+		a.SessionTTL = cmp.Or(a.SessionTTL, DefaultSessionTTL)
+		a.Hosts = make([]string, len(opts.Auth.Hosts))
+		for i, h := range opts.Auth.Hosts {
+			a.Hosts[i] = strings.ToLower(hostName(h))
+		}
+		a.Origins = make([]string, len(opts.Auth.Origins))
+		for i, o := range opts.Auth.Origins {
+			a.Origins[i] = strings.ToLower(strings.TrimSuffix(o, "/"))
+		}
+		opts.Auth = &a
+	}
+	s := &Server{opts: opts, log: opts.Logger, mux: http.NewServeMux(),
+		sessions: sessions{byID: map[[32]byte]time.Time{}}}
+	if opts.Auth != nil {
+		s.tokenSum = sha256.Sum256([]byte(opts.Auth.Token))
+	}
+	s.mux.HandleFunc("GET "+MetricsPath, func(w http.ResponseWriter, r *http.Request) {
+		if err := s.prometheus(w, r); err != nil {
+			s.writeError(w, r, err)
+		}
+	})
 	var paths []string
 	for _, rt := range routes {
 		h := rt.h
@@ -246,9 +286,23 @@ func New(opts Options) (*Server, error) {
 	return s, nil
 }
 
-// ServeHTTP serves the API's paths, and answers any other path under /api/ notFound.
+// ServeHTTP serves the API's paths and /metrics, and answers any other path under /api/ notFound. A state-changing
+// request from another origin is forbidden; with Auth, a request without the token is unauthorized.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Content-Type-Options", "nosniff")
+	cred := noCredential
+	if s.opts.Auth != nil {
+		cred = s.credential(r)
+	}
+	if !s.sameOrigin(r, cred) {
+		writeErrorBody(w, http.StatusForbidden, codeForbidden, r.Method+" from another origin: "+
+			strings.Join(r.Header.Values("Origin"), ", "))
+		return
+	}
+	if s.opts.Auth != nil && cred == noCredential && !s.public(r) {
+		writeUnauthorized(w, "sign in: send the token as Authorization: Bearer <token>, or sign in through the UI")
+		return
+	}
 	s.mux.ServeHTTP(w, r)
 }
 
@@ -260,30 +314,36 @@ func jsonContent(r *http.Request) bool {
 	return err == nil && mt == "application/json"
 }
 
-// Handler serves the API under /api/ and everything else with ui, the web UI's single-page app, to requests naming
-// a loopback host only: until authentication (M4) a page whose name resolves to this machine (DNS rebinding) must
-// not reach the API as if it were the UI.
+// Handler serves the API under /api/, the Prometheus exposition on /metrics (unless the request accepts HTML: a
+// browser loading the UI's metrics explorer), and everything else with ui, the web
+// UI's single-page app, to requests naming a loopback host, or with Auth one of its hosts: a page whose name resolves
+// to this machine (DNS rebinding) must not reach the API as if it were the UI.
 //
 // No response may be framed by another page (clickjacking): every one says so, and the UI's pages carry a content
 // security policy that loads nothing from elsewhere. Artifacts replace it with their own sandbox (serveArtifact).
-func Handler(apiHandler, ui http.Handler) http.Handler {
-	mux := http.NewServeMux()
-	mux.Handle("/api/", apiHandler)
-	mux.Handle("/", ui)
+func Handler(s *Server, ui http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h := w.Header()
 		h.Set("X-Frame-Options", "DENY")
-		if strings.HasPrefix(r.URL.Path, "/api/") {
+		next := ui
+		if strings.HasPrefix(r.URL.Path, "/api/") || prometheusRequest(r) {
 			h.Set("Content-Security-Policy", apiPolicy)
+			next = s
 		} else {
 			h.Set("Content-Security-Policy", uiPolicy)
 		}
-		if !loopbackHost(r.Host) {
-			writeErrorBody(w, http.StatusForbidden, codeForbidden, "host "+r.Host+" is not a loopback address")
+		if !s.hostAllowed(r.Host) {
+			writeErrorBody(w, http.StatusForbidden, codeForbidden, "host "+r.Host+" is not one this server answers")
 			return
 		}
-		mux.ServeHTTP(w, r)
+		next.ServeHTTP(w, r)
 	})
+}
+
+// prometheusRequest reports whether a request is a scrape of /metrics: one that does not accept HTML, since /metrics
+// is also the UI's metrics explorer, which a browser loads as a page.
+func prometheusRequest(r *http.Request) bool {
+	return r.URL.Path == MetricsPath && !strings.Contains(r.Header.Get("Accept"), "text/html")
 }
 
 // Content security policies. The UI's scripts, styles, fonts and API calls are all its own; its styles include
@@ -298,8 +358,8 @@ const (
 	artifactPolicy = "sandbox; default-src 'none'; frame-ancestors 'self'"
 )
 
-// CheckLoopback refuses a listen address that is not a loopback one: until token authentication (M4), the API
-// changes state for whoever reaches it, so it is served to this machine only. A host name must be localhost.
+// CheckLoopback refuses a listen address that is not a loopback one: without auth.token the API changes state for
+// whoever reaches it, so it is served to this machine only. A host name must be localhost.
 func CheckLoopback(addr string) error {
 	host, _, err := net.SplitHostPort(addr)
 	if err != nil {
@@ -308,23 +368,28 @@ func CheckLoopback(addr string) error {
 	if host != "" && loopbackHost(host) {
 		return nil
 	}
-	return fmt.Errorf("listen address %q is not a loopback address: the API has no authentication until token "+
-		"auth arrives (M4), so it listens on 127.0.0.1, ::1 or localhost only", addr)
+	return fmt.Errorf("listen address %q is not a loopback address: without auth.token the API listens on "+
+		"127.0.0.1, ::1 or localhost only", addr)
 }
 
 // loopbackHost reports whether a Host header names this machine: localhost or a loopback address, with or without
 // a port.
 func loopbackHost(hostport string) bool {
-	host := hostport
-	if h, _, err := net.SplitHostPort(hostport); err == nil {
-		host = h
-	}
-	host = strings.TrimSuffix(strings.TrimPrefix(host, "["), "]")
+	host := hostName(hostport)
 	if host == "localhost" {
 		return true
 	}
 	ip := net.ParseIP(host)
 	return ip != nil && ip.IsLoopback()
+}
+
+// hostName is a Host header's name: without its port and an IPv6 address's brackets.
+func hostName(hostport string) string {
+	host := hostport
+	if h, _, err := net.SplitHostPort(hostport); err == nil {
+		host = h
+	}
+	return strings.TrimSuffix(strings.TrimPrefix(host, "["), "]")
 }
 
 // Error codes: stable, for clients to branch on.
@@ -336,6 +401,7 @@ const (
 	codeMethodNotAllowed     = "methodNotAllowed"
 	codeTooLarge             = "tooLarge"
 	codeForbidden            = "forbidden"
+	codeUnauthorized         = "unauthorized"
 	codeUnsupportedMediaType = "unsupportedMediaType"
 	codeInternal             = "internal"
 )
@@ -449,8 +515,12 @@ func (s *Server) decodeBodyMax(w http.ResponseWriter, r *http.Request, v any, li
 	return nil
 }
 
-// user is who makes the request: the X-Millstream-User header, else $USER.
+// user is who makes the request: with Auth its user, whatever the request says; else the X-Millstream-User
+// header, else $USER.
 func (s *Server) user(r *http.Request) (string, error) {
+	if s.opts.Auth != nil {
+		return s.opts.Auth.User, nil
+	}
 	if u := strings.TrimSpace(r.Header.Get(UserHeader)); u != "" {
 		return u, nil
 	}

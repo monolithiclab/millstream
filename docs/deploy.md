@@ -4,12 +4,11 @@ One binary is the engine, the CLI and a node, with the web UI embedded. It runs 
 environment file, `millstream.yaml`, says where (spec section 14). This guide covers the three targets: a laptop, a
 VPS with Docker Compose, and a VPS with systemd.
 
-> **M4 status.** `millstream serve`, `apply`, `rollback` and `disable` and every key of the environment file are in
-> (Task 2 of the [M4 plan](plans/20261016.m4-server.md)), and the standby takes over (Task 3, see Standby and failover).
-> Still to come: `millstream node --join`, node TLS and the S3 artifact store with Task 4, token auth with Task 7 (until
-> then `serve` refuses a non-loopback `listen`, so the Compose engines, which listen on `0.0.0.0` for the published
-> port, do not start yet), retention with Task 8. The laptop target and a systemd engine listening on loopback work
-> today.
+> **M4 status.** `millstream serve`, `apply`, `rollback` and `disable`, every key of the environment file, the
+> standby's takeover, token auth and `/metrics` are in (Tasks 2, 3 and 7 of the [M4 plan](plans/20261016.m4-server.md);
+> see Standby and failover). Still to come: `millstream node --join`, node TLS and the S3 artifact store with Task 4,
+> retention with Task 8. The laptop target, a systemd engine and the Compose engines (on `0.0.0.0` inside their
+> containers, with the token) work today; the Compose nodes wait for Task 4.
 
 ## The artefacts
 
@@ -64,6 +63,19 @@ docker compose up -d
   `secrets` and the variable added to the engines' `environment`.
 - **Nodes** run exec actions as static binaries only (see Laptop). For container actions, run nodes on hosts of
   their own with systemd.
+
+## Signing in and monitoring
+
+With `auth.token` set, every API request carries the token: the CLI sends `MILLSTREAM_TOKEN` as a bearer token, and
+the web UI asks for it once on a sign-in screen, then holds a session cookie (12 hours, `HttpOnly`,
+`SameSite=Strict`, `Secure` behind HTTPS) until **Sign out** in its menu. Sessions live in the engine's memory: a
+restart, and so a token change or a failover, signs the UI out. Every decision made through the API is recorded
+under `auth.user` (`operator` by default): the open-source edition is single-user.
+
+Prometheus scrapes `/metrics` on the same listener, with the token as a bearer token (`authorization: { credentials:
+… }` in its scrape configuration), or without it when `metrics: { public: true }`. It serves the metric rollups and
+the engine's own gauges: leases held per node, the writer's batch sizes, failed review notifications and each eval
+case's latest score (spec section 10.2).
 
 ## Applying packages
 
@@ -136,9 +148,11 @@ A second `millstream serve` on the same Postgres database, with the same environ
 ## Security
 
 - **API token.** The API listens on loopback unless `listen` says otherwise, and refuses a non-loopback address
-  without `auth.token` (and, until Task 7 checks the token, refuses one with it too). Expose it through a reverse
-  proxy that terminates TLS (Caddy, nginx), never as plain HTTP.
-  Tokens are compared in constant time and never logged.
+  without `auth.token`. Expose it through a reverse proxy that terminates TLS (Caddy, nginx), with `ui.baseUrl` set
+  to its https address: the API answers requests naming that host or a loopback one, takes state-changing requests
+  from that origin, and marks the session cookie `Secure`. Or let the engine serve HTTPS itself with
+  `tls: { cert, key }` (PEM files, relative to the environment file). Never expose it as plain HTTP. Tokens are
+  compared in constant time and never logged.
 - **Node token and TLS.** Nodes present the deployment's node token, over TLS except on loopback (spec section 15.7).
   A node can fetch packages and artifacts only for the deliveries it holds. `millstream nodes revoke <id>` refuses
   a node; rotating the token disconnects every node until it has the new one. Revocation and the engine

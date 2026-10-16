@@ -146,11 +146,13 @@ ui-demo-package:
 		[ $$(echo "$$withheld" | wc -w) -eq 1 ] || { echo "want one recording of L002, got: $$withheld" >&2; exit 1; }; \
 		rm $$withheld
 
-# test-ui-e2e runs both suites: every screen over ui/e2e/fixture (playwright.config.ts), then the reference demo
-# (playwright.demo.config.ts); test-ui-demo runs the demo alone.
+# test-ui-e2e runs every suite: every screen over ui/e2e/fixture (playwright.config.ts), the same server with auth.token
+# set (playwright.auth.config.ts), then the reference demo (playwright.demo.config.ts); test-ui-demo runs the demo
+# alone.
 .PHONY: test-ui-e2e
 test-ui-e2e: ui-e2e-bin ui-demo-package ## Playwright and axe: every screen in both themes, languages and widths, then the M3 reference demo (Playwright container)
 	@$(UI_PLAYWRIGHT)
+	@$(UI_PLAYWRIGHT) --config playwright.auth.config.ts
 	@$(UI_PLAYWRIGHT) --config playwright.demo.config.ts
 
 .PHONY: test-ui-demo

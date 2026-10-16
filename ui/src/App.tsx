@@ -2,6 +2,7 @@ import { lazy, Suspense, type ReactNode } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
 import type { Api } from './api/api';
 import { ApiProvider } from './api/context';
+import { SessionGate } from './auth/SessionGate';
 import type { Language } from './i18n';
 import type { EventSourceFactory } from './live/useLiveStream';
 import { PreferencesProvider, type Theme } from './preferences';
@@ -82,9 +83,13 @@ export function App({
 }) {
   return (
     <PreferencesProvider language={language} theme={theme}>
-      <ApiProvider api={api} eventSource={eventSource} demo={demo}>
-        <ShellNoticeProvider>{children}</ShellNoticeProvider>
-      </ApiProvider>
+      <SessionGate api={api}>
+        {(guarded) => (
+          <ApiProvider api={guarded} eventSource={eventSource} demo={demo}>
+            <ShellNoticeProvider>{children}</ShellNoticeProvider>
+          </ApiProvider>
+        )}
+      </SessionGate>
     </PreferencesProvider>
   );
 }

@@ -23,7 +23,7 @@ import (
 const (
 	// ServerEnv names the served engine's API URL when --server does not.
 	ServerEnv = "MILLSTREAM_SERVER"
-	// TokenEnv holds the API's bearer token, sent with every request when set (token auth: M4 Task 7).
+	// TokenEnv holds the API's bearer token (auth.token), sent with every request when set.
 	TokenEnv = "MILLSTREAM_TOKEN"
 )
 

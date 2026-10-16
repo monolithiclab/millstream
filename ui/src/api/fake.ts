@@ -70,6 +70,8 @@ export interface Fixtures {
 export interface FakeOptions {
   delayMs?: number;
   failReads?: boolean;
+  // A server with a token: every call but signIn and signOut answers 401 until signIn with it.
+  token?: string;
 }
 
 export interface FakeCall {
@@ -110,6 +112,7 @@ function since(query: { since?: string; from?: string; to?: string }): { from: D
 export class FakeApi implements Api {
   readonly calls: FakeCall[] = [];
   private readonly fixtures: Fixtures;
+  private signedIn = false;
 
   constructor(
     fixtures: Fixtures = demoFixtures,
@@ -118,6 +121,25 @@ export class FakeApi implements Api {
     const { metrics, ...data } = fixtures;
     this.fixtures = { ...structuredClone(data), metrics };
     if (options.delayMs !== undefined || options.failReads) this.slowDown();
+    if (options.token !== undefined) this.requireToken();
+  }
+
+  // Wraps every method but signIn, signOut and artifactUrl (a URL, not a request): unauthorized until signed in.
+  private requireToken(): void {
+    const self = this as unknown as Record<string, unknown>;
+    for (const key of Object.keys(this)) {
+      const method = self[key];
+      if (typeof method !== 'function' || /^(signIn|signOut|artifactUrl)$/.test(key)) continue;
+      self[key] = (...args: unknown[]) =>
+        this.signedIn
+          ? (method as (...a: unknown[]) => unknown)(...args)
+          : Promise.reject(new ApiError(401, 'unauthorized', 'sign in'));
+    }
+  }
+
+  // Ends the session as the server would when it restarts or the session expires.
+  expireSession(): void {
+    this.signedIn = false;
   }
 
   // Wraps every read: waits delayMs, then fails when failReads.
@@ -420,6 +442,23 @@ export class FakeApi implements Api {
   acknowledgeInsight: Api['acknowledgeInsight'] = (...args) =>
     this.setInsight('acknowledgeInsight', args, 'acknowledged');
   muteInsight: Api['muteInsight'] = (...args) => this.setInsight('muteInsight', args, 'muted');
+
+  getSession: Api['getSession'] = () =>
+    Promise.resolve(
+      this.options.token === undefined ? { auth: false, user: 'demo' } : { auth: true, user: 'operator' },
+    );
+  signIn: Api['signIn'] = (token) => {
+    if (this.options.token === undefined)
+      return Promise.reject(new ApiError(503, 'unavailable', 'this server has no token'));
+    if (token !== this.options.token)
+      return Promise.reject(new ApiError(401, 'unauthorized', "the token does not match this server's"));
+    this.signedIn = true;
+    return this.record('signIn', [], { auth: true, user: 'operator' });
+  };
+  signOut: Api['signOut'] = () => {
+    this.signedIn = false;
+    return this.record('signOut', [], undefined);
+  };
 
   private setInsight(method: string, args: [string, string], state: Insight['state']): Promise<void> {
     const insight = this.fixtures.insights.find((i) => i.pipeline === args[0] && i.id === args[1]);

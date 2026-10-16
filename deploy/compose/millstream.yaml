@@ -2,8 +2,8 @@
 # /etc/millstream/millstream.yaml in both engines. Secrets are never written here: each { env: NAME } reads the
 # variable compose.yaml passes from .env.
 #
-# M4 status: every key parses (Task 2 of the M4 plan). serve refuses the non-loopback listen below until token auth
-# checks auth.token (Task 7); key shapes marked "Task N" may still change with that task.
+# M4 status: every key parses (Task 2 of the M4 plan) and the API checks auth.token (Task 7); key shapes marked
+# "Task N" may still change with that task.
 environment: production
 
 # Both engines share one Postgres database; the one holding its advisory lock is active, the other waits as the
@@ -14,7 +14,8 @@ store: { postgres: { dsn: { env: MILLSTREAM_DSN } } }
 engine: { lockCheck: 5s, keepalive: 5s }
 
 # Inside the container the API listens on every interface, so compose can publish it; a non-loopback listener is
-# refused without auth.token. Publish it on the host's loopback and put a TLS reverse proxy in front (docs/deploy.md).
+# refused without auth.token. Publish it on the host's loopback and put a TLS reverse proxy in front, at ui.baseUrl
+# (docs/deploy.md). Every decision made through the API is recorded under auth.user (default operator).
 listen: 0.0.0.0:7070
 auth: { token: { env: MILLSTREAM_TOKEN } }
 

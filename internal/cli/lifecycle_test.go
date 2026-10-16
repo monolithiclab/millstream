@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"strings"
 	"testing"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/monolithiclab/millstream/internal/api"
 	"github.com/monolithiclab/millstream/internal/engine"
+	"github.com/monolithiclab/millstream/internal/pipeline"
 	"github.com/monolithiclab/millstream/internal/store"
 )
 
@@ -109,7 +111,7 @@ func Test_commandsThroughTheServer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	srv, err := api.New(api.Options{Store: st, Engine: eng, User: "server"})
+	srv, err := api.New(api.Options{Store: st, Engine: eng, User: "server", Auth: &api.Auth{Token: "s3cret"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -199,8 +201,8 @@ func Test_commandsThroughTheServer(t *testing.T) {
 	}
 }
 
-// serve refuses what it cannot serve before it opens anything: a non-loopback listener (with auth.token, until
-// token auth checks it), what production forbids, and bad flags.
+// serve refuses what it cannot serve before it opens anything: a non-loopback listener without auth.token, a token
+// or a certificate it cannot read, what production forbids, and bad flags.
 func TestServeRefusals(t *testing.T) {
 	dir := t.TempDir()
 	write := func(name, src string) string {
@@ -213,14 +215,16 @@ func TestServeRefusals(t *testing.T) {
 	open := write("open.yaml", "listen: 0.0.0.0:7070\n")
 	token := write("token.yaml", "listen: 0.0.0.0:7070\nauth: { token: { env: T } }\n")
 	improve := write("improve.yaml", "improve: { enabled: true }\n")
+	badTLS := write("tls.yaml", "tls: { cert: missing.pem, key: missing.key }\n")
 	for _, tt := range []struct {
 		argv []string
 		want string
 	}{
 		{[]string{"--env-file", open, "serve"}, "requires auth.token"},
-		{[]string{"--env-file", token, "serve"}, "M4 Task 7"},
+		{[]string{"--env-file", token, "serve"}, "auth.token: environment variable T is not set"},
 		{[]string{"--env-file", open, "serve", "--listen", "127.0.0.1"}, "want host:port"},
 		{[]string{"--env-file", improve, "serve"}, "improve.enabled"},
+		{[]string{"--env-file", badTLS, "serve"}, "tls: open"},
 		{[]string{"serve", "--slots", "0"}, "--slots and --lease-ttl must be positive"},
 	} {
 		code, _, errOut := runCLICtx(t, context.Background(), map[string]string{"USER": "ops"}, tt.argv...)
@@ -231,6 +235,44 @@ func TestServeRefusals(t *testing.T) {
 	code, _, errOut := direct(nil, ServeCmd{Slots: 4, LeaseTTL: time.Minute})
 	if code != exitUsage || !strings.Contains(errOut, "no user") {
 		t.Errorf("serve without a user: code %d, stderr %q", code, errOut)
+	}
+}
+
+// auth.token turns the API's token authentication on: a non-loopback listener is allowed, the server answers the
+// listen address's host and ui.baseUrl's, and the session cookie is Secure when the UI is reached over HTTPS.
+func TestAPIAuth(t *testing.T) {
+	rt := &Runtime{Env: func(k string) (string, bool) { return "s3cret", k == "T" }}
+	if a, err := apiAuth(rt, &pipeline.Environment{}, "0.0.0.0:7070"); a != nil || err != nil {
+		t.Fatalf("without a token: %+v, %v", a, err)
+	}
+	token := &pipeline.SecretSource{Env: "T"}
+	if _, err := apiAuth(rt, &pipeline.Environment{AuthToken: &pipeline.SecretSource{Env: "U"}}, ""); err == nil {
+		t.Fatal("an unset token: no error")
+	}
+	for _, tt := range []struct {
+		env    pipeline.Environment
+		listen string
+		want   api.Auth
+	}{
+		{pipeline.Environment{AuthToken: token}, "127.0.0.1:7070",
+			api.Auth{Token: "s3cret", Hosts: []string{"127.0.0.1"}}},
+		{pipeline.Environment{AuthToken: token, AuthUser: "ana", MetricsPublic: true,
+			UIBaseURL: "https://millstream.example"}, "0.0.0.0:7070",
+			api.Auth{Token: "s3cret", User: "ana", MetricsPublic: true, Hosts: []string{"millstream.example"},
+				Origins: []string{"https://millstream.example"}, SecureCookie: true}},
+		{pipeline.Environment{AuthToken: token, UIBaseURL: "http://10.0.0.5:7070"}, "10.0.0.5:7070",
+			api.Auth{Token: "s3cret", Hosts: []string{"10.0.0.5", "10.0.0.5:7070"},
+				Origins: []string{"http://10.0.0.5:7070"}, SecureCookie: true}},
+		{pipeline.Environment{AuthToken: token, TLS: &pipeline.TLSConfig{}}, "localhost:7070",
+			api.Auth{Token: "s3cret", Hosts: []string{"localhost"}, SecureCookie: true}},
+	} {
+		got, err := apiAuth(rt, &tt.env, tt.listen)
+		if err != nil || !reflect.DeepEqual(*got, tt.want) {
+			t.Errorf("%s: %+v, %v; want %+v", tt.listen, got, err, tt.want)
+		}
+		if err := checkListen(tt.listen, &tt.env); err != nil {
+			t.Errorf("listen %s with a token: %v", tt.listen, err)
+		}
 	}
 }
 

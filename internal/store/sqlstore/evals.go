@@ -29,8 +29,10 @@ func (s *Store) RecordEval(ctx context.Context, results []store.EvalResult) erro
 
 // EvalResults returns an action's recorded scores, newest first.
 func (s *Store) EvalResults(ctx context.Context, action string) ([]store.EvalResult, error) {
-	out, err := scan(ctx, s.read, `SELECT action, action_digest, case_name, score, at FROM eval_results
-		WHERE action = ? ORDER BY at DESC, rowid DESC`, []any{action}, func(rows *sql.Rows) (store.EvalResult, error) {
+	var w where
+	w.eq("action", action)
+	out, err := scan(ctx, s.read, `SELECT action, action_digest, case_name, score, at FROM eval_results`+w.String()+
+		` ORDER BY at DESC, rowid DESC`, w.args, func(rows *sql.Rows) (store.EvalResult, error) {
 		var r store.EvalResult
 		var at TimeCol
 		if err := rows.Scan(&r.Action, &r.ActionDigest, &r.Case, &r.Score, &at); err != nil {

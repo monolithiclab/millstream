@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
+	"sync/atomic"
 	"time"
 
 	"github.com/monolithiclab/millstream/internal/failpoint"
@@ -20,6 +22,32 @@ const (
 	maxBatch    = 64
 	batchWindow = 5 * time.Millisecond
 )
+
+// batchBounds are the upper bounds of the writer's batch size histogram, up to maxBatch.
+var batchBounds = []int{1, 2, 4, 8, 16, 32, maxBatch}
+
+// batchSizes counts the writer's batches by size: the writer records, /metrics reads.
+type batchSizes struct {
+	buckets [8]atomic.Int64 // by the first bound holding the size; len(batchBounds) + 1
+	sum     atomic.Int64
+}
+
+func (b *batchSizes) record(n int) {
+	i, _ := slices.BinarySearch(batchBounds, n)
+	b.buckets[i].Add(1)
+	b.sum.Add(int64(n))
+}
+
+// WriterBatches returns the sizes of the batches the writer committed since the store opened.
+func (s *Store) WriterBatches() store.BatchSizes {
+	out := store.BatchSizes{Bounds: batchBounds, Counts: make([]int64, len(batchBounds)+1), Sum: s.batches.sum.Load()}
+	var n int64
+	for i := range out.Counts {
+		n += s.batches.buckets[i].Load()
+		out.Counts[i] = n
+	}
+	return out
+}
 
 // request is one unit waiting for the writer.
 type request struct {
@@ -102,6 +130,7 @@ func (s *Store) writer() {
 			}
 		}
 		results := s.commit(batch)
+		s.batches.record(len(batch))
 		s.prepareUnseen() // before the replies: once a unit returns, the writer is idle
 		for i, r := range batch {
 			r.done <- results[i]

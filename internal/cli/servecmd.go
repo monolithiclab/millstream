@@ -52,18 +52,22 @@ func (c ServeCmd) Run(rt *Runtime) error {
 	if err := checkListen(listen, env); err != nil {
 		return err
 	}
-	if identity(rt) == "" {
-		return usageError("serve: no user to record review decisions under: set $USER")
+	sec, err := newAPISecurity(rt, env, listen)
+	if err != nil {
+		return err
+	}
+	if identity(rt) == "" && env.AuthToken == nil {
+		return usageError("serve: no user to record review decisions under: set $USER, or auth.token and auth.user")
 	}
 	var site *site
-	site, err = listenSite(ctx, listen, func() { announce(rt, site) })
+	site, err = listenSite(ctx, listen, sec.tls, func() { announce(rt, site) })
 	if err != nil {
 		return err
 	}
 	siteCtx, stopSite := context.WithCancel(ctx)
 	siteDone := make(chan error, 1)
 	go func() { siteDone <- site.serve(siteCtx) }()
-	err = c.serveOn(ctx, rt, env, log, site)
+	err = c.serveOn(ctx, rt, env, log, site, sec)
 	stopSite()
 	return errors.Join(err, <-siteDone)
 }
@@ -71,8 +75,9 @@ func (c ServeCmd) Run(rt *Runtime) error {
 // serveOn runs the engine on site until ctx ends: on SQLite (or a store a test hands in) one engine, without a
 // standby (spec section 5.9); on Postgres, lead's terms and standby.
 func (c ServeCmd) serveOn(ctx context.Context, rt *Runtime, env *pipeline.Environment, log *slog.Logger, site *site,
+	sec apiSecurity,
 ) error {
-	s := &server{cmd: c, rt: rt, env: env, log: log, site: site, id: newEngineID()}
+	s := &server{cmd: c, rt: rt, env: env, log: log, site: site, sec: sec, id: newEngineID()}
 	s.open, s.run = s.acquire, s.term
 	if rt.Store == nil && env.Store.PostgresDSN != nil {
 		return s.lead(ctx)
@@ -89,7 +94,8 @@ type server struct {
 	env  *pipeline.Environment
 	log  *slog.Logger
 	site *site
-	id   string // the engine's id, the same across the process's terms
+	sec  apiSecurity // the API's token and TLS, the active engine's and the standby's
+	id   string      // the engine's id, the same across the process's terms
 	// open and run are acquire and term: tests replace them.
 	open func(ctx context.Context) (store.Store, error)
 	run  func(ctx context.Context, st store.Store, lead leadership) error
@@ -183,8 +189,8 @@ func (s *server) standby(ctx context.Context, since time.Time) {
 		dep = pgDeployment{e}
 	}
 	a, err := api.New(api.Options{Store: st, Artifacts: artifactStore(s.rt, s.env), Version: s.rt.Version,
-		User: identity(s.rt), Logger: s.log, Identity: api.Identity{ID: s.id, Since: since}, Deployment: dep,
-		Standby: true})
+		User: identity(s.rt), Auth: s.sec.auth, Logger: s.log, Identity: api.Identity{ID: s.id, Since: since},
+		Deployment: dep, Standby: true})
 	if err != nil {
 		s.log.Error("the standby serves no API", "error", err.Error())
 		return
@@ -226,7 +232,8 @@ func (s *server) term(ctx context.Context, st store.Store, lead leadership) erro
 			}
 		}
 	}
-	h := engineHost{site: s.site, embedded: env.NodeEmbedded, slots: s.cmd.Slots, leaseTTL: s.cmd.LeaseTTL, lead: lead}
+	h := engineHost{site: s.site, sec: s.sec, embedded: env.NodeEmbedded, slots: s.cmd.Slots, leaseTTL: s.cmd.LeaseTTL,
+		lead: lead}
 	return h.run(ctx, rt, env, st, e, notes, s.log, wait)
 }
 
@@ -274,21 +281,15 @@ func newEngineID() string {
 	return cmp.Or(host, "engine") + "-" + strings.ToLower(rand.Text()[:6])
 }
 
-// checkListen refuses a listen address that is not a loopback one: exposed, the API requires auth.token (spec
-// section 15.2), and until token auth (M4 Task 7) checks it, serve listens on loopback only.
+// checkListen refuses a listen address that is not a loopback one without auth.token: exposed, the API requires the
+// token (spec section 15.2).
 func checkListen(listen string, env *pipeline.Environment) error {
 	if _, _, err := net.SplitHostPort(listen); err != nil {
 		return usageError(fmt.Sprintf("listen %q: want host:port, such as 127.0.0.1:7070", listen))
 	}
-	err := api.CheckLoopback(listen)
-	switch {
-	case err == nil:
-		return nil
-	case env.AuthToken == nil:
+	if api.CheckLoopback(listen) != nil && env.AuthToken == nil {
 		return usageError(fmt.Sprintf("listen %s is not a loopback address: a non-loopback listener requires "+
 			"auth.token (spec section 15.2)", listen))
-	default:
-		return usageError(fmt.Sprintf("listen %s is not a loopback address: the API checks auth.token from M4 Task 7 "+
-			"on; until then serve listens on 127.0.0.1, ::1 or localhost only", listen))
 	}
+	return nil
 }

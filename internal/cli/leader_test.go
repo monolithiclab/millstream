@@ -196,7 +196,7 @@ func TestServeOn(t *testing.T) {
 	s.rt.Store = memoryStore(t)
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
-	if err := s.cmd.serveOn(ctx, s.rt, s.env, s.log, s.site); err != nil && !errors.Is(err, context.Canceled) {
+	if err := s.cmd.serveOn(ctx, s.rt, s.env, s.log, s.site, s.sec); err != nil && !errors.Is(err, context.Canceled) {
 		t.Fatalf("serve on SQLite: %v", err)
 	}
 	s.rt.Store = nil
@@ -204,7 +204,7 @@ func TestServeOn(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := s.cmd.serveOn(t.Context(), s.rt, env, s.log, s.site); err == nil ||
+	if err := s.cmd.serveOn(t.Context(), s.rt, env, s.log, s.site, s.sec); err == nil ||
 		!strings.Contains(err.Error(), "store.postgres.dsn") {
 		t.Fatalf("serve on Postgres without its DSN: %v", err)
 	}

@@ -47,6 +47,8 @@ export type ReplayRequest = Schemas['ReplayRequest'];
 
 export type MetricSeries = Schemas['MetricSeries'];
 
+export type Session = Schemas['Session'];
+
 export type Review = Schemas['Review'];
 export type ReviewPage = Schemas['ReviewPage'];
 export type ReviewDecision = Schemas['ReviewDecision'];

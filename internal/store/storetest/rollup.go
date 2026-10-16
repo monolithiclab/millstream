@@ -2,6 +2,7 @@ package storetest
 
 import (
 	"errors"
+	"reflect"
 	"testing"
 	"time"
 
@@ -167,12 +168,25 @@ func TestRollupFailpoint(t *testing.T, open Opener) {
 func TestMetricAndEventFilters(t *testing.T, open Opener) {
 	e := newEnv(t, open, fixture, otherPipeline)
 	e.fire("r1")
+	e.rollup() // a first minute of the queue depths, which the totals' latest minute must not show
 	e.clock.Advance(time.Hour)
 	e.firePipeline("other", "daily", "r2")
 	e.rollup()
 	rs, err := e.s.MetricRollups(e.ctx, store.MetricFilter{Name: metrics.ItemsOut, Since: t0.Add(time.Minute)})
 	if err != nil || len(rs) != 1 || rs[0].Pipeline != "other" || rs[0].Labels["stream"] != "trigger.daily" {
 		t.Fatalf("rollups since an hour = %+v, %v", rs, err)
+	}
+	// The totals add up every minute of a series and keep its latest one.
+	all, err := e.s.MetricRollups(e.ctx, store.MetricFilter{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	totals, err := e.s.MetricTotals(e.ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := metrics.Totals(all); !reflect.DeepEqual(totals, want) || len(totals) == 0 {
+		t.Fatalf("totals\n%+v\nwant\n%+v", totals, want)
 	}
 	evs, err := e.s.PipelineEvents(e.ctx, store.EventFilter{Pipeline: "listings",
 		Kinds: []string{store.EventRunStarted, store.EventItemPublished}})

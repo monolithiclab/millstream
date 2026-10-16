@@ -4,6 +4,8 @@ import { NavLink, Outlet, useMatch, useNavigate } from 'react-router-dom';
 import { useResource } from '../common/useResource';
 import { liveUrls } from '../api/api';
 import { useDemo } from '../api/context';
+import { useSession } from '../auth/SessionGate';
+import { buttons } from '../common/styles';
 import { languages, type Language } from '../i18n';
 import { useLiveStream } from '../live/useLiveStream';
 import { themes, usePreferences, type Theme } from '../preferences';
@@ -11,6 +13,7 @@ import { pipelinePath, pipelineScreens, screenPath, screens, workspaceScreens, t
 import { CommandPalette, type Command } from './CommandPalette';
 import { DemoBadge } from './DemoBadge';
 import { Kbd } from './Kbd';
+import { Logo } from './Logo';
 import { LiveIndicator } from './LiveIndicator';
 import { PipelineSwitcher } from './PipelineSwitcher';
 import { ShortcutHelp } from './ShortcutHelp';
@@ -32,22 +35,6 @@ const themeCommands: Record<Theme, 'palette.useSystem' | 'palette.useLight' | 'p
 };
 
 const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform);
-
-function Logo() {
-  return (
-    <svg width="22" height="22" viewBox="0 0 22 22" aria-hidden="true">
-      <path
-        d="M1 6C6 3.5 11 8.5 21 5.5M1 16.5C6 14 11 19 21 16"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-      />
-      <circle cx="7" cy="11.2" r="1.9" className="fill-accent" opacity="0.45" />
-      <circle cx="14" cy="11" r="2.3" className="fill-accent" />
-    </svg>
-  );
-}
 
 function NavGroup({
   title,
@@ -92,6 +79,7 @@ export function AppShell() {
   const pipeline = useMatch('/p/:pipeline/*')?.params.pipeline;
   const pipelines = useResource('pipelines', (api) => api.listPipelines());
   const demo = useDemo();
+  const { session, signOut } = useSession();
   const live = useLiveStream(pipeline === undefined ? null : liveUrls.pipeline(pipeline));
   const [palette, setPalette] = useState(false);
   const [help, setHelp] = useState(false);
@@ -149,8 +137,11 @@ export function AppShell() {
         run: () => prefs.setLanguage(otherLanguage),
       },
       { id: 'shortcuts', group: action, label: t('palette.showShortcuts'), hint: '?', run: () => setHelp(true) },
+      ...(session?.auth === true
+        ? [{ id: 'sign-out', group: action, label: t('palette.signOut'), run: () => void signOut() }]
+        : []),
     ];
-  }, [t, pipeline, pipelines, prefs, navigate, go]);
+  }, [t, pipeline, pipelines, prefs, navigate, go, session, signOut]);
 
   const closeMenu = () => setMenu(false);
 
@@ -208,6 +199,11 @@ export function AppShell() {
               ))}
             </select>
           </label>
+          {session?.auth === true && (
+            <button type="button" onClick={() => void signOut()} className={buttons.secondary}>
+              {t('shell.signOut')}
+            </button>
+          )}
         </div>
       </nav>
 

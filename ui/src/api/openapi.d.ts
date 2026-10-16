@@ -21,6 +21,25 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/session': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Whether the server requires the token, and who the request decides as. */
+    get: operations['getSession'];
+    put?: never;
+    /** Sign in with the token, for a session cookie (HttpOnly, SameSite=Strict). */
+    post: operations['createSession'];
+    /** Sign out; the response clears the session cookie. */
+    delete: operations['deleteSession'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/pipelines': {
     parameters: {
       query?: never;
@@ -919,6 +938,7 @@ export interface components {
           | 'unavailable'
           | 'methodNotAllowed'
           | 'tooLarge'
+          | 'unauthorized'
           | 'forbidden'
           | 'unsupportedMediaType'
           | 'internal';
@@ -1405,6 +1425,15 @@ export interface components {
         source?: string;
       }[];
     };
+    Session: {
+      /** @description Whether the server requires the token. */
+      auth: boolean;
+      /** @description Who the request's decisions are recorded under. */
+      user?: string;
+    };
+    SessionLogin: {
+      token: string;
+    };
     Nodes: {
       /** @description The engine serving this response, the active one or a standby serving reads. */
       engine: {
@@ -1557,7 +1586,7 @@ export interface components {
     since: string;
     from: string;
     to: string;
-    /** @description Who decides, until authentication (M4); the server's $USER without it. */
+    /** @description Who decides, on a server without auth.token; the server's $USER without it. Ignored with auth.token. */
     user: string;
     /** @description The pipeline of the run or item; their ids are unique within a pipeline only. */
     livePipeline: string;
@@ -1588,6 +1617,74 @@ export interface operations {
         content: {
           'application/yaml': string;
         };
+      };
+      default: components['responses']['Error'];
+    };
+  };
+  getSession: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The session. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Session'];
+        };
+      };
+      401: components['responses']['Error'];
+      default: components['responses']['Error'];
+    };
+  };
+  createSession: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['SessionLogin'];
+      };
+    };
+    responses: {
+      /** @description Signed in; the response sets the session cookie. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Session'];
+        };
+      };
+      401: components['responses']['Error'];
+      503: components['responses']['Error'];
+      default: components['responses']['Error'];
+    };
+  };
+  deleteSession: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Signed out. */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
       };
       default: components['responses']['Error'];
     };
@@ -2440,7 +2537,7 @@ export interface operations {
     parameters: {
       query?: never;
       header?: {
-        /** @description Who decides, until authentication (M4); the server's $USER without it. */
+        /** @description Who decides, on a server without auth.token; the server's $USER without it. Ignored with auth.token. */
         'X-Millstream-User'?: components['parameters']['user'];
       };
       path: {
@@ -2501,7 +2598,7 @@ export interface operations {
     parameters: {
       query?: never;
       header?: {
-        /** @description Who decides, until authentication (M4); the server's $USER without it. */
+        /** @description Who decides, on a server without auth.token; the server's $USER without it. Ignored with auth.token. */
         'X-Millstream-User'?: components['parameters']['user'];
       };
       path: {

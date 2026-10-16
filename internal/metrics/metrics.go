@@ -79,6 +79,18 @@ const (
 	ReviewSamples = "review_samples"
 )
 
+// Metrics the engine measures itself, exposed beside the rollups as Families on /metrics (spec section 10.2).
+const (
+	// LeasesHeld is the deliveries each node holds leased now {pipeline, node}: a gauge.
+	LeasesHeld = "leases_held"
+	// WriterBatchSize is the units per batch the store's writer committed since it opened: a histogram.
+	WriterBatchSize = "writer_batch_size"
+	// NotificationsFailed counts the review notifications the engine failed to deliver since it started: a counter.
+	NotificationsFailed = "review_notifications_failed"
+	// EvalScore is the latest score of each eval case of an action {action, case}, from 0 to 1: a gauge.
+	EvalScore = "eval_score"
+)
+
 // DecisionAutoApprove is the decision label of an item the autoApprove rule approved.
 const DecisionAutoApprove = "autoApprove"
 
@@ -94,6 +106,7 @@ var kinds = map[string]Kind{
 	Unschedulable: Counter, QueueDepth: Gauge, OldestPending: Gauge, DeliveryLatency: Histogram,
 	DeliveryWait: Distribution, DeliveryWork: Distribution, DeliveryCost: Distribution, RunDuration: Distribution,
 	RunCost: Distribution, ReviewDecisions: Counter, ReviewTimeToDecision: Distribution, ReviewSamples: Counter,
+	LeasesHeld: Gauge, WriterBatchSize: Histogram, NotificationsFailed: Counter, EvalScore: Gauge,
 }
 
 // KindOf returns a metric's kind: an engine metric's own, Counter for a histogram's bucket series, and
@@ -229,7 +242,7 @@ func Points(ev store.Event) []Point {
 }
 
 // ActionName is the name an action's metric is stored under: its own, or action_<name> when an engine metric (or
-// one of its series) uses it.
+// one of its series) uses it, the metrics the engine measures itself included.
 func ActionName(name string) string {
 	base, _ := strings.CutSuffix(name, BucketSuffix)
 	if _, engine := kinds[base]; engine {

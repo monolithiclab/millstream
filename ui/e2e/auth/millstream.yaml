@@ -1,0 +1,3 @@
+# The environment of make test-ui-e2e's token run (playwright.auth.config.ts): the API takes the token in
+# MILLSTREAM_TOKEN, and every decision is recorded under auth.user.
+auth: { token: { env: MILLSTREAM_TOKEN }, user: operator }
