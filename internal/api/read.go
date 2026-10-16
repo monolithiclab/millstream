@@ -9,15 +9,18 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"maps"
 	"mime"
 	"net/http"
+	"path"
 	"slices"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/monolithiclab/millstream/internal/artifacts"
 	"github.com/monolithiclab/millstream/internal/engine"
 	"github.com/monolithiclab/millstream/internal/expr"
 	"github.com/monolithiclab/millstream/internal/insights"
@@ -787,20 +790,42 @@ func (s *Server) serveArtifact(w http.ResponseWriter, r *http.Request, pipelineN
 		return fmt.Errorf("artifact %s: %w", ref.Name, err)
 	}
 	defer func() { _ = f.Close() }()
-	base, _, _ := strings.Cut(ref.Type, ";")
+	if artifacts.Compressed(ref) {
+		return serveDecompressed(w, ref, f)
+	}
+	setArtifactHeaders(w, ref, ref.Type)
+	// Ranges, conditional requests on the ETag, and the length of the bytes on disk.
+	http.ServeContent(w, r, "", time.Time{}, f)
+	return nil
+}
+
+// setArtifactHeaders sets the headers every artifact is served with: its media type typ, inline only when passive,
+// under the sandbox policy, cached by its content address.
+func setArtifactHeaders(w http.ResponseWriter, ref store.ArtifactRef, typ string) {
+	base, _, _ := strings.Cut(typ, ";")
 	disposition := "attachment"
 	if slices.Contains(inlineTypes, strings.TrimSpace(base)) {
 		disposition = "inline"
 	}
 	h := w.Header()
-	h.Set("Content-Type", ref.Type)
+	h.Set("Content-Type", typ)
 	h.Set("Content-Disposition", mime.FormatMediaType(disposition, map[string]string{"filename": ref.Name}))
 	h.Set("Content-Security-Policy", artifactPolicy)
 	h.Set("X-Frame-Options", "SAMEORIGIN")
 	h.Set("Cache-Control", "private, max-age=31536000, immutable") // content-addressed
 	h.Set("ETag", `"`+ref.SHA256+`"`)
-	// Ranges, conditional requests on the ETag, and the length of the bytes on disk.
-	http.ServeContent(w, r, "", time.Time{}, f)
+}
+
+// serveDecompressed answers an artifact stored compressed (a transcript, spec section 7.2) decompressed, its type
+// read from its name, without ranges: the bytes on disk are not the bytes served.
+func serveDecompressed(w http.ResponseWriter, ref store.ArtifactRef, f io.Reader) error {
+	r, err := artifacts.Decompressed(ref, f)
+	if err != nil {
+		return err
+	}
+	setArtifactHeaders(w, ref, cmp.Or(mime.TypeByExtension(path.Ext(ref.Name)), "application/octet-stream"))
+	w.WriteHeader(http.StatusOK)
+	_, _ = io.Copy(w, r) // the status is sent: a failure mid-copy can only cut the body short
 	return nil
 }
 
@@ -1148,5 +1173,14 @@ func (s *Server) listNodes(w http.ResponseWriter, r *http.Request) error {
 		}
 	}
 	writeJSON(w, http.StatusOK, out)
+	return nil
+}
+
+func (s *Server) getPurge(w http.ResponseWriter, r *http.Request) error {
+	p, err := s.opts.Store.Purge(r.Context(), r.PathValue("purge"))
+	if err != nil {
+		return err
+	}
+	writeJSON(w, http.StatusOK, ToPurge(p))
 	return nil
 }

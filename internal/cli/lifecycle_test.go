@@ -178,6 +178,8 @@ func Test_commandsThroughTheServer(t *testing.T) {
 		{replay, "run_replay_rp\n", false},
 		{replay, "run_replay_rp (already started)\n", false},
 		{NodesRevokeCmd{Node: "gpu-1"}, "gpu-1 revoked\n", false},
+		{PurgeCmd{Key: "nobody", RequestID: "pg"}, "purge_pg done: 0 items erased\n", false},
+		{PurgeCmd{Key: "nobody", RequestID: "pg"}, "purge_pg done: 0 items erased (already started)\n", false},
 		{TriggerFireCmd{Pipeline: "extra", Trigger: "adhoc", Payload: "{}", Var: map[string]string{"x": "1"}}, "--var", true},
 		{InboxApproveCmd{deliveryRef: deliveryRef{Delivery: "d1"}, reviewerFlag: reviewerFlag{As: "ana"}}, "--pipeline", true},
 		{InboxSampleCmd{deliveryRef: deliveryRef{Delivery: "d1"}, Decision: "agree", reviewerFlag: reviewerFlag{As: "ana"}},

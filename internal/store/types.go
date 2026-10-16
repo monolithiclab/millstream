@@ -156,6 +156,9 @@ const (
 	EventReviewSampled          = "reviewSampled"
 	EventSampleDecided          = "sampleDecided"
 	EventSampleExpired          = "sampleExpired"
+	EventItemsExpired           = "itemsExpired"
+	EventPurgeStarted           = "purgeStarted"
+	EventPurgeCompleted         = "purgeCompleted"
 )
 
 // Budget scopes (spec section 7.5): budget.runUsd bounds the spend of one run, budget.dayUsd the spend of the
@@ -513,6 +516,9 @@ type Item struct {
 	// ParentPipeline is the pipeline holding the item's parents when it is another one: a copy published on an
 	// imported stream (spec section 4.12). Empty for every other item.
 	ParentPipeline string
+	// Tombstone says why the item no longer holds its payload: empty while it does. A tombstoned item keeps its
+	// envelope and lineage; its payload reads as null and it carries no artifacts (spec section 9.3).
+	Tombstone Tombstone
 }
 
 // NodeState is a remote node's state (spec section 5.10).
@@ -999,4 +1005,105 @@ type SampleFilter struct {
 	State    SampleState
 	After    int64
 	Limit    int
+}
+
+// Tombstone is why an item no longer holds its payload (spec section 9.3). Its envelope (id, run, stream, step,
+// parents, generation, time) stays, so counts and lineage remain correct; its payload is null and its artifacts are
+// gone. An erased item's key is gone too.
+type Tombstone string
+
+// Tombstones.
+const (
+	// TombstoneExpired: its stream's retention passed (Retain).
+	TombstoneExpired Tombstone = "expired"
+	// TombstoneErased: a purge erased it (StartPurge fences it, ErasePurge erases it).
+	TombstoneErased Tombstone = "erased"
+)
+
+// RetentionBatch is the most records of each kind one Retain pass removes.
+const RetentionBatch = 500
+
+// StreamRetention is a stream's retention (spec section 4.2, streams.<name>.retention): its items' payloads and
+// artifacts are kept for Age after they were published.
+type StreamRetention struct {
+	Pipeline string
+	Stream   string
+	Age      time.Duration
+}
+
+// RetentionRequest is one pass of the retention unit (spec section 9.3): the streams with a retention, and how long
+// events, transcripts (the artifacts attempts keep) and metric rollups are kept, zero for ever. Ages count back from
+// the store clock.
+type RetentionRequest struct {
+	Streams     []StreamRetention
+	Events      time.Duration
+	Transcripts time.Duration
+	Rollups     time.Duration
+	// Limit bounds the records of each kind the pass removes; zero means RetentionBatch.
+	Limit int
+}
+
+// RetentionResult is what a Retain pass removed. More says a kind reached its limit: another pass has more to do.
+type RetentionResult struct {
+	Items, Events, Transcripts, Rollups int
+	More                                bool
+}
+
+// Add adds o's counts to r's.
+func (r *RetentionResult) Add(o RetentionResult) {
+	r.Items, r.Events, r.Transcripts, r.Rollups = r.Items+o.Items, r.Events+o.Events, r.Transcripts+o.Transcripts,
+		r.Rollups+o.Rollups
+}
+
+// PurgeBatch is the most items one ErasePurge pass erases.
+const PurgeBatch = 200
+
+// PurgeScope is what a purge names (spec section 9.3).
+type PurgeScope string
+
+// Purge scopes.
+const (
+	PurgeKey  PurgeScope = "key"
+	PurgeItem PurgeScope = "item"
+)
+
+// PurgeState is where a purge stands.
+type PurgeState string
+
+// Purge states: erasing until every fenced item is erased, sweeping while the engine deletes the artifact files no
+// surviving item references, then done.
+const (
+	PurgeErasing  PurgeState = "erasing"
+	PurgeSweeping PurgeState = "sweeping"
+	PurgeDone     PurgeState = "done"
+)
+
+// PurgeRequest asks for a purge: of the items with Key, or of the item Item, in Pipeline or, when it is empty, in
+// every pipeline; exactly one of Key and Item. ID names it: a request repeated with the same id finds the purge it
+// started.
+type PurgeRequest struct {
+	ID       string
+	Key      string
+	Item     string
+	Pipeline string
+}
+
+// Purge is a durable erasure operation (spec section 9.3, the purges table). It holds no erased data: the key or
+// item named is not kept.
+type Purge struct {
+	ID          string
+	Scope       PurgeScope
+	Pipeline    string
+	State       PurgeState
+	Items       int64    // the items fenced: those named, their descendants and their copies in other pipelines
+	Erased      int64    // how many of them are erased so far
+	Pipelines   []string // the pipelines holding them, sorted
+	RequestedAt time.Time
+	FinishedAt  time.Time
+}
+
+// ArtifactKey names an artifact store entry.
+type ArtifactKey struct {
+	Pipeline string
+	SHA256   string
 }

@@ -17,7 +17,7 @@ import { useCoalescedRefresh } from '../../live/useCoalescedRefresh';
 import { parseData, useLiveStream } from '../../live/useLiveStream';
 import { pipelinePath, runPath } from '../../routes';
 import { ScreenPage } from '../ScreenPage';
-import { Artifacts, LineageTree } from './ItemParts';
+import { Artifacts, LineageTree, TombstoneNotice } from './ItemParts';
 import { Journey } from './Journey';
 
 // Raw events kept on the page.
@@ -236,16 +236,20 @@ export function ItemScreen() {
   if (wide) tabs.push({ id: 'events', label: t('item.tabs.events') });
   const tab = tabs.some((x) => x.id === chosen) ? chosen : 'journey';
 
-  const payload = (
-    <JsonViewer
-      value={item.payload}
-      title={t('item.payload.title')}
-      meta={t('item.payload.meta', {
-        stream: item.stream,
-        size: formatBytes(byteSize(JSON.stringify(item.payload)), f),
-      })}
-    />
-  );
+  // A tombstoned item keeps its envelope and lineage: a notice stands in for its payload and artifacts.
+  const payload =
+    item.tombstone !== undefined ? (
+      <TombstoneNotice tombstone={item.tombstone} />
+    ) : (
+      <JsonViewer
+        value={item.payload}
+        title={t('item.payload.title')}
+        meta={t('item.payload.meta', {
+          stream: item.stream,
+          size: formatBytes(byteSize(JSON.stringify(item.payload)), f),
+        })}
+      />
+    );
   const lineageTree = <LineageTree pipeline={pipeline} item={item} lineage={lineage} />;
 
   return (
@@ -258,6 +262,7 @@ export function ItemScreen() {
             <span className="font-mono text-ui break-all text-ink-2">{item.id}</span>
             <CopyButton text={item.id} label={t('item.copyId')} icon />
             <StatusBadge status={state.status} label={stateLabel} />
+            {item.tombstone !== undefined && <StatusBadge status={item.tombstone} />}
           </div>
         </div>
       }
@@ -310,7 +315,7 @@ export function ItemScreen() {
 
         <div className="flex min-w-0 flex-[1_1_380px] flex-col gap-6">
           {wide && payload}
-          <Artifacts pipeline={pipeline} item={item} />
+          {item.tombstone === undefined && <Artifacts pipeline={pipeline} item={item} />}
           {wide && lineageTree}
         </div>
       </div>

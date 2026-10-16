@@ -57,7 +57,10 @@ func (w *wtx) publish(rev *revision, run *runRow, it newItem) error {
 		err = w.event(run.pipeline, run.id, store.EventItemPublished,
 			map[string]any{"itemId": it.id, "stream": it.stream, "step": it.step})
 	} else {
-		err = w.firstCommit(run, it, hash)
+		var tombstoned bool
+		if tombstoned, err = w.firstCommit(run, it, hash); err == nil && tombstoned {
+			return nil // its payload is gone: there is nothing to deliver (spec section 9.3)
+		}
 	}
 	if err != nil {
 		return err
@@ -85,16 +88,23 @@ func (w *wtx) countArtifacts(pipelineName string, refs []store.ArtifactRef) erro
 	return nil
 }
 
-func (w *wtx) firstCommit(run *runRow, it newItem, hash string) error {
-	var existing string
-	if err := w.queryRow(`SELECT payload_hash FROM items WHERE pipeline = ? AND id = ?`, run.pipeline, it.id).
-		Scan(&existing); err != nil {
-		return notFound(err, "item "+it.id)
+// firstCommit applies the first-commit rule to an item published again (spec section 5.2): the same payload is a
+// no-op, another one records a nondeterministicOutput event. It reports whether the existing item is tombstoned
+// (spec section 9.3), which a back-fill finding a copy the consumer let expire or erased may meet: nothing is
+// compared or delivered then.
+func (w *wtx) firstCommit(run *runRow, it newItem, hash string) (tombstoned bool, err error) {
+	var existing, tombstone string
+	if err := w.queryRow(`SELECT payload_hash, tombstone FROM items WHERE pipeline = ? AND id = ?`, run.pipeline,
+		it.id).Scan(&existing, &tombstone); err != nil {
+		return false, notFound(err, "item "+it.id)
+	}
+	if tombstone != "" {
+		return true, nil
 	}
 	if existing == hash {
-		return nil
+		return false, nil
 	}
-	return w.event(run.pipeline, run.id, store.EventNondeterministicOutput,
+	return false, w.event(run.pipeline, run.id, store.EventNondeterministicOutput,
 		map[string]any{"itemId": it.id, "stream": it.stream, "step": it.step})
 }
 

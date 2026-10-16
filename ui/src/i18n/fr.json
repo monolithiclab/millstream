@@ -131,7 +131,9 @@
     "revoked": "Révoqué",
     "healthy": "Sain",
     "late": "Signal en retard",
-    "lost": "Perdu"
+    "lost": "Perdu",
+    "expired": "Expiré",
+    "erased": "Effacé"
   },
   "graph": {
     "kind": {
@@ -385,6 +387,10 @@
     "payload": {
       "title": "Données",
       "meta": "dans {{stream}} · {{size}}"
+    },
+    "tombstone": {
+      "expired": "Les données de cet item ont expiré selon la rétention de son flux. Son enveloppe et sa lignée sont conservées.",
+      "erased": "Cet item a été effacé par une purge. Son enveloppe et sa lignée sont conservées ; ses données, sa clé et ses artefacts ont disparu."
     },
     "journey": {
       "label": "Parcours",

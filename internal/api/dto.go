@@ -141,6 +141,8 @@ type Item struct {
 	// ParentPipeline is the pipeline of the item's parents when it is another one: a copy published on an imported
 	// stream (spec section 4.12).
 	ParentPipeline string `json:"parentPipeline,omitempty"`
+	// Tombstone says why the item no longer holds its payload (spec section 9.3), empty while it does.
+	Tombstone string `json:"tombstone,omitempty"`
 }
 
 // LineageNode is an item of a lineage, without its payload. Pipeline is the item's: another pipeline's for an
@@ -154,6 +156,8 @@ type LineageNode struct {
 	Key      string    `json:"key"`
 	Parents  []string  `json:"parents"`
 	TS       time.Time `json:"ts"`
+	// Tombstone says why the item no longer holds its payload, empty while it does.
+	Tombstone string `json:"tombstone,omitempty"`
 }
 
 // Lineage is an item's ancestors (up) and descendants (down), nearest first; Truncated says a bound cut it.
@@ -420,13 +424,32 @@ func toItem(it store.Item) Item {
 	return Item{
 		ID: it.ID, Pipeline: it.Pipeline, RunID: it.RunID, Stream: it.Stream, Step: it.Step, Key: it.Key,
 		Parents: orEmpty(it.Parents), Generation: it.Generation, TS: it.TS, Payload: payload,
-		Artifacts: orEmpty(it.Artifacts), ParentPipeline: it.ParentPipeline,
+		Artifacts: orEmpty(it.Artifacts), ParentPipeline: it.ParentPipeline, Tombstone: string(it.Tombstone),
 	}
 }
 
 func toLineageNode(it store.Item) LineageNode {
 	return LineageNode{ID: it.ID, Pipeline: it.Pipeline, RunID: it.RunID, Stream: it.Stream, Step: it.Step, Key: it.Key,
-		Parents: orEmpty(it.Parents), TS: it.TS}
+		Parents: orEmpty(it.Parents), TS: it.TS, Tombstone: string(it.Tombstone)}
+}
+
+// Purge is a purge (spec section 9.3).
+type Purge struct {
+	ID          string     `json:"id"`
+	Scope       string     `json:"scope"`
+	Pipeline    string     `json:"pipeline,omitempty"`
+	State       string     `json:"state"`
+	Items       int64      `json:"items"`
+	Erased      int64      `json:"erased"`
+	Pipelines   []string   `json:"pipelines"`
+	RequestedAt time.Time  `json:"requestedAt"`
+	FinishedAt  *time.Time `json:"finishedAt,omitempty"`
+}
+
+// ToPurge is a purge as the API answers it.
+func ToPurge(p store.Purge) Purge {
+	return Purge{ID: p.ID, Scope: string(p.Scope), Pipeline: p.Pipeline, State: string(p.State), Items: p.Items,
+		Erased: p.Erased, Pipelines: orEmpty(p.Pipelines), RequestedAt: p.RequestedAt, FinishedAt: timePtr(p.FinishedAt)}
 }
 
 func toDelivery(d store.Delivery) Delivery {

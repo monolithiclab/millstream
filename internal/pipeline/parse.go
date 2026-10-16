@@ -220,7 +220,11 @@ func parseStream(n *yaml.Node, path string) (StreamDecl, error) {
 		return d, err
 	}
 	if f.get("pipeline") != nil || f.get("stream") != nil {
-		if err := f.allow("pipeline", "stream"); err != nil {
+		// An imported stream's copies are the consumer's own items: it sets their retention (spec section 4.12).
+		if err := f.allow("pipeline", "stream", "retention"); err != nil {
+			return d, err
+		}
+		if err := optional(f, "retention", &d.Retention, duration); err != nil {
 			return d, err
 		}
 		imp := &StreamImport{}

@@ -1,12 +1,13 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
-import type { ArtifactRef, Item, Lineage, LineageNode } from '../../api/schema';
+import type { ArtifactRef, Item, Lineage, LineageNode, Tombstone } from '../../api/schema';
 import { useApi } from '../../api/context';
 import { buttons, card } from '../../common/styles';
 import { QueryView } from '../../common/States';
 import { useResource } from '../../common/useResource';
 import { shortId } from '../../common/Id';
+import { StatusBadge } from '../../common/Status';
 import { formatBytes, useFormat } from '../../common/useFormat';
 import { itemPath } from '../../routes';
 
@@ -88,12 +89,28 @@ export function LineageTree({ pipeline, item, lineage }: { pipeline: string; ite
                 {node.pipeline !== pipeline && (
                   <span className="text-ink-2">{t('item.lineage.inPipeline', { pipeline: node.pipeline })}</span>
                 )}
+                {node.tombstone !== undefined && <StatusBadge status={node.tombstone} />}
               </>
             )}
           </li>
         ))}
       </ol>
       {lineage.truncated && <p className="m-0 text-tiny text-ink-3">{t('item.lineage.truncated')}</p>}
+    </section>
+  );
+}
+
+// In place of the payload of an item that no longer holds it: why, and what is kept.
+export function TombstoneNotice({ tombstone }: { tombstone: Tombstone }) {
+  const { t } = useTranslation();
+  return (
+    <section aria-labelledby="payload-title" className={`${card} flex flex-col gap-2.5 px-3.5 py-3`}>
+      <h2 id="payload-title" className="m-0 text-ui font-bold">
+        {t('item.payload.title')}
+      </h2>
+      <p className="m-0 text-small text-ink-2">
+        {t(tombstone === 'expired' ? 'item.tombstone.expired' : 'item.tombstone.erased')}
+      </p>
     </section>
   );
 }

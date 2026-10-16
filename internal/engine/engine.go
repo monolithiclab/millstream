@@ -76,6 +76,9 @@ type Options struct {
 	Resolver pipeline.ActionResolver
 	// Artifacts is the artifact store nodes move artifacts through; nil fails every delivery that has any.
 	Artifacts artifacts.Store
+	// ArtifactFiles is the artifact store as the artifact sweep sees it (spec section 9.3); nil means Artifacts, when
+	// it implements artifacts.Files (the local directory and the S3-compatible store do).
+	ArtifactFiles artifacts.Files
 	// Agents says how agent steps run.
 	Agents Agents
 	// Notifier posts the notifications of review steps with a notify webhook (spec section 8); nil sends none.
@@ -89,6 +92,10 @@ type Options struct {
 	// Leadership is who this engine is on a deployment with a standby and the epoch it leads in (spec section
 	// 5.9), what nodes following the active engine across a failover learn it by; zero on SQLite.
 	Leadership Leadership
+	// Retention is the environment file's retention key: how long events, transcripts and rollups are kept (zero
+	// for ever), and how often the retention job runs (Every; zero means DefaultRetentionInterval). Streams carry
+	// their own retention in their pipelines (spec section 9.3).
+	Retention pipeline.Retention
 	// Takeover makes every step's rate start empty, a full token's interval before its first lease, so that an
 	// engine taking a deployment over (serve) never causes a burst (spec section 5.9).
 	Takeover bool
@@ -157,6 +164,7 @@ type Engine struct {
 
 	projMu       sync.Mutex           // serialises Project
 	lastInsights map[string]time.Time // when each pipeline's insights last ran; under projMu
+	retainMu     sync.Mutex           // serialises Retain
 
 	// Test seams, set before Run: maxDue bounds the missed cron times kept (the maxDue constant), and ticked and
 	// projected, when set, are called after each pass of Run's expiry tick and of its projectors.
@@ -204,6 +212,9 @@ func New(opts Options) (*Engine, error) {
 	}
 	if opts.ProjectInterval <= 0 {
 		opts.ProjectInterval = DefaultProjectInterval
+	}
+	if opts.Retention.Every <= 0 {
+		opts.Retention.Every = DefaultRetentionInterval
 	}
 	if opts.Env == nil {
 		opts.Env = func(string) (string, bool) { return "", false }
@@ -298,9 +309,9 @@ func (e *Engine) apply(ctx context.Context, pkg *pipeline.Package, message strin
 }
 
 // Run rebuilds the leases in flight from the store and times out the overdue reviews, closes Ready, then expires
-// leases, times out reviews and runs the cron scheduler every tick, and the projectors every ProjectInterval, until
-// ctx is cancelled. It returns nil then, once the
-// projectors stopped. Nodes start pulling once Ready is closed, so the rebuild never races their leases.
+// leases, times out reviews and runs the cron scheduler every tick, the projectors every ProjectInterval and the
+// retention job every retention.every (resuming the purges not done first), until ctx is cancelled. It returns nil
+// then, once the projectors and the retention job stopped. Nodes start pulling once Ready is closed, so the rebuild never races their leases.
 func (e *Engine) Run(ctx context.Context) error {
 	// The review notifications outlive ctx: queued and in-flight ones get a grace period once the engine stops.
 	if e.opts.Notifier != nil {
@@ -318,6 +329,7 @@ func (e *Engine) Run(ctx context.Context) error {
 	var wg sync.WaitGroup
 	defer wg.Wait()
 	wg.Go(func() { e.projectLoop(ctx) })
+	wg.Go(func() { e.retentionLoop(ctx) })
 	tick := time.NewTicker(e.opts.TickInterval)
 	defer tick.Stop()
 	for first := true; ; first = false {

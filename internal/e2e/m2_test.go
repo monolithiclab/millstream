@@ -5,6 +5,7 @@ package e2e
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"maps"
 	"math"
 	"os"
@@ -18,6 +19,7 @@ import (
 	"github.com/monolithiclab/millstream/examples/m1-fixture/listing"
 	"github.com/monolithiclab/millstream/examples/m2-fixture/pool"
 	"github.com/monolithiclab/millstream/internal/agent"
+	"github.com/monolithiclab/millstream/internal/artifacts"
 	"github.com/monolithiclab/millstream/internal/failpoint"
 	"github.com/monolithiclab/millstream/internal/ids"
 	"github.com/monolithiclab/millstream/internal/pipeline"
@@ -140,7 +142,7 @@ func transcripts(t *testing.T, db, runID string) map[string]agent.Transcript {
 			arts[0].Attempt != 1 {
 			t.Fatalf("score delivery %s is %s with attempt artifacts %+v (%v)", d.ID, d.State, arts, err)
 		}
-		data, err := os.ReadFile(filepath.Join(filepath.Dir(db), "artifacts", m2Pipeline, arts[0].SHA256))
+		data, err := readArtifact(filepath.Join(filepath.Dir(db), "artifacts", m2Pipeline), arts[0].ArtifactRef)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -451,4 +453,19 @@ func TestM2CrashAtFailpoints(t *testing.T) {
 			}
 		}
 	}
+}
+
+// readArtifact reads an artifact from a pipeline's directory of the local artifact store, decompressed when it is
+// stored compressed (a transcript, spec section 7.2).
+func readArtifact(dir string, ref store.ArtifactRef) ([]byte, error) {
+	f, err := os.Open(filepath.Join(dir, ref.SHA256)) // #nosec G304 -- a test's own artifact directory
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = f.Close() }()
+	r, err := artifacts.Decompressed(ref, f)
+	if err != nil {
+		return nil, err
+	}
+	return io.ReadAll(r)
 }

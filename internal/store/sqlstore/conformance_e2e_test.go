@@ -123,3 +123,11 @@ func TestImportRevisionsAndChains(t *testing.T) {
 func TestImportFollowsReviews(t *testing.T) {
 	storetest.TestImportFollowsReviews(t, memoryStore)
 }
+
+func TestRetainKeepsSampledItems(t *testing.T) {
+	storetest.TestRetainKeepsSampledItems(t, memoryStore)
+}
+
+func TestPurgeErasesReviewsAndDeadLetters(t *testing.T) {
+	storetest.TestPurgeErasesReviewsAndDeadLetters(t, memoryStore)
+}

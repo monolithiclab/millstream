@@ -231,7 +231,7 @@ export class FakeApi implements Api {
   getLineage: Api['getLineage'] = async (p, id, { depth = 10 } = {}) => {
     const start = await this.getItem(p, id);
     const items = this.fixtures.items;
-    const node = ({ id, pipeline, runId, stream, step, key, parents, ts }: Item): LineageNode => ({
+    const node = ({ id, pipeline, runId, stream, step, key, parents, ts, tombstone }: Item): LineageNode => ({
       id,
       pipeline,
       runId,
@@ -240,6 +240,7 @@ export class FakeApi implements Api {
       key,
       parents,
       ts,
+      ...(tombstone === undefined ? {} : { tombstone }),
     });
     // An item is named by pipeline and id: a copy's parents are in the producer's pipeline (spec section 4.12).
     const ref = (i: Item) => `${i.pipeline}/${i.id}`;

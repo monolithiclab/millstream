@@ -9,6 +9,9 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/monolithiclab/millstream/internal/store"
+	"github.com/monolithiclab/millstream/internal/store/sqlite"
 )
 
 func Test_triggerCommand(t *testing.T) {
@@ -155,6 +158,26 @@ func Test_dlqAndReplayCommands(t *testing.T) {
 	s.checkRefusals(t, nil, []refusal{
 		{ReplayCmd{From: "dlq", Pipeline: "listings", RunID: "nope"}, false, "run nope: not found"},
 	})
+
+	// Purge a listing, its lineage with it (the same state: a store clone costs more than the purge).
+	st := s.st
+	if st == nil { // the e2e build's commands open the copied database
+		var err error
+		if st, err = sqlite.Open(s.db, sqlite.Options{}); err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = st.Close() }()
+	}
+	items, err := st.Items(context.Background(), store.ItemFilter{Pipeline: "listings", Stream: "listings"})
+	if err != nil || len(items) == 0 {
+		t.Fatalf("items = %v, %v", items, err)
+	}
+	out, _ = s.must(0, "purge", "--key", items[0].Key, "--request-id", "p1")
+	if !regexp.MustCompile(`^purge_p1 done: \d+ items? erased in listings\n$`).MatchString(out) {
+		t.Fatalf("purge stdout = %q", out)
+	}
+	s.must(2, "purge")
+	s.must(2, "purge", "--key", "a", "--item", "b")
 }
 
 func Test_replayStepCommand(t *testing.T) {

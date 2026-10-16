@@ -78,7 +78,7 @@ type Environment struct {
 	// Secrets maps each pipeline to its secrets' sources, by secret name: the grant of section 4.5. Nil when the
 	// file has no secrets key: secrets then resolve from MILLSTREAM_SECRET_<NAME>, as without an environment file.
 	Secrets map[string]map[string]SecretSource
-	// Retention is the retention key (spec section 9.3), applied by M4 Task 8.
+	// Retention is the retention key (spec section 9.3).
 	Retention Retention
 	// Improve is the improve key (spec sections 11.2 and 11.3), kept for the improve pipeline (M5).
 	Improve Improve
@@ -218,12 +218,13 @@ type S3Config struct {
 	SecretAccessKey *SecretSource
 }
 
-// Retention is the retention key: how long events, agent transcripts and metric rollups are kept; zero keeps them
-// for ever (spec section 9.3).
+// Retention is the retention key: how long events, agent transcripts and metric rollups are kept, zero for ever,
+// and how often the engine's retention job runs, zero for its default (spec section 9.3).
 type Retention struct {
 	Events      time.Duration
 	Transcripts time.Duration
 	Rollups     time.Duration
+	Every       time.Duration
 }
 
 // Publishers of accepted proposals (spec section 11.3).
@@ -755,11 +756,12 @@ func secretsByPipeline(n *yaml.Node, path string) (map[string]map[string]SecretS
 }
 
 func readRetention(f *fields, env *Environment) error {
-	return section(f, "retention", []string{"events", "transcripts", "rollups"}, func(rf *fields) []error {
+	return section(f, "retention", []string{"events", "transcripts", "rollups", "every"}, func(rf *fields) []error {
 		return []error{
 			optional(rf, "events", &env.Retention.Events, duration),
 			optional(rf, "transcripts", &env.Retention.Transcripts, duration),
 			optional(rf, "rollups", &env.Retention.Rollups, duration),
+			optional(rf, "every", &env.Retention.Every, duration),
 		}
 	})
 }

@@ -13,11 +13,6 @@ import (
 	"github.com/monolithiclab/millstream/internal/store"
 )
 
-// tombstoneHash is the payload hash of an item whose payload has expired (spec section 9.3): retention, from M4,
-// replaces the payload with null and its hash with this marker, which no SHA-256 hex digest can equal. A replay
-// refuses such an item rather than replaying it from its tombstone (spec section 5.7).
-const tombstoneHash = "tombstone"
-
 // StartReplay is the Start replay unit (spec sections 5.7 and 5.11): a run of kind replay on the revision named (the
 // active one for zero), the pipeline's next generation, and a pending delivery of the step for each selected item,
 // in that generation. A run already started under the same id is returned as it is, with created false, so a
@@ -145,18 +140,17 @@ func (w *wtx) backfill(rev *revision, r store.ReplayStart) ([]newItem, error) {
 	}
 	copies := make([]newItem, 0, len(r.Items))
 	for _, id := range r.Items {
-		var stream, key, body, hash, artifacts string
-		if err := w.queryRow(`SELECT stream, key, payload, payload_hash, artifacts FROM items
-			WHERE pipeline = ? AND id = ?`, imp.Pipeline, id).Scan(&stream, &key, &body, &hash, &artifacts); err != nil {
+		var stream, key, body, tombstone, artifacts string
+		if err := w.queryRow(`SELECT stream, key, payload, tombstone, artifacts FROM items
+			WHERE pipeline = ? AND id = ?`, imp.Pipeline, id).Scan(&stream, &key, &body, &tombstone, &artifacts); err != nil {
 			return nil, notFound(err, "item "+id+" of pipeline "+imp.Pipeline)
 		}
 		switch {
 		case stream != imp.Stream:
 			return nil, fmt.Errorf("item %s is on %s, not on %s.%s: %w", id, stream, imp.Pipeline, imp.Stream,
 				store.ErrInvalid)
-		case hash == tombstoneHash:
-			return nil, fmt.Errorf("item %s has expired: its payload is a tombstone and cannot be replayed: %w", id,
-				store.ErrConflict)
+		case tombstone != "":
+			return nil, tombstoned(id, tombstone)
 		}
 		pl, err := canonical(json.RawMessage(body))
 		if err != nil {
@@ -173,17 +167,23 @@ func (w *wtx) backfill(rev *revision, r store.ReplayStart) ([]newItem, error) {
 
 // replayable checks that an item exists on one of the streams in and still holds its payload.
 func (w *wtx) replayable(pipelineName, id string, in []string) error {
-	var stream, hash string
-	if err := w.queryRow(`SELECT stream, payload_hash FROM items WHERE pipeline = ? AND id = ?`, pipelineName, id).
-		Scan(&stream, &hash); err != nil {
+	var stream, tombstone string
+	if err := w.queryRow(`SELECT stream, tombstone FROM items WHERE pipeline = ? AND id = ?`, pipelineName, id).
+		Scan(&stream, &tombstone); err != nil {
 		return notFound(err, "item "+id)
 	}
 	switch {
 	case !slices.Contains(in, stream):
 		return fmt.Errorf("item %s is on %s, which the step does not read: %w", id, stream, store.ErrInvalid)
-	case hash == tombstoneHash:
-		return fmt.Errorf("item %s has expired: its payload is a tombstone and cannot be replayed: %w", id,
-			store.ErrConflict)
+	case tombstone != "":
+		return tombstoned(id, tombstone)
 	}
 	return nil
+}
+
+// tombstoned refuses replaying an item whose payload is gone (spec section 5.7): it is never replayed from its
+// tombstone.
+func tombstoned(id, tombstone string) error {
+	return fmt.Errorf("item %s is %s: its payload is gone and it cannot be replayed: %w", id, tombstone,
+		store.ErrConflict)
 }

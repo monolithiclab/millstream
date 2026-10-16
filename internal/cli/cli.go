@@ -136,6 +136,7 @@ type CLI struct {
 	Cancel   CancelCmd   `cmd:"" help:"Cancel a run."`
 	Replay   ReplayCmd   `cmd:"" help:"Replay dead letters into their run, or a step over past items in a replay run."`
 	DLQ      DLQCmd      `cmd:"" name:"dlq" help:"List and discard dead letters."`
+	Purge    PurgeCmd    `cmd:"" help:"Erase the items with a key, or an item, with their descendants and their copies in other pipelines."`
 	Inbox    InboxCmd    `cmd:"" help:"List and decide reviews and review samples."`
 	Pause    PauseCmd    `cmd:"" help:"Pause a pipeline or one of its steps."`
 	Resume   ResumeCmd   `cmd:"" help:"Resume a pipeline or one of its steps."`

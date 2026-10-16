@@ -1,6 +1,8 @@
 package api
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"errors"
@@ -748,5 +750,26 @@ func TestNodeActions(t *testing.T) {
 		codeUnavailable)
 	if n := get[Nodes](t, noEngine, "/api/v1/nodes"); n.Unschedulable != nil {
 		t.Fatalf("unschedulable without an engine = %+v", n.Unschedulable)
+	}
+}
+
+// A transcript stored compressed is served decompressed, its type read from its name (spec section 7.2).
+func TestServeDecompressed(t *testing.T) {
+	var buf bytes.Buffer
+	zw := gzip.NewWriter(&buf)
+	_, _ = zw.Write([]byte(`{"turns":[]}`))
+	_ = zw.Close()
+	ref := store.ArtifactRef{Name: "transcript.json", SHA256: strings.Repeat("c", 64), Size: int64(buf.Len()),
+		Type: "application/x-gzip"}
+	rec := httptest.NewRecorder()
+	if err := serveDecompressed(rec, ref, bytes.NewReader(buf.Bytes())); err != nil {
+		t.Fatal(err)
+	}
+	if rec.Body.String() != `{"turns":[]}` || rec.Header().Get("Content-Type") != "application/json" ||
+		!strings.HasPrefix(rec.Header().Get("Content-Disposition"), "inline") {
+		t.Fatalf("served %q as %v", rec.Body.String(), rec.Header())
+	}
+	if err := serveDecompressed(httptest.NewRecorder(), ref, strings.NewReader("not gzip")); err == nil {
+		t.Fatal("served data that is not gzip")
 	}
 }

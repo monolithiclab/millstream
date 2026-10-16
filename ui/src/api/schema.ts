@@ -31,6 +31,7 @@ export type Figure = Schemas['Figure'];
 
 export type ArtifactRef = Schemas['ArtifactRef'];
 export type Item = Schemas['Item'];
+export type Tombstone = Schemas['Tombstone'];
 export type ItemPage = Schemas['ItemPage'];
 export type Lineage = Schemas['Lineage'];
 export type LineageNode = Schemas['LineageNode'];

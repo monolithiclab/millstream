@@ -23,20 +23,32 @@ type deliveryRow struct {
 	token                             int64
 	reserved                          float64 // the budget reservation of a leased agent delivery
 	createdAt, leasedAt               time.Time
+	erased                            bool // a purge fenced its item (spec section 9.3)
 }
 
 func (w *wtx) delivery(pipelineName, id string) (*deliveryRow, error) {
 	d := &deliveryRow{pipeline: pipelineName, id: id}
 	var created, leased TimeCol
-	err := w.queryRow(`SELECT run_id, step, item_id, generation, state, attempt, attempt_base, lease_owner,
-		fencing_token, reserved_usd, created_at, leased_at FROM deliveries WHERE pipeline = ? AND id = ?`, pipelineName, id).
+	var tombstone string
+	err := w.queryRow(`SELECT d.run_id, d.step, d.item_id, d.generation, d.state, d.attempt, d.attempt_base,
+		d.lease_owner, d.fencing_token, d.reserved_usd, d.created_at, d.leased_at, i.tombstone
+		FROM deliveries d JOIN items i ON i.pipeline = d.pipeline AND i.id = d.item_id
+		WHERE d.pipeline = ? AND d.id = ?`, pipelineName, id).
 		Scan(&d.runID, &d.step, &d.itemID, &d.generation, &d.state, &d.attempt, &d.attemptBase, &d.owner, &d.token,
-			&d.reserved, &created, &leased)
+			&d.reserved, &created, &leased, &tombstone)
 	if err != nil {
 		return nil, notFound(err, "delivery "+id)
 	}
 	d.createdAt, d.leasedAt = created.Time, leased.Time
+	d.erased = store.Tombstone(tombstone) == store.TombstoneErased
 	return d, nil
+}
+
+// discards reports whether the report of d, a leased delivery of run, is discarded and d cancelled instead: its run
+// was cancelled (spec section 5.3), or a purge fenced its item (spec section 9.3), so nothing it produced may be
+// published.
+func discards(d *deliveryRow, run *runRow) bool {
+	return run.state == store.RunCancelled || d.erased
 }
 
 // millis is d in whole milliseconds, never negative: the unit of the delivery timings.

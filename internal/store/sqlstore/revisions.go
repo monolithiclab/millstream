@@ -3,9 +3,9 @@ package sqlstore
 import (
 	"fmt"
 	"slices"
-	"sync"
 
 	"github.com/monolithiclab/millstream/internal/expr"
+	"github.com/monolithiclab/millstream/internal/memo"
 	"github.com/monolithiclab/millstream/internal/pipeline"
 	"github.com/monolithiclab/millstream/internal/store"
 )
@@ -59,24 +59,32 @@ func (w *wtx) revision(id store.RevisionID) (*revision, error) {
 	if r := w.s.revs[hash]; r != nil {
 		return r, nil
 	}
-	key := revisionKey{hash, data}
-	if r, ok := revisions.Load(key); ok {
-		w.s.revs[hash] = r.(*revision)
-		return r.(*revision), nil
-	}
-	r, err := newRevision(hash, []byte(data))
-	if err != nil {
+	r := revisions.Get(revisionKey{hash, data}, func() *revision {
+		r, _ := newRevision(hash, []byte(data))
+		return r
+	})
+	if r == nil { // cached as nil: compile it again for the error
+		_, err := newRevision(hash, []byte(data))
 		return nil, fmt.Errorf("revision %d: %w", id, err)
 	}
-	revisions.Store(key, r)
+	if len(w.s.revs) >= maxStoreRevisions {
+		clear(w.s.revs) // the process-wide cache refills it
+	}
 	w.s.revs[hash] = r
 	return r, nil
 }
 
+// Revision cache bounds: a long-running engine meets every revision a deployment applied, and evicting one costs no
+// more than compiling its routes again.
+const (
+	maxStoreRevisions   = 64  // a store's revisions by package hash, the writer's alone
+	maxProcessRevisions = 256 // the revisions every store of the process built
+)
+
 // revisions caches the revisions every store of the process built, by package hash and pipeline: compiling a
 // pipeline's routes costs more than most units, and the stores of a process (tests, millstream test) apply the same
-// few pipelines over and over.
-var revisions sync.Map
+// few pipelines over and over. A revision whose pipeline does not decode is cached as nil.
+var revisions = memo.New[revisionKey, *revision](maxProcessRevisions)
 
 // revisionKey keys revisions: the pipeline too, as tests make up package hashes.
 type revisionKey struct{ hash, pipeline string }

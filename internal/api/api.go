@@ -72,6 +72,7 @@ type Engine interface {
 	SetNodeState(ctx context.Context, id string, state store.NodeState, expireLeases bool) error
 	// Unschedulable returns the steps whose pending deliveries no registered node can take (spec section 5.10).
 	Unschedulable(ctx context.Context) ([]engine.UnschedulableStep, error)
+	Purge(ctx context.Context, req engine.PurgeRequest) (store.Purge, bool, error)
 }
 
 // Deployment is what the server knows of its deployment's engines (spec section 5.9).
@@ -211,6 +212,8 @@ var routes = []route{
 	{http.MethodGet, "/insights", (*Server).listInsights},
 	{http.MethodGet, "/metrics", (*Server).getMetrics},
 	{http.MethodGet, "/metrics/names", (*Server).listMetricNames},
+	{http.MethodPost, "/purges", (*Server).createPurge},
+	{http.MethodGet, "/purges/{purge}", (*Server).getPurge},
 	{http.MethodGet, "/nodes", (*Server).listNodes},
 	{http.MethodPost, "/nodes/{node}/drain", (*Server).drainNode},
 	{http.MethodPost, "/nodes/{node}/revoke", (*Server).revokeNode},

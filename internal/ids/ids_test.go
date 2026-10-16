@@ -30,6 +30,7 @@ func TestFormulas(t *testing.T) {
 		{"cron run", CronRun(time.Date(2026, 10, 14, 8, 0, 42, 0, cest), "daily"), "run_2026-10-14T06:00Z_daily"},
 		{"manual run", ManualRun("req42", "rescore"), "run_req42_rescore"},
 		{"replay run", ReplayRun("req42"), "run_replay_req42"},
+		{"purge", Purge("req42"), "purge_req42"},
 		{"import item", ImportItem("approved", "it_abc"), "it_a0d07f2776e2756802761d3b0d7f6264"},
 		{"import run", ImportRun("approved", "run_req42_go"), "run_import_8d6f121b92921195ee9861b7f5f3fbee"},
 	}

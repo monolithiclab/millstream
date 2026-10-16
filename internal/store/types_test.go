@@ -29,6 +29,16 @@ func TestLeaseRef(t *testing.T) {
 	}
 }
 
+// Retention passes add up; More stays the caller's to read from each pass.
+func TestRetentionResultAdd(t *testing.T) {
+	t.Parallel()
+	r := RetentionResult{Items: 1, Events: 2, Transcripts: 3, Rollups: 4}
+	r.Add(RetentionResult{Items: 10, Events: 20, Transcripts: 30, Rollups: 40, More: true})
+	if want := (RetentionResult{Items: 11, Events: 22, Transcripts: 33, Rollups: 44}); r != want {
+		t.Errorf("Add = %+v, want %+v", r, want)
+	}
+}
+
 func TestRevisionDecode(t *testing.T) {
 	t.Parallel()
 	r := Revision{ID: 3, PipelineJSON: []byte(`{"Name":"listings","Vars":{"maxPrice":400000}}`)}

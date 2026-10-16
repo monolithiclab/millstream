@@ -69,7 +69,7 @@ func (s *Store) Dedupe(ctx context.Context, req store.DedupeRequest) (store.Deli
 }
 
 // leasedLive returns the delivery a builtin unit names, and its run, refused unless still leased under the same fencing token and
-// attempt. A delivery of a cancelled run is cancelled on the spot, and cancelled is true.
+// attempt. A delivery of a cancelled run or of an item a purge fenced is cancelled on the spot, and cancelled is true.
 func (w *wtx) leasedLive(ref store.LeaseRef, attempt int) (d *deliveryRow, run *runRow, cancelled bool, err error) {
 	if d, err = w.leased(ref, attempt); err != nil {
 		return nil, nil, false, err
@@ -77,7 +77,7 @@ func (w *wtx) leasedLive(ref store.LeaseRef, attempt int) (d *deliveryRow, run *
 	if run, err = w.run(d.pipeline, d.runID); err != nil {
 		return nil, nil, false, err
 	}
-	if run.state == store.RunCancelled {
+	if discards(d, run) {
 		_, err = w.cancelDelivery(d, 0, nil)
 		return nil, nil, true, err
 	}

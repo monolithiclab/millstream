@@ -4,6 +4,7 @@ package cli
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -12,6 +13,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/monolithiclab/millstream/internal/artifacts"
 	"github.com/monolithiclab/millstream/internal/store"
 	"github.com/monolithiclab/millstream/internal/store/sqlite"
 )
@@ -74,10 +76,25 @@ func Test_runAgentRecordReplay(t *testing.T) {
 		if err != nil || len(arts) != 1 || arts[0].Name != "transcript.json" || arts[0].Attempt != 1 {
 			t.Fatalf("run %d: attempt artifacts %+v, %v", i, arts, err)
 		}
-		transcript, err := os.ReadFile(filepath.Join(filepath.Dir(db), "artifacts", "listings", arts[0].SHA256))
+		transcript, err := readDecompressed(filepath.Join(filepath.Dir(db), "artifacts", "listings"), arts[0].ArtifactRef)
 		if err != nil || strings.Contains(string(transcript), "sk-test-0123456789") ||
 			!strings.Contains(string(transcript), `"costUsd": 0.000134`) {
 			t.Fatalf("transcript %s, %v", transcript, err)
 		}
 	}
+}
+
+// readDecompressed reads an artifact from a pipeline's directory of the local artifact store, decompressed when it
+// is stored compressed (a transcript, spec section 7.2).
+func readDecompressed(dir string, ref store.ArtifactRef) ([]byte, error) {
+	f, err := os.Open(filepath.Join(dir, ref.SHA256)) // #nosec G304 -- a test's own artifact directory
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = f.Close() }()
+	r, err := artifacts.Decompressed(ref, f)
+	if err != nil {
+		return nil, err
+	}
+	return io.ReadAll(r)
 }

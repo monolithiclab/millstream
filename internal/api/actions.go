@@ -480,3 +480,37 @@ func (s *Server) setInsightState(w http.ResponseWriter, r *http.Request, state s
 	w.WriteHeader(http.StatusNoContent)
 	return nil
 }
+
+// PurgeRequest is the body of POST /purges: exactly one of Key and Item (spec section 9.3).
+type PurgeRequest struct {
+	Key       string `json:"key"`
+	Item      string `json:"item"`
+	Pipeline  string `json:"pipeline"`
+	RequestID string `json:"requestId"`
+}
+
+// createPurge runs a purge to its end: 201 when the request started it, 200 when its request id names one already
+// started (finished now if it was not).
+func (s *Server) createPurge(w http.ResponseWriter, r *http.Request) error {
+	var req PurgeRequest
+	if err := s.decodeBody(w, r, &req); err != nil {
+		return err
+	}
+	if (req.Key == "") == (req.Item == "") {
+		return invalidf("key or item: exactly one is required")
+	}
+	if s.opts.Engine == nil {
+		return fmt.Errorf("purge: no engine: %w", errUnavailable)
+	}
+	p, created, err := s.opts.Engine.Purge(r.Context(), engine.PurgeRequest{Key: req.Key, Item: req.Item,
+		Pipeline: req.Pipeline, RequestID: req.RequestID})
+	if err != nil {
+		return err
+	}
+	status := http.StatusOK
+	if created {
+		status = http.StatusCreated
+	}
+	writeJSON(w, status, ToPurge(p))
+	return nil
+}

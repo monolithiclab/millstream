@@ -149,6 +149,29 @@ type Store interface {
 	// an id never registered records it, so it is refused from then on; draining one is ErrNotFound. Renew updates
 	// a registered node's last heartbeat.
 	SetNodeState(ctx context.Context, id string, state NodeState, expireLeases bool) ([]LeaseRef, error)
+	// Retain is the retention unit (spec section 9.3): it tombstones the items of each stream older than its
+	// retention, except those unfinished work needs (a delivery not terminal, an open dead letter or one whose
+	// dead delivery they are the input of, an open review or review sample), dropping their artifact references,
+	// and deletes the events older than req.Events that every projection has read (never the last one), the
+	// attempt artifacts older than req.Transcripts but those of a live delivery or of an open dead letter's, and
+	// the metric rollups older than req.Rollups. Each kind is bounded by req.Limit.
+	Retain(ctx context.Context, req RetentionRequest) (RetentionResult, error)
+	// StartPurge is the first unit of a purge (spec section 9.3): it records the purge and fences its lineage, the
+	// items named, their descendants and, following imports, their copies in other pipelines and theirs. Fenced
+	// items are tombstoned erased at once, their pending and parked deliveries cancelled with their reviews, their
+	// open review samples closed and their open dead letters discarded; a leased one is cancelled when it reports,
+	// its outputs discarded. A request whose id names an existing purge returns it, with created false.
+	StartPurge(ctx context.Context, req PurgeRequest) (p Purge, created bool, err error)
+	// ErasePurge erases up to PurgeBatch fenced items of an erasing purge: payloads, keys, artifact references,
+	// the artifacts their deliveries' attempts kept, error messages, review renderings and edits, dedupe keys. Once
+	// none is left, the purge moves to sweeping. A purge in another state is returned as it is.
+	ErasePurge(ctx context.Context, id string) (Purge, error)
+	// FinishPurge ends a sweeping purge, once the engine deleted the artifact files no surviving item references,
+	// with a purgeCompleted event in each pipeline it erased items of. A done purge is returned as it is.
+	FinishPurge(ctx context.Context, id string) (Purge, error)
+	// DeleteArtifacts removes the artifact store entries named that no item or attempt references any more (their
+	// reference count is zero): the artifact sweep, once their files are gone. It returns how many it removed.
+	DeleteArtifacts(ctx context.Context, keys []ArtifactKey) (int, error)
 
 	Runs(ctx context.Context, f RunFilter) ([]Run, error)
 	Run(ctx context.Context, pipeline, id string) (Run, error)
@@ -204,6 +227,10 @@ type Store interface {
 	Nodes(ctx context.Context) ([]Node, error)
 	// TriggerTokenHash returns the SHA-256 (hex) of a webhook trigger's token, ErrNotFound when it has none.
 	TriggerTokenHash(ctx context.Context, pipeline, trigger string) (string, error)
+	// Purge returns a purge.
+	Purge(ctx context.Context, id string) (Purge, error)
+	// Purges returns the purges not yet done, oldest first: what the engine resumes.
+	Purges(ctx context.Context) ([]Purge, error)
 	// LastFiring returns the latest scheduled time the cron trigger fired a cron run for or skipped, zero when it
 	// never did: where catch-up resumes. Manual firings of the trigger do not count.
 	LastFiring(ctx context.Context, pipeline, trigger string) (time.Time, error)

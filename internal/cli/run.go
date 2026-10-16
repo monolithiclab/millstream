@@ -97,7 +97,7 @@ func (c RunPackagesCmd) Run(rt *Runtime) error {
 		e, err := engine.New(engine.Options{
 			Store: st, Logger: log, LeaseTTL: c.LeaseTTL, Env: rt.Env, Secrets: secrets(rt, env), Flags: c.Var,
 			NoCron: c.Once, Artifacts: arts, Resolver: actions, Agents: agents(rt, env),
-			Notifier: notes, PackageDir: packageDir(rt, env), Check: checkOptions(rt, env),
+			Notifier: notes, PackageDir: packageDir(rt, env), Check: checkOptions(rt, env), Retention: env.Retention,
 		})
 		if err != nil {
 			return err
@@ -126,6 +126,10 @@ func (c RunPackagesCmd) Run(rt *Runtime) error {
 				// The runs' metrics and insights, as the engine's projectors would find them at their next pass.
 				if err := e.Project(ctx); err != nil {
 					log.Warn("projections", "error", err.Error())
+				}
+				// And the retention job's pass, which a one-shot run would otherwise never reach.
+				if err := e.Retain(ctx); err != nil {
+					log.Warn("retention", "error", err.Error())
 				}
 				return nil
 			}

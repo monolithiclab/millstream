@@ -157,14 +157,11 @@ func TestStartReplayRefusals(t *testing.T, open Opener) {
 }
 
 // TestReplayRefusesExpiredPayloads: an item whose payload was replaced by a tombstone is never replayed (spec
-// section 5.7); retention arrives in M4, so the tombstone is set by hand.
+// section 5.7).
 func TestReplayRefusesExpiredPayloads(t *testing.T, open Opener) {
 	e := newEnv(t, open, dedupePipeline)
 	raw := e.crawled()
-	if err := e.s.Exec(e.ctx, `UPDATE items SET payload = 'null', payload_hash = ? WHERE pipeline = 'dd' AND id = ?`,
-		tombstoneHash, raw[1]); err != nil {
-		t.Fatal(err)
-	}
+	e.expire("dd", raw[1])
 	_, _, err := e.startReplay("rp1", "unique", raw)
 	wantErr(t, err, store.ErrConflict)
 	if !strings.Contains(err.Error(), "expired") {

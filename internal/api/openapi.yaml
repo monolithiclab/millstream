@@ -812,6 +812,48 @@ paths:
             application/json:
               schema: { type: array, items: { type: string } }
         "400": { $ref: "#/components/responses/Error" }
+  /purges:
+    post:
+      operationId: createPurge
+      summary: Erase the items with a key, or one item, their descendants and their copies in other pipelines (spec section 9.3).
+      description: |
+        The purge fences the lineage, then runs to its end before the answer: payloads, keys, transcripts and the
+        artifacts no surviving item references are deleted. A purge interrupted (a crash, a request cancelled) is
+        resumed by the engine. requestId names it: repeating it finds the purge it started. The key or item named is
+        not kept.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PurgeRequest" }
+      responses:
+        default: { $ref: "#/components/responses/Error" }
+        "415": { $ref: "#/components/responses/Error" }
+        "201":
+          description: The purge, started by this request.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Purge" }
+        "200":
+          description: The purge the request id had already started.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Purge" }
+        "400": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+  /purges/{purge}:
+    parameters: [{ name: purge, in: path, required: true, schema: { type: string } }]
+    get:
+      operationId: getPurge
+      summary: A purge and its progress.
+      responses:
+        default: { $ref: "#/components/responses/Error" }
+        "200":
+          description: The purge.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Purge" }
+        "404": { $ref: "#/components/responses/Error" }
   /nodes:
     get:
       operationId: listNodes
@@ -1250,6 +1292,11 @@ components:
         parentPipeline:
           type: string
           description: The pipeline of the item's parents when it is another one, for a copy published on an imported stream.
+        tombstone: { $ref: "#/components/schemas/Tombstone" }
+    Tombstone:
+      type: string
+      enum: [expired, erased]
+      description: Why the item no longer holds its payload (spec section 9.3); absent while it does. Its payload is then null and it has no artifacts; an erased item has no key either.
     ItemPage:
       type: object
       required: [items]
@@ -1270,6 +1317,7 @@ components:
         key: { type: string }
         parents: { type: array, items: { type: string } }
         ts: { type: string, format: date-time }
+        tombstone: { $ref: "#/components/schemas/Tombstone" }
     Lineage:
       type: object
       required: [item, up, down, truncated]
@@ -1441,6 +1489,29 @@ components:
         trigger: { type: string, description: The pipeline's first manual trigger by default. }
         payload: { description: "The trigger item's payload; {} by default." }
         requestId: { type: string, description: Firing the same request id again returns the same run. }
+    PurgeRequest:
+      type: object
+      description: Exactly one of key and item.
+      additionalProperties: false
+      properties:
+        key: { type: string, description: Every item with this key. }
+        item: { type: string, description: The item with this id. }
+        pipeline: { type: string, description: Only in this pipeline; every pipeline by default. Its copies in importing pipelines are followed all the same. }
+        requestId: { type: string }
+    Purge:
+      type: object
+      required: [id, scope, state, items, erased, pipelines, requestedAt]
+      additionalProperties: false
+      properties:
+        id: { type: string }
+        scope: { type: string, enum: [key, item] }
+        pipeline: { type: string, description: The pipeline the request named. }
+        state: { type: string, enum: [erasing, sweeping, done] }
+        items: { type: integer, description: The items fenced, descendants and copies included. }
+        erased: { type: integer }
+        pipelines: { type: array, items: { type: string } }
+        requestedAt: { type: string, format: date-time }
+        finishedAt: { type: string, format: date-time }
     ReplayRequest:
       type: object
       description: Exactly one of step (a replay run of the step over past items) and stream (a back-fill of an imported stream from the producer's retained items).

@@ -129,8 +129,8 @@ func (e *Engine) selectItems(ctx context.Context, req ReplayRequest, sel selecti
 			return nil, err
 		}
 		for _, it := range items {
-			if sel.retained && string(it.Payload) == "null" {
-				continue // expired: retention keeps the envelope and replaces the payload with null (spec section 9.3)
+			if sel.retained && it.Tombstone != "" {
+				continue // its payload is gone: retention or a purge left only its envelope (spec section 9.3)
 			}
 			if where != nil {
 				v, err := pipeline.DecodeValue(string(it.Payload))

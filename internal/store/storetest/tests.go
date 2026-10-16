@@ -86,4 +86,8 @@ var Tests = append([]Test{
 	{"TestImportProducerReplay", TestImportProducerReplay},
 	{"TestImportBackfill", TestImportBackfill},
 	{"TestImportFollowsRollback", TestImportFollowsRollback},
+	{"TestRetainKeepsWhatUnfinishedWorkNeeds", TestRetainKeepsWhatUnfinishedWorkNeeds},
+	{"TestRetainEventsTranscriptsRollups", TestRetainEventsTranscriptsRollups},
+	{"TestPurgeAcrossImports", TestPurgeAcrossImports},
+	{"TestPurgeResumesAfterCrash", TestPurgeResumesAfterCrash},
 }, e2eTests...)

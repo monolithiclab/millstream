@@ -112,12 +112,18 @@ CREATE TABLE items (
     artifacts    text NOT NULL DEFAULT '[]',
     -- the pipeline holding the item's parents when it is another one: a copy published through an import
     parent_pipeline text NOT NULL DEFAULT '',
+    -- why the item no longer holds its payload (spec section 9.3): '' while it does, expired (retention) or
+    -- erased (purge); payload is then null, artifacts [] and payload_hash ''
+    tombstone    text NOT NULL DEFAULT '',
     PRIMARY KEY (pipeline, id),
     FOREIGN KEY (pipeline, run_id) REFERENCES runs (pipeline, id)
 );
 CREATE INDEX items_copies ON items (parent_pipeline) WHERE parent_pipeline <> '';
 CREATE INDEX items_stream ON items (pipeline, stream);
 CREATE INDEX items_run ON items (pipeline, run_id);
+-- Retention scans a stream's items by age; purge finds the items of a key.
+CREATE INDEX items_expiry ON items (pipeline, stream, ts) WHERE tombstone = '';
+CREATE INDEX items_key ON items (key) WHERE key <> '';
 CREATE INDEX items_rowid ON items (rowid);
 
 -- attempt_base is the attempt number before a dead-letter replay: attempt numbers are never reused (attempt
@@ -177,6 +183,7 @@ CREATE TABLE dead_letters (
     FOREIGN KEY (pipeline, id) REFERENCES items (pipeline, id)
 );
 CREATE INDEX dead_letters_run ON dead_letters (pipeline, run_id, state);
+CREATE INDEX dead_letters_origin ON dead_letters (pipeline, origin_delivery);
 
 -- seq is assigned by the writer, in commit order, each event numbered after the last, so the sequence has no gaps.
 CREATE TABLE events (
@@ -228,6 +235,7 @@ CREATE TABLE attempt_artifacts (
     created_at  timestamptz NOT NULL,
     PRIMARY KEY (pipeline, delivery_id, attempt, name)
 );
+CREATE INDEX attempt_artifacts_age ON attempt_artifacts (created_at); -- transcript retention
 
 -- Costs charged to a pipeline's UTC day (spec section 7.5), and the day budget it was stopped at, 0 while it has not
 -- been.
@@ -268,6 +276,7 @@ CREATE TABLE metric_rollups (
     max         double precision NOT NULL,
     PRIMARY KEY (pipeline, name, labels_json, minute)
 );
+CREATE INDEX metric_rollups_minute ON metric_rollups (minute); -- rollup retention
 
 -- id is the insight's fingerprint (spec section 11.1), so a recurring problem updates its row.
 CREATE TABLE insights (
@@ -372,3 +381,29 @@ CREATE TABLE trigger_tokens (
     created_at timestamptz NOT NULL, -- set again by a rotation
     PRIMARY KEY (pipeline, trigger)
 );
+
+-- Purges (spec section 9.3): durable erasure operations. The scope says what was named (key or item) and in which
+-- pipeline, never the value: a purge records no erased data. state is erasing, then sweeping (the artifact files no
+-- surviving item references are being deleted), then done.
+CREATE TABLE purges (
+    id           text PRIMARY KEY,
+    scope        text NOT NULL, -- key | item
+    pipeline     text NOT NULL, -- the pipeline named, '' for every pipeline
+    state        text NOT NULL, -- erasing | sweeping | done
+    items        bigint NOT NULL,
+    erased       bigint NOT NULL DEFAULT 0,
+    pipelines    text NOT NULL, -- JSON array of the pipelines whose items it erases
+    requested_at timestamptz NOT NULL,
+    finished_at  timestamptz
+);
+CREATE INDEX purges_state ON purges (state);
+
+-- The lineage a purge fenced: the items named, their descendants and the copies imports made of them.
+CREATE TABLE purge_items (
+    purge_id text NOT NULL,
+    pipeline text NOT NULL,
+    item_id  text NOT NULL,
+    erased   boolean NOT NULL DEFAULT FALSE,
+    PRIMARY KEY (purge_id, pipeline, item_id)
+);
+CREATE INDEX purge_items_pending ON purge_items (purge_id, erased);

@@ -436,6 +436,27 @@ const namedItems: Item[] = [
     ts: '2026-10-12T06:20:00Z',
     payload: { title: 'T2 · 52 m² · Vincennes' },
   }),
+  // Tombstones of 13 October (spec section 9.3): a fetched page past the raw stream's retention, and its enriched
+  // listing, erased by a purge.
+  item('it_3b7e2c90', {
+    stream: 'raw',
+    step: 'fetch',
+    runId: 'run_0600_1013',
+    key: 'homesite-2198034',
+    ts: '2026-10-13T06:03:10Z',
+    payload: null,
+    tombstone: 'expired',
+  }),
+  item('it_8c4d1f6e', {
+    stream: 'enriched',
+    step: 'enrich',
+    runId: 'run_0600_1013',
+    key: '',
+    parents: ['it_3b7e2c90'],
+    ts: '2026-10-13T06:08:40Z',
+    payload: null,
+    tombstone: 'erased',
+  }),
 ];
 
 // Reviews and samples
