@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"io/fs"
 	"math/rand/v2"
+	"os"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -258,6 +259,8 @@ func (s *Store) open(path, from string) error {
 	sep := "?"
 	if memory {
 		path, sep = fmt.Sprintf("file:/millstream-%d?vfs=memdb", memorySeq.Add(1)), "&"
+	} else if err := createFromImage(path); err != nil {
+		return fmt.Errorf("open store %s: %w", path, err)
 	}
 	busy := "_pragma=busy_timeout(" + strconv.FormatInt(s.opts.BusyTimeout.Milliseconds(), 10) + ")"
 	pragmas := "_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)&_pragma=synchronous(NORMAL)&" + busy
@@ -423,4 +426,24 @@ func (s *Store) clock(ctx context.Context, tx *sql.Tx) (time.Time, error) {
 		return time.Time{}, fmt.Errorf("read database clock: %w", err)
 	}
 	return parseTime(now)
+}
+
+// createFromImage writes the migrated template image at path when no database is there yet, so that a new store
+// starts migrated rather than running every migration; migrate then applies only those newer than the image.
+func createFromImage(path string) error {
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600) // #nosec G304 -- the store's own path
+	if errors.Is(err, fs.ErrExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	_, err = f.Write(templateImage)
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
+		_ = os.Remove(path)
+	}
+	return err
 }
