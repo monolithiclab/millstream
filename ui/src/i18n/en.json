@@ -90,7 +90,23 @@
     "loading": "Loading…",
     "retry": "Retry",
     "cancel": "Cancel",
-    "dismiss": "Dismiss"
+    "dismiss": "Dismiss",
+    "copied": "Copied",
+    "copyError": "Copy",
+    "showLess": "Show less",
+    "showFullError": "Show full error · {{size}}",
+    "expandAll": "Expand all",
+    "collapseAll": "Collapse all",
+    "copyJson": "Copy JSON",
+    "collapse": "Collapse {{name}}",
+    "expand": "Expand {{name}}",
+    "jsonItemsOne": "{{n}} item",
+    "jsonItemsOther": "{{n}} items",
+    "jsonKeysOne": "{{n}} key",
+    "jsonKeysOther": "{{n}} keys",
+    "pauseScroll": "Pause scroll",
+    "noLogs": "No log lines yet.",
+    "logGap": "Lines missed while reconnecting"
   },
   "status": {
     "running": "Running",
@@ -114,6 +130,90 @@
     "paused": "Paused",
     "failing": "Failing",
     "slow": "Slow"
+  },
+  "item": {
+    "breadcrumb": "Breadcrumb",
+    "error": "The item could not be loaded.",
+    "copyId": "Copy item id",
+    "reviewNow": "Review now",
+    "state": {
+      "awaitingReview": "Awaiting review at {{step}}",
+      "leased": "Running at {{step}}",
+      "dead": "Dead at {{step}}",
+      "pending": "Waiting at {{step}}"
+    },
+    "meta": {
+      "run": "Run",
+      "stream": "Stream",
+      "step": "Step",
+      "cost": "Total cost",
+      "created": "Created {{time}}",
+      "sourcesOne": "{{n}} source",
+      "sourcesOther": "{{n}} sources"
+    },
+    "tabs": {
+      "label": "Item views",
+      "journey": "Journey · {{n}} steps",
+      "payload": "Payload",
+      "lineage": "Lineage",
+      "logs": "Logs",
+      "events": "Raw events"
+    },
+    "logs": "Live logs",
+    "events": {
+      "empty": "Events appear here as they happen."
+    },
+    "payload": {
+      "title": "Payload",
+      "meta": "in {{stream}} · {{size}}"
+    },
+    "journey": {
+      "label": "Journey",
+      "empty": "No step has read this item yet.",
+      "attempts": "{{n}} attempts",
+      "doneFirst": "first attempt",
+      "filteredBy": "filtered: {{reason}}",
+      "filtered": "held back by the filter",
+      "inInbox": "in the review inbox",
+      "leasedBy": "running on {{owner}}",
+      "leased": "running",
+      "retryAt": "retry at {{time}}",
+      "pending": "waiting for a slot",
+      "cancelled": "its run was cancelled",
+      "attempt": "Attempt {{n}}",
+      "leaseExpired": "lease expired",
+      "attemptsError": "The attempts could not be loaded.",
+      "noAttempts": "No attempt yet."
+    },
+    "transcript": {
+      "tokens": "in {{in}} tok · out {{out}} tok",
+      "system": "System",
+      "toolCall": "Tool call",
+      "toolResult": "Tool result",
+      "input": "Input",
+      "user": "Message",
+      "response": "Response",
+      "invalid": "Final output · invalid",
+      "valid": "Final output · valid",
+      "error": "The transcript could not be loaded."
+    },
+    "lineage": {
+      "title": "Lineage",
+      "alone": "No parents and no children: this item stands alone.",
+      "self": "this item · {{step}} · {{stream}}",
+      "upLevel": "{{n}} up:",
+      "downLevel": "{{n}} down:",
+      "truncated": "The lineage goes further than shown."
+    },
+    "artifacts": {
+      "title": "Artifacts",
+      "none": "No artifacts.",
+      "open": "Open {{name}}",
+      "preview": "Preview",
+      "hide": "Hide",
+      "noPdf": "This browser shows no PDF here: open it instead.",
+      "error": "The artifact could not be loaded."
+    }
   },
   "pipelines": {
     "paused": "{{name}} paused: its deliveries wait until you resume it.",

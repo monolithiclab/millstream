@@ -7,6 +7,7 @@ import type { EventSourceFactory } from './live/useLiveStream';
 import { PreferencesProvider, type Theme } from './preferences';
 import { NotFound } from './screens/NotFound';
 import { Placeholder } from './screens/Placeholder';
+import { ItemScreen } from './screens/item/ItemScreen';
 import { PipelinesScreen } from './screens/pipelines/PipelinesScreen';
 import { routePattern, screens, type ScreenId } from './routes';
 import { AppShell } from './shell/AppShell';
@@ -28,6 +29,7 @@ export function AppRoutes() {
             element={built[screen.id] ?? <Placeholder screen={screen} />}
           />
         ))}
+        <Route path="p/:pipeline/items/:item" element={<ItemScreen />} />
         <Route path="p/:pipeline" element={<Navigate to="graph" replace />} />
         <Route path="*" element={<NotFound />} />
       </Route>
