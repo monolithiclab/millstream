@@ -11,7 +11,9 @@
     "openMenu": "Ouvrir la navigation",
     "closeMenu": "Fermer la navigation",
     "search": "Chercher des items, des runs, des étapes",
-    "preferences": "Préférences"
+    "preferences": "Préférences",
+    "demo": "Données de démonstration",
+    "exitDemo": "Quitter la démo"
   },
   "switcher": {
     "label": "Changer de pipeline, affiché : {{name}}",

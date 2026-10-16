@@ -3,7 +3,8 @@ import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiProvider } from '../api/context';
 import { FakeApi } from '../api/fake';
-import { demoEventSource, fakeEventSource, FakeEventSource } from './fakeEventSource';
+import { demoEventSource } from './demoEventSource';
+import { fakeEventSource, FakeEventSource } from './fakeEventSource';
 import {
   BACKOFF_MAX_MS,
   backoffDelay,

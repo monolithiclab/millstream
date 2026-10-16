@@ -11,7 +11,9 @@
     "openMenu": "Open navigation",
     "closeMenu": "Close navigation",
     "search": "Search items, runs, steps",
-    "preferences": "Preferences"
+    "preferences": "Preferences",
+    "demo": "Demo data",
+    "exitDemo": "Exit demo"
   },
   "switcher": {
     "label": "Switch pipeline, showing {{name}}",

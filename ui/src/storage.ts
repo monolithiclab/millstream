@@ -17,3 +17,11 @@ export function writeStored(key: string, value: string, kind: Kind = 'localStora
     // Storage unavailable: keep the value in memory only.
   }
 }
+
+export function removeStored(key: string, kind: Kind = 'localStorage'): void {
+  try {
+    window[kind].removeItem(key);
+  } catch {
+    // Storage unavailable: nothing was kept.
+  }
+}

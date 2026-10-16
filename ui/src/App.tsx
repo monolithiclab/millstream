@@ -71,17 +71,19 @@ export function App({
   eventSource,
   language,
   theme,
+  demo,
   children = <AppRoutes />,
 }: {
   api: Api;
   eventSource: EventSourceFactory;
+  demo?: boolean | undefined;
   language?: Language | undefined;
   theme?: Theme | undefined;
   children?: ReactNode;
 }) {
   return (
     <PreferencesProvider language={language} theme={theme}>
-      <ApiProvider api={api} eventSource={eventSource}>
+      <ApiProvider api={api} eventSource={eventSource} demo={demo}>
         {children}
       </ApiProvider>
     </PreferencesProvider>
