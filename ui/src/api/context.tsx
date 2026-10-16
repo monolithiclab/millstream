@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import type { Api } from './api';
 import type { EventSourceFactory } from '../live/useLiveStream';
 
@@ -25,11 +25,20 @@ export const useEventSourceFactory = () => useApiContext().eventSource;
 
 export type QueryState<T> = { status: 'loading' } | { status: 'ready'; data: T } | { status: 'error'; error: Error };
 
-// Runs one API read when its key changes; screens of Tasks 4 and 5 may replace it with a caching library.
-export function useApiQuery<T>(key: string, read: (api: Api) => Promise<T>): QueryState<T> {
+export type Query<T> = QueryState<T> & { reload: () => void };
+
+// Runs one API read when its key changes; reload reads it again, keeping the data on screen until the new answer
+// arrives, so a retry, a live event or an action's refresh never flashes the loading state. A null key reads nothing
+// and stays loading.
+export function useApiQuery<T>(key: string | null, read: (api: Api) => Promise<T>): Query<T> {
   const api = useApi();
-  const [state, setState] = useState<{ key: string; value: QueryState<T> }>({ key, value: { status: 'loading' } });
+  const [version, setVersion] = useState(0);
+  const [state, setState] = useState<{ key: string | null; value: QueryState<T> }>({
+    key,
+    value: { status: 'loading' },
+  });
   useEffect(() => {
+    if (key === null) return;
     let current = true;
     read(api).then(
       (data) => current && setState({ key, value: { status: 'ready', data } }),
@@ -40,8 +49,9 @@ export function useApiQuery<T>(key: string, read: (api: Api) => Promise<T>): Que
     return () => {
       current = false;
     };
-    // read is a new closure each render; key names what it reads.
+    // read is a new closure each render; key names what it reads and version asks again.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [api, key]);
-  return state.key === key ? state.value : { status: 'loading' };
+  }, [api, key, version]);
+  const reload = useCallback(() => setVersion((v) => v + 1), []);
+  return { ...(state.key === key ? state.value : { status: 'loading' }), reload };
 }

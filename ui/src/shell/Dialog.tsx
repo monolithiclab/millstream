@@ -4,8 +4,8 @@ import { useDismiss } from './useDismiss';
 const focusable =
   'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
-// A modal dialog per the interaction notes: focus moves in (to the first control, else the dialog), Tab stays
-// inside, Esc or the backdrop closes, and focus returns to where it came from.
+// A modal dialog per the interaction notes: focus moves in (to the control marked data-autofocus, else the first
+// control, else the dialog), Tab stays inside, Esc or the backdrop closes, and focus returns to where it came from.
 export function Dialog({
   labelledBy,
   onClose,
@@ -20,7 +20,11 @@ export function Dialog({
   useEffect(() => {
     const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const root = ref.current;
-    (root?.querySelector<HTMLElement>(focusable) ?? root)?.focus();
+    (
+      root?.querySelector<HTMLElement>('[data-autofocus]') ??
+      root?.querySelector<HTMLElement>(focusable) ??
+      root
+    )?.focus();
     return () => opener?.focus();
   }, []);
 

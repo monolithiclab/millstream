@@ -3,7 +3,7 @@ import type { Language } from './index';
 // Number, money, duration and time formatting per the canvas interaction notes: Intl everywhere, so French gets
 // its narrow no-break group separator (1 240) and decimal comma, and English 1,240.
 
-const intlLocale: Record<Language, string> = { en: 'en-US', fr: 'fr-FR' };
+export const intlLocale: Record<Language, string> = { en: 'en-US', fr: 'fr-FR' };
 const NBSP = ' ';
 
 export function formatNumber(value: number, language: Language, options?: Intl.NumberFormatOptions): string {

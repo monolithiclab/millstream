@@ -47,6 +47,18 @@ export interface Target {
   step?: string;
 }
 
+// An artifact of an item, or of one attempt of a delivery (an agent's transcript.json).
+export type ArtifactLocation = { pipeline: string; name: string } & (
+  { item: string } | { delivery: string; attempt: number }
+);
+
+export function artifactPath({ pipeline, name, ...owner }: ArtifactLocation): string {
+  const base = `/pipelines/${enc(pipeline)}`;
+  return 'item' in owner
+    ? `${base}/items/${enc(owner.item)}/artifacts/${enc(name)}`
+    : `${base}/deliveries/${enc(owner.delivery)}/attempts/${owner.attempt}/artifacts/${enc(name)}`;
+}
+
 // Everything the UI asks of the server, as internal/api/openapi.yaml documents it. Every record but a pipeline is
 // scoped by its pipeline. HttpApi implements it over fetch, FakeApi in memory for tests and ?demo.
 export interface Api {
@@ -74,6 +86,9 @@ export interface Api {
   getMetrics(query: MetricsQuery): Promise<MetricSeries[]>;
   listMetricNames(query?: MetricNamesQuery): Promise<string[]>;
   listNodes(): Promise<Nodes>;
+  // Where the browser loads an artifact from (an image, a PDF), and its content as text (JSON, text, a transcript).
+  artifactUrl(location: ArtifactLocation): string;
+  readArtifact(location: ArtifactLocation): Promise<string>;
 
   triggerRun(pipeline: string, request?: TriggerRequest): Promise<Run>;
   cancelRun(pipeline: string, run: string): Promise<void>;

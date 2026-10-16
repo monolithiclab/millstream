@@ -56,7 +56,7 @@ describe('app shell', () => {
     const button = screen.getByRole('button', { name: /Switch pipeline/ });
     await user.click(button);
     expect(button).toHaveAttribute('aria-expanded', 'true');
-    await user.click(await screen.findByRole('link', { name: 'photo-tagging' }));
+    await user.click(await nav().findByRole('link', { name: 'photo-tagging' }));
     expect(location()).toBe('/p/photo-tagging/graph');
     expect(screen.getByRole('button', { name: 'Switch pipeline, showing photo-tagging' })).toHaveAttribute(
       'aria-expanded',

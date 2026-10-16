@@ -20,6 +20,15 @@ export interface LiveMessage {
   data: string;
 }
 
+// A message's JSON data, or null when it is not JSON: a malformed event changes nothing.
+export function parseData<T>(message: LiveMessage): T | null {
+  try {
+    return JSON.parse(message.data) as T;
+  } catch {
+    return null;
+  }
+}
+
 export type LiveStatus = 'connecting' | 'live' | 'reconnecting';
 
 export interface LiveState {

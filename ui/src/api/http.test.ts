@@ -151,6 +151,23 @@ describe('HttpApi', () => {
     expect(error).toMatchObject({ status: 502, code: 'http', message: 'Bad Gateway' });
   });
 
+  it('locates artifacts and reads them as text', async () => {
+    const { api, fetch } = setup(() => new Response('{"a": 1}'));
+    expect(api.artifactUrl({ pipeline: 'p', item: 'it 1', name: 'photo.jpg' })).toBe(
+      `${P}/items/it%201/artifacts/photo.jpg`,
+    );
+    expect(await api.readArtifact({ pipeline: 'p', delivery: 'dl_1', attempt: 2, name: 'transcript.json' })).toBe(
+      '{"a": 1}',
+    );
+    expect(fetch).toHaveBeenCalledWith(`${P}/deliveries/dl_1/attempts/2/artifacts/transcript.json`, { method: 'GET' });
+    const missing = setup(() =>
+      Response.json({ error: { code: 'notFound', message: 'no such artifact' } }, { status: 404 }),
+    );
+    await expect(missing.api.readArtifact({ pipeline: 'p', item: 'i', name: 'x' })).rejects.toEqual(
+      new ApiError(404, 'notFound', 'no such artifact'),
+    );
+  });
+
   it('uses the global fetch by default', async () => {
     const fetch = vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json([]));
     await new HttpApi().listNodes();

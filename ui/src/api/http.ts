@@ -1,4 +1,4 @@
-import { ApiError, enc, withQuery, type Api, type Query, type Target } from './api';
+import { ApiError, artifactPath, enc, withQuery, type Api, type Query, type Target } from './api';
 
 type Fetch = (input: string, init?: RequestInit) => Promise<Response>;
 
@@ -22,6 +22,13 @@ export class HttpApi implements Api {
       init.headers = { Accept: 'application/json', 'Content-Type': 'application/json' };
       init.body = JSON.stringify(body);
     }
+    const response = await this.send(path, init);
+    if (response.status === 204) return undefined as T;
+    return (await response.json()) as T;
+  }
+
+  // fetch, turning an error status into an ApiError from the server's {error: {code, message}} body.
+  private async send(path: string, init: RequestInit): Promise<Response> {
     const response = await this.fetch(this.base + path, init);
     if (!response.ok) {
       let code = 'http';
@@ -35,8 +42,7 @@ export class HttpApi implements Api {
       }
       throw new ApiError(response.status, code, message);
     }
-    if (response.status === 204) return undefined as T;
-    return (await response.json()) as T;
+    return response;
   }
 
   private get<T>(path: string, query?: Query) {
@@ -74,6 +80,9 @@ export class HttpApi implements Api {
   getMetrics: Api['getMetrics'] = (query) => this.get('/metrics', query);
   listMetricNames: Api['listMetricNames'] = (query = {}) => this.get('/metrics/names', query);
   listNodes: Api['listNodes'] = () => this.get('/nodes');
+  artifactUrl: Api['artifactUrl'] = (location) => this.base + artifactPath(location);
+  readArtifact: Api['readArtifact'] = async (location) =>
+    (await this.send(artifactPath(location), { method: 'GET' })).text();
 
   triggerRun: Api['triggerRun'] = (p, request = {}) => this.post(`${pipelinePath(p)}/runs`, request);
   cancelRun: Api['cancelRun'] = (p, run) => this.post(`${pipelinePath(p)}/runs/${enc(run)}/cancel`);

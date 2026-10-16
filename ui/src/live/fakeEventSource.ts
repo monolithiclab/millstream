@@ -1,3 +1,6 @@
+import { liveUrls } from '../api/api';
+import { demoFixtures } from '../api/fake';
+import { demoLogEvents } from '../api/fakeData';
 import type { EventSourceFactory, EventSourceLike } from './useLiveStream';
 
 // A scriptable EventSource: tests open, feed and fail it; ?demo opens it on the next tick.
@@ -47,8 +50,18 @@ export class FakeEventSource implements EventSourceLike {
 
 export const fakeEventSource: EventSourceFactory = (url) => new FakeEventSource(url);
 
+// What ?demo streams once open: a pipeline's snapshot, the log tail's lines.
+function demoEvents(url: string): [string, object][] {
+  const snapshot = demoFixtures.snapshots.find((s) => liveUrls.pipeline(s.pipeline) === url);
+  if (snapshot !== undefined) return [['snapshot', snapshot]];
+  return url.startsWith(liveUrls.logs()) ? demoLogEvents : [];
+}
+
 export const demoEventSource: EventSourceFactory = (url) => {
   const source = new FakeEventSource(url);
-  setTimeout(() => source.open(), 0);
+  setTimeout(() => {
+    source.open();
+    demoEvents(url).forEach(([type, data], i) => source.emit(type, JSON.stringify(data), String(i + 1)));
+  }, 0);
   return source;
 };
