@@ -8,3 +8,6 @@ build/
 coverage.out
 cover.out
 .millstream/
+# The web UI build (make ui): embedded by internal/ui, never committed, except the placeholder for npm-less builds.
+/internal/ui/dist/*
+!/internal/ui/dist/placeholder.html

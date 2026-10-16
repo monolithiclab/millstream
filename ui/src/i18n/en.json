@@ -1,0 +1,89 @@
+{
+  "app": {
+    "name": "Millstream",
+    "pageTitle": "{{page}} · Millstream"
+  },
+  "shell": {
+    "skipToContent": "Skip to main content",
+    "mainNav": "Main",
+    "workspace": "Workspace",
+    "pipeline": "Pipeline",
+    "openMenu": "Open navigation",
+    "closeMenu": "Close navigation",
+    "search": "Search items, runs, steps",
+    "preferences": "Preferences"
+  },
+  "switcher": {
+    "label": "Switch pipeline, showing {{name}}",
+    "allPipelines": "All pipelines",
+    "list": "Pipelines",
+    "loading": "Loading pipelines…",
+    "error": "Pipelines could not be loaded."
+  },
+  "nav": {
+    "pipelines": "Pipelines",
+    "inbox": "Inbox",
+    "nodes": "Nodes",
+    "metrics": "Metrics",
+    "logs": "Logs",
+    "graph": "Graph",
+    "runs": "Runs",
+    "items": "Streams and items",
+    "deadLetters": "Dead letters",
+    "insights": "Insights",
+    "lessons": "Lessons"
+  },
+  "screen": {
+    "placeholder": "This view is not built yet.",
+    "inPipeline": "Pipeline {{pipeline}}",
+    "notFound": {
+      "title": "Page not found",
+      "body": "Nothing lives at this address.",
+      "back": "Go to pipelines"
+    }
+  },
+  "live": {
+    "live": "Live",
+    "connecting": "Connecting",
+    "reconnecting": "Reconnecting · {{seconds}} s"
+  },
+  "palette": {
+    "title": "Command palette",
+    "input": "Command",
+    "placeholder": "Go to a screen, a pipeline or an action",
+    "results": "Commands",
+    "empty": "No command matches.",
+    "goTo": "Go to",
+    "action": "Action",
+    "pipelineGraph": "{{pipeline}} · graph",
+    "useLight": "Use the light theme",
+    "useDark": "Use the dark theme",
+    "useSystem": "Follow the system theme",
+    "switchLanguage": "Passer en français",
+    "showShortcuts": "Show keyboard shortcuts"
+  },
+  "shortcuts": {
+    "title": "Keyboard shortcuts",
+    "everywhere": "Everywhere",
+    "palette": "Command palette: go to, actions",
+    "goTo": "Go to a screen: g then p pipelines, i inbox, n nodes, m metrics, l logs, g graph, r runs, d dead letters",
+    "help": "All shortcuts",
+    "close": "Close a panel or dialog and return to where you were",
+    "singleKeys": "Single-key shortcuts",
+    "singleKeysHint": "Turn them off if they get in the way of speech input or another tool. ⌘K and Ctrl+K stay on."
+  },
+  "dialog": {
+    "close": "Close"
+  },
+  "theme": {
+    "label": "Theme",
+    "system": "System",
+    "light": "Light",
+    "dark": "Dark"
+  },
+  "language": {
+    "label": "Language",
+    "en": "English",
+    "fr": "Français"
+  }
+}

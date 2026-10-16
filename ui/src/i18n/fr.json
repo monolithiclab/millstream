@@ -1,0 +1,89 @@
+{
+  "app": {
+    "name": "Millstream",
+    "pageTitle": "{{page}} · Millstream"
+  },
+  "shell": {
+    "skipToContent": "Aller au contenu principal",
+    "mainNav": "Principale",
+    "workspace": "Espace de travail",
+    "pipeline": "Pipeline",
+    "openMenu": "Ouvrir la navigation",
+    "closeMenu": "Fermer la navigation",
+    "search": "Chercher des items, des runs, des étapes",
+    "preferences": "Préférences"
+  },
+  "switcher": {
+    "label": "Changer de pipeline, affiché : {{name}}",
+    "allPipelines": "Tous les pipelines",
+    "list": "Pipelines",
+    "loading": "Chargement des pipelines…",
+    "error": "Les pipelines n’ont pas pu être chargés."
+  },
+  "nav": {
+    "pipelines": "Pipelines",
+    "inbox": "Revue",
+    "nodes": "Nœuds",
+    "metrics": "Métriques",
+    "logs": "Journaux",
+    "graph": "Graphe",
+    "runs": "Runs",
+    "items": "Flux et items",
+    "deadLetters": "Lettres mortes",
+    "insights": "Constats",
+    "lessons": "Leçons"
+  },
+  "screen": {
+    "placeholder": "Cette vue n’est pas encore construite.",
+    "inPipeline": "Pipeline {{pipeline}}",
+    "notFound": {
+      "title": "Page introuvable",
+      "body": "Rien ne se trouve à cette adresse.",
+      "back": "Aller aux pipelines"
+    }
+  },
+  "live": {
+    "live": "En direct",
+    "connecting": "Connexion",
+    "reconnecting": "Reconnexion · {{seconds}} s"
+  },
+  "palette": {
+    "title": "Palette de commandes",
+    "input": "Commande",
+    "placeholder": "Aller à un écran, un pipeline ou une action",
+    "results": "Commandes",
+    "empty": "Aucune commande ne correspond.",
+    "goTo": "Aller à",
+    "action": "Action",
+    "pipelineGraph": "{{pipeline}} · graphe",
+    "useLight": "Utiliser le thème clair",
+    "useDark": "Utiliser le thème sombre",
+    "useSystem": "Suivre le thème du système",
+    "switchLanguage": "Switch to English",
+    "showShortcuts": "Afficher les raccourcis clavier"
+  },
+  "shortcuts": {
+    "title": "Raccourcis clavier",
+    "everywhere": "Partout",
+    "palette": "Palette de commandes : aller à, actions",
+    "goTo": "Aller à un écran : g puis p pipelines, i revue, n nœuds, m métriques, l journaux, g graphe, r runs, d lettres mortes",
+    "help": "Tous les raccourcis",
+    "close": "Fermer un panneau ou une boîte de dialogue et revenir où vous étiez",
+    "singleKeys": "Raccourcis à une touche",
+    "singleKeysHint": "Désactivez-les s’ils gênent la saisie vocale ou un autre outil. ⌘K et Ctrl+K restent actifs."
+  },
+  "dialog": {
+    "close": "Fermer"
+  },
+  "theme": {
+    "label": "Thème",
+    "system": "Système",
+    "light": "Clair",
+    "dark": "Sombre"
+  },
+  "language": {
+    "label": "Langue",
+    "en": "English",
+    "fr": "Français"
+  }
+}
