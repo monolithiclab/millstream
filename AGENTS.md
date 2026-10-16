@@ -28,6 +28,7 @@ below) for the reasoning, and `make help` for every command.
 - `sdk/go/`: the Go action SDK, its own module.
 - `ui/`: the web UI, built and tested only in containers (see Web UI).
 - `examples/`: fixture and example pipeline packages.
+- `deploy/`: the Compose deployment and the systemd units (see Packaging).
 - `make ci` is the gate: lint (golangci-lint over the e2e-tagged build, which holds every file, govulncheck, tidy,
   pins, shellcheck), the default test suite without `-race`, and the docs check, for the main module and the SDK
   module alike.
@@ -144,6 +145,25 @@ below) for the reasoning, and `make help` for every command.
   the model, `haiku` by default). It is never part of `make ci`; never commit what it records.
 - The end-to-end and crash tests sit behind the `e2e` build tag: `make test-e2e`, or `go test -tags e2e ./internal/e2e`.
 
+## Packaging
+
+- `Dockerfile` builds the image from source: the UI in the node image of `ui/images.mk` (keep its digest equal to
+  `UI_NODE_IMAGE`), the binary with the UI embedded in the golang image of go.mod's toolchain, then
+  `gcr.io/distroless/static-debian13:nonroot`. Every `FROM` is pinned by digest (`lint-pins`). `Dockerfile.release`
+  is GoReleaser's: the same runtime around the binaries it built; keep the two runtime stages in step.
+- `make image` builds `millstream:dev`; `make test-image` checks it prints its version and that `millstream run`
+  in it serves the built UI (not the placeholder) and the API over `ui/e2e/fixture`, from a node container sharing
+  its network namespace (run listens on loopback only). `make test-deploy` runs `docker compose config` on
+  `deploy/compose` and `systemd-analyze verify` and `security` on `deploy/systemd` in a pinned ubi-init image. None
+  of them is in `make ci`; CI's `image` job runs them.
+- `make release-snapshot` runs GoReleaser (`.goreleaser.yaml`) with `--snapshot --skip=sign`: archives, an SBOM
+  each, checksums and local images in `dist/`, nothing signed or pushed. GoReleaser and syft are pinned in their own
+  tools module, `tools/release/go.mod`, so their dependencies never move the linters' in `tools/go.mod`; bump them
+  with `go get -tool -modfile=tools/release/go.mod <module>@<version>`.
+- `deploy/compose/millstream.yaml` and the units reference `serve` (M4 Task 2) and `node --join` (Task 4) before
+  they exist: a task that changes those commands or the environment file's keys updates `deploy/` and
+  `docs/deploy.md` in the same commit.
+
 ## Where things go
 
 - Architecture decisions live in `docs/decisions.md`. Until the first public release the log is kept current: edit
@@ -158,6 +178,7 @@ below) for the reasoning, and `make help` for every command.
 | `docs/specs/20261014.platform-design.md` | The platform design: concepts, file format, execution model, protocol, UI, deployment, milestones |
 | `docs/decisions.md` | Architecture decisions D1 onward |
 | `docs/protocol.md` | The action protocol: messages, framing, ordering, errors, for action authors and SDKs |
+| `docs/deploy.md` | Deployment: the image, Compose, systemd, security, backups and upgrades |
 | `docs/design/20261015.ui-brief.md` | Design brief for the web UI, written for Claude Design |
 | `docs/design/canvas/` | Snapshot of the Claude Design canvas for the web UI, with its version id |
 | `ROADMAP.md` | Parked ideas and follow-ups |

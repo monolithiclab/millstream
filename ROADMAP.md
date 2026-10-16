@@ -96,6 +96,11 @@ earlier designs are in the git history of the spec.
 - Signed approve and reject links in notifications, and email notifications.
 - A control plane across customer deployments (commercial edition).
 - The Claude Agent SDK as an agent harness.
+- The release workflow, at the first public release: tag push, `goreleaser release` publishing the archives and the
+  image to GHCR, cosign keyless signing (the `.goreleaser.yaml` sections are written, snapshots skip them), a Homebrew
+  formula in `monolithiclab/homebrew-tap`, and Dependabot for the `docker` ecosystem so the pinned digests refresh.
+- An image variant for nodes that run interpreted or container actions (a shell, Python, the Docker CLI): the
+  distroless image runs static exec binaries only.
 
 ## After v1
 
