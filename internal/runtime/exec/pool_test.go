@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -60,17 +61,29 @@ func TestPoolLifecycles(t *testing.T) {
 	}
 }
 
-func TestPoolKeysOnDigestConfigVarsAndLessons(t *testing.T) {
+// Any difference in what a process starts with keys another process: an action shared by two pipelines with other
+// secrets (env) or packages (mounts), a container image run with another network or command.
+func TestPoolKeysOnTheLaunchSpec(t *testing.T) {
 	t.Parallel()
-	pl := newTestPool(t, 0)
+	pl := newTestPool(t, 16) // room for every variant: the base process must stay idle
 	base := fakeSpec("echo", nil)
 	pid := poolPID(t, pl, base, "dl_0")
-	otherDigest, otherConfig, otherVars, otherLessons := base, fakeSpec("echo", map[string]any{"extra": 1}), base, base
-	otherDigest.Digest = "sha256:other"
-	otherVars.Vars = map[string]any{"city": "Paris"}
-	otherLessons.Lessons = json.RawMessage(`{"rules":[{"text":"Be strict."}]}`)
-	for name, spec := range map[string]Spec{"digest": otherDigest, "config": otherConfig, "vars": otherVars,
-		"lessons": otherLessons} {
+	with := func(edit func(*Spec)) Spec {
+		s := base
+		edit(&s)
+		return s
+	}
+	for name, spec := range map[string]Spec{
+		"digest":  with(func(s *Spec) { s.Digest = "sha256:other" }),
+		"config":  fakeSpec("echo", map[string]any{"extra": 1}),
+		"vars":    with(func(s *Spec) { s.Vars = map[string]any{"city": "Paris"} }),
+		"lessons": with(func(s *Spec) { s.Lessons = json.RawMessage(`{"rules":[{"text":"Be strict."}]}`) }),
+		"env":     with(func(s *Spec) { s.Env = append(slices.Clone(s.Env), "API_KEY=rotated") }),
+		"network": with(func(s *Spec) { s.Network = true }),
+		"mounts":  with(func(s *Spec) { s.Mounts = []Mount{{Source: "/pkg/b", Target: "/pkg", ReadOnly: true}} }),
+		"command": with(func(s *Spec) { s.Command = append(slices.Clone(s.Command), "--other") }),
+		"image":   with(func(s *Spec) { s.Image = "sha256:image" }),
+	} {
 		if got := poolPID(t, pl, spec, "dl_"+name); got == pid {
 			t.Errorf("another %s reused process %d", name, pid)
 		}

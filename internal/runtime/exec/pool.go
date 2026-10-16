@@ -23,8 +23,8 @@ type PoolOptions struct {
 	MaxIdle int
 }
 
-// Pool runs deliveries on action processes. A long-lived process is reused only for the same action digest,
-// config, vars and lessons (spec section 6.5), and serves one delivery at a time: concurrent deliveries of one key run on
+// Pool runs deliveries on action processes. A long-lived process is reused only for the same launch spec: action
+// digest, image, command, network, mounts, environment, config, vars and lessons (spec section 6.5), and serves one delivery at a time: concurrent deliveries of one key run on
 // as many processes. A process that fails a delivery in the runtime is dropped, so the next delivery spawns a
 // fresh one. A perItem action gets a fresh process for every delivery, closed after it.
 type Pool struct {
@@ -146,13 +146,24 @@ func (pl *Pool) closeLogged(p *Process) {
 	}
 }
 
-// poolKey is the action digest with a hash of the config, vars and lessons: encoding/json sorts map keys, so equal
-// maps encode alike.
+// poolKey hashes everything that shapes a process when it starts: what runs (kind, digest, image, command,
+// directory), what it can reach (network, mounts, environment, so rotated secrets start a new process) and what
+// hello tells it (config, vars, lessons). Two pipelines with equal actions but other secrets or mounts never share a
+// process. encoding/json sorts map keys, so equal maps encode alike; the key is a hash, so the environment's values
+// never appear in it.
 func poolKey(spec Spec) (string, error) {
-	enc, err := json.Marshal([]any{spec.Config, spec.Vars, spec.Lessons})
+	enc, err := json.Marshal(struct {
+		Kind, Digest, Image, Dir string
+		Command, Env             []string
+		Network                  bool
+		Mounts                   []Mount
+		Config, Vars             map[string]any
+		Lessons                  json.RawMessage
+	}{spec.Kind, spec.Digest, spec.Image, spec.Dir, spec.Command, spec.Env, spec.Network, spec.Mounts, spec.Config,
+		spec.Vars, spec.Lessons})
 	if err != nil {
-		return "", fmt.Errorf("action %s: encode config and vars: %w", spec.Action, err)
+		return "", fmt.Errorf("action %s: encode its launch spec: %w", spec.Action, err)
 	}
 	sum := sha256.Sum256(enc)
-	return spec.Digest + "/" + hex.EncodeToString(sum[:]), nil
+	return hex.EncodeToString(sum[:]), nil
 }

@@ -38,7 +38,8 @@ receives no other variable of the node's environment.
 
 **`hello`** is the first message a process receives. It names the action and gives the step's config, already
 interpolated for the run, and the run's variables. A process only ever receives items with this same action
-digest, config, vars and lessons, so it may prepare once (open clients, load models) and reuse that for every item.
+digest, config, vars and lessons, and the same environment and mounts it started with, so it may prepare once (open
+clients, load models) and reuse that for every item.
 
 ```json
 {"type":"hello","protocol":1,"action":"lab/score-listing","version":"2.1.0","config":{"minRooms":2},"vars":{"city":"Lyon"}}
