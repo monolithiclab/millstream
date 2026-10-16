@@ -464,6 +464,26 @@ func TestUnrouted(t *testing.T) {
 		if !strings.Contains(rec.Body.String(), tt.want) {
 			t.Errorf("GET %s on %s = %q, want %q", tt.target, tt.host, rec.Body.String(), tt.want)
 		}
+		// No page elsewhere may frame any response (clickjacking); the UI's pages load nothing from elsewhere.
+		policy := uiPolicy
+		if strings.HasPrefix(tt.target, "/api/") {
+			policy = apiPolicy
+		}
+		if got := rec.Header(); got.Get("X-Frame-Options") != "DENY" || got.Get("Content-Security-Policy") != policy {
+			t.Errorf("GET %s on %s: headers %v", tt.target, tt.host, got)
+		}
+	}
+	if !strings.Contains(uiPolicy, "frame-ancestors 'none'") || !strings.Contains(uiPolicy, "script-src 'self';") {
+		t.Errorf("UI policy = %q", uiPolicy)
+	}
+	// An artifact keeps its sandbox, and only the UI's own pages may embed it (a PDF preview).
+	r := httptest.NewRequest(http.MethodGet, "/api/v1/pipelines/listings/items/"+f.good.ID+"/artifacts/photo.png", nil)
+	r.Host = "127.0.0.1:7070"
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, r)
+	if got := rec.Header(); rec.Code != http.StatusOK || got.Get("Content-Security-Policy") != artifactPolicy ||
+		got.Get("X-Frame-Options") != "SAMEORIGIN" {
+		t.Errorf("artifact: %d %v", rec.Code, got)
 	}
 	// A POST without a JSON content type, which a page elsewhere can send without asking, changes nothing.
 	for _, ct := range []string{"", "text/plain", "application/x-www-form-urlencoded"} {

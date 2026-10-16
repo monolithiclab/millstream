@@ -721,7 +721,8 @@ func (s *Server) serveArtifact(w http.ResponseWriter, pipelineName string, ref s
 	h.Set("Content-Type", ref.Type)
 	h.Set("Content-Length", strconv.FormatInt(ref.Size, 10))
 	h.Set("Content-Disposition", mime.FormatMediaType(disposition, map[string]string{"filename": ref.Name}))
-	h.Set("Content-Security-Policy", "sandbox; default-src 'none'")
+	h.Set("Content-Security-Policy", artifactPolicy)
+	h.Set("X-Frame-Options", "SAMEORIGIN")
 	h.Set("Cache-Control", "private, max-age=31536000, immutable") // content-addressed
 	h.Set("ETag", `"`+ref.SHA256+`"`)
 	w.WriteHeader(http.StatusOK)

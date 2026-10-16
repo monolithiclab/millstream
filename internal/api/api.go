@@ -215,11 +215,21 @@ func jsonContent(r *http.Request) bool {
 // Handler serves the API under /api/ and everything else with ui, the web UI's single-page app, to requests naming
 // a loopback host only: until authentication (M4) a page whose name resolves to this machine (DNS rebinding) must
 // not reach the API as if it were the UI.
+//
+// No response may be framed by another page (clickjacking): every one says so, and the UI's pages carry a content
+// security policy that loads nothing from elsewhere. Artifacts replace it with their own sandbox (serveArtifact).
 func Handler(apiHandler, ui http.Handler) http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("/api/", apiHandler)
 	mux.Handle("/", ui)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h := w.Header()
+		h.Set("X-Frame-Options", "DENY")
+		if strings.HasPrefix(r.URL.Path, "/api/") {
+			h.Set("Content-Security-Policy", apiPolicy)
+		} else {
+			h.Set("Content-Security-Policy", uiPolicy)
+		}
 		if !loopbackHost(r.Host) {
 			writeErrorBody(w, http.StatusForbidden, codeForbidden, "host "+r.Host+" is not a loopback address")
 			return
@@ -227,6 +237,18 @@ func Handler(apiHandler, ui http.Handler) http.Handler {
 		mux.ServeHTTP(w, r)
 	})
 }
+
+// Content security policies. The UI's scripts, styles, fonts and API calls are all its own; its styles include
+// inline ones (React Flow positions nodes with style attributes), images may be data: or blob: URLs, and PDF
+// artifacts are shown in an <object> of the same origin.
+const (
+	apiPolicy = "frame-ancestors 'none'"
+	uiPolicy  = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; " +
+		"font-src 'self'; connect-src 'self'; object-src 'self'; base-uri 'none'; form-action 'self'; " +
+		"frame-ancestors 'none'"
+	// artifactPolicy sandboxes what an action wrote, which only the UI's own pages may embed.
+	artifactPolicy = "sandbox; default-src 'none'; frame-ancestors 'self'"
+)
 
 // loopbackHost reports whether a Host header names this machine: localhost or a loopback address, with or without
 // a port.
