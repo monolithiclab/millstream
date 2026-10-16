@@ -255,9 +255,10 @@ retention: { events: 90d, transcripts: 30d, rollups: 400d, every: 1h }
 The active engine's retention job runs every `every` (an hour by default; the standby runs none): expired payloads
 become tombstones (the UI shows the item as expired, its lineage intact), old events (once the metric rollup has read
 them), transcripts and rollups are deleted in batches of 500, the artifact files nothing references any more are
-deleted (a file stored again within the last day waits for the next pass), and the package cache (`packages/` beside
-the artifacts) loses the revisions no pipeline runs any more. An item that unfinished work needs (a delivery in
-flight or waiting, a parked review, an open dead letter, an open review sample) keeps its payload until that work is
+deleted, in the local directory or the S3 bucket alike (a file stored again within the last day waits for the next
+pass), and the package cache (`packages/` beside the artifacts) loses the revisions no pipeline runs any more. An item
+that unfinished work needs (a delivery in flight or waiting, on the embedded node or a remote one, a parked review, an
+open dead letter, an open review sample) keeps its payload until that work is
 resolved: replay or discard dead letters to let retention take them. The engine logs what each pass removed
 (`retention` lines).
 

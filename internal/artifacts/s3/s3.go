@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"maps"
 	"net/http"
 	"net/url"
 	"os"
@@ -55,6 +56,8 @@ type Store struct {
 var (
 	_ artifacts.Store     = (*Store)(nil)
 	_ artifacts.Presigner = (*Store)(nil)
+	_ artifacts.Files     = (*Store)(nil)
+	_ artifacts.Toucher   = (*Store)(nil)
 )
 
 // New returns the store of cfg.
@@ -110,7 +113,14 @@ func (s *Store) objectURL(key string) *url.URL {
 func (s *Store) do(ctx context.Context, method, key string, body io.Reader, size int64, payloadHash string,
 	header http.Header,
 ) (*http.Response, error) {
-	req, err := http.NewRequestWithContext(ctx, method, s.objectURL(key).String(), body)
+	return s.doURL(ctx, method, s.objectURL(key), body, size, payloadHash, header)
+}
+
+// doURL makes a signed request of u.
+func (s *Store) doURL(ctx context.Context, method string, u *url.URL, body io.Reader, size int64, payloadHash string,
+	header http.Header,
+) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(ctx, method, u.String(), body)
 	if err != nil {
 		return nil, err
 	}
@@ -152,8 +162,12 @@ func (s *Store) Put(ctx context.Context, pipeline, name string, r io.Reader) (st
 		_ = os.Remove(f.Name())
 	}()
 	key, _ := s.key(pipeline, ref.SHA256)
-	if ok, err := s.Exists(ctx, pipeline, ref.SHA256); err != nil || ok {
-		return ref, err
+	// Stored already: touched, so the artifact sweep's grace counts from now, as the local directory's Put does.
+	switch err := s.touch(ctx, key); {
+	case err == nil:
+		return ref, nil
+	case !errors.Is(err, fs.ErrNotExist):
+		return store.ArtifactRef{}, fmt.Errorf("store artifact %s: %w", name, err)
 	}
 	resp, err := s.do(ctx, http.MethodPut, key, f, ref.Size, ref.SHA256,
 		http.Header{"Content-Type": {ref.Type}})
@@ -167,17 +181,17 @@ func (s *Store) Put(ctx context.Context, pipeline, name string, r io.Reader) (st
 	return ref, nil
 }
 
-// head returns the size of key, an error wrapping fs.ErrNotExist when it is absent.
-func (s *Store) head(ctx context.Context, key string) (int64, error) {
+// head returns the response headers of key, an error wrapping fs.ErrNotExist when it is absent.
+func (s *Store) head(ctx context.Context, key string) (*http.Response, error) {
 	resp, err := s.do(ctx, http.MethodHead, key, nil, 0, emptySHA256, nil)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
-		return 0, statusErr("head", key, resp)
+		return nil, statusErr("head", key, resp)
 	}
-	return resp.ContentLength, nil
+	return resp, nil
 }
 
 // Exists implements artifacts.Store.
@@ -202,11 +216,11 @@ func (s *Store) Open(ctx context.Context, pipeline, sha string) (io.ReadSeekClos
 	if err != nil {
 		return nil, err
 	}
-	size, err := s.head(ctx, key)
+	resp, err := s.head(ctx, key)
 	if err != nil {
 		return nil, fmt.Errorf("open artifact %s of %s: %w", sha, pipeline, err)
 	}
-	return &object{s: s, ctx: ctx, key: key, size: size}, nil
+	return &object{s: s, ctx: ctx, key: key, size: resp.ContentLength}, nil
 }
 
 // Copy implements artifacts.Store with a server-side copy.
@@ -219,8 +233,14 @@ func (s *Store) Copy(ctx context.Context, from, to, sha string) error {
 	if err != nil {
 		return err
 	}
-	resp, err := s.do(ctx, http.MethodPut, dst, nil, 0, emptySHA256,
-		http.Header{"X-Amz-Copy-Source": {"/" + s.cfg.Bucket + "/" + uriEncode(src, false)}})
+	return s.copyObject(ctx, src, dst, nil)
+}
+
+// copyObject copies the object src to dst on the server, with the extra headers.
+func (s *Store) copyObject(ctx context.Context, src, dst string, header http.Header) error {
+	h := http.Header{"X-Amz-Copy-Source": {"/" + s.cfg.Bucket + "/" + uriEncode(src, false)}}
+	maps.Copy(h, header)
+	resp, err := s.do(ctx, http.MethodPut, dst, nil, 0, emptySHA256, h)
 	if err != nil {
 		return err
 	}

@@ -38,9 +38,10 @@ func (e *env) item(pipelineName, id string) store.Item {
 // TestPurgeAcrossImports: a purge by key fences and erases the items with the key, their descendants and the copies
 // imports made of them down a chain of imports, and nothing else. Fenced, pending deliveries are cancelled and a
 // leased one's outputs are discarded when it reports; erased, an item has no payload, key or artifacts, and its
-// deliveries' transcripts are gone. Its events never carry the key.
+// deliveries' transcripts are gone. Its events never carry the key, and webhook trigger tokens are untouched.
 func TestPurgeAcrossImports(t *testing.T, open Opener) {
 	e := newEnv(t, open, srcPipeline)
+	e.createToken("src", "hook")
 	e.applyVars(dealPipeline, map[string]any{"tag": "y"})
 	e.apply(relayPipeline)
 	e.firePipeline("src", "go", "r1")
@@ -165,6 +166,7 @@ func TestPurgeAcrossImports(t *testing.T, open Opener) {
 	if it := e.item("src", b); it.Tombstone != "" {
 		t.Fatalf("purging a copy erased its producer item: %+v", it)
 	}
+	e.wantToken("src", "hook")
 	for _, req := range []store.PurgeRequest{{Key: "k"}, {ID: "x"}, {ID: "x", Key: "k", Item: "i"}} {
 		if _, _, err := e.s.StartPurge(e.ctx, req); !errors.Is(err, store.ErrInvalid) {
 			t.Fatalf("StartPurge %+v = %v", req, err)

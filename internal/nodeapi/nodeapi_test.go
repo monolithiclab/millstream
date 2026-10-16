@@ -97,7 +97,13 @@ type deployment struct {
 
 func newDeployment(t *testing.T) *deployment {
 	t.Helper()
-	st, err := sqlite.Open(sqlite.Memory, sqlite.Options{})
+	return newDeploymentWith(t, sqlite.Options{})
+}
+
+// newDeploymentWith is newDeployment over a store opened with opts.
+func newDeploymentWith(t *testing.T, opts sqlite.Options) *deployment {
+	t.Helper()
+	st, err := sqlite.Open(sqlite.Memory, opts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -276,9 +282,15 @@ func TestLeaseScopedHandlers(t *testing.T) {
 	if rec := request(h, http.MethodPut, u.URL, "report"); rec.Code != http.StatusOK {
 		t.Fatalf("put through the proxy: %d %s", rec.Code, rec.Body.String())
 	}
-	if again := put(ref); !again.Exists {
-		t.Fatalf("a stored content: %+v", again)
+	// Stored already, it is not sent again but touched, so the artifact sweep's grace counts from now.
+	if again := put(ref); !again.Exists || d.arts.touched[l.Pipeline+"/"+ref.SHA256] != 1 {
+		t.Fatalf("a stored content: %+v, touched %v", again, d.arts.touched)
 	}
+	d.arts.touchErr = errors.New("disk failure")
+	body, _ := json.Marshal(nodewire.ArtifactURL{Node: "n1", Lease: lease, Op: nodewire.OpPut, Artifact: ref})
+	wantCode(t, request(h, http.MethodPost, nodewire.PathArtifactURL, string(body)), http.StatusInternalServerError,
+		nodewire.CodeInternal)
+	d.arts.touchErr = nil
 	for body, code := range map[string]string{
 		`{"node":"n1","lease":{},"op":"delete","artifact":{}}`: nodewire.CodeInvalid,
 		`{"node":"n1","lease":{},"op":"put","artifact":{}}`:    nodewire.CodeNotHeld,
@@ -473,11 +485,28 @@ func scratch(t *testing.T) string {
 
 // memArtifacts is an artifact store in memory: the tests move artifacts without touching a disk.
 type memArtifacts struct {
-	mu    sync.Mutex
-	blobs map[string][]byte // by pipeline/sha256
+	mu       sync.Mutex
+	blobs    map[string][]byte // by pipeline/sha256
+	touched  map[string]int    // Touch calls by pipeline/sha256
+	touchErr error             // what Touch fails with when set
 }
 
-func newMemArtifacts() *memArtifacts { return &memArtifacts{blobs: map[string][]byte{}} }
+func newMemArtifacts() *memArtifacts {
+	return &memArtifacts{blobs: map[string][]byte{}, touched: map[string]int{}}
+}
+
+func (m *memArtifacts) Touch(_ context.Context, p, sha string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.touchErr != nil {
+		return m.touchErr
+	}
+	if _, ok := m.blobs[p+"/"+sha]; !ok {
+		return fs.ErrNotExist
+	}
+	m.touched[p+"/"+sha]++
+	return nil
+}
 
 func (m *memArtifacts) Put(_ context.Context, p, name string, r io.Reader) (store.ArtifactRef, error) {
 	if !store.ValidArtifactName(name) {

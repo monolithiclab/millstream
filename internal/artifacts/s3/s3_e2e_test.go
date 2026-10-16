@@ -149,6 +149,43 @@ func TestAgainstS3Server(t *testing.T) {
 	if ok, _ := st.Exists(ctx, "outputs", sha); !ok {
 		t.Fatal("the presigned PUT stored nothing")
 	}
+	// The artifact sweep's operations: the listing, Last-Modified, a touch (Put of a stored content too), deletes.
+	files, err := st.List(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	listed := map[string]bool{}
+	for _, f := range files {
+		listed[f.Pipeline+"/"+f.Name] = !f.ModTime.IsZero()
+	}
+	if len(files) != 3 || !listed["listings/"+ref.SHA256] || !listed["deals/"+ref.SHA256] || !listed["outputs/"+sha] {
+		t.Fatalf("List = %+v", files)
+	}
+	before, err := st.ModTime(ctx, "listings", ref.SHA256)
+	if err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(1100 * time.Millisecond) // Last-Modified counts seconds
+	if _, err := st.Put(ctx, "listings", "again.txt", bytes.NewReader(content)); err != nil {
+		t.Fatal(err)
+	}
+	if after, err := st.ModTime(ctx, "listings", ref.SHA256); err != nil || !after.After(before) {
+		t.Fatalf("ModTime after storing again = %v (before %v), %v", after, before, err)
+	}
+	if got, _ := st.Open(ctx, "listings", ref.SHA256); got == nil {
+		t.Fatal("the touched object is gone")
+	} else if b, err := io.ReadAll(got); err != nil || !bytes.Equal(b, content) {
+		t.Fatalf("the touched object reads %d bytes, %v", len(b), err)
+	}
+	for range 2 { // the second time, already gone
+		if err := st.Remove(ctx, "deals", ref.SHA256); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := st.Touch(ctx, "deals", ref.SHA256); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("Touch of a removed object = %v", err)
+	}
+
 	// A tampered URL, and a wrong key, are refused by the server.
 	resp, err = http.Get(strings.Replace(get, "listings", "deals", 1)) // #nosec G107 -- the test server's URL
 	if err != nil {

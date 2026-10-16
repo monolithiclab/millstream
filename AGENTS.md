@@ -40,7 +40,8 @@ below) for the reasoning, and `make help` for every command.
   delivery's action process as the engine resolves it, which a node builds its process spec from (`Launch.Spec`) for
   its own platform and package cache. The engine's node registry, placement and lease-scoped fetches are
   `engine/nodes.go`; `artifacts` is the artifact store interface over the local `Dir` and `artifacts/s3` (SigV4
-  written in-repo).
+  written in-repo), both also implementing `Files` (what the retention job's artifact sweep lists, stats, copies and
+  removes, `engine/retention.go`) and `Toucher`.
 - `internal/store/`: the log store interface; `sqlstore` is its implementation on `database/sql` (the writer loop,
   every unit, the reads), shared by `sqlite` and `postgres`, which open, migrate and hold the connections and give a
   `sqlstore.Dialect` for what the databases spell differently; `storetest` is the conformance suite both pass;

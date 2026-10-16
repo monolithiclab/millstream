@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -446,7 +447,7 @@ func (h *Handler) artifactURL(w http.ResponseWriter, r *http.Request) error {
 		if err := store.ValidArtifact(a); err != nil {
 			return err
 		}
-		exists, err := arts.Exists(ctx, ref.Pipeline, a.SHA256)
+		exists, err := stored(ctx, arts, ref.Pipeline, a.SHA256)
 		if err != nil {
 			return err
 		}
@@ -474,6 +475,23 @@ func (h *Handler) artifactURL(w http.ResponseWriter, r *http.Request) error {
 	}
 	writeJSON(w, http.StatusOK, out)
 	return nil
+}
+
+// stored reports whether arts holds pipeline's artifact sha, touching it when it does (artifacts.Toucher): the node
+// does not send it again, so the artifact sweep's grace counts from now as if it had (spec section 9.3).
+func stored(ctx context.Context, arts artifacts.Store, pipeline, sha string) (bool, error) {
+	t, ok := arts.(artifacts.Toucher)
+	if !ok {
+		return arts.Exists(ctx, pipeline, sha)
+	}
+	switch err := t.Touch(ctx, pipeline, sha); {
+	case err == nil:
+		return true, nil
+	case errors.Is(err, fs.ErrNotExist):
+		return false, nil
+	default:
+		return false, err
+	}
 }
 
 // blobURL is the proxy's signed URL for one artifact move: what the signature covers is the operation, the pipeline,

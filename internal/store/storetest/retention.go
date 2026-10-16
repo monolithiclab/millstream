@@ -118,9 +118,10 @@ func TestRetainKeepsWhatUnfinishedWorkNeeds(t *testing.T, open Opener) {
 
 // TestRetainEventsTranscriptsRollups: events go by age once every projection has read them, never the last one, so
 // the sequence carries on; attempt artifacts go by age but those of a live delivery; rollups go by their minute.
-// DeleteArtifacts then removes the entries nothing references.
+// DeleteArtifacts then removes the entries nothing references. Webhook trigger tokens are no record retention ages.
 func TestRetainEventsTranscriptsRollups(t *testing.T, open Opener) {
 	e := newEnv(t, open, fixture)
+	e.createToken("listings", "hook")
 	e.fire("r1")
 	crawl := e.leaseStep("crawl")
 	if _, err := e.s.Done(e.ctx, store.DoneRequest{LeaseRef: crawl.Ref(), Attempt: 1,
@@ -170,8 +171,25 @@ func TestRetainEventsTranscriptsRollups(t *testing.T, open Opener) {
 	if rs := e.rollups("items_out", "crawl"); len(rs) != 0 {
 		t.Fatalf("rollups left = %+v", rs)
 	}
+	e.wantToken("listings", "hook")
 	e.fire("r2") // numbered on from the last event kept
 	if evs := e.events(); evs[1].Seq != last+1 {
 		t.Fatalf("next event seq = %d, want %d", evs[1].Seq, last+1)
+	}
+}
+
+// createToken stores a webhook trigger's token hash, hash-<trigger>, as an apply does.
+func (e *env) createToken(pipelineName, trigger string) {
+	e.t.Helper()
+	if _, err := e.s.CreateTriggerTokens(e.ctx, pipelineName, map[string]string{trigger: "hash-" + trigger}); err != nil {
+		e.t.Fatal(err)
+	}
+}
+
+// wantToken checks that a webhook trigger's token hash is still the one createToken stored.
+func (e *env) wantToken(pipelineName, trigger string) {
+	e.t.Helper()
+	if h, err := e.s.TriggerTokenHash(e.ctx, pipelineName, trigger); err != nil || h != "hash-"+trigger {
+		e.t.Fatalf("token of %s/%s = %q, %v", pipelineName, trigger, h, err)
 	}
 }
