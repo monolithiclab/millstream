@@ -142,7 +142,6 @@ func TestParseOut(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
 			p, err := Parse([]byte(pipelineWith("  s:\n    action: x\n    in: trigger.go\n    " + tt.out + "\n")))
 			if tt.wantErr != "" {
 				assertErr(t, err, tt.wantErr)
@@ -342,7 +341,6 @@ func TestParseErrors(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
 			_, err := Parse([]byte(tt.doc))
 			assertErr(t, err, tt.wantErr)
 		})

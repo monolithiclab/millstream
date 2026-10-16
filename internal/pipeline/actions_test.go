@@ -89,7 +89,6 @@ runtime: { exec: { command: [score, --fast] } }
 	}
 	for _, tt := range tests {
 		t.Run(tt.ref, func(t *testing.T) {
-			t.Parallel()
 			got, err := r.Resolve(pkg, tt.ref)
 			if err != nil {
 				t.Fatal(err)
@@ -101,7 +100,6 @@ runtime: { exec: { command: [score, --fast] } }
 	}
 
 	t.Run("registry", func(t *testing.T) {
-		t.Parallel()
 		if _, err := r.Resolve(pkg, "lab/x@1"); !errors.Is(err, ErrUnavailable) {
 			t.Fatalf("err = %v, want ErrUnavailable", err)
 		}
@@ -183,7 +181,6 @@ func TestResolveErrors(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
 			files := [][2]string{{"pipeline.yaml", minimalPipeline}, {"actions/x/action.yaml", tt.manifest}}
 			pkg := memPackage(t, append(files, tt.extra...)...)
 			_, err := Resolver{}.Resolve(pkg, tt.ref)

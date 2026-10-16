@@ -30,7 +30,6 @@ func TestInsightsConfig(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
 			p, err := Parse([]byte(checkHeader + "steps: { a: { action: ./a, in: trigger.go } }\n" + tt.yaml + "\n"))
 			if err != nil {
 				t.Fatal(err)

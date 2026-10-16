@@ -4,7 +4,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"io/fs"
 	"maps"
 	"os"
 	"path/filepath"
@@ -103,27 +102,47 @@ func readTree(dir string, files map[string][]byte) error {
 		return err
 	}
 	defer func() { _ = root.Close() }()
-	fsys := root.FS()
-	return fs.WalkDir(fsys, ".", func(p string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.IsDir() {
-			if p != "." && slices.Contains(skippedDirs, d.Name()) {
-				return fs.SkipDir
+	return readRoot(root, "", files)
+}
+
+// readRoot reads the regular files under root into files, keyed by prefix and their slash-separated path. Each
+// directory opens once, as a root of its own inside its parent, and its files by name: walking the tree through the
+// top root alone would open every directory on a file's path again for each file.
+func readRoot(root *os.Root, prefix string, files map[string][]byte) error {
+	d, err := root.Open(".")
+	if err != nil {
+		return err
+	}
+	entries, err := d.ReadDir(-1)
+	_ = d.Close()
+	if err != nil {
+		return err
+	}
+	for _, e := range entries {
+		p := prefix + e.Name()
+		switch {
+		case e.IsDir():
+			if slices.Contains(skippedDirs, e.Name()) {
+				continue
 			}
-			return nil
+			sub, err := root.OpenRoot(e.Name())
+			if err != nil {
+				return err
+			}
+			err = readRoot(sub, p+"/", files)
+			_ = sub.Close()
+			if err != nil {
+				return err
+			}
+		case e.Type().IsRegular() && p != EnvironmentFile: // the environment file describes where packages run
+			data, err := root.ReadFile(e.Name())
+			if err != nil {
+				return err
+			}
+			files[p] = data
 		}
-		if !d.Type().IsRegular() || p == EnvironmentFile {
-			return nil // the environment file describes where packages run, not the package
-		}
-		data, err := fs.ReadFile(fsys, p)
-		if err != nil {
-			return err
-		}
-		files[p] = data
-		return nil
-	})
+	}
+	return nil
 }
 
 // ActionDigest is the content hash of the action directory dir, slash-separated and relative to the package:

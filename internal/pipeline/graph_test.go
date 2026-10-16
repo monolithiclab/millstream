@@ -17,7 +17,6 @@ func TestGraphGolden(t *testing.T) {
 	}
 	for _, format := range []string{FormatMermaid, FormatDOT} {
 		t.Run(format, func(t *testing.T) {
-			t.Parallel()
 			got, err := Graph(pkg.Pipeline, format)
 			if err != nil {
 				t.Fatalf("Graph: %v", err)

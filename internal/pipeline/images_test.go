@@ -119,7 +119,6 @@ func TestResolveContainerManifestErrors(t *testing.T) {
 	}
 	for name, manifest := range tests {
 		t.Run(name, func(t *testing.T) {
-			t.Parallel()
 			pkg := containerPackage("")
 			if manifest != "" {
 				pkg.Files["actions/report/action.yaml"] = []byte(manifest)
@@ -150,7 +149,6 @@ func TestResolveRegistry(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.ref+tt.lock, func(t *testing.T) {
-			t.Parallel()
 			a, err := testResolver(false).Resolve(containerPackage(tt.lock), tt.ref)
 			if err != nil {
 				t.Fatal(err)
@@ -184,7 +182,6 @@ func TestResolveRegistryErrors(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
 			_, err := testResolver(false).Resolve(containerPackage(tt.lock), tt.ref)
 			if err == nil || !strings.Contains(err.Error(), tt.want) {
 				t.Fatalf("err = %v, want %q", err, tt.want)

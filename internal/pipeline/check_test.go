@@ -268,7 +268,6 @@ steps:
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
 			pkg := checkPackage(t, tt.yaml)
 			got := Check(pkg, Resolver{}, envOf(tt.env), CheckOptions{})
 			lines := make([]string, len(got))
@@ -352,7 +351,6 @@ func TestValuePath(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.ptr, func(t *testing.T) {
-			t.Parallel()
 			if got := valuePath("cfg", v, tt.ptr); got != tt.want {
 				t.Fatalf("got %q, want %q", got, tt.want)
 			}
@@ -398,7 +396,6 @@ func TestCheckConfigSchemaErrors(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
 			action := "./actions/crawl"
 			if _, ok := tt.resolver.(brokenResolver); ok {
 				action = "x"

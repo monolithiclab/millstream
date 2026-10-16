@@ -96,7 +96,6 @@ func TestLoadHash(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
 			if got := hashOf(tt.files); got == want {
 				t.Errorf("hash unchanged by %s", tt.name)
 			}
@@ -144,7 +143,6 @@ func TestLoadErrors(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
 			if os.Geteuid() == 0 && strings.HasPrefix(tt.name, "unreadable") {
 				t.Skip("root reads everything")
 			}

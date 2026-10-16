@@ -45,7 +45,6 @@ func TestParseLessons(t *testing.T) {
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			t.Parallel()
 			if _, err := ParseLessons([]byte(tt.src)); err == nil || !strings.Contains(err.Error(), tt.want) {
 				t.Fatalf("err = %v, want %q", err, tt.want)
 			}
@@ -106,7 +105,6 @@ func TestCheckLessons(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
 			pkg := memPackage(t, append(append([][2]string{{"pipeline.yaml", checkHeader + "steps:\n" + tt.yaml}},
 				checkActions...), tt.files...)...)
 			var lessons []string

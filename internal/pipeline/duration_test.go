@@ -24,7 +24,6 @@ func TestParseDuration(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.in, func(t *testing.T) {
-			t.Parallel()
 			got, err := ParseDuration(tt.in)
 			if (err != nil) != tt.wantErr || got != tt.want {
 				t.Errorf("ParseDuration(%q) = %v, %v; want %v, error %v", tt.in, got, err, tt.want, tt.wantErr)
@@ -52,7 +51,6 @@ func TestParseRate(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.in, func(t *testing.T) {
-			t.Parallel()
 			count, per, err := ParseRate(tt.in)
 			if (err != nil) != tt.wantErr || count != tt.count || per != tt.per {
 				t.Errorf("ParseRate(%q) = %d, %v, %v", tt.in, count, per, err)

@@ -67,7 +67,6 @@ func TestResolveVars(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
 			r, err := ResolveVars(p, tt.flags, envOf(tt.env))
 			if tt.wantErr != "" {
 				assertErr(t, err, tt.wantErr)
