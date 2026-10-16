@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"slices"
 	"strings"
 	"sync"
@@ -26,6 +27,12 @@ runtime: { agent: { harness: api, model: claude-sonnet-5-5, apiKeySecret: apiTok
 `
 	testPrompt = "Score {{ .Payload.url }} for {{ .Vars.city }} with at least {{ .Config.rooms }} rooms.\n"
 )
+
+func TestMain(m *testing.M) {
+	// The tests allocate heavily: a higher collector target trades memory for test time, as in the store tests.
+	debug.SetGCPercent(400)
+	os.Exit(m.Run())
+}
 
 // memPackage builds, in memory, a package with the agent action ./actions/score of manifest and prompt.
 func memPackage(t *testing.T, manifest, prompt string) *pipeline.Package {
@@ -95,8 +102,13 @@ func dirSession(t *testing.T, pkg string, h Harness) *session {
 // transcripts and artifacts need one.
 func (s *session) withWorkdir() *session {
 	s.t.Helper()
-	s.workdir = s.t.TempDir()
-	s.env["MILLSTREAM_WORKDIR"] = s.workdir
+	return s.inWorkdir(s.t.TempDir())
+}
+
+// inWorkdir gives the session the working directory dir, which sessions run one after the other may share.
+func (s *session) inWorkdir(dir string) *session {
+	s.workdir = dir
+	s.env["MILLSTREAM_WORKDIR"] = dir
 	return s
 }
 
@@ -257,10 +269,10 @@ func TestRunFailures(t *testing.T) {
 		}, true, "connection reset", true},
 		{"template fails", "{{ .Nope }}", answer("", 0, 0), false, "render prompt", false},
 	}
+	workdir := t.TempDir() // the cases run in turn, each writing its transcript over the last
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			s := newSession(t, memPackage(t, testManifest, tt.prompt), &fakeHarness{fn: tt.fn}).withWorkdir()
+			s := newSession(t, memPackage(t, testManifest, tt.prompt), &fakeHarness{fn: tt.fn}).inWorkdir(workdir)
 			msgs := s.run(`{"url": "u"}`)
 			last, ok := msgs[len(msgs)-1].(protocol.Error)
 			if !ok || last.Retryable != tt.retryable || !strings.Contains(last.Message, tt.message) ||
@@ -292,7 +304,6 @@ func TestRunSetupErrors(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
 			prompt := testPrompt
 			if p, ok := tt.env["prompt"]; ok {
 				prompt = p
@@ -399,7 +410,6 @@ func TestCost(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
 			var logs bytes.Buffer
 			a := &adapter{opts: Options{Price: tt.price, Logger: slog.New(slog.NewTextHandler(&logs, nil))},
 				agent: &pipeline.AgentRuntime{Model: "m"}}
@@ -432,7 +442,6 @@ func TestRunProtocol(t *testing.T) {
 		"garbage":       `{"type":"hello","protocol":1}` + "\nnot json\n",
 	} {
 		t.Run(name, func(t *testing.T) {
-			t.Parallel()
 			if err := Run(t.Context(), strings.NewReader(in), &bytes.Buffer{}, Options{}); err == nil {
 				t.Fatal("Run accepted it")
 			}

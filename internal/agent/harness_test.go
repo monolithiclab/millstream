@@ -36,7 +36,6 @@ func TestExtract(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
 			got, err := Extract(tt.resp)
 			if tt.want == "" {
 				if err == nil || !isRetryable(err) {
@@ -221,7 +220,6 @@ func TestAPIErrors(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
 			srv := newFakeAPI(t, tt.status, tt.body)
 			h := API{Provider: tt.provider, BaseURL: srv.URL, Client: srv.Client(), APIKey: "k"}
 			_, err := h.Run(t.Context(), Request{Model: "m"})
@@ -319,7 +317,6 @@ func TestAPIMaxCost(t *testing.T) {
 		over  bool
 	}{{"0.0005", true}, {"0.01", false}} {
 		t.Run(tt.limit, func(t *testing.T) {
-			t.Parallel()
 			manifest := strings.Replace(testManifest, "apiKeySecret: apiToken",
 				"apiKeySecret: apiToken, baseUrl: \""+srv.URL+"\", maxCostUsd: "+tt.limit, 1)
 			s := newSession(t, memPackage(t, manifest, testPrompt), nil)
@@ -412,7 +409,6 @@ func TestClaudeCodeFailuresInProcess(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
 			h := ClaudeCode{Bin: "claude", cli: &fakeCLI{out: tt.out, status: tt.status}}
 			resp, err := h.Run(t.Context(), Request{Model: "m", MaxTurns: 7, MaxCostUSD: 0.5})
 			if err == nil || isRetryable(err) != tt.retryable || !strings.Contains(err.Error(), tt.message) {
