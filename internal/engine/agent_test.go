@@ -165,3 +165,21 @@ func TestAgentBudgetReservation(t *testing.T) {
 		t.Fatalf("state = %+v, %v", ps, err)
 	}
 }
+
+// TestAgentBudgetWithoutMaxCost: check refuses an agent step under a budget without maxCostUsd, and the engine never
+// runs one either: its deliveries would reserve nothing, so any number could start while the spend is under the
+// limit. The delivery fails at dispatch as a config error, not retried.
+func TestAgentBudgetWithoutMaxCost(t *testing.T) {
+	t.Parallel()
+	agents := Agents{AllowUnsandboxed: true, Executable: "/usr/local/bin/millstream"}
+	environ := map[string]string{"MILLSTREAM_SECRET_KEY": "sk-0123456789"}
+	v, id := agentRun(t, agents, environ, nil, "budget: { runUsd: 1 }\n")
+	if got := v.pull(1); len(got) != 0 {
+		t.Fatalf("assignments = %v", got)
+	}
+	d := v.deliveries(id)[0]
+	if d.State != store.DeliveryDead || d.ErrorClass != ClassConfig ||
+		!strings.Contains(d.ErrorMessage, "runtime.agent.maxCostUsd is required") {
+		t.Fatalf("delivery %+v", d)
+	}
+}

@@ -160,3 +160,15 @@ func finishAgent(pkg *Package, m *Action) error {
 	}
 	return nil
 }
+
+// BudgetMaxCost returns why the agent step named step, running action a, cannot run under budget b: a budget
+// reserves each agent delivery's maxCostUsd before it runs (spec section 5.9), and a delivery reserving nothing
+// would let any number of concurrent ones start while the spend is still under the limit. Nil when a is no agent,
+// b sets no budget, or a sets maxCostUsd.
+func BudgetMaxCost(b Budget, step string, a *Action) error {
+	if a == nil || a.Agent == nil || (b.RunUSD <= 0 && b.DayUSD <= 0) || a.Agent.MaxCostUSD > 0 {
+		return nil
+	}
+	return fmt.Errorf("agent step %s: runtime.agent.maxCostUsd is required when the pipeline sets budget.runUsd or "+
+		"budget.dayUsd", step)
+}

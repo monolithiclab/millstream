@@ -180,6 +180,9 @@ func (c *checker) checkStep(name string, actions ActionResolver) {
 		if a.Agent != nil {
 			c.checkAgent(joinPath(at, "action"), a)
 		}
+		if err := BudgetMaxCost(c.p.Budget, name, a); err != nil {
+			c.errorf(joinPath(at, "action"), "%v", err)
+		}
 	}
 
 	c.checkLessons(name, s, a)

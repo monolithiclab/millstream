@@ -223,6 +223,16 @@ steps:
 			},
 		},
 		{
+			name: "agent under a budget without maxCostUsd",
+			yaml: "pipeline: p\nbudget: { dayUsd: 5 }\ntriggers:\n  go: { manual: {} }\n" + `steps:
+  agent: { action: ./actions/agent, in: trigger.go }
+`,
+			want: []string{
+				"error steps.agent.action: agent step agent: runtime.agent.maxCostUsd is required when the pipeline " +
+					"sets budget.runUsd or budget.dayUsd",
+			},
+		},
+		{
 			name: "imports and unresolved steps",
 			yaml: checkHeader + `streams:
   approved: { pipeline: other, stream: listings.approved }

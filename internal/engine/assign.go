@@ -26,8 +26,8 @@ const (
 	// ClassUnsupported: the step's action is a builtin, or a kind this build cannot run yet (review arrives in M3),
 	// or it needs a runtime this machine lacks. Never retried.
 	ClassUnsupported = "unsupported"
-	// ClassConfig: the step's config does not interpolate, a secret is unset, or the action does not resolve.
-	// Never retried (spec section 5.5).
+	// ClassConfig: the step's config does not interpolate, a secret is unset, the action does not resolve, or an
+	// agent step under a budget sets no maxCostUsd. Never retried (spec section 5.5).
 	ClassConfig = "config"
 	// ClassInputSchema: the item's payload does not match the action's input schema (spec section 5.5). Never
 	// retried, and no process is started.
@@ -86,6 +86,9 @@ func (e *Engine) assign(ctx context.Context, l store.Lease) (node.Assignment, er
 	act := e.action(rev, step.Action)
 	if act.err != nil {
 		return node.Assignment{}, act.err
+	}
+	if err := pipeline.BudgetMaxCost(rev.p.Budget, l.Step, act.a); err != nil { // check refuses it; never run it
+		return node.Assignment{}, dispatchErr(ClassConfig, false, "%w", err)
 	}
 	if err := validateJSON(act.input, l.Item.Payload); err != nil {
 		return node.Assignment{}, dispatchErr(ClassInputSchema, false, "item %s does not match the input schema of %s: %w",
