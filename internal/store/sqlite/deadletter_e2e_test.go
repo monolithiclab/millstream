@@ -61,8 +61,8 @@ func TestReplayDead(t *testing.T) {
 		t.Fatalf("dead letter %s", dl.State)
 	}
 	again := e.leaseStep("crawl")
-	if again.DeliveryID != l.DeliveryID || again.Attempt != 1 || again.FencingToken != l.FencingToken+1 {
-		t.Fatalf("replayed lease = %+v; want the same delivery, attempt 1", again)
+	if again.DeliveryID != l.DeliveryID || again.Attempt != l.Attempt+1 || again.FencingToken != l.FencingToken+1 {
+		t.Fatalf("replayed lease = %+v; want the same delivery, the next attempt number", again)
 	}
 	e.done(again, out("a", `{"score":90}`))
 	e.drain()

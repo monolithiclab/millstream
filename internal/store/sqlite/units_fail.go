@@ -72,14 +72,15 @@ func (w *wtx) fail(d *deliveryRow, run *runRow, rev *revision, step pipeline.Ste
 		return "", err
 	}
 	retry := step.Retry
-	retried := f.retryable && d.attempt < retry.MaxAttempts
+	tries := d.attempt - d.attemptBase // since the last dead-letter replay
+	retried := f.retryable && tries < retry.MaxAttempts
 	data, err := w.endAttempt(d, !retried, f.attemptEnd)
 	if err != nil {
 		return "", err
 	}
 	data["class"], data["error"] = f.class, eventError(msg)
 	if retried {
-		next := w.now.Add(backoff(retry, d.attempt, w.s.opts.Rand()))
+		next := w.now.Add(backoff(retry, tries, w.s.opts.Rand()))
 		if _, err := w.exec(`UPDATE deliveries SET state = ?, attempt = attempt + 1, lease_owner = '',
 			lease_expires_at = '', next_attempt_at = ?, error_class = ?, error_message = ?
 			WHERE pipeline = ? AND id = ?`,

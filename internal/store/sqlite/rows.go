@@ -18,6 +18,7 @@ type deliveryRow struct {
 	generation                        int64
 	state                             store.DeliveryState
 	attempt                           int
+	attemptBase                       int // the attempt before the last dead-letter replay: retries count from it
 	owner                             string
 	token                             int64
 	reserved                          float64 // the budget reservation of a leased agent delivery
@@ -27,10 +28,10 @@ type deliveryRow struct {
 func (w *wtx) delivery(pipelineName, id string) (*deliveryRow, error) {
 	d := &deliveryRow{pipeline: pipelineName, id: id}
 	var created, leased string
-	err := w.queryRow(`SELECT run_id, step, item_id, generation, state, attempt, lease_owner, fencing_token,
-		reserved_usd, created_at, leased_at FROM deliveries WHERE pipeline = ? AND id = ?`, pipelineName, id).
-		Scan(&d.runID, &d.step, &d.itemID, &d.generation, &d.state, &d.attempt, &d.owner, &d.token, &d.reserved,
-			&created, &leased)
+	err := w.queryRow(`SELECT run_id, step, item_id, generation, state, attempt, attempt_base, lease_owner,
+		fencing_token, reserved_usd, created_at, leased_at FROM deliveries WHERE pipeline = ? AND id = ?`, pipelineName, id).
+		Scan(&d.runID, &d.step, &d.itemID, &d.generation, &d.state, &d.attempt, &d.attemptBase, &d.owner, &d.token,
+			&d.reserved, &created, &leased)
 	if err != nil {
 		return nil, notFound(err, "delivery "+id)
 	}

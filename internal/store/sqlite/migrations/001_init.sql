@@ -87,6 +87,9 @@ CREATE TABLE deliveries (
     generation       INTEGER NOT NULL,
     state            TEXT NOT NULL,
     attempt          INTEGER NOT NULL,
+    -- attempt_base is the attempt number before a dead-letter replay: attempt numbers are never reused (attempt
+    -- artifacts are keyed by them), and the retry budget counts attempt - attempt_base.
+    attempt_base     INTEGER NOT NULL DEFAULT 0,
     lease_owner      TEXT NOT NULL DEFAULT '',
     fencing_token    INTEGER NOT NULL DEFAULT 0,
     lease_expires_at TEXT NOT NULL DEFAULT '',

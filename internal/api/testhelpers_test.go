@@ -336,7 +336,7 @@ func (f *fixture) seed() {
 	lb := f.lease("score")
 	f.dead, f.deadDelivery = lb.Item, lb.DeliveryID
 	must(f.st.Fail(f.ctx, store.FailRequest{LeaseRef: lb.Ref(), Attempt: lb.Attempt, Class: "nonRetryable",
-		Message: "price 5 is below the floor", Retryable: false}))
+		Message: "price 5 is below the floor", Retryable: false, Artifacts: []store.ArtifactRef{f.transcript}}))
 	lc := f.lease("check")
 	f.reviewDelivery = lc.DeliveryID
 	must(f.st.Park(f.ctx, store.ParkRequest{LeaseRef: lc.Ref(), Attempt: lc.Attempt, Spec: reviewSpec,

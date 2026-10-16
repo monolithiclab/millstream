@@ -53,7 +53,7 @@ type deadLetterRow struct {
 
 // ReplayDeadLetters is the Dead-letter replay unit (spec section 5.6). With migrate, the run moves to the
 // pipeline's active revision first, recorded as revisionMigrated. A dead letter of kind dead sends its delivery
-// back to pending with attempts reset; an unrouted one routes its stored output again and publishes it, or stays
+// back to pending with its retry budget restarted; an unrouted one routes its stored output again and publishes it, or stays
 // open if it still matches no route. A run that had settled is reopened.
 func (s *Store) ReplayDeadLetters(ctx context.Context, pipelineName, runID string, ids []string, migrate bool) (int,
 	error,
@@ -230,8 +230,10 @@ func (w *wtx) replayOne(rev *revision, run *runRow, dl deadLetterRow) (bool, err
 		return false, err
 	}
 	if dl.kind == store.DeadLetterDead {
-		// The replayed delivery starts afresh: its timings count from the replay.
-		n, err := w.affected(`UPDATE deliveries SET state = ?, attempt = 1, next_attempt_at = ?, created_at = ?,
+		// The replayed delivery starts afresh: its timings count from the replay, and its retry budget from its next
+		// attempt, numbered on from the dead one (attempt numbers are never reused).
+		n, err := w.affected(`UPDATE deliveries SET state = ?, attempt_base = attempt, attempt = attempt + 1,
+			next_attempt_at = ?, created_at = ?,
 			leased_at = '', finished_at = '', wait_ms = 0, work_ms = 0
 			WHERE pipeline = ? AND id = ? AND state = ?`,
 			store.DeliveryPending, w.ts(), w.ts(), d.pipeline, d.id, store.DeliveryDead)

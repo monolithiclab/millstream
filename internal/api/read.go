@@ -618,8 +618,7 @@ func (s *Server) attempts(ctx context.Context, d store.Delivery) ([]Attempt, err
 			continue
 		}
 		i, ok := byNumber[a.Attempt]
-		if !ok || ev.Kind == store.EventDeliveryLeased {
-			// A dead-letter replay resets the attempts: a lease of a number seen again starts a new attempt.
+		if !ok { // attempt numbers are never reused, a dead-letter replay included
 			out = append(out, Attempt{Attempt: a.Attempt, Outcome: "running", Artifacts: []store.ArtifactRef{}})
 			i = len(out) - 1
 			byNumber[a.Attempt] = i

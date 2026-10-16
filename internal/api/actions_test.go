@@ -134,10 +134,15 @@ func TestActions(t *testing.T) {
 	if rec.Code != http.StatusOK || rec.Body.String() != `{"count":1}`+"\n" {
 		t.Fatalf("replay dead letters: %d %s", rec.Code, rec.Body.String())
 	}
-	// The replayed delivery fails again: a new dead letter, discarded by id, then nothing is left for all.
+	// The replayed delivery fails again, keeping a transcript of its own under the same name: a new dead letter,
+	// discarded by id, then nothing is left for all.
 	l := f.lease("score")
+	second := must(f.arts.Put("listings", "transcript.jsonl", strings.NewReader(`{"role":"assistant"}`+"\n")))
+	if l.DeliveryID != f.deadDelivery || l.Attempt != 2 {
+		t.Fatalf("replayed lease = %+v: attempt numbers go on after a replay", l)
+	}
 	must(f.st.Fail(f.ctx, store.FailRequest{LeaseRef: l.Ref(), Attempt: l.Attempt, Class: "nonRetryable",
-		Message: "price 5 is below the floor"}))
+		Message: "price 5 is below the floor", Artifacts: []store.ArtifactRef{second}}))
 	groups = get[[]DeadLetterGroup](t, h, "/api/v1/pipelines/listings/dead-letters")
 	rec = post(dl+"discard", fmt.Sprintf(`{"ids":[%q]}`, groups[0].DeadLetters[0].ID), nil)
 	if rec.Code != http.StatusOK || rec.Body.String() != `{"count":1}`+"\n" {
@@ -146,8 +151,19 @@ func TestActions(t *testing.T) {
 	if rec := post(dl+"replay", `{"all":true}`, nil); rec.Body.String() != `{"count":0}`+"\n" {
 		t.Errorf("replay all: %s", rec.Body.String())
 	}
-	if d := get[Delivery](t, h, "/api/v1/pipelines/listings/deliveries/"+f.deadDelivery); len(d.Attempts) != 2 {
+	// Each attempt keeps its own transcript, listed and served apart.
+	d := get[Delivery](t, h, "/api/v1/pipelines/listings/deliveries/"+f.deadDelivery)
+	if len(d.Attempts) != 2 || d.Attempts[0].Attempt != 1 || d.Attempts[1].Attempt != 2 ||
+		len(d.Attempts[0].Artifacts) != 1 || len(d.Attempts[1].Artifacts) != 1 ||
+		d.Attempts[0].Artifacts[0].SHA256 != f.transcript.SHA256 || d.Attempts[1].Artifacts[0].SHA256 != second.SHA256 {
 		t.Errorf("attempts after a replay = %+v", d.Attempts)
+	}
+	for n, want := range map[int]string{1: `{"role":"user"}`, 2: `{"role":"assistant"}`} {
+		rec := do(t, h, request{target: fmt.Sprintf("/api/v1/pipelines/listings/deliveries/%s/attempts/%d/artifacts/"+
+			"transcript.jsonl", f.deadDelivery, n)})
+		if rec.Code != http.StatusOK || strings.TrimSpace(rec.Body.String()) != want {
+			t.Errorf("transcript of attempt %d: %d %q", n, rec.Code, rec.Body.String())
+		}
 	}
 }
 

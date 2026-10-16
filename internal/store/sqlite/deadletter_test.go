@@ -2,8 +2,10 @@ package sqlite
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/monolithiclab/millstream/internal/store"
 )
@@ -191,5 +193,26 @@ func TestOrphanStepEndsDead(t *testing.T) {
 				t.Fatalf("dead letters = %+v; want one on audit.dlq", dls)
 			}
 		})
+	}
+}
+
+// A replayed delivery numbers its attempts on from the dead one, never reusing a number, and gets the step's whole
+// retry budget again: three attempts after the replay, then dead.
+func TestReplayRestartsTheRetryBudget(t *testing.T) {
+	e, dead := deadRun(t)
+	if _, err := e.s.ReplayDeadLetters(e.ctx, "listings", "r1", nil, false); err != nil {
+		t.Fatal(err)
+	}
+	var states []store.DeliveryState
+	for i := range 3 {
+		l := e.leaseStep("crawl")
+		if l.Attempt != dead.Attempt+1+i {
+			t.Fatalf("attempt %d after the replay is numbered %d", i+1, l.Attempt)
+		}
+		states = append(states, e.fail(l, true))
+		e.clock.Advance(time.Minute) // past the backoff
+	}
+	if fmt.Sprint(states) != "[pending pending dead]" {
+		t.Fatalf("states after the replay = %v", states)
 	}
 }

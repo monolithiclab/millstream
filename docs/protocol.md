@@ -62,7 +62,7 @@ optionally `source` and `added`) and `examples` (each with `input` and `output`,
 | `payload` | The item, any JSON value valid against the action's input schema |
 | `artifacts` | Input files, already placed under `MILLSTREAM_WORKDIR` at `path` |
 | `run` | The run the item belongs to |
-| `attempt` | 1 on the first try, then 2, 3… on retries |
+| `attempt` | 1 on the first try, then 2, 3… on retries; numbers go on after a dead-letter replay, never reused |
 | `idempotencyKey` | Stable across retries of this delivery, new on replay (see below) |
 
 **`shutdown`** asks the process to exit. It is only sent between deliveries. The process exits with status 0; the
