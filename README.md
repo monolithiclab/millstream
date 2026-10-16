@@ -19,8 +19,10 @@ steps:
     config: { expr: "item.score >= vars.min_score" }
 ```
 
-**Status:** design. The platform specification is written and under review; the engine is being built milestone by
-milestone. The name is chosen, pending a trademark search ([naming note](docs/research/20261014.naming.md)).
+**Status:** under construction, not yet released. M1 (the core engine: pipeline files, the SQLite store, the `exec`
+runtime, the embedded node, crash-safe runs) is complete; M2 (agents, containers, budgets, evals, lessons, dedupe,
+replay, insights) is implemented and in review. The web UI (M3) and server deployment (M4) come next. The name is
+chosen, pending a trademark search ([naming note](docs/research/20261014.naming.md)).
 
 ## Documentation
 

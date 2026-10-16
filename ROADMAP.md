@@ -37,6 +37,18 @@ earlier designs are in the git history of the spec.
 - Transcripts are stored uncompressed until retention (M4) brings compression and `retention.transcripts`.
 - Evals: container actions, a step's lessons applied to a case, and the judge's own cost in the printed cost (M2
   evaluates agent and exec actions, without lessons, and prints only the action's cost).
+- Evals: expose `eval_results` as the metric `eval_score{action,case}` with the Prometheus endpoint (M4).
+- Engine memory before the M4 server: bound the revision cache and the per-revision maps (resolved actions, lessons,
+  packages) a long-running engine accumulates, evicting revisions with no open run.
+- Agent sandbox image: pin `agents.image` by digest in `millstream.lock`, as container actions' images are.
+- The unsandboxed `claude-code` harness reads the user's own `~/.claude` settings (hooks, permissions, MCP
+  servers); isolate it with `--setting-sources` (or an empty `CLAUDE_CONFIG_DIR`) so a run does not depend on them.
+- `sqlite.Memory`'s pool of closed stores' databases is built for tests (and `millstream test`): it keeps up to
+  eight emptied in-memory databases, with their prepared statements, alive for the life of the process, and empties
+  each table row by row on close. A long-running process opening Memory stores, or one with large ones, would need
+  it bounded by size or turned off.
+- Container mounts: `--mount` refuses a path holding a comma, and never creates a missing source; quote such paths
+  if Docker and Podman both accept a quoted CSV field.
 
 ## Execution (icebox)
 

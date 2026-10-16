@@ -658,7 +658,8 @@ type DeadLetterFilter struct {
 	State    DeadLetterState
 }
 
-// EvalResult is the score of one eval case of an action (spec section 7.4), the eval_score{action,case} metric.
+// EvalResult is the score of one eval case of an action (spec section 7.4), which the M4 Prometheus endpoint
+// exposes as the eval_score{action,case} metric.
 type EvalResult struct {
 	// Action is the action's name and ActionDigest the content hash of its directory when it was scored.
 	Action       string
