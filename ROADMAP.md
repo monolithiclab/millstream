@@ -69,6 +69,10 @@ earlier designs are in the git history of the spec.
   agent mark, no cost per step); a dead letter carries neither its attempt count nor its original item's id (the
   screen links the dead-letter item, whose parent is the original); dead letters have no CEL filter; the step panel
   has no queue list (oldest waiting items) or throughput sparkline; every channel animates, not only those in view.
+- Web UI: the inbox reads its queue again every 15 seconds because the API has no inbox stream (a
+  `/live/inbox` of review events would make it live); the manual trigger's request id comes from
+  `crypto.randomUUID()`, which browsers offer only in a secure context, so non-loopback serving (M4) needs HTTPS or a
+  fallback; the item list's filtered pages read on only when asked (no automatic scan to the next match).
 - Live events: the broker wakes on this process's commits and polls every 15 seconds for other processes' writes on
   the same SQLite file; Postgres (M4) can wake it with `LISTEN`/`NOTIFY` instead. The live log tail relays the
   embedded node only; remote nodes stream their lines with M4's node endpoint. Event retention (M4) is what makes a
