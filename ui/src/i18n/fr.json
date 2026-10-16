@@ -808,6 +808,7 @@
     "empty": "En attente de lignes de journal…",
     "gap": "Connexion perdue : des lignes de ce moment peuvent manquer",
     "gapWindow": "Connexion perdue {{from}} → {{to}} · des lignes de cette période peuvent manquer",
-    "newLines": "{{count}} nouvelles · afficher"
+    "newLines": "{{count}} nouvelles · afficher",
+    "newLinesDropped": "{{count}} nouvelles, {{dropped}} perdues · afficher"
   }
 }

@@ -808,6 +808,7 @@
     "empty": "Waiting for log lines…",
     "gap": "Connection lost: lines from this moment may be missing",
     "gapWindow": "Connection lost {{from}} → {{to}} · lines from this window may be missing",
-    "newLines": "{{count}} new · show"
+    "newLines": "{{count}} new · show",
+    "newLinesDropped": "{{count}} new, {{dropped}} dropped · show"
   }
 }

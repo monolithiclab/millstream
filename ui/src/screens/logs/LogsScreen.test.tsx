@@ -2,7 +2,7 @@ import { act, screen, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { FakeEventSource } from '../../live/fakeEventSource';
 import { renderApp } from '../../test/render';
-import { MAX_LINES, PAINT_MS } from '../../common/LogTail';
+import { MAX_LINES, MAX_PAUSED_LINES, PAINT_MS } from '../../common/LogTail';
 
 const line = (ts: string, level: string, message: string, step = 'score') =>
   JSON.stringify({ ts, level, message, pipeline: 'p', runId: 'r', step, itemId: '', deliveryId: '', attempt: 1 });
@@ -73,6 +73,28 @@ describe('LogsScreen', () => {
     expect(screen.getByRole('button', { name: 'Pause scroll' })).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Clear' }));
     expect(tail()).toHaveTextContent('Waiting for log lines…');
+  });
+
+  it('keeps a paused tail’s lines past the cap, buffering and counting what it drops', async () => {
+    const { user } = renderApp({ route: '/logs' });
+    act(() => {
+      source().emit('log', line('2026-10-15T06:00:00Z', 'info', 'kept-a'));
+      source().emit('log', line('2026-10-15T06:00:00Z', 'info', 'kept-b'));
+    });
+    await paint();
+    await user.click(screen.getByRole('button', { name: 'Pause scroll' }));
+    act(() => {
+      for (let i = 0; i < MAX_PAUSED_LINES + 1; i++)
+        source().emit('log', line('2026-10-15T06:00:01Z', 'info', `p${i}`));
+    });
+    await paint();
+    // What was shown stays; the three oldest arrivals made room under the cap.
+    expect(tail()).toHaveTextContent('kept-a');
+    const pill = screen.getByRole('button', { name: `${MAX_PAUSED_LINES - 2} new, 3 dropped · show` });
+    await user.click(pill);
+    const rows = within(tail()).getAllByRole('paragraph');
+    expect(rows).toHaveLength(MAX_LINES);
+    expect(rows.at(-1)).toHaveTextContent(`p${MAX_PAUSED_LINES}`);
   });
 
   it('clears the lines still waiting to be painted too', async () => {

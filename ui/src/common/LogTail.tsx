@@ -11,6 +11,9 @@ import { buttons } from './styles';
 
 // The tail keeps this many entries; history stays in the host's log tools (spec 10.3).
 export const MAX_LINES = 1000;
+// A paused tail keeps what it shows and buffers what arrives, up to this many entries in all; past it, the oldest
+// lines that arrived during the pause are dropped, and counted.
+export const MAX_PAUSED_LINES = 10_000;
 // Interaction notes: paint at most every 250 ms.
 export const PAINT_MS = 250;
 
@@ -20,14 +23,15 @@ const levelTone: Record<string, string> = { WARN: 'text-log-warn', ERROR: 'text-
 
 // A live log tail over /live/logs (Components board): dark, monospace, painted in batches. Best effort: after a
 // reconnection the server marks lost lines with a gap, shown as a dashed rule with the missing window. Scrolling
-// follows new lines unless paused; a paused tail counts what arrived. A new url is a new tail.
+// follows new lines unless paused; a paused tail keeps its lines, buffers and counts what arrives (a bounded number,
+// counting what it had to drop), and shows it on resume. A new url is a new tail.
 export function LogTail(props: { url: string; title: string; className?: string }) {
   return <Tail key={props.url} {...props} />;
 }
 
 function Tail({ url, title, className = 'max-h-80' }: { url: string; title: string; className?: string }) {
   const { t } = useTranslation();
-  const [entries, setEntries] = useState<Entry[]>([]);
+  const [{ entries, dropped }, setTail] = useState<{ entries: Entry[]; dropped: number }>({ entries: [], dropped: 0 });
   const [frozenAt, setFrozenAt] = useState<number | null>(null);
   const pending = useRef<Entry[]>([]);
   const nextId = useRef(1);
@@ -38,7 +42,7 @@ function Tail({ url, title, className = 'max-h-80' }: { url: string; title: stri
   const paint = useThrottle(() => {
     const batch = pending.current;
     pending.current = [];
-    setEntries((current) => {
+    setTail(({ entries: current, dropped: lost }) => {
       const merged = [...current];
       for (const entry of batch) {
         const last = merged.at(-1);
@@ -48,7 +52,12 @@ function Tail({ url, title, className = 'max-h-80' }: { url: string; title: stri
         }
         merged.push(entry);
       }
-      return merged.slice(-MAX_LINES);
+      if (frozenAt === null) return { entries: merged.slice(-MAX_LINES), dropped: 0 };
+      const excess = merged.length - MAX_PAUSED_LINES;
+      if (excess <= 0) return { entries: merged, dropped: lost };
+      // Paused: what is shown stays; the oldest of what arrived since makes room.
+      const since = merged.findIndex((e) => e.id > frozenAt);
+      return { entries: [...merged.slice(0, since), ...merged.slice(since + excess)], dropped: lost + excess };
     });
   }, PAINT_MS);
 
@@ -78,7 +87,12 @@ function Tail({ url, title, className = 'max-h-80' }: { url: string; title: stri
   const clear = () => {
     pending.current = [];
     lastTs.current = undefined;
-    setEntries([]);
+    setTail({ entries: [], dropped: 0 });
+    setFrozenAt(null);
+  };
+  // Resuming shows the newest MAX_LINES, as a tail that never paused.
+  const resume = () => {
+    setTail((tail) => ({ entries: tail.entries.slice(-MAX_LINES), dropped: 0 }));
     setFrozenAt(null);
   };
 
@@ -89,7 +103,7 @@ function Tail({ url, title, className = 'max-h-80' }: { url: string; title: stri
         <button
           type="button"
           aria-pressed={frozenAt !== null}
-          onClick={() => setFrozenAt(frozenAt === null ? (entries.at(-1)?.id ?? 0) : null)}
+          onClick={() => (frozenAt === null ? setFrozenAt(entries.at(-1)?.id ?? 0) : resume())}
           className={buttons.secondary}
         >
           {frozenAt === null ? t('logs.pause') : t('logs.resume')}
@@ -114,10 +128,12 @@ function Tail({ url, title, className = 'max-h-80' }: { url: string; title: stri
         {waiting > 0 && (
           <button
             type="button"
-            onClick={() => setFrozenAt(null)}
+            onClick={resume}
             className="absolute bottom-3 left-1/2 -translate-x-1/2 rounded-pill bg-accent px-3 py-1 text-tiny font-bold text-accent-ink shadow-2"
           >
-            {t('logs.newLines', { count: waiting })}
+            {dropped > 0
+              ? t('logs.newLinesDropped', { count: waiting, dropped })
+              : t('logs.newLines', { count: waiting })}
           </button>
         )}
       </div>
