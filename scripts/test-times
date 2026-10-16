@@ -5,7 +5,7 @@
 #     at most BUDGET_TOTAL_MS, and no test takes more than BUDGET_TEST_MS.
 #   - Package wall time: the suite runs again one package at a time, with t.Parallel in effect (-p 1), and no
 #     package's Elapsed is more than BUDGET_PKG_MS above its floor: the Elapsed of its test binary running no test
-#     (-run '^$': process start, package initialisation, TestMain). Both take the faster of two runs, macOS
+#     (-run '^$': process start, package initialisation, TestMain). Both take the fastest of three runs, macOS
 #     start-up times being noisy. An empty test binary's Elapsed, the floor of the smallest binary, is printed
 #     for reference: a larger binary takes longer to start.
 # Prints the per-package figures and the TOP slowest tests, and exits 1 when the budget is exceeded.
@@ -27,8 +27,8 @@ for _ in 1 2 3; do (cd "$tmp/empty" && go test -count=1 -json .); done > "$tmp/e
 
 status=0
 go test -count=1 -json -p 1 -parallel 1 "$@" > "$tmp/serial.json" || status=$?
-for _ in 1 2; do go test -count=1 -json -p 1 -run '^$' "$@" || status=$?; done > "$tmp/floor.json"
-for _ in 1 2; do go test -count=1 -json -p 1 "$@" || status=$?; done > "$tmp/wall.json"
+for _ in 1 2 3; do go test -count=1 -json -p 1 -run '^$' "$@" || status=$?; done > "$tmp/floor.json"
+for _ in 1 2 3; do go test -count=1 -json -p 1 "$@" || status=$?; done > "$tmp/wall.json"
 
 # go test -json emits one event per line, with flat fields: a regexp per field is enough.
 awk -v total_budget="$BUDGET_TOTAL_MS" -v test_budget="$BUDGET_TEST_MS" -v pkg_budget="$BUDGET_PKG_MS" -v top="$TOP" '
