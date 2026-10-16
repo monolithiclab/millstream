@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"runtime/debug"
 	"sync"
 	"testing"
 	"time"
@@ -26,6 +27,8 @@ func TestMain(m *testing.M) {
 }
 
 func runTests(m *testing.M) int {
+	// The tests allocate heavily: a higher collector target trades memory for test time, as in the store tests.
+	debug.SetGCPercent(400)
 	defer cleanupFake()
 	var err error
 	if fakeBin, err = fakeCommand(); err != nil {

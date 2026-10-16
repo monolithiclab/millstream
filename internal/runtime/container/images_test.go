@@ -44,7 +44,6 @@ func TestImagesInspectFormats(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
 			img, err := Images{Runtime: rawRuntime(t, pipeline.RuntimePodman, tt.out)}.Inspect("x")
 			if (err != nil) != tt.wantErr || img.ID != tt.wantID || img.Labels["k"] != tt.wantLabel {
 				t.Fatalf("Inspect = %+v, %v", img, err)

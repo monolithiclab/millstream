@@ -51,7 +51,6 @@ func TestRoundTrip(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.msg.Type(), func(t *testing.T) {
-			t.Parallel()
 			var buf bytes.Buffer
 			if err := NewWriter(&buf).Write(tt.msg); err != nil {
 				t.Fatal(err)
@@ -92,7 +91,6 @@ func TestReadErrors(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
 			_, err := newReader(strings.NewReader(tt.input), testLine).Read()
 			if !errors.Is(err, ErrProtocol) || !strings.Contains(err.Error(), tt.want) {
 				t.Fatalf("err = %v, want ErrProtocol with %q", err, tt.want)
@@ -109,7 +107,6 @@ func TestReadLimits(t *testing.T) {
 	line := "x" + strings.Repeat(" ", testLine-1)
 	for name, input := range map[string]string{"last line": line, "with newline": line + "\n"} {
 		t.Run(name, func(t *testing.T) {
-			t.Parallel()
 			_, err := newReader(strings.NewReader(input), testLine).Read()
 			if !errors.Is(err, ErrProtocol) || !strings.Contains(err.Error(), "malformed line") {
 				t.Fatalf("err = %v, want ErrProtocol for a malformed line, not for its length", err)
@@ -160,7 +157,6 @@ func TestWriteErrors(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
 			err := (&Writer{w: tt.w, maxLine: testLine}).Write(tt.msg)
 			if err == nil || !strings.Contains(err.Error(), tt.want) {
 				t.Fatalf("err = %v, want %q", err, tt.want)

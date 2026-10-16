@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"sync"
 	"testing"
 	"time"
@@ -16,6 +17,12 @@ import (
 	"github.com/monolithiclab/millstream/internal/store"
 	"github.com/monolithiclab/millstream/internal/store/sqlite"
 )
+
+func TestMain(m *testing.M) {
+	// The tests allocate heavily: a higher collector target trades memory for test time, as in the store tests.
+	debug.SetGCPercent(400)
+	os.Exit(m.Run())
+}
 
 var update = flag.Bool("update", false, "rewrite the golden files")
 

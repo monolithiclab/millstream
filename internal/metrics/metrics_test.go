@@ -94,7 +94,6 @@ func TestPoints(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
 			var got []string
 			for _, p := range Points(tt.ev) {
 				got = append(got, render(p))

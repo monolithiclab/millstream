@@ -35,7 +35,6 @@ func TestArgs(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
 			s := spec
 			s.Network = tt.network
 			args := Launcher{Runtime: tt.rt}.Args(s, "/tmp/millstream-work-42")

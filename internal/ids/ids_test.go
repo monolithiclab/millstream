@@ -33,7 +33,6 @@ func TestFormulas(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
 			if tt.got != tt.want {
 				t.Errorf("got %s, want %s", tt.got, tt.want)
 			}
@@ -59,7 +58,6 @@ func TestUpperSnake(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.in, func(t *testing.T) {
-			t.Parallel()
 			if got := UpperSnake(tt.in); got != tt.want {
 				t.Errorf("UpperSnake(%q) = %q, want %q", tt.in, got, tt.want)
 			}
