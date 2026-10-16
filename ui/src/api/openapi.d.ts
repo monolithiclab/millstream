@@ -801,7 +801,7 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /** The engine and the nodes it serves, with the leases each holds. */
+    /** The engine serving the request, the deployment's engines, and the nodes, with the leases each holds. */
     get: operations['listNodes'];
     put?: never;
     post?: never;
@@ -1387,14 +1387,40 @@ export interface components {
       }[];
     };
     Nodes: {
+      /** @description The engine serving this response, the active one or a standby serving reads. */
       engine: {
         /** @enum {string} */
         state: 'active' | 'standby';
+        id: string;
         version: string;
+        /**
+         * Format: date-time
+         * @description When the engine took the leadership lock (active) or began to wait for it (standby).
+         */
+        since?: string;
+        /** @description The active engine's leadership epoch, one more at each acquisition of the lock (Postgres). */
+        epoch?: number;
         /** @description Review notifications that failed after their retries or were dropped since the engine started. */
         notificationsFailed: number;
       };
+      /** @description The deployment's engines, the active one first, then the standbys in the order they began to wait (spec section 5.9). On SQLite, the serving engine alone. */
+      engines: components['schemas']['DeploymentEngine'][];
       nodes: components['schemas']['Node'][];
+    };
+    DeploymentEngine: {
+      id: string;
+      /** @enum {string} */
+      state: 'active' | 'standby';
+      version: string;
+      /**
+       * Format: date-time
+       * @description When the engine took the leadership lock (active) or began to wait for it (standby).
+       */
+      since?: string;
+      /** @description The active engine's leadership epoch. */
+      epoch?: number;
+      /** @description Where the active engine serves its API */
+      address?: string;
     };
     Node: {
       id: string;

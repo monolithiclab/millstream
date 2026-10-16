@@ -57,6 +57,7 @@ export type Insight = Schemas['Insight'];
 export type StepLessons = Schemas['StepLessons'];
 export type Nodes = Schemas['Nodes'];
 export type Node = Schemas['Node'];
+export type DeploymentEngine = Schemas['DeploymentEngine'];
 
 // The data of the server-sent events.
 export type Event = Schemas['Event'];

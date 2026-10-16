@@ -1187,7 +1187,18 @@ export const demoFixtures: Fixtures = {
   inbox: demoReviews,
   samples: demoSamples,
   nodes: {
-    engine: { state: 'active', version: '0.0.0', notificationsFailed: 0 },
+    engine: {
+      state: 'active',
+      id: 'mill-01',
+      version: '0.0.0',
+      since: minutesBefore(2000),
+      epoch: 3,
+      notificationsFailed: 0,
+    },
+    engines: [
+      { id: 'mill-01', state: 'active', version: '0.0.0', since: minutesBefore(2000), epoch: 3 },
+      { id: 'mill-02', state: 'standby', version: '0.0.0', since: minutesBefore(2000) },
+    ],
     nodes: [
       { id: 'mill-01', embedded: true, version: '0.0.0', slots: 8, leases: 2, labels: {}, runtimes: ['process'] },
     ],

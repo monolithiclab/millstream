@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { Node } from '../../api/schema';
-import { formatNumber } from '../../i18n/format';
+import type { DeploymentEngine, Node } from '../../api/schema';
+import { formatDateTime, formatNumber } from '../../i18n/format';
 import { usePreferences } from '../../preferences';
 import { ScreenPage } from '../ScreenPage';
 import { ScrollRegion } from '../../common/ScrollRegion';
@@ -45,23 +45,20 @@ export function NodesScreen() {
       }
     >
       <QueryView query={nodes} rows={2}>
-        {({ engine, nodes: list }) => (
+        {({ engine, engines, nodes: list }) => (
           <div className="flex flex-col gap-5">
+            {engine.state === 'standby' && (
+              <p
+                role="status"
+                className="m-0 rounded-2 border border-line bg-surface-2 px-3.5 py-2.5 text-small text-ink"
+              >
+                {t('nodes.readOnly')}
+              </p>
+            )}
             <div className="grid grid-cols-[repeat(auto-fit,minmax(min(300px,100%),1fr))] gap-4">
-              <section aria-label={t('nodes.engine')} className={`${card} flex flex-col gap-2 p-4`}>
-                <div className="flex items-center gap-2">
-                  <span className="font-display text-[18px] text-ink-3 italic">{t('nodes.engine')}</span>
-                  {engine.state === 'active' ? (
-                    <StatusBadge status="active" />
-                  ) : (
-                    <StatusBadge status="pending" label={t('nodes.standby')} />
-                  )}
-                </div>
-                <p className="m-0 font-display text-[34px] leading-9">
-                  {t('nodes.version', { version: engine.version })}
-                </p>
-                <p className="m-0 text-small text-ink-2">{t('nodes.engineNote')}</p>
-              </section>
+              {(engines.length > 0 ? engines : [engine]).map((e) => (
+                <EngineCard key={e.id} engine={e} serving={e.id === engine.id} />
+              ))}
               <section aria-label={t('nodes.capacity')} className={`${card} flex flex-col gap-2 p-4`}>
                 <span className="font-display text-[18px] text-ink-3 italic">{t('nodes.capacity')}</span>
                 <p className="m-0 font-display text-[44px] leading-[44px]">{formatNumber(slots - leases, language)}</p>
@@ -111,6 +108,33 @@ export function NodesScreen() {
         )}
       </QueryView>
     </ScreenPage>
+  );
+}
+
+function EngineCard({ engine, serving }: { engine: DeploymentEngine; serving: boolean }) {
+  const { t } = useTranslation();
+  const { language } = usePreferences();
+  const active = engine.state === 'active';
+  const since = engine.since ? formatDateTime(new Date(engine.since), language) : undefined;
+  const { version } = engine;
+  let line = t('nodes.version', { version });
+  if (since)
+    line = active ? t('nodes.leaderSince', { version, since }) : t('nodes.standingBySince', { version, since });
+  if (engine.epoch !== undefined) line = `${line} · ${t('nodes.epoch', { epoch: engine.epoch })}`;
+  return (
+    <section
+      aria-label={active ? t('nodes.activeEngine') : t('nodes.standbyEngine')}
+      className={`${card} flex flex-col gap-2 p-4`}
+    >
+      <div className="flex items-center gap-2">
+        <span className="font-display text-[18px] text-ink-3 italic">{t('nodes.engine')}</span>
+        {active ? <StatusBadge status="active" /> : <StatusBadge status="pending" label={t('nodes.standby')} />}
+        {serving && <span className="ml-auto text-tiny text-ink-3">{t('nodes.serving')}</span>}
+      </div>
+      <p className="m-0 font-display text-[34px] leading-9">{engine.id}</p>
+      <p className="m-0 text-small text-ink-2">{line}</p>
+      <p className="m-0 text-small text-ink-2">{active ? t('nodes.activeNote') : t('nodes.standbyNote')}</p>
+    </section>
   );
 }
 
