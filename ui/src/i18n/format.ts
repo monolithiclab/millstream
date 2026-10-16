@@ -19,6 +19,18 @@ function numberFormat(language: Language, options: Intl.NumberFormatOptions = {}
   return format;
 }
 
+const dateFormats = new Map<string, Intl.DateTimeFormat>();
+
+function dateFormat(language: Language, options: Intl.DateTimeFormatOptions): Intl.DateTimeFormat {
+  const key = `${language}|${JSON.stringify(options)}`;
+  let format = dateFormats.get(key);
+  if (format === undefined) {
+    format = new Intl.DateTimeFormat(intlLocale[language], options);
+    dateFormats.set(key, format);
+  }
+  return format;
+}
+
 export function formatNumber(value: number, language: Language, options?: Intl.NumberFormatOptions): string {
   return numberFormat(language, options).format(value);
 }
@@ -70,7 +82,7 @@ export function formatRelativeTime(date: Date, now: Date, language: Language): s
 }
 
 export function formatDateTime(date: Date, language: Language, timeZone?: string): string {
-  return new Intl.DateTimeFormat(intlLocale[language], {
+  return dateFormat(language, {
     dateStyle: 'medium',
     timeStyle: 'medium',
     timeZone,
@@ -79,7 +91,7 @@ export function formatDateTime(date: Date, language: Language, timeZone?: string
 
 // A time of day, 06:31 in both languages (24-hour clock), with seconds for log lines.
 export function formatClock(date: Date, language: Language, seconds = false, timeZone?: string): string {
-  return new Intl.DateTimeFormat(intlLocale[language], {
+  return dateFormat(language, {
     hour: '2-digit',
     minute: '2-digit',
     second: seconds ? '2-digit' : undefined,
@@ -90,7 +102,7 @@ export function formatClock(date: Date, language: Language, seconds = false, tim
 
 // A short day: Thu 15 Oct, jeu. 15 oct.
 export function formatDay(date: Date, language: Language, timeZone?: string): string {
-  return new Intl.DateTimeFormat(intlLocale[language], {
+  return dateFormat(language, {
     weekday: 'short',
     day: 'numeric',
     month: 'short',

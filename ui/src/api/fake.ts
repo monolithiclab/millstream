@@ -280,8 +280,10 @@ export class FakeApi implements Api {
     Promise.resolve((this.fixtures.revisions ?? []).filter((r) => r.pipeline === p));
   getRevision: Api['getRevision'] = (p, revision) => this.notFound(`revision ${p}/${revision}`);
   listStreams: Api['listStreams'] = () => Promise.resolve([]);
-  listRuns: Api['listRuns'] = (pipeline) =>
-    Promise.resolve({ items: this.fixtures.runs.filter((r) => r.pipeline === pipeline) });
+  listRuns: Api['listRuns'] = (pipeline, { state } = {}) =>
+    Promise.resolve({
+      items: this.fixtures.runs.filter((r) => r.pipeline === pipeline && (state === undefined || r.state === state)),
+    });
   getRun: Api['getRun'] = (p, id) => this.run(p, id);
   getRunReport: Api['getRunReport'] = async (p, id) => report(await this.run(p, id), this.fixtures.reports?.[id]);
   listRunDeliveries: Api['listRunDeliveries'] = (p, run, { step, state } = {}) =>

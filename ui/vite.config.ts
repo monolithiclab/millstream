@@ -19,6 +19,9 @@ export default defineConfig({
     setupFiles: ['src/test/setup.ts'],
     include: ['src/**/*.test.{ts,tsx}'],
     restoreMocks: true,
+    // The file-system module cache keeps a module's import.meta.glob result after files are added, so the i18n
+    // test would miss the keys of a new screen until the cache is cleared.
+    fsModuleCache: false,
     coverage: {
       provider: 'v8',
       include: ['src/**/*.{ts,tsx}'],
