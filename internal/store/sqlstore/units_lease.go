@@ -254,19 +254,18 @@ func jsonList[T any](vs []T) string {
 	return string(b)
 }
 
-// roundRobin takes up to n candidates, one pipeline at a time, starting one pipeline further at every call so no
-// pipeline is always served first (spec section 4.10).
+// roundRobin takes up to n candidates, one pipeline at a time in name order, carrying on after the pipeline served
+// last, by this call or an earlier one (spec section 4.10). Only pipelines with candidates take part, so one at its
+// limit, or out of rate tokens, drops out of the rotation without handing its turn to the next one.
 func (s *Store) roundRobin(queues map[string][]candidate, n int) []candidate {
 	names := make([]string, 0, len(queues))
-	for name := range queues {
-		names = append(names, name)
-	}
-	if len(names) == 0 {
-		return nil
+	for name, q := range queues {
+		if len(q) > 0 {
+			names = append(names, name)
+		}
 	}
 	slices.Sort(names)
-	start := s.rr % len(names)
-	s.rr++
+	start := max(slices.IndexFunc(names, func(name string) bool { return name > s.rrLast }), 0)
 	names = append(names[start:], names[:start]...)
 	var out []candidate
 	for len(out) < n {
@@ -275,7 +274,7 @@ func (s *Store) roundRobin(queues map[string][]candidate, n int) []candidate {
 			if q := queues[name]; len(q) > 0 && len(out) < n {
 				out = append(out, q[0])
 				queues[name] = q[1:]
-				took = true
+				s.rrLast, took = name, true
 			}
 		}
 		if !took {

@@ -116,6 +116,14 @@ type Store interface {
 	// revision older than the active one, and returns it. Runs already started keep their revision (spec section
 	// 5.7). A revision of another pipeline is ErrNotFound, the active revision or no older one ErrConflict.
 	Rollback(ctx context.Context, pipeline string, to RevisionID) (RevisionID, error)
+	// CreateTriggerTokens is the Trigger tokens unit of an apply (spec section 4.6): it stores, by trigger, the
+	// SHA-256 (hex) of a new token for each webhook trigger of the pipeline that has none yet, and returns the
+	// triggers it stored one for, sorted. A trigger that already has a token keeps it.
+	CreateTriggerTokens(ctx context.Context, pipeline string, hashes map[string]string) ([]string, error)
+	// RotateTriggerToken is the Trigger tokens unit of a rotation: it replaces the token hash of a webhook trigger of
+	// the pipeline's active revision. A pipeline or trigger that does not exist is ErrNotFound, a trigger of another
+	// kind ErrInvalid.
+	RotateTriggerToken(ctx context.Context, pipeline, trigger, hash string) error
 	// RecordEval stores the scores of an eval run, all in one unit, at the store clock's instant.
 	RecordEval(ctx context.Context, results []EvalResult) error
 	// SkipFirings records each scheduled time of the cron trigger that catch-up none passed over (spec section
@@ -194,6 +202,8 @@ type Store interface {
 	EvalResults(ctx context.Context, action string) ([]EvalResult, error)
 	// Nodes returns the remote nodes that registered or were revoked, by id.
 	Nodes(ctx context.Context) ([]Node, error)
+	// TriggerTokenHash returns the SHA-256 (hex) of a webhook trigger's token, ErrNotFound when it has none.
+	TriggerTokenHash(ctx context.Context, pipeline, trigger string) (string, error)
 	// LastFiring returns the latest scheduled time the cron trigger fired a cron run for or skipped, zero when it
 	// never did: where catch-up resumes. Manual firings of the trigger do not count.
 	LastFiring(ctx context.Context, pipeline, trigger string) (time.Time, error)

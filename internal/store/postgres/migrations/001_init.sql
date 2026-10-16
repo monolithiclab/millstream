@@ -62,7 +62,7 @@ CREATE TABLE runs (
     revision           bigint NOT NULL REFERENCES revisions (id),
     trigger            text NOT NULL,
     trigger_key        text NOT NULL,
-    trigger_source     text NOT NULL, -- cron | manual | import
+    trigger_source     text NOT NULL, -- cron | manual | webhook | import
     scheduled_at       timestamptz,   -- the scheduled time of a cron firing
     kind               text NOT NULL, -- trigger | replay | import
     generation         bigint NOT NULL,
@@ -361,4 +361,14 @@ CREATE TABLE nodes (
     state          text NOT NULL,              -- active | draining | revoked
     registered_at  timestamptz,                -- NULL for an id revoked before it registered
     last_heartbeat timestamptz
+);
+
+-- Webhook trigger tokens (spec section 4.6): the SHA-256 of each token, hex, never the token. A token outlives the
+-- revisions that declare its trigger, so a rollback finds it again.
+CREATE TABLE trigger_tokens (
+    pipeline   text NOT NULL,
+    trigger    text NOT NULL,
+    hash       text NOT NULL,
+    created_at timestamptz NOT NULL, -- set again by a rotation
+    PRIMARY KEY (pipeline, trigger)
 );

@@ -2,15 +2,17 @@
 # Playwright container needs no action runtime. The e2e setup (e2e/global.setup.ts) fires the manual trigger: each
 # listing parks in two inboxes, analysts (looked at by the screens tests) and triage (decided by the keyboard flow);
 # a listing with keep: false is not shortlisted, so its run settles, and one whose surface is 0 dies at price-check,
-# so the dead letters screen has a group to replay.
+# so the dead letters screen has a group to replay. The listing webhook gives the graph screen its Webhooks section,
+# whose token the screens tests rotate.
 pipeline: listings-daily
 description: Listings shortlisted and reviewed
 triggers:
   adhoc: { manual: {} }
+  listing: { webhook: {} }
 steps:
   shortlist:
     action: filter
-    in: trigger.adhoc
+    in: [trigger.adhoc, trigger.listing]
     out: listings.shortlist
     config: { expr: '!has(item.keep) || item.keep' }
   # Dies (class expr, never retried) on a listing whose surface is 0; every other payload passes.

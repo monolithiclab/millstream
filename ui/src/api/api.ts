@@ -27,6 +27,7 @@ import type {
   StepLessons,
   Stream,
   TriggerRequest,
+  TriggerToken,
 } from './schema';
 
 // The query parameters of an operation, as the OpenAPI document declares them.
@@ -116,6 +117,8 @@ export interface Api {
   // A remote node: drain stops leasing to it until it restarts; revoke refuses its id for good and ends its leases.
   drainNode(node: string): Promise<void>;
   revokeNode(node: string): Promise<void>;
+  // Replaces a webhook trigger's token and returns the new one, shown once: the old one stops working at once.
+  rotateTriggerToken(pipeline: string, trigger: string): Promise<TriggerToken>;
 
   // Whether the server requires its token, and who decides; unauthorized (401) until signed in on one that does.
   getSession(): Promise<Session>;

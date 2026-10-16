@@ -39,9 +39,13 @@ func Test_lifecycleCommands(t *testing.T) {
 	}{
 		{ApplyCmd{Dirs: []string{fixture(lifecycleV1)}}, "", "extra revision 1 "},
 		{ApplyCmd{Dirs: []string{fixture(lifecycleV2)}}, "", "extra revision 2 "},
+		{TriggerTokenCmd{Pipeline: "extra", Trigger: "hook"}, "pass --rotate", ""},
+		{TriggerTokenCmd{Pipeline: "extra", Trigger: "hook", Rotate: true}, "",
+			"extra webhook hook: POST /hooks/extra/hook with Authorization: Bearer mswh_"},
+		{TriggerTokenCmd{Pipeline: "extra", Trigger: "adhoc", Rotate: true}, "not a webhook trigger", ""},
 		{RollbackCmd{Pipeline: "extra", Revision: 2}, "conflict", ""},
 		{DisableCmd{Pipeline: "extra"}, "", "extra disabled\n"},
-		{TriggerCmd{Pipeline: "extra", Trigger: "adhoc", Payload: "{}"}, "is disabled", ""},
+		{TriggerFireCmd{Pipeline: "extra", Trigger: "adhoc", Payload: "{}"}, "is disabled", ""},
 		{PauseCmd{Pipeline: "extra"}, "resume it before pausing it", ""},
 		{ResumeCmd{Pipeline: "extra"}, "", "extra resumed\n"},
 		{ApplyCmd{Dirs: []string{fixture(lifecycleBad)}}, "failed", ""},
@@ -152,14 +156,16 @@ func Test_commandsThroughTheServer(t *testing.T) {
 		err := cmd.Run(rt)
 		return out.String(), err
 	}
-	trigger := TriggerCmd{Pipeline: "extra", Trigger: "adhoc", Payload: "{}", RequestID: "r1"}
+	trigger := TriggerFireCmd{Pipeline: "extra", Trigger: "adhoc", Payload: "{}", RequestID: "r1"}
 	replay := ReplayCmd{Pipeline: "extra", Step: "pass", RequestID: "rp"}
 	for _, step := range []struct {
 		cmd runner
 		out string // a prefix of what it prints, or of the error
 		err bool
 	}{
-		{ApplyCmd{Dirs: dirs[1:]}, "extra revision 2 ", false},
+		{ApplyCmd{Dirs: dirs[1:]}, "extra webhook hook: POST /hooks/extra/hook with Authorization: Bearer mswh_", false},
+		{TriggerTokenCmd{Pipeline: "extra", Trigger: "hook", Rotate: true}, "extra webhook hook: POST", false},
+		{TriggerTokenCmd{Pipeline: "extra", Trigger: "nope", Rotate: true}, "no trigger", true},
 		{RollbackCmd{Pipeline: "extra"}, "extra rolled back to revision 1\n", false},
 		{DisableCmd{Pipeline: "extra"}, "extra disabled\n", false},
 		{ResumeCmd{Pipeline: "extra"}, "extra resumed\n", false},
@@ -172,7 +178,7 @@ func Test_commandsThroughTheServer(t *testing.T) {
 		{replay, "run_replay_rp\n", false},
 		{replay, "run_replay_rp (already started)\n", false},
 		{NodesRevokeCmd{Node: "gpu-1"}, "gpu-1 revoked\n", false},
-		{TriggerCmd{Pipeline: "extra", Trigger: "adhoc", Payload: "{}", Var: map[string]string{"x": "1"}}, "--var", true},
+		{TriggerFireCmd{Pipeline: "extra", Trigger: "adhoc", Payload: "{}", Var: map[string]string{"x": "1"}}, "--var", true},
 		{InboxApproveCmd{deliveryRef: deliveryRef{Delivery: "d1"}, reviewerFlag: reviewerFlag{As: "ana"}}, "--pipeline", true},
 		{InboxSampleCmd{deliveryRef: deliveryRef{Delivery: "d1"}, Decision: "agree", reviewerFlag: reviewerFlag{As: "ana"}},
 			"--pipeline", true},

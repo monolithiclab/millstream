@@ -132,7 +132,7 @@ type CLI struct {
 	Vars     VarsCmd     `cmd:"" help:"Print a package's variables, values and sources."`
 	Status   StatusCmd   `cmd:"" help:"Show pipelines and recent runs."`
 	Tail     TailCmd     `cmd:"" help:"Print events as JSON lines."`
-	Trigger  TriggerCmd  `cmd:"" help:"Fire a trigger."`
+	Trigger  TriggerCmd  `cmd:"" help:"Fire a trigger; trigger token --rotate replaces a webhook trigger's token."`
 	Cancel   CancelCmd   `cmd:"" help:"Cancel a run."`
 	Replay   ReplayCmd   `cmd:"" help:"Replay dead letters into their run, or a step over past items in a replay run."`
 	DLQ      DLQCmd      `cmd:"" name:"dlq" help:"List and discard dead letters."`

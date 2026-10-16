@@ -133,12 +133,19 @@ type ApplyResponse struct {
 }
 
 // AppliedRevision is the revision of one package an apply applied; created is false when the package was already
-// the pipeline's active one.
+// the pipeline's active one. Tokens are the new tokens of its webhook triggers, shown this once.
 type AppliedRevision struct {
-	Pipeline    string `json:"pipeline"`
-	Revision    int64  `json:"revision"`
-	PackageHash string `json:"packageHash"`
-	Created     bool   `json:"created"`
+	Pipeline    string         `json:"pipeline"`
+	Revision    int64          `json:"revision"`
+	PackageHash string         `json:"packageHash"`
+	Created     bool           `json:"created"`
+	Tokens      []TriggerToken `json:"tokens,omitempty"`
+}
+
+// AppliedOf is what the engine applied, as an apply answers it.
+func AppliedOf(a engine.Applied) AppliedRevision {
+	return AppliedRevision{Pipeline: a.Pipeline, Revision: int64(a.Revision), PackageHash: a.PackageHash,
+		Created: a.Created, Tokens: triggerTokens(a.Pipeline, a.Tokens)}
 }
 
 // Finding is a check finding of a pipeline.
@@ -177,8 +184,7 @@ func (s *Server) applyPackages(w http.ResponseWriter, r *http.Request) error {
 	}
 	out := ApplyResponse{Revisions: make([]AppliedRevision, 0, len(applied)), Warnings: make([]Finding, 0, len(findings))}
 	for _, a := range applied {
-		out.Revisions = append(out.Revisions, AppliedRevision{Pipeline: a.Pipeline, Revision: int64(a.Revision),
-			PackageHash: a.PackageHash, Created: a.Created})
+		out.Revisions = append(out.Revisions, AppliedOf(a))
 	}
 	for _, f := range findings {
 		out.Warnings = append(out.Warnings, Finding{Pipeline: f.Pipeline, Severity: f.Severity, Path: f.Path,

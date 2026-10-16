@@ -514,7 +514,7 @@ func TestRoutesDocumented(t *testing.T) {
 	c := theContract()
 	paths, _ := c.doc["paths"].(map[string]any)
 	served := map[string]bool{}
-	for _, rt := range routes {
+	for _, rt := range append(slices.Clone(routes), hookOperation) {
 		op := rt.method + " " + rt.path
 		served[op] = true
 		if _, ok := c.lookup("paths", rt.path, strings.ToLower(rt.method), "responses"); !ok {
@@ -523,7 +523,7 @@ func TestRoutesDocumented(t *testing.T) {
 	}
 	for p, item := range paths {
 		for m := range item.(map[string]any) {
-			if m == "parameters" {
+			if m == "parameters" || m == "servers" {
 				continue
 			}
 			if op := strings.ToUpper(m) + " " + p; !served[op] {

@@ -244,7 +244,27 @@
     "paused": "{{step}} paused: its deliveries wait until you resume it.",
     "resumed": "{{step}} resumed.",
     "pauseFailed": "Couldn’t pause {{step}}: {{message}} Nothing changed.",
-    "resumeFailed": "Couldn’t resume {{step}}: {{message}} Nothing changed."
+    "resumeFailed": "Couldn’t resume {{step}}: {{message}} Nothing changed.",
+    "webhooks": {
+      "title": "Webhooks",
+      "intro": "A service starts a run by sending a POST request to a trigger's URL with its token: as a bearer token in the {{header}} header, or as the {{param}} query parameter (prefer the header, since proxies log URLs). millstream apply shows each new token once.",
+      "rate": "Up to {{rate}}",
+      "copyUrl": "Copy URL",
+      "rotate": "Rotate token",
+      "rotateName": "Rotate token of {{trigger}}",
+      "rotateTitle": "Rotate the token of {{trigger}}?",
+      "rotateNew": "A new token is generated for {{trigger}}.",
+      "rotateOld": "The current token stops working immediately: requests that send it are refused.",
+      "rotateSenders": "Every service that calls this webhook must be updated with the new token.",
+      "rotateOnce": "The new token is shown only once, right after this.",
+      "rotateFailed": "Couldn’t rotate the token of {{trigger}}: {{message}} The current token still works.",
+      "tokenTitle": "New token for {{trigger}}",
+      "tokenOnce": "Store it now: it will not be shown again.",
+      "tokenLost": "Millstream keeps only its hash; if it is lost, rotate the token again.",
+      "copyToken": "Copy token",
+      "usage": "Send it with every request to the webhook:",
+      "done": "Done"
+    }
   },
   "deadLetters": {
     "migrate": "Move their runs to the active revision {{revision}} first",

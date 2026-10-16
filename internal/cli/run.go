@@ -103,9 +103,11 @@ func (c RunPackagesCmd) Run(rt *Runtime) error {
 			return err
 		}
 		for _, pkg := range pkgs {
-			if _, err := e.Apply(ctx, pkg); err != nil {
+			a, err := e.Apply(ctx, pkg)
+			if err != nil {
 				return err
 			}
+			printTokens(rt, a.Pipeline, api.AppliedOf(a).Tokens)
 		}
 		var runs []engine.RunRef
 		if c.Once {

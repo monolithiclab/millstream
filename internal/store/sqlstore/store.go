@@ -35,7 +35,7 @@ var Units = []string{
 	unitReplay, unitDiscard, unitExpireLeases, unitSetPaused, unitSkipFirings, unitFilter, unitDedupe,
 	unitStartReplay, unitRecordEval, unitRollup, unitRecordInsights, unitSetInsightState, unitPark,
 	unitReviewDecision, unitSampleDecision, unitReviewTimeout, unitDisable, unitRollback,
-	unitRegisterNode, unitSetNodeState,
+	unitRegisterNode, unitSetNodeState, unitTriggerTokens,
 }
 
 const (
@@ -66,6 +66,7 @@ const (
 	unitReviewTimeout   = "reviewTimeout"
 	unitDisable         = "disable"
 	unitRollback        = "rollback"
+	unitTriggerTokens   = "triggerTokens"
 )
 
 // Dialect is what the SQLite and Postgres stores spell differently under the shared SQL.
@@ -149,7 +150,7 @@ type Store struct {
 
 	// Writer goroutine only.
 	revs   map[string]*revision // revisions by package hash; see revision
-	rr     int                  // round-robin offset across pipelines
+	rrLast string               // the pipeline the round-robin served last
 	stmts  map[string]*sql.Stmt // prepared write statements by query; see wtx.stmt
 	unseen map[string]bool      // queries of the last batch to prepare once it ends
 	lost   error                // set once Check failed: the write connection is gone; lostCh closes after

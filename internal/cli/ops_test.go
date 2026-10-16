@@ -28,12 +28,12 @@ func Test_triggerCommand(t *testing.T) {
 		t.Fatalf("generated id stdout = %q", out)
 	}
 	s.checkRefusals(t, nil, []refusal{
-		{TriggerCmd{Pipeline: "listings", Trigger: "adhoc", Payload: "{"}, true, "--payload: not valid JSON"},
-		{TriggerCmd{Pipeline: "listings", Trigger: "adhoc", Payload: "{}", Var: map[string]string{"nope": "1"}}, true,
+		{TriggerFireCmd{Pipeline: "listings", Trigger: "adhoc", Payload: "{"}, true, "--payload: not valid JSON"},
+		{TriggerFireCmd{Pipeline: "listings", Trigger: "adhoc", Payload: "{}", Var: map[string]string{"nope": "1"}}, true,
 			"declares no such variable"},
-		{TriggerCmd{Pipeline: "other", Trigger: "adhoc", Payload: "{}", Var: map[string]string{"nope": "1"}}, false,
+		{TriggerFireCmd{Pipeline: "other", Trigger: "adhoc", Payload: "{}", Var: map[string]string{"nope": "1"}}, false,
 			"pipeline other: not found"},
-		{TriggerCmd{Pipeline: "listings", Trigger: "weekly", Payload: "{}"}, false, `has no trigger "weekly"`},
+		{TriggerFireCmd{Pipeline: "listings", Trigger: "weekly", Payload: "{}"}, false, `has no trigger "weekly"`},
 	})
 	status, _ := s.must(0, "status", "--pipeline", "listings", "--limit", "5")
 	if !regexp.MustCompile(`run_t1_adhoc\s+listings\s+running\s+\S+\s+1\s+0`).MatchString(status) {

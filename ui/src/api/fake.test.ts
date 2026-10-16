@@ -270,4 +270,18 @@ describe('FakeApi', () => {
     expect(api.calls.filter((c) => c.method === 'rollback')).toHaveLength(6);
     expect(demoFixtures.revisions[0]!.active).toBe(true);
   });
+
+  it('rotates a webhook trigger token, a new one each time, refusing any other trigger', async () => {
+    const api = new FakeApi();
+    const first = await api.rotateTriggerToken('listings-daily', 'listing');
+    expect(first).toEqual({ trigger: 'listing', token: 'mswh_listing_0001', path: '/hooks/listings-daily/listing' });
+    expect((await api.rotateTriggerToken('listings-daily', 'listing')).token).not.toBe(first.token);
+    await expect(api.rotateTriggerToken('listings-daily', 'daily')).rejects.toMatchObject({
+      status: 400,
+      code: 'invalid',
+    });
+    await expect(api.rotateTriggerToken('listings-daily', 'nope')).rejects.toMatchObject({ status: 404 });
+    await expect(api.rotateTriggerToken('nope', 'listing')).rejects.toMatchObject({ status: 404 });
+    expect(api.calls.filter((c) => c.method === 'rotateTriggerToken')).toHaveLength(5);
+  });
 });

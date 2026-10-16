@@ -46,9 +46,9 @@ func (e *Engine) Replay(ctx context.Context, req ReplayRequest) (string, bool, e
 	case req.Stream != "" && req.RunID != "":
 		return fail(fmt.Errorf("a back-fill selects by --since and --where, not by run: %w", store.ErrInvalid))
 	}
-	key := req.RequestID
-	if key == "" {
-		key = NewRequestID(e.opts.Now())
+	key, err := e.requestKey(req.RequestID)
+	if err != nil {
+		return fail(err)
 	}
 	runID := ids.ReplayRun(key)
 	revID := req.Revision

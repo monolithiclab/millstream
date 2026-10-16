@@ -33,6 +33,7 @@ import (
 	"github.com/monolithiclab/millstream/internal/redact"
 	"github.com/monolithiclab/millstream/internal/review"
 	"github.com/monolithiclab/millstream/internal/runtime/exec"
+	"github.com/monolithiclab/millstream/internal/schema"
 	"github.com/monolithiclab/millstream/internal/store"
 )
 
@@ -137,9 +138,13 @@ type Engine struct {
 	actions  map[actionKey]*resolvedAction  // by package hash and reference
 	lessonsC map[actionKey]lessonsEntry     // agent steps' lessons by package hash and step
 	inflight map[store.DeliveryKey]flight   // leased deliveries
-	buckets  map[store.StepRef]*bucket      // step rate limits
+	buckets  map[store.StepRef]*Bucket      // step rate limits
 	nodes    map[string]*nodeEntry          // the nodes registered in this term, by id
 	builtins map[builtinKey]*builtin        // compiled builtin steps by package hash and step
+	// triggerSchemas are the triggers' compiled input schemas (nil for none), by package hash and trigger stream;
+	// hookBuckets the webhook triggers' rates, by pipeline and trigger stream.
+	triggerSchemas map[actionKey]*schema.Schema
+	hookBuckets    map[store.StepRef]*Bucket
 	// changed, made when WaitSettled first asks for it, is closed (and forgotten) when a lease in flight ends, the
 	// moments a run may settle.
 	changed chan struct{}
@@ -223,8 +228,9 @@ func New(opts Options) (*Engine, error) {
 		st: opts.Store, opts: opts, log: opts.Logger,
 		packages: map[string]*pipeline.Package{}, revs: map[store.RevisionID]*revision{},
 		actions:  map[actionKey]*resolvedAction{},
-		lessonsC: map[actionKey]lessonsEntry{}, inflight: map[store.DeliveryKey]flight{}, buckets: map[store.StepRef]*bucket{},
-		nodes: map[string]*nodeEntry{}, builtins: map[builtinKey]*builtin{}, maxDue: maxDue,
+		lessonsC: map[actionKey]lessonsEntry{}, inflight: map[store.DeliveryKey]flight{}, buckets: map[store.StepRef]*Bucket{},
+		nodes: map[string]*nodeEntry{}, builtins: map[builtinKey]*builtin{}, triggerSchemas: map[actionKey]*schema.Schema{},
+		hookBuckets: map[store.StepRef]*Bucket{}, maxDue: maxDue,
 		crons: map[[2]string]*cronState{}, ready: make(chan struct{}), lastInsights: map[string]time.Time{},
 		parser: cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor),
 	}
@@ -249,35 +255,46 @@ func (e *Engine) LeaseTTL() time.Duration { return e.opts.LeaseTTL }
 // run. The bundle stored with the revision is the package's files as a JSON object of base64 contents
 // (EncodeBundle). It does not check the package: ApplyPackages does. A pipeline that imports streams has its
 // variables resolved now, as a firing would resolve them, for the runs its imports open inside producers' Done units
-// (spec section 4.12); they must resolve, secrets included.
-func (e *Engine) Apply(ctx context.Context, pkg *pipeline.Package) (store.RevisionID, error) {
+// (spec section 4.12); they must resolve, secrets included. Each webhook trigger without a token gets one, returned
+// once in Applied.Tokens.
+func (e *Engine) Apply(ctx context.Context, pkg *pipeline.Package) (Applied, error) {
 	return e.apply(ctx, pkg, "")
 }
 
-func (e *Engine) apply(ctx context.Context, pkg *pipeline.Package, message string) (store.RevisionID, error) {
+func (e *Engine) apply(ctx context.Context, pkg *pipeline.Package, message string) (Applied, error) {
+	name := pkg.Pipeline.Name
+	fail := func(err error) (Applied, error) { return Applied{}, fmt.Errorf("apply %s: %w", name, err) }
 	bundle, err := pipeline.EncodeBundle(pkg.Files)
 	if err != nil {
-		return 0, fmt.Errorf("apply %s: encode bundle: %w", pkg.Pipeline.Name, err)
+		return fail(fmt.Errorf("encode bundle: %w", err))
 	}
 	rec := store.PackageRecord{Hash: pkg.Hash, Bundle: bundle, Pipeline: pkg.Pipeline, Message: message}
 	if len(pkg.Pipeline.Imports()) > 0 {
-		res, err := pipeline.ResolveVarsWith(pkg.Pipeline, e.declaredFlags(pkg.Pipeline), e.opts.Env,
-			e.secrets(pkg.Pipeline.Name))
+		res, err := pipeline.ResolveVarsWith(pkg.Pipeline, e.declaredFlags(pkg.Pipeline), e.opts.Env, e.secrets(name))
 		if err != nil {
-			return 0, fmt.Errorf("apply %s: the runs its imported streams open: %w: %w", pkg.Pipeline.Name,
-				ErrFiringConfig, err)
+			return fail(fmt.Errorf("the runs its imported streams open: %w: %w", ErrFiringConfig, err))
 		}
 		rec.Vars, rec.VarSources = res.Vars, res.Sources
 	}
+	before, err := e.st.ActiveRevision(ctx, name)
+	if err != nil && !errors.Is(err, store.ErrNotFound) {
+		return fail(err)
+	}
 	id, err := e.st.ApplyRevision(ctx, rec)
 	if err != nil {
-		return 0, fmt.Errorf("apply %s: %w", pkg.Pipeline.Name, err)
+		return fail(err)
 	}
 	e.mu.Lock()
 	e.packages[pkg.Hash] = pkg
 	e.mu.Unlock()
-	e.log.Info("revision applied", "pipeline", pkg.Pipeline.Name, "revision", int64(id), "packageHash", pkg.Hash)
-	return id, nil
+	e.log.Info("revision applied", "pipeline", name, "revision", int64(id), "packageHash", pkg.Hash)
+	// Stored after the revision: an apply interrupted in between leaves the trigger without a token, answering every
+	// request unauthorized, until the same apply runs again or the token is rotated.
+	tokens, err := e.createTriggerTokens(ctx, pkg.Pipeline)
+	if err != nil {
+		return fail(err)
+	}
+	return Applied{Pipeline: name, Revision: id, PackageHash: pkg.Hash, Created: id != before, Tokens: tokens}, nil
 }
 
 // Run rebuilds the leases in flight from the store and times out the overdue reviews, closes Ready, then expires

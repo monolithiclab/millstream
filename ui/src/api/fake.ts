@@ -445,6 +445,23 @@ export class FakeApi implements Api {
   // Draining stops leasing to a node; revoking also ends its leases. The embedded node refuses both, a standby too.
   drainNode: Api['drainNode'] = (...args) => this.setNode('drainNode', args, 'draining');
   revokeNode: Api['revokeNode'] = (...args) => this.setNode('revokeNode', args, 'revoked');
+  // A new token each time, numbered by the call; only a webhook trigger has one.
+  rotateTriggerToken: Api['rotateTriggerToken'] = (...args) => {
+    const [pipeline, name] = args;
+    const trigger = this.pipeline(pipeline)?.triggers.find((t) => t.name === name);
+    if (trigger === undefined) {
+      return this.refuse('rotateTriggerToken', args, 404, 'notFound', `trigger ${pipeline}/${name} not found`);
+    }
+    if (trigger.kind !== 'webhook') {
+      return this.refuse('rotateTriggerToken', args, 400, 'invalid', `trigger ${name} is not a webhook`);
+    }
+    const token = `mswh_${name}_${String(this.calls.length + 1).padStart(4, '0')}`;
+    return this.record('rotateTriggerToken', args, {
+      trigger: name,
+      token,
+      path: trigger.path ?? `/hooks/${pipeline}/${name}`,
+    });
+  };
 
   getSession: Api['getSession'] = () =>
     Promise.resolve(

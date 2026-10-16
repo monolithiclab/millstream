@@ -51,6 +51,7 @@ var Tests = append([]Test{
 	{"TestFireRevisionOfAnotherPipeline", TestFireRevisionOfAnotherPipeline},
 	{"TestSetPaused", TestSetPaused},
 	{"TestDisable", TestDisable},
+	{"TestTriggerTokens", TestTriggerTokens},
 	{"TestRollback", TestRollback},
 	{"TestRandomUnitSequences", TestRandomUnitSequences},
 	{"TestStartReplay", TestStartReplay},

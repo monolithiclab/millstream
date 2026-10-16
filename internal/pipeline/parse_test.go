@@ -196,7 +196,7 @@ func TestParseTopLevelOptions(t *testing.T) {
 	p, err := Parse([]byte(`
 pipeline: deal-flow
 triggers:
-  hook: { webhook: { path: /hooks/x }, inputSchema: { type: object } }
+  hook: { webhook: { rate: 10/s }, inputSchema: { type: object } }
   nightly: { cron: "0 1 * * *", catchup: all }
 streams:
   approved: { pipeline: property-sourcing, stream: listings.approved }
@@ -212,7 +212,7 @@ improve: { enabled: false }
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
-	if w := p.Triggers["hook"]; w.Webhook == nil || w.Webhook.Path != "/hooks/x" ||
+	if w := p.Triggers["hook"]; w.Webhook == nil || w.Webhook.Rate != "10/s" ||
 		!reflect.DeepEqual(w.InputSchema, map[string]any{"type": "object"}) {
 		t.Errorf("hook = %+v", w)
 	}
@@ -301,10 +301,10 @@ func TestParseErrors(t *testing.T) {
 		{"cron empty", "pipeline: p\ntriggers: { t: { cron: \"\" } }\n", "triggers.t.cron: must not be empty"},
 		{"cron unknown", "pipeline: p\ntriggers: { t: { cron: \"* * * * *\", zone: x } }\n", "triggers.t.zone: unknown key"},
 		{"cron tz", "pipeline: p\ntriggers: { t: { cron: \"* * * * *\", tz: \"\" } }\n", "triggers.t.tz: must not be empty"},
-		{"webhook path", "pipeline: p\ntriggers: { t: { webhook: {} } }\n", "triggers.t.webhook.path: is required"},
-		{"webhook key", "pipeline: p\ntriggers: { t: { webhook: { path: /x, secret: y } } }\n", "triggers.t.webhook.secret: unknown key"},
+		{"webhook rate", "pipeline: p\ntriggers: { t: { webhook: { rate: often } } }\n", "triggers.t.webhook.rate: invalid rate"},
+		{"webhook key", "pipeline: p\ntriggers: { t: { webhook: { path: /x } } }\n", "triggers.t.webhook.path: unknown key"},
 		{"webhook mapping", "pipeline: p\ntriggers: { t: { webhook: x } }\n", "triggers.t.webhook: must be a mapping"},
-		{"webhook unknown", "pipeline: p\ntriggers: { t: { webhook: { path: /x }, token: y } }\n", "triggers.t.token: unknown key"},
+		{"webhook unknown", "pipeline: p\ntriggers: { t: { webhook: {}, token: y } }\n", "triggers.t.token: unknown key"},
 		{"trigger not mapping", "pipeline: p\ntriggers: { t: x }\n", "triggers.t: must be a mapping"},
 		{"triggers not mapping", "pipeline: p\ntriggers: [a]\n", "triggers: must be a mapping"},
 		{"stream mixed import", top + "streams: { a: { pipeline: q, stream: s, retention: 1d } }\n", "streams.a.retention: unknown key"},

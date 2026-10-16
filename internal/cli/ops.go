@@ -16,8 +16,15 @@ import (
 	"github.com/monolithiclab/millstream/internal/store"
 )
 
-// TriggerCmd is "millstream trigger".
+// TriggerCmd is "millstream trigger": "trigger <pipeline> <trigger>" fires a trigger, "trigger token" rotates a
+// webhook trigger's token.
 type TriggerCmd struct {
+	Fire  TriggerFireCmd  `cmd:"" default:"withargs" hidden:"" help:"Fire a trigger by hand."`
+	Token TriggerTokenCmd `cmd:"" help:"Replace a webhook trigger's token (--rotate) and print the new one, once."`
+}
+
+// TriggerFireCmd is "millstream trigger <pipeline> <trigger>".
+type TriggerFireCmd struct {
 	Pipeline  string            `arg:"" help:"Pipeline name."`
 	Trigger   string            `arg:"" help:"Trigger name."`
 	Payload   string            `default:"{}" help:"Trigger input, as JSON."`
@@ -27,7 +34,7 @@ type TriggerCmd struct {
 
 // Run fires the trigger of the pipeline's active revision straight into the store: a running engine picks the run's
 // deliveries up. It prints the run id.
-func (c TriggerCmd) Run(rt *Runtime) error {
+func (c TriggerFireCmd) Run(rt *Runtime) error {
 	if !json.Valid([]byte(c.Payload)) {
 		return usageError("--payload: not valid JSON")
 	}
@@ -66,6 +73,43 @@ func (c TriggerCmd) Run(rt *Runtime) error {
 	}
 	_, err = fmt.Fprintf(rt.IO.Out, "%s%s\n", id, suffix)
 	return err
+}
+
+// TriggerTokenCmd is "millstream trigger token <pipeline> <trigger> --rotate" (spec section 4.6).
+type TriggerTokenCmd struct {
+	Pipeline string `arg:"" help:"Pipeline name."`
+	Trigger  string `arg:"" help:"Webhook trigger name."`
+	Rotate   bool   `help:"Replace the token: the old one stops working at once. Required: the store keeps only a hash, so the token in use cannot be shown again."`
+}
+
+// Run replaces the webhook trigger's token, through the served engine's API or in the store, and prints the new
+// one with the trigger's path: the only time it is shown.
+func (c TriggerTokenCmd) Run(rt *Runtime) error {
+	if !c.Rotate {
+		return usageError("trigger token: pass --rotate: a token is shown only when it is created, never again")
+	}
+	var tok api.TriggerToken
+	err := changeState(rt, func(cl *apiClient) error {
+		_, err := cl.post(rt.Ctx, pipelinePath(c.Pipeline, "triggers", c.Trigger, "token"), nil, &tok)
+		return err
+	}, func(st store.Store) error {
+		token, hash := engine.NewTriggerToken()
+		tok = api.TriggerToken{Trigger: c.Trigger, Token: token, Path: api.HookPath(c.Pipeline, c.Trigger)}
+		return st.RotateTriggerToken(rt.Ctx, c.Pipeline, c.Trigger, hash)
+	})
+	if err != nil {
+		return err
+	}
+	printTokens(rt, c.Pipeline, []api.TriggerToken{tok})
+	return nil
+}
+
+// printTokens prints webhook tokens, shown this once: each trigger's path and token.
+func printTokens(rt *Runtime, pipelineName string, tokens []api.TriggerToken) {
+	for _, t := range tokens {
+		fmt.Fprintf(rt.IO.Out, "%s webhook %s: POST %s with Authorization: Bearer %s (shown once: keep it now)\n",
+			pipelineName, t.Trigger, t.Path, t.Token)
+	}
 }
 
 // checkFlagsDeclared fails when a --var names a variable the pipeline's active revision does not declare.
