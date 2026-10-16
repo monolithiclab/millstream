@@ -1,6 +1,6 @@
 import { renderHook } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import { useApi, useEventSourceFactory } from './context';
+import { useApi, useLiveHub } from './context';
 
 describe('ApiProvider', () => {
   it('refuses a read outside the provider', () => {
@@ -10,7 +10,7 @@ describe('ApiProvider', () => {
     window.addEventListener('error', quiet);
     try {
       expect(() => renderHook(() => useApi())).toThrow('useApi outside ApiProvider');
-      expect(() => renderHook(() => useEventSourceFactory())).toThrow('useApi outside ApiProvider');
+      expect(() => renderHook(() => useLiveHub())).toThrow('useApi outside ApiProvider');
     } finally {
       window.removeEventListener('error', quiet);
     }
