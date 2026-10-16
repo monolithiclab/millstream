@@ -60,7 +60,6 @@ func TestInterpolate(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
 			got, err := Interpolate(map[string]any{"v": tt.in}, testCtx())
 			if err != nil {
 				t.Fatalf("Interpolate: %v", err)
@@ -95,33 +94,29 @@ func TestInterpolateErrors(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name, in, want string
+		is             error // what the error must wrap, if anything
 	}{
-		{"compile error carries expression and path", "${vars.city +}", `config filters[1].v: compile "vars.city +"`},
-		{"unknown variable", "${item.x}", `compile "item.x": ERROR`},
-		{"runtime error", "${vars.nope}", `config filters[1].v: evaluate "vars.nope": no such key: nope`},
-		{"runtime error when splicing", "x ${vars.nope}", `evaluate "vars.nope"`},
-		{"unterminated", "a ${vars.city", "unterminated ${ at offset 2"},
-		{"unterminated string", "${'}", "unterminated ${ at offset 0"},
-		{"empty", "a ${ } b", "empty expression at offset 2"},
-		{"cost limit", "${vars.big.all(x, vars.big.all(y, x == y))}", "CEL cost limit exceeded"},
-		{"unsplicable", "x ${ {1: 2} }", "only string keys are supported"},
-		{"unsupported type", "${type(1)}", "unsupported result type"},
-		{"unsupported nested", "${[type(1)]}", "unsupported result type"},
-		{"unsupported in map", "${ {'a': type(1)} }", "unsupported result type"},
+		{"compile error carries expression and path", "${vars.city +}", `config filters[1].v: compile "vars.city +"`, nil},
+		{"unknown variable", "${item.x}", `compile "item.x": ERROR`, nil},
+		{"runtime error", "${vars.nope}", `config filters[1].v: evaluate "vars.nope": no such key: nope`, nil},
+		{"runtime error when splicing", "x ${vars.nope}", `evaluate "vars.nope"`, nil},
+		{"unterminated", "a ${vars.city", "unterminated ${ at offset 2", nil},
+		{"unterminated string", "${'}", "unterminated ${ at offset 0", nil},
+		{"empty", "a ${ } b", "empty expression at offset 2", nil},
+		{"cost limit", "${vars.big.all(x, vars.big.all(y, x == y))}", "CEL cost limit exceeded", ErrCostLimit},
+		{"unsplicable", "x ${ {1: 2} }", "only string keys are supported", nil},
+		{"unsupported type", "${type(1)}", "unsupported result type", nil},
+		{"unsupported nested", "${[type(1)]}", "unsupported result type", nil},
+		{"unsupported in map", "${ {'a': type(1)} }", "unsupported result type", nil},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
 			cfg := map[string]any{"filters": []any{"ok", map[string]any{"v": tt.in}}}
 			_, err := Interpolate(cfg, testCtx())
-			if err == nil || !strings.Contains(err.Error(), tt.want) {
-				t.Fatalf("error = %v, want it to contain %q", err, tt.want)
+			if err == nil || !strings.Contains(err.Error(), tt.want) || tt.is != nil && !errors.Is(err, tt.is) {
+				t.Fatalf("error = %v, want it to contain %q and wrap %v", err, tt.want, tt.is)
 			}
 		})
-	}
-	_, err := Interpolate(map[string]any{"v": "${vars.big.all(x, vars.big.all(y, x == y))}"}, testCtx())
-	if !errors.Is(err, ErrCostLimit) {
-		t.Errorf("cost limit error %v is not ErrCostLimit", err)
 	}
 }
 
@@ -136,6 +131,7 @@ func TestItemExpr(t *testing.T) {
 		expr    string
 		want    bool
 		wantErr string
+		is      error // what the error must wrap, if anything
 	}{
 		{name: "threshold true", expr: "item.score >= vars.minScore", want: true},
 		{name: "threshold false", expr: "item.score < vars.minScore", want: false},
@@ -144,11 +140,11 @@ func TestItemExpr(t *testing.T) {
 		{name: "run", expr: "run.trigger == 'daily'", want: true},
 		{name: "dyn non-bool at runtime", expr: "item.city", wantErr: `evaluate "item.city": want a bool, got string`},
 		{name: "missing field", expr: "item.nope > 1", wantErr: "no such key: nope"},
-		{name: "cost limit", expr: "item.list.all(x, item.list.all(y, x == y))", wantErr: "CEL cost limit exceeded"},
+		{name: "cost limit", expr: "item.list.all(x, item.list.all(y, x == y))", wantErr: "CEL cost limit exceeded",
+			is: ErrCostLimit},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
 			e, err := CompileItem(tt.expr)
 			if err != nil {
 				t.Fatalf("CompileItem: %v", err)
@@ -158,8 +154,8 @@ func TestItemExpr(t *testing.T) {
 			}
 			got, err := e.Eval(item, env, vars, run)
 			if tt.wantErr != "" {
-				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
-					t.Fatalf("error = %v, want %q", err, tt.wantErr)
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) || tt.is != nil && !errors.Is(err, tt.is) {
+					t.Fatalf("error = %v, want %q wrapping %v", err, tt.wantErr, tt.is)
 				}
 				return
 			}
@@ -168,11 +164,7 @@ func TestItemExpr(t *testing.T) {
 			}
 		})
 	}
-	e, _ := CompileItem("item.list.all(x, item.list.all(y, x == y))")
-	if _, err := e.Eval(item, env, vars, run); !errors.Is(err, ErrCostLimit) {
-		t.Errorf("cost limit error %v is not ErrCostLimit", err)
-	}
-	e, _ = CompileItem("size(vars) == 0")
+	e, _ := CompileItem("size(vars) == 0")
 	if ok, err := e.Eval(nil, Envelope{}, nil, Run{}); !ok || err != nil {
 		t.Errorf("nil vars are an empty map: %v, %v", ok, err)
 	}
@@ -197,12 +189,22 @@ func TestCompileErrors(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
 			_, err := tt.compile(tt.expr)
 			if err == nil || !strings.Contains(err.Error(), tt.want) {
 				t.Fatalf("error = %v, want it to contain %q", err, tt.want)
 			}
 		})
+	}
+}
+
+// A source compiles once per environment: the same program serves every caller.
+func TestCompileCache(t *testing.T) {
+	t.Parallel()
+	a, errA := CompileItem("item.cached == 1")
+	b, errB := CompileItem("item.cached == 1")
+	r, errR := CompileRoute("item.cached == 1")
+	if errA != nil || errB != nil || errR != nil || a.prg != b.prg || r.prg == a.prg {
+		t.Fatalf("programs %p %p %p, errors %v %v %v: want one per environment", a.prg, b.prg, r.prg, errA, errB, errR)
 	}
 }
 

@@ -32,7 +32,6 @@ func TestTemplateRefs(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
 			got, err := TemplateRefs(tt.in)
 			if tt.wantErr != "" {
 				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
@@ -69,7 +68,6 @@ func TestCompileKey(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
 			k, err := CompileKey(tt.src)
 			if err == nil {
 				if k.String() != tt.src {

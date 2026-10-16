@@ -14,6 +14,8 @@ import (
 
 	"cel.dev/cel-go/cel"
 	"cel.dev/cel-go/interpreter"
+
+	"github.com/monolithiclab/millstream/internal/memo"
 )
 
 // CostLimit is the most CEL cost units one evaluation may spend.
@@ -77,21 +79,43 @@ var (
 	routeEnv  = newEnv(cel.Variable(varItem, cel.DynType))
 )
 
-// compile parses, type-checks and plans src in env.
+// compile parses, type-checks and plans src in env, once per process: compiling costs more than evaluating, and the
+// same sources come back (a step's config interpolated for each delivery, a revision's routes and filters for each
+// store and engine loading it). An AST is read only and a program safe for concurrent use, so callers share them.
 func compile(envFn func() (*cel.Env, error), src string) (*cel.Ast, cel.Program, error) {
 	env, err := envFn()
 	if err != nil {
 		return nil, nil, fmt.Errorf("build CEL environment: %w", err)
 	}
+	c := compiled.Get(compileKey{env, src}, func() compiledExpr { return compileIn(env, src) })
+	return c.ast, c.prg, c.err
+}
+
+func compileIn(env *cel.Env, src string) compiledExpr {
 	ast, iss := env.Compile(src)
 	if iss.Err() != nil {
-		return nil, nil, fmt.Errorf("compile %q: %s", src, strings.ReplaceAll(iss.Err().Error(), "\n", " "))
+		return compiledExpr{err: fmt.Errorf("compile %q: %s", src, strings.ReplaceAll(iss.Err().Error(), "\n", " "))}
 	}
 	prg, err := env.Program(ast, cel.CostLimit(CostLimit))
 	if err != nil {
-		return nil, nil, fmt.Errorf("plan %q: %w", src, err)
+		return compiledExpr{err: fmt.Errorf("plan %q: %w", src, err)}
 	}
-	return ast, prg, nil
+	return compiledExpr{ast: ast, prg: prg}
+}
+
+// compiled holds compile's results: a revision's sources, but nothing bounds how many revisions a long-lived process
+// applies.
+var compiled = memo.New[compileKey, compiledExpr](1024)
+
+type compileKey struct {
+	env *cel.Env
+	src string
+}
+
+type compiledExpr struct {
+	ast *cel.Ast
+	prg cel.Program
+	err error
 }
 
 // evalErr wraps an evaluation error, marking a cost limit breach with ErrCostLimit.
