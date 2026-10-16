@@ -192,8 +192,8 @@ func reviewPatterns(d *Data) []store.Insight {
 			ev["editRate"] = round(float64(s.editedApprovals) / float64(s.approved))
 		}
 		if len(s.times) > 0 {
-			ev["timeToDecisionP50Seconds"] = seconds(percentile(s.times, 0.5))
-			ev["timeToDecisionP95Seconds"] = seconds(percentile(s.times, 0.95))
+			ev["timeToDecisionP50Seconds"] = seconds(Percentile(s.times, 0.5))
+			ev["timeToDecisionP95Seconds"] = seconds(Percentile(s.times, 0.95))
 		}
 		if n := max(reached[step], decisions); n > 0 {
 			ev["interventionRate"] = round(float64(s.approved+s.rejected) / float64(n))

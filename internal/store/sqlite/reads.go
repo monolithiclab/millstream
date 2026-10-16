@@ -166,9 +166,12 @@ func (s *Store) Items(ctx context.Context, f store.ItemFilter) ([]store.Item, er
 	w.eq("stream", f.Stream)
 	w.eq("run_id", f.RunID)
 	w.in("id", f.IDs)
-	if f.Parent != "" {
-		w.conds = append(w.conds, "EXISTS (SELECT 1 FROM json_each(parents) WHERE value = ?)")
-		w.args = append(w.args, f.Parent)
+	if len(f.Parents) > 0 {
+		w.conds = append(w.conds, "EXISTS (SELECT 1 FROM json_each(parents) WHERE value IN (?"+
+			strings.Repeat(", ?", len(f.Parents)-1)+"))")
+		for _, id := range f.Parents {
+			w.args = append(w.args, id)
+		}
 	}
 	w.since("ts", f.Since)
 	if f.After > 0 {
@@ -371,14 +374,17 @@ func (s *Store) Package(ctx context.Context, hash string) ([]byte, error) {
 	return bundle, nil
 }
 
-// StreamCounts returns how many items each stream of a pipeline holds.
-func (s *Store) StreamCounts(ctx context.Context, pipelineName string) (map[string]int64, error) {
+// StreamCounts returns how many items each stream of a pipeline, or of one of its runs, holds.
+func (s *Store) StreamCounts(ctx context.Context, pipelineName, runID string) (map[string]int64, error) {
 	type count struct {
 		stream string
 		n      int64
 	}
-	counts, err := scan(ctx, s.read, `SELECT stream, COUNT(*) FROM items WHERE pipeline = ? GROUP BY stream`,
-		[]any{pipelineName}, func(rows *sql.Rows) (count, error) {
+	var w where
+	w.eq("pipeline", pipelineName)
+	w.eq("run_id", runID)
+	counts, err := scan(ctx, s.read, `SELECT stream, COUNT(*) FROM items`+w.String()+` GROUP BY stream`, w.args,
+		func(rows *sql.Rows) (count, error) {
 			var c count
 			err := rows.Scan(&c.stream, &c.n)
 			return c, err

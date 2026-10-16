@@ -153,7 +153,7 @@ func newLiveEnv(t *testing.T, opts BrokerOptions, kind int) *liveEnv {
 		t.Fatal(err)
 	}
 	logs := NewLogRing(4, t0)
-	srv, err := New(Options{Store: f.st, Broker: b, Logs: logs, Clock: f.clock, Now: f.clock.Now})
+	srv, err := New(Options{Store: f.st, Broker: b, Logs: logs, Clock: f.clock})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -495,21 +495,6 @@ func must2[A, B any](a A, b B, err error) (A, B) {
 		panic(err)
 	}
 	return a, b
-}
-
-func Test_p95(t *testing.T) {
-	for _, tt := range []struct {
-		in   []time.Duration
-		want time.Duration
-	}{
-		{nil, 0},
-		{[]time.Duration{3, 1, 2}, 3},
-		{[]time.Duration{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20}, 19},
-	} {
-		if got := p95(tt.in); got != tt.want {
-			t.Errorf("p95(%v) = %d, want %d", tt.in, got, tt.want)
-		}
-	}
 }
 
 // The live log tail: a delivery's records reach the ring through the handler, a reconnect within the ring gets

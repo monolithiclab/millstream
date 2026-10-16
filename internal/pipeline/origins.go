@@ -47,7 +47,7 @@ func origins(pkg *Package, producers map[string][]string, action func(string) *A
 	var out []Origin
 	for _, w := range producers[stream] {
 		s, a := p.Steps[w], action(w)
-		if a == nil || !slices.Contains(s.Out.targets(), stream) {
+		if a == nil || !slices.Contains(s.Out.Targets(), stream) {
 			continue // unresolved, or the stream is w's dead-letter stream, whose payload is not w's output
 		}
 		if !a.Builtin {

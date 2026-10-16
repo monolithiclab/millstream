@@ -4,7 +4,11 @@
 // compatibility) are diagnostics of Check, so one broken reference never hides the others.
 package pipeline
 
-import "time"
+import (
+	"maps"
+	"slices"
+	"time"
+)
 
 // Pipeline is a parsed pipeline file. Maps are keyed by the names the user chose.
 type Pipeline struct {
@@ -92,6 +96,17 @@ type Step struct {
 	// Lessons is the step's lessons file, relative to the package; Load fills in lessons/<step>.yaml when that
 	// file exists and the step sets none.
 	Lessons string
+}
+
+// FirstManualTrigger returns the name of the pipeline's first manual trigger by name: the one fired when none is
+// named (an API trigger, a package test). ok is false when it has none.
+func (p *Pipeline) FirstManualTrigger() (name string, ok bool) {
+	for _, n := range slices.Sorted(maps.Keys(p.Triggers)) {
+		if p.Triggers[n].Manual != nil {
+			return n, true
+		}
+	}
+	return "", false
 }
 
 // Out is where a step's outputs go: a list of streams that each receive every output, or route objects where the

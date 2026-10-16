@@ -588,8 +588,8 @@ type ItemFilter struct {
 	RunID    string
 	// IDs keeps the items with these ids.
 	IDs []string
-	// Parent keeps the items that have this item among their parents.
-	Parent string
+	// Parents keeps the items that have one of these items among their parents.
+	Parents []string
 	// Since keeps the items published at or after it.
 	Since time.Time
 	After int64

@@ -212,9 +212,9 @@ func stepReports(ds []store.Delivery, attempts []Attempt, now time.Time) []StepR
 		a := steps[name]
 		sr := StepReport{Step: name, Deliveries: len(a.latencies), FailedAttempts: a.failed, CostUSD: round6(a.cost)}
 		if n := len(a.latencies); n > 0 {
-			sr.P50Seconds = seconds(percentile(a.latencies, 0.5))
-			sr.P95Seconds = seconds(percentile(a.latencies, 0.95))
-			sr.MaxSeconds = seconds(percentile(a.latencies, 1))
+			sr.P50Seconds = seconds(Percentile(a.latencies, 0.5))
+			sr.P95Seconds = seconds(Percentile(a.latencies, 0.95))
+			sr.MaxSeconds = seconds(Percentile(a.latencies, 1))
 			sr.WaitSeconds = seconds(a.wait / time.Duration(n))
 			sr.WorkSeconds = seconds(a.work / time.Duration(n))
 		}

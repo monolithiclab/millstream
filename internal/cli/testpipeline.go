@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"maps"
 	"os"
 	"path"
 	"path/filepath"
@@ -129,13 +128,8 @@ func (c TestPipelineCmd) runTest(rt *Runtime, pkg *pipeline.Package, tc pipeline
 	p := pkg.Pipeline
 	trigger := tc.Trigger
 	if trigger == "" {
-		for _, name := range slices.Sorted(maps.Keys(p.Triggers)) {
-			if p.Triggers[name].Manual != nil {
-				trigger = name
-				break
-			}
-		}
-		if trigger == "" {
+		var ok bool
+		if trigger, ok = p.FirstManualTrigger(); !ok {
 			return nil, fmt.Errorf("no trigger given and pipeline %s has no manual trigger", p.Name)
 		}
 	}

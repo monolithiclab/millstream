@@ -227,10 +227,10 @@ func slowSteps(d *Data) []store.Insight {
 		}
 		regression := false
 		if w := window[step]; len(w) > 0 {
-			p95 := percentile(w, 0.95)
+			p95 := Percentile(w, 0.95)
 			ev["deliveries"], ev["p95Seconds"] = len(w), seconds(p95)
 			if b := baseline[step]; len(b) >= minSamples {
-				base := percentile(b, 0.95)
+				base := Percentile(b, 0.95)
 				ev["baselineP95Seconds"] = seconds(base)
 				regression = len(w) >= minSamples && float64(p95) >= regressionFactor*float64(base) &&
 					p95-base >= minRegression
@@ -503,8 +503,8 @@ func costs(d *Data) []store.Insight {
 	return out
 }
 
-// percentile returns the p-th percentile of ds (nearest rank).
-func percentile(ds []time.Duration, p float64) time.Duration {
+// Percentile returns the p-th percentile of ds (nearest rank); ds must not be empty.
+func Percentile(ds []time.Duration, p float64) time.Duration {
 	s := slices.Clone(ds)
 	slices.Sort(s)
 	rank := int(math.Ceil(p*float64(len(s)))) - 1

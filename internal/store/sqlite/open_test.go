@@ -199,7 +199,7 @@ func TestAPIReads(t *testing.T) {
 
 	l := e.leaseStep("crawl")
 	e.done(l, out("a", `{"score": 80}`), out("b", `{"score": 10}`))
-	children, err := e.s.Items(e.ctx, store.ItemFilter{Pipeline: "listings", Parent: l.Item.ID})
+	children, err := e.s.Items(e.ctx, store.ItemFilter{Pipeline: "listings", Parents: []string{l.Item.ID}})
 	if err != nil || len(children) != 4 { // two outputs, each on listings.raw and listings.audit
 		t.Fatalf("children = %v, %v", children, err)
 	}
@@ -222,9 +222,12 @@ func TestAPIReads(t *testing.T) {
 		t.Fatalf("done events of the run = %v, %v", evs, err)
 	}
 
-	counts, err := e.s.StreamCounts(e.ctx, "listings")
+	counts, err := e.s.StreamCounts(e.ctx, "listings", "")
 	if err != nil || counts["trigger.daily"] != 2 || counts["listings.raw"] != 2 {
 		t.Fatalf("StreamCounts = %v, %v", counts, err)
+	}
+	if counts, err = e.s.StreamCounts(e.ctx, "listings", l.RunID); err != nil || counts["trigger.daily"] != 1 {
+		t.Fatalf("StreamCounts of %s = %v, %v", l.RunID, counts, err)
 	}
 	stats, err := e.s.StepStats(e.ctx, "listings", t0)
 	if err != nil {

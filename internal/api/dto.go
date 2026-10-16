@@ -105,7 +105,7 @@ type Run struct {
 	CostUSD         float64           `json:"costUsd"`
 	Vars            map[string]any    `json:"vars"`
 	VarSources      map[string]string `json:"varSources"`
-	Items           map[string]int    `json:"items,omitempty"`
+	Items           map[string]int64  `json:"items,omitempty"`
 	OpenDeadLetters *int              `json:"openDeadLetters,omitempty"`
 }
 
@@ -338,11 +338,17 @@ func toRun(r store.Run) Run {
 	}
 }
 
+// nonNilMap is m, or an empty map for nil: objects are {} in JSON, never null.
 func nonNilMap[V any](m map[string]V) map[string]V {
 	if m == nil {
 		return map[string]V{}
 	}
 	return m
+}
+
+func toRevision(rev store.Revision, active store.RevisionID) Revision {
+	return Revision{ID: int64(rev.ID), Pipeline: rev.Pipeline, PackageHash: rev.PackageHash, AppliedAt: rev.AppliedAt,
+		Active: rev.ID == active}
 }
 
 func toItem(it store.Item) Item {
@@ -423,7 +429,7 @@ func graph(p *pipeline.Pipeline, ps *store.PipelineState) Graph {
 	for _, name := range slices.Sorted(maps.Keys(p.Steps)) {
 		st := p.Steps[name]
 		step := Step{Name: name, Action: st.Action, Builtin: pipeline.IsBuiltin(st.Action), In: orEmpty(st.In),
-			Out: stepOut(st), DLQ: st.DLQ, Concurrency: max(st.Concurrency, 1)}
+			Out: orEmpty(st.Out.Targets()), DLQ: st.DLQ, Concurrency: max(st.Concurrency, 1)}
 		if ps != nil {
 			step.Paused = ps.Paused || slices.Contains(ps.PausedSteps, name)
 			step.PauseCause = ps.PauseCauses[name]
@@ -441,15 +447,4 @@ func graph(p *pipeline.Pipeline, ps *store.PipelineState) Graph {
 	}
 	g.Streams = slices.Sorted(maps.Keys(streams))
 	return g
-}
-
-// stepOut is every stream a step writes to: its output streams, or its routes' targets, in order, once each.
-func stepOut(st pipeline.Step) []string {
-	out := slices.Clone(st.Out.Streams)
-	for _, r := range st.Out.Routes {
-		if !slices.Contains(out, r.Out) {
-			out = append(out, r.Out)
-		}
-	}
-	return orEmpty(out)
 }

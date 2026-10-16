@@ -10,7 +10,6 @@ import (
 
 	"github.com/monolithiclab/millstream/internal/engine"
 	"github.com/monolithiclab/millstream/internal/pipeline"
-	"github.com/monolithiclab/millstream/internal/review"
 	"github.com/monolithiclab/millstream/internal/store"
 )
 
@@ -72,13 +71,8 @@ func (s *Server) triggerRun(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return err
 		}
-		for _, t := range slices.Sorted(maps.Keys(p.Triggers)) {
-			if p.Triggers[t].Manual != nil {
-				req.Trigger = t
-				break
-			}
-		}
-		if req.Trigger == "" {
+		var ok bool
+		if req.Trigger, ok = p.FirstManualTrigger(); !ok {
 			return invalidf("pipeline %s has no manual trigger: name one", name)
 		}
 	}
@@ -278,17 +272,7 @@ func (s *Server) decideReview(w http.ResponseWriter, r *http.Request) error {
 	if err := decodeBody(w, r, &req); err != nil {
 		return err
 	}
-	if req.Decision != store.DecisionApprove && req.Decision != store.DecisionReject {
-		return invalidf("decision %q: want approve or reject", req.Decision)
-	}
-	if len(req.Patch) > 0 && string(req.Patch) != "null" {
-		if req.Decision == store.DecisionReject {
-			return invalidf("patch goes with approve, not reject")
-		}
-		if _, err := review.ParsePatch(req.Patch); err != nil {
-			return invalidf("patch: %s", err.Error())
-		}
-	} else {
+	if string(req.Patch) == "null" { // the store checks the decision and the edit
 		req.Patch = nil
 	}
 	reviewer, err := s.user(r)

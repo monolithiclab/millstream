@@ -85,13 +85,38 @@ func decodeCursor(r *http.Request, kind string, n int) ([]int64, error) {
 	return out, nil
 }
 
+// activePipeline returns a pipeline's state and its active revision, record and decoded.
+func activePipeline(ctx context.Context, st store.Store, name string) (store.PipelineState, store.Revision,
+	*pipeline.Pipeline, error,
+) {
+	ps, err := st.PipelineState(ctx, name)
+	if err != nil {
+		return ps, store.Revision{}, nil, err
+	}
+	rev, err := st.Revision(ctx, ps.ActiveRevision)
+	if err != nil {
+		return ps, rev, nil, err
+	}
+	p, err := rev.Decode()
+	return ps, rev, p, err
+}
+
+// pageOf makes a page of the first n of rows, read n+1 at most: a row past n means a next page, whose cursor is
+// the last row's.
+func pageOf[T, U any](rows []T, n int, conv func(T) U, cursor func(T) string) Page[U] {
+	page := Page[U]{Items: make([]U, 0, min(len(rows), n))}
+	for _, row := range rows[:min(len(rows), n)] {
+		page.Items = append(page.Items, conv(row))
+	}
+	if len(rows) > n {
+		page.Next = cursor(rows[n-1])
+	}
+	return page
+}
+
 // pipelineState returns the state of the pipeline the request names, and its active revision decoded.
 func (s *Server) pipelineState(ctx context.Context, name string) (store.PipelineState, *pipeline.Pipeline, error) {
-	ps, err := s.st.PipelineState(ctx, name)
-	if err != nil {
-		return ps, nil, err
-	}
-	p, err := s.decodeRevision(ctx, ps.ActiveRevision)
+	ps, _, p, err := activePipeline(ctx, s.st, name)
 	return ps, p, err
 }
 
@@ -176,8 +201,7 @@ func (s *Server) listRevisions(w http.ResponseWriter, r *http.Request) error {
 	}
 	out := make([]Revision, 0, len(revs))
 	for _, rev := range revs {
-		out = append(out, Revision{ID: int64(rev.ID), Pipeline: rev.Pipeline, PackageHash: rev.PackageHash,
-			AppliedAt: rev.AppliedAt, Active: rev.ID == active})
+		out = append(out, toRevision(rev, active))
 	}
 	writeJSON(w, http.StatusOK, out)
 	return nil
@@ -205,8 +229,9 @@ func (s *Server) getRevision(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	g := graph(p, nil)
-	writeJSON(w, http.StatusOK, Revision{ID: id, Pipeline: name, PackageHash: rev.PackageHash, AppliedAt: rev.AppliedAt,
-		Active: rev.ID == active, Graph: &g})
+	out := toRevision(rev, active)
+	out.Graph = &g
+	writeJSON(w, http.StatusOK, out)
 	return nil
 }
 
@@ -216,7 +241,7 @@ func (s *Server) listStreams(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	counts, err := s.st.StreamCounts(r.Context(), name)
+	counts, err := s.st.StreamCounts(r.Context(), name, "")
 	if err != nil {
 		return err
 	}
@@ -271,16 +296,9 @@ func (s *Server) listRuns(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	page := Page[Run]{Items: []Run{}}
-	for i, run := range runs {
-		if i == n {
-			last := runs[n-1]
-			page.Next = encodeCursor("runs", last.StartedAt.UnixNano(), last.Seq)
-			break
-		}
-		page.Items = append(page.Items, toRun(run))
-	}
-	writeJSON(w, http.StatusOK, page)
+	writeJSON(w, http.StatusOK, pageOf(runs, n, toRun, func(r store.Run) string {
+		return encodeCursor("runs", r.StartedAt.UnixNano(), r.Seq)
+	}))
 	return nil
 }
 
@@ -289,7 +307,7 @@ func (s *Server) getRun(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	items, err := s.st.Items(r.Context(), store.ItemFilter{Pipeline: run.Pipeline, RunID: run.ID})
+	counts, err := s.st.StreamCounts(r.Context(), run.Pipeline, run.ID)
 	if err != nil {
 		return err
 	}
@@ -299,10 +317,7 @@ func (s *Server) getRun(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	out := toRun(run)
-	out.Items = map[string]int{}
-	for _, it := range items {
-		out.Items[it.Stream]++
-	}
+	out.Items = counts
 	open := len(dls)
 	out.OpenDeadLetters = &open
 	writeJSON(w, http.StatusOK, out)
@@ -310,7 +325,7 @@ func (s *Server) getRun(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (s *Server) getRunReport(w http.ResponseWriter, r *http.Request) error {
-	rep, err := insights.BuildReport(r.Context(), s.st, r.PathValue("pipeline"), r.PathValue("run"), s.opts.Now())
+	rep, err := insights.BuildReport(r.Context(), s.st, r.PathValue("pipeline"), r.PathValue("run"), s.opts.Clock.Now())
 	if err != nil {
 		return err
 	}
@@ -502,27 +517,25 @@ func (s *Server) getLineage(w http.ResponseWriter, r *http.Request) error {
 	if len(frontier) > 0 && !out.Truncated {
 		out.Truncated = slices.ContainsFunc(frontier, func(id string) bool { return !seen[id] })
 	}
-	// Down: each generation's children, one read per item.
+	// Down: each generation's children, read together.
 	level := []string{it.ID}
 	for d := 0; d < depth && len(level) > 0; d++ {
 		var next []string
-		for _, id := range level {
-			children, err := s.st.Items(r.Context(), store.ItemFilter{Pipeline: name, Parent: id})
-			if err != nil {
-				return err
+		children, err := s.st.Items(r.Context(), store.ItemFilter{Pipeline: name, Parents: level})
+		if err != nil {
+			return err
+		}
+		for _, c := range children {
+			if seen[c.ID] {
+				continue
 			}
-			for _, c := range children {
-				if seen[c.ID] {
-					continue
-				}
-				if len(out.Down) == maxLineageNodes {
-					out.Truncated = true
-					break
-				}
-				seen[c.ID] = true
-				out.Down = append(out.Down, toLineageNode(c))
-				next = append(next, c.ID)
+			if len(out.Down) == maxLineageNodes {
+				out.Truncated = true
+				break
 			}
+			seen[c.ID] = true
+			out.Down = append(out.Down, toLineageNode(c))
+			next = append(next, c.ID)
 		}
 		level = next
 		if d == depth-1 && len(level) > 0 {
@@ -767,7 +780,9 @@ func groupDeadLetters(dls []store.DeadLetter) []*DeadLetterGroup {
 			groups = append(groups, g)
 		}
 		g.Count++
-		g.FirstSeen = minTime(g.FirstSeen, dl.CreatedAt)
+		if dl.CreatedAt.Before(g.FirstSeen) {
+			g.FirstSeen = dl.CreatedAt
+		}
 		if dl.CreatedAt.After(g.LastSeen) {
 			g.LastSeen = dl.CreatedAt
 		}
@@ -780,20 +795,9 @@ func groupDeadLetters(dls []store.DeadLetter) []*DeadLetterGroup {
 	return groups
 }
 
-func minTime(a, b time.Time) time.Time {
-	if b.Before(a) {
-		return b
-	}
-	return a
-}
-
 func (s *Server) listLessons(w http.ResponseWriter, r *http.Request) error {
 	name := r.PathValue("pipeline")
-	ps, p, err := s.pipelineState(r.Context(), name)
-	if err != nil {
-		return err
-	}
-	rev, err := s.st.Revision(r.Context(), ps.ActiveRevision)
+	_, rev, p, err := activePipeline(r.Context(), s.st, name)
 	if err != nil {
 		return err
 	}
@@ -854,15 +858,9 @@ func (s *Server) listInbox(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	page := Page[Review]{Items: []Review{}}
-	for i, rv := range reviews {
-		if i == n {
-			page.Next = encodeCursor("reviews", reviews[n-1].Seq)
-			break
-		}
-		page.Items = append(page.Items, toReview(rv))
-	}
-	writeJSON(w, http.StatusOK, page)
+	writeJSON(w, http.StatusOK, pageOf(reviews, n, toReview, func(r store.Review) string {
+		return encodeCursor("reviews", r.Seq)
+	}))
 	return nil
 }
 
@@ -881,15 +879,9 @@ func (s *Server) listSamples(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	page := Page[Sample]{Items: []Sample{}}
-	for i, sm := range samples {
-		if i == n {
-			page.Next = encodeCursor("samples", samples[n-1].Seq)
-			break
-		}
-		page.Items = append(page.Items, toSample(sm))
-	}
-	writeJSON(w, http.StatusOK, page)
+	writeJSON(w, http.StatusOK, pageOf(samples, n, toSample, func(s store.ReviewSample) string {
+		return encodeCursor("samples", s.Seq)
+	}))
 	return nil
 }
 
@@ -914,7 +906,7 @@ func (s *Server) listInsights(w http.ResponseWriter, r *http.Request) error {
 // hour by default.
 func (s *Server) timeRange(r *http.Request) (time.Time, time.Time, error) {
 	q := r.URL.Query()
-	now := s.opts.Now()
+	now := s.opts.Clock.Now()
 	from, to := now.Add(-time.Hour), now
 	if v := q.Get("since"); v != "" {
 		d, err := pipeline.ParseDuration(v)
@@ -1006,13 +998,12 @@ func (s *Server) listMetricNames(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	names := []string{}
+	names := make([]string, 0, len(rollups))
 	for _, ru := range rollups {
-		if !slices.Contains(names, ru.Name) {
-			names = append(names, ru.Name)
-		}
+		names = append(names, ru.Name)
 	}
 	slices.Sort(names)
+	names = slices.Compact(names)
 	writeJSON(w, http.StatusOK, names)
 	return nil
 }

@@ -58,7 +58,7 @@ func (p *Pipeline) streamIndex() (producers, consumers map[string][]string) {
 		for _, in := range s.In {
 			consumers[in] = append(consumers[in], name)
 		}
-		for _, out := range s.Out.targets() {
+		for _, out := range s.Out.Targets() {
 			producers[out] = append(producers[out], name)
 		}
 	}
@@ -123,8 +123,8 @@ func buildGraph(p *Pipeline) ([]graphNode, []graphEdge) {
 	return nodes, edges
 }
 
-// targets returns every stream out may write to, routes included, without duplicates, in declaration order.
-func (o Out) targets() []string {
+// Targets returns every stream out may write to, routes included, without duplicates, in declaration order.
+func (o Out) Targets() []string {
 	out := slices.Clone(o.Streams)
 	for _, r := range o.Routes {
 		if !slices.Contains(out, r.Out) {

@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/monolithiclab/millstream/internal/insights"
 	"github.com/monolithiclab/millstream/internal/store"
 )
 
@@ -474,15 +475,7 @@ func (b *Broker) snapshot(ctx context.Context, pipelineName string) (PipelineSna
 	b.mu.Lock()
 	seq := b.head // read before the state: the snapshot reflects at least the events up to seq
 	b.mu.Unlock()
-	ps, err := b.st.PipelineState(ctx, pipelineName)
-	if err != nil {
-		return PipelineSnapshot{}, err
-	}
-	rev, err := b.st.Revision(ctx, ps.ActiveRevision)
-	if err != nil {
-		return PipelineSnapshot{}, err
-	}
-	p, err := rev.Decode()
+	ps, _, p, err := activePipeline(ctx, b.st, pipelineName)
 	if err != nil {
 		return PipelineSnapshot{}, err
 	}
@@ -502,22 +495,12 @@ func (b *Broker) snapshot(ctx context.Context, pipelineName string) (PipelineSna
 		st := byStep[name]
 		step := StepSnapshot{Step: name, Paused: ps.Paused || slices.Contains(ps.PausedSteps, name),
 			Queued: st.Pending, InFlight: st.Leased, AwaitingReview: st.AwaitingReview,
-			ThroughputPerMin: float64(st.Finished) / b.opts.Window.Minutes(), P95LatencyMs: p95(st.Latencies).Milliseconds()}
+			ThroughputPerMin: float64(st.Finished) / b.opts.Window.Minutes()}
 		if st.Finished > 0 {
 			step.ErrorRate = float64(st.Dead) / float64(st.Finished)
+			step.P95LatencyMs = insights.Percentile(st.Latencies, 0.95).Milliseconds()
 		}
 		snap.Steps = append(snap.Steps, step)
 	}
 	return snap, nil
-}
-
-// p95 is the 95th percentile of ds by the nearest rank, zero for none.
-func p95(ds []time.Duration) time.Duration {
-	if len(ds) == 0 {
-		return 0
-	}
-	s := slices.Clone(ds)
-	slices.Sort(s)
-	rank := (95*len(s) + 99) / 100 // ceil(0.95 n)
-	return s[rank-1]
 }

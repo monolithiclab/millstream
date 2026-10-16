@@ -67,9 +67,7 @@ type Options struct {
 	Version string
 	// Env looks up $USER, the reviewer when a request names none; nil means no environment.
 	Env func(string) (string, bool)
-	// Now is the clock of relative ranges and run reports; nil means time.Now.
-	Now func() time.Time
-	// Clock paces the live streams' heartbeats; nil means SystemClock.
+	// Clock is the clock of relative ranges, run reports and the live streams' heartbeats; nil means SystemClock.
 	Clock Clock
 	// Heartbeat is how often a quiet live stream sends a comment; zero means DefaultHeartbeat.
 	Heartbeat time.Duration
@@ -150,9 +148,6 @@ func New(opts Options) (*Server, error) {
 	}
 	if opts.Env == nil {
 		opts.Env = func(string) (string, bool) { return "", false }
-	}
-	if opts.Now == nil {
-		opts.Now = time.Now
 	}
 	if opts.Clock == nil {
 		opts.Clock = SystemClock{}

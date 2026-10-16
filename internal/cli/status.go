@@ -68,7 +68,7 @@ func (c StatusCmd) Run(rt *Runtime) error {
 			if err != nil {
 				return err
 			}
-			total := 0
+			var total int64
 			for _, n := range counts {
 				total += n
 			}
@@ -80,16 +80,8 @@ func (c StatusCmd) Run(rt *Runtime) error {
 }
 
 // streamCounts counts a run's items per stream.
-func streamCounts(ctx context.Context, st store.Store, r store.Run) (map[string]int, error) {
-	items, err := st.Items(ctx, store.ItemFilter{Pipeline: r.Pipeline, RunID: r.ID})
-	if err != nil {
-		return nil, err
-	}
-	counts := map[string]int{}
-	for _, it := range items {
-		counts[it.Stream]++
-	}
-	return counts, nil
+func streamCounts(ctx context.Context, st store.Store, r store.Run) (map[string]int64, error) {
+	return st.StreamCounts(ctx, r.Pipeline, r.ID)
 }
 
 // TailCmd is "millstream tail".

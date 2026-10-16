@@ -144,8 +144,9 @@ type Store interface {
 	Revisions(ctx context.Context, pipeline string) ([]Revision, error)
 	// Package returns the bundle of the package applied under hash.
 	Package(ctx context.Context, hash string) ([]byte, error)
-	// StreamCounts returns how many items each stream of a pipeline holds, by stream.
-	StreamCounts(ctx context.Context, pipeline string) (map[string]int64, error)
+	// StreamCounts returns how many items each stream of a pipeline holds, by stream: those of one run when runID
+	// is set.
+	StreamCounts(ctx context.Context, pipeline, runID string) (map[string]int64, error)
 	// StepStats returns each step's deliveries by state now, and those that finished since the instant given, by
 	// step: the live state of a pipeline (spec section 12.1).
 	StepStats(ctx context.Context, pipeline string, since time.Time) ([]StepStats, error)
