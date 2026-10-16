@@ -1,7 +1,6 @@
 package sqlstore
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
@@ -20,20 +19,8 @@ const FailpointImportCopy = "streamImport.copy"
 var Failpoints = []string{FailpointImportCopy}
 
 // setImports records the streams p imports as its active revision's (spec section 4.12), replacing the rows of
-// the revision it supersedes, and the variables of the runs they open.
-func (w *wtx) setImports(p *pipeline.Pipeline, vars map[string]any, sources map[string]string) error {
-	varsJSON, err := json.Marshal(nonNil(vars))
-	if err != nil {
-		return fmt.Errorf("encode import vars: %w", err)
-	}
-	sourcesJSON, err := json.Marshal(nonNil(sources))
-	if err != nil {
-		return fmt.Errorf("encode import var sources: %w", err)
-	}
-	if _, err := w.exec(`UPDATE pipelines SET vars = ?, var_sources = ? WHERE id = ?`, string(varsJSON),
-		string(sourcesJSON), p.Name); err != nil {
-		return err
-	}
+// the revision it supersedes: every unit that changes a pipeline's active revision calls it.
+func (w *wtx) setImports(p *pipeline.Pipeline) error {
 	if _, err := w.exec(`DELETE FROM stream_imports WHERE consumer = ?`, p.Name); err != nil {
 		return err
 	}
@@ -132,8 +119,8 @@ func (w *wtx) importRun(imp importer, producer *runRow) (*runRow, *revision, err
 	}
 	var revID store.RevisionID
 	var vars, sources string
-	if err := w.queryRow(`SELECT active_revision, vars, var_sources FROM pipelines WHERE id = ?`, imp.consumer).
-		Scan(&revID, &vars, &sources); err != nil {
+	if err := w.queryRow(`SELECT p.active_revision, r.vars, r.var_sources FROM pipelines p
+		JOIN revisions r ON r.id = p.active_revision WHERE p.id = ?`, imp.consumer).Scan(&revID, &vars, &sources); err != nil {
 		return nil, nil, notFound(err, "pipeline "+imp.consumer)
 	}
 	rev, err := w.revision(revID)

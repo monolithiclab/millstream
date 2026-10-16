@@ -28,13 +28,9 @@ func (s *Store) StartReplay(ctx context.Context, r store.ReplayStart) (int64, bo
 		return 0, false, fmt.Errorf("start replay: pipeline, a step or a stream, run id and key are required: %w",
 			store.ErrInvalid)
 	}
-	vars, err := json.Marshal(nonNil(r.Vars))
+	vars, sources, err := encodeVars(r.Vars, r.VarSources)
 	if err != nil {
-		return 0, false, fmt.Errorf("start replay: encode vars: %w", err)
-	}
-	sources, err := json.Marshal(nonNil(r.VarSources))
-	if err != nil {
-		return 0, false, fmt.Errorf("start replay: encode var sources: %w", err)
+		return 0, false, fmt.Errorf("start replay: %w", err)
 	}
 	var (
 		generation int64
@@ -89,8 +85,8 @@ func (s *Store) StartReplay(ctx context.Context, r store.ReplayStart) (int64, bo
 		}
 		if _, err := w.exec(`INSERT INTO runs (pipeline, id, revision, trigger, trigger_key, trigger_source, kind,
 			generation, vars, var_sources, state, started_at) VALUES (?, ?, ?, '', ?, ?, ?, ?, ?, ?, ?, ?)`,
-			r.Pipeline, r.RunID, revID, r.Key, store.SourceManual, store.RunKindReplay, generation, string(vars),
-			string(sources), store.RunRunning, w.ts()); err != nil {
+			r.Pipeline, r.RunID, revID, r.Key, store.SourceManual, store.RunKindReplay, generation, vars,
+			sources, store.RunRunning, w.ts()); err != nil {
 			return err
 		}
 		data := map[string]any{"kind": store.RunKindReplay, "key": r.Key, "revision": revID, "generation": generation,

@@ -13,8 +13,9 @@ import (
 )
 
 // ApplyRevision stores the package, makes its revision active and starts the steps the pipeline marks paused
-// paused, unless their pause state was already set. It records the streams the revision imports and the variables
-// of the runs they open (spec section 4.12), replacing those variables when the package is already active.
+// paused, unless their pause state was already set. It records the streams the revision imports, and keeps with the
+// revision the variables of the runs they open (spec section 4.12), replacing them when the package is already
+// active.
 func (s *Store) ApplyRevision(ctx context.Context, pkg store.PackageRecord) (store.RevisionID, error) {
 	if pkg.Pipeline == nil || pkg.Pipeline.Name == "" || pkg.Hash == "" {
 		return 0, fmt.Errorf("apply revision: a pipeline with a name and a package hash: %w", store.ErrInvalid)
@@ -28,6 +29,10 @@ func (s *Store) ApplyRevision(ctx context.Context, pkg store.PackageRecord) (sto
 	if bundle == nil {
 		bundle = []byte{}
 	}
+	vars, sources, err := encodeVars(pkg.Vars, pkg.VarSources)
+	if err != nil {
+		return 0, fmt.Errorf("apply revision: %w", err)
+	}
 	var id store.RevisionID
 	err = s.submit(ctx, unitApplyRevision, func(w *wtx) error {
 		var activeHash string
@@ -35,7 +40,11 @@ func (s *Store) ApplyRevision(ctx context.Context, pkg store.PackageRecord) (sto
 			JOIN revisions r ON r.id = p.active_revision WHERE p.id = ?`, name).Scan(&id, &activeHash)
 		switch {
 		case err == nil && activeHash == pkg.Hash:
-			return w.setImports(pkg.Pipeline, pkg.Vars, pkg.VarSources)
+			if _, err := w.exec(`UPDATE revisions SET vars = ?, var_sources = ? WHERE id = ?`, vars, sources,
+				id); err != nil {
+				return err
+			}
+			return w.setImports(pkg.Pipeline)
 		case err != nil && !errors.Is(err, sql.ErrNoRows):
 			return fmt.Errorf("read active revision: %w", err)
 		}
@@ -50,8 +59,8 @@ func (s *Store) ApplyRevision(ctx context.Context, pkg store.PackageRecord) (sto
 		// Numbered after the last revision, as events are: a revision rolled back gives its number back, where a
 		// Postgres sequence would leave a gap and number the next one differently after a crash.
 		rev, err := w.insertKey(`INSERT INTO revisions (id, pipeline, package_hash, pipeline_json, applied_at, message,
-			state) VALUES ((SELECT COALESCE(MAX(id), 0) + 1 FROM revisions), ?, ?, ?, ?, ?, 'active')`, "id",
-			name, pkg.Hash, string(data), w.ts(), pkg.Message)
+			state, vars, var_sources) VALUES ((SELECT COALESCE(MAX(id), 0) + 1 FROM revisions), ?, ?, ?, ?, ?, 'active',
+			?, ?)`, "id", name, pkg.Hash, string(data), w.ts(), pkg.Message, vars, sources)
 		if err != nil {
 			return fmt.Errorf("insert revision: %w", err)
 		}
@@ -60,7 +69,7 @@ func (s *Store) ApplyRevision(ctx context.Context, pkg store.PackageRecord) (sto
 			ON CONFLICT (id) DO UPDATE SET active_revision = excluded.active_revision`, name, id); err != nil {
 			return err
 		}
-		if err := w.setImports(pkg.Pipeline, pkg.Vars, pkg.VarSources); err != nil {
+		if err := w.setImports(pkg.Pipeline); err != nil {
 			return err
 		}
 		for stepName, step := range pkg.Pipeline.Steps {
@@ -86,13 +95,9 @@ func (s *Store) Fire(ctx context.Context, f store.Firing) (bool, error) {
 	if err != nil {
 		return false, fmt.Errorf("fire: %w", err)
 	}
-	vars, err := json.Marshal(nonNil(f.Vars))
+	vars, sources, err := encodeVars(f.Vars, f.VarSources)
 	if err != nil {
-		return false, fmt.Errorf("fire: encode vars: %w", err)
-	}
-	sources, err := json.Marshal(nonNil(f.VarSources))
-	if err != nil {
-		return false, fmt.Errorf("fire: encode var sources: %w", err)
+		return false, fmt.Errorf("fire: %w", err)
 	}
 	kind := f.Kind
 	if kind == "" {
@@ -144,8 +149,8 @@ func (s *Store) Fire(ctx context.Context, f store.Firing) (bool, error) {
 		if _, err := w.exec(`INSERT INTO runs (pipeline, id, revision, trigger, trigger_key, trigger_source,
 			scheduled_at, kind, generation, vars, var_sources, state, started_at)
 			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			f.Pipeline, f.RunID, revID, f.Trigger, f.Key, source, scheduledAt, kind, f.Generation, string(vars),
-			string(sources), store.RunRunning, w.ts()); err != nil {
+			f.Pipeline, f.RunID, revID, f.Trigger, f.Key, source, scheduledAt, kind, f.Generation, vars,
+			sources, store.RunRunning, w.ts()); err != nil {
 			return err
 		}
 		run := &runRow{pipeline: f.Pipeline, id: f.RunID, generation: f.Generation}
@@ -227,7 +232,8 @@ func (s *Store) Disable(ctx context.Context, pipelineName string) error {
 }
 
 // Rollback is the Rollback unit: it makes an earlier revision of the pipeline its active one again. Runs keep the
-// revision they started on; the runs started from now on take the one reactivated.
+// revision they started on; the runs started from now on take the one reactivated, and so do the runs its imported
+// streams open, with the variables kept with it (spec section 4.12).
 func (s *Store) Rollback(ctx context.Context, pipelineName string, to store.RevisionID) (store.RevisionID, error) {
 	var id store.RevisionID
 	err := s.submit(ctx, unitRollback, func(w *wtx) error {
@@ -247,10 +253,12 @@ func (s *Store) Rollback(ctx context.Context, pipelineName string, to store.Revi
 				return err
 			}
 		}
-		var one int
-		if err := w.queryRow(`SELECT 1 FROM revisions WHERE id = ? AND pipeline = ?`, id, pipelineName).
-			Scan(&one); err != nil {
-			return notFound(err, fmt.Sprintf("revision %d of %s", id, pipelineName))
+		rev, err := w.revision(id)
+		switch {
+		case errors.Is(err, store.ErrNotFound) || err == nil && rev.p.Name != pipelineName:
+			return fmt.Errorf("revision %d of %s: %w", id, pipelineName, store.ErrNotFound)
+		case err != nil:
+			return err
 		}
 		if id == active {
 			return fmt.Errorf("revision %d is already the active revision of %s: %w", id, pipelineName, store.ErrConflict)
@@ -265,9 +273,25 @@ func (s *Store) Rollback(ctx context.Context, pipelineName string, to store.Revi
 		if _, err := w.exec(`UPDATE pipelines SET active_revision = ? WHERE id = ?`, id, pipelineName); err != nil {
 			return err
 		}
+		if err := w.setImports(rev.p); err != nil {
+			return err
+		}
 		return w.event(pipelineName, "", store.EventRolledBack, map[string]any{"revision": id, "from": active})
 	})
 	return id, err
+}
+
+// encodeVars encodes resolved variables and their sources as JSON objects, empty ones for nil maps.
+func encodeVars(vars map[string]any, sources map[string]string) (string, string, error) {
+	v, err := json.Marshal(nonNil(vars))
+	if err != nil {
+		return "", "", fmt.Errorf("encode vars: %w", err)
+	}
+	src, err := json.Marshal(nonNil(sources))
+	if err != nil {
+		return "", "", fmt.Errorf("encode var sources: %w", err)
+	}
+	return string(v), string(src), nil
 }
 
 func nonNil[V any](m map[string]V) map[string]V {

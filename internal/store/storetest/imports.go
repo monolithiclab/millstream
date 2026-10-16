@@ -89,12 +89,14 @@ func (e *env) leaseIn(pipelineName, step string) store.Lease {
 }
 
 // applyVars applies a pipeline with the variables of the runs its imports open.
-func (e *env) applyVars(src string, vars map[string]any) {
+func (e *env) applyVars(src string, vars map[string]any) store.RevisionID {
 	e.t.Helper()
-	if _, err := e.s.ApplyRevision(e.ctx, store.PackageRecord{Hash: hashOf(src), Bundle: []byte(src),
-		Pipeline: parse(e.t, src), Vars: vars, VarSources: map[string]string{"tag": "env"}}); err != nil {
+	id, err := e.s.ApplyRevision(e.ctx, store.PackageRecord{Hash: hashOf(src), Bundle: []byte(src),
+		Pipeline: parse(e.t, src), Vars: vars, VarSources: map[string]string{"tag": "env"}})
+	if err != nil {
 		e.t.Fatalf("ApplyRevision: %v", err)
 	}
+	return id
 }
 
 // runIn returns a run of a pipeline, failing when it does not exist.
@@ -390,5 +392,31 @@ func TestImportBackfill(t *testing.T, open Opener) {
 		if !errors.Is(err, tc.target) {
 			t.Errorf("%s: %v, want %v", tc.name, err, tc.target)
 		}
+	}
+}
+
+// TestImportFollowsRollback: the streams a pipeline imports, and the variables of the runs they open, are its
+// active revision's, a rollback's included (spec section 4.12): rolled back to a revision that imports, it receives
+// again with that revision's variables; rolled forward to one that does not, it receives nothing.
+func TestImportFollowsRollback(t *testing.T, open Opener) {
+	e := newEnv(t, open, srcPipeline)
+	importing := e.applyVars(dealPipeline, map[string]any{"tag": "first"})
+	dropped := e.applyVars(strings.Replace(dealPipeline, "stream: listings", "stream: nothing", 1),
+		map[string]any{"tag": "second"})
+	if _, err := e.s.Rollback(e.ctx, "deal", 0); err != nil {
+		t.Fatal(err)
+	}
+	e.firePipeline("src", "go", "r1")
+	e.done(e.leaseIn("src", "crawl"), out("a", `{}`))
+	if r := e.runIn("deal", ids.ImportRun("approved", "r1")); r.Revision != importing || r.Vars["tag"] != "first" {
+		t.Fatalf("import run after the rollback = %+v", r)
+	}
+	if _, err := e.s.Rollback(e.ctx, "deal", dropped); err != nil {
+		t.Fatal(err)
+	}
+	e.firePipeline("src", "go", "r2")
+	e.done(e.leaseIn("src", "crawl"), out("b", `{}`))
+	if _, err := e.s.Run(e.ctx, "deal", ids.ImportRun("approved", "r2")); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("import run on a revision that does not import the stream: %v", err)
 	}
 }

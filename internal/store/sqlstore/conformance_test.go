@@ -296,3 +296,7 @@ func TestImportProducerReplay(t *testing.T) {
 func TestImportBackfill(t *testing.T) {
 	storetest.TestImportBackfill(t, memoryStore)
 }
+
+func TestImportFollowsRollback(t *testing.T) {
+	storetest.TestImportFollowsRollback(t, memoryStore)
+}

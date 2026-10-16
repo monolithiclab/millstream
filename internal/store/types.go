@@ -177,7 +177,8 @@ type PackageRecord struct {
 	Message string
 	// Vars and VarSources are the variables of the runs the pipeline's imported streams open, resolved by whoever
 	// applies the package as a firing would resolve them (spec section 4.12): such a run opens inside a producer's
-	// Done, where no environment is read. Applying the active package again replaces them.
+	// Done, where no environment is read. They are kept with the revision, so a rollback to it brings them back;
+	// applying the active package again replaces them.
 	Vars       map[string]any
 	VarSources map[string]string
 }

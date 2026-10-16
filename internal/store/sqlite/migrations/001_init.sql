@@ -19,19 +19,19 @@ CREATE TABLE revisions (
     pipeline_json TEXT NOT NULL,
     applied_at    TEXT NOT NULL,
     message       TEXT NOT NULL DEFAULT '', -- apply --message
-    state         TEXT NOT NULL -- active | superseded
+    state         TEXT NOT NULL, -- active | superseded
+    vars          TEXT NOT NULL DEFAULT '{}', -- the variables of the runs its imports open, resolved at apply
+    var_sources   TEXT NOT NULL DEFAULT '{}'
 );
 
 CREATE TABLE pipelines (
     id              TEXT PRIMARY KEY,
     active_revision INTEGER NOT NULL REFERENCES revisions (id),
-    state           TEXT NOT NULL, -- active | paused | disabled
-    vars            TEXT NOT NULL DEFAULT '{}', -- the variables of the runs its imports open, resolved at apply
-    var_sources     TEXT NOT NULL DEFAULT '{}'
+    state           TEXT NOT NULL -- active | paused | disabled
 );
 
 -- The streams each pipeline's active revision imports (spec section 4.12): the Done unit copies a producer's new
--- item on producer_stream to each consumer's stream. ApplyRevision rewrites a consumer's rows.
+-- item on producer_stream to each consumer's stream. ApplyRevision and Rollback rewrite a consumer's rows.
 CREATE TABLE stream_imports (
     consumer        TEXT NOT NULL,
     stream          TEXT NOT NULL, -- the consumer's name for it

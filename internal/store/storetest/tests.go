@@ -83,4 +83,5 @@ var Tests = append([]Test{
 	{"TestImportPausedConsumerAndCancel", TestImportPausedConsumerAndCancel},
 	{"TestImportProducerReplay", TestImportProducerReplay},
 	{"TestImportBackfill", TestImportBackfill},
+	{"TestImportFollowsRollback", TestImportFollowsRollback},
 }, e2eTests...)
