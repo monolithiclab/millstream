@@ -1,4 +1,4 @@
-import { act, screen, within } from '@testing-library/react';
+import { act, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '../../api/api';
 import { DEMO_NOW, demoFixtures } from '../../api/demo';
@@ -46,7 +46,8 @@ describe('RunsScreen', () => {
     const real = api.listRuns;
     api.listRuns = async (p, { cursor, ...query } = {}) => {
       const all = (await real(p, query)).items;
-      return cursor === undefined ? { items: all.slice(0, 2), next: 'c2' } : { items: all.slice(2) };
+      // The second page repeats the first page's last run, as when a run moves while paging: shown once.
+      return cursor === undefined ? { items: all.slice(0, 2), next: 'c2' } : { items: all.slice(1) };
     };
     const { user } = renderApp({ route: '/p/listings-daily/runs', api });
     const list = await screen.findByRole('list', { name: 'Runs, newest first' });
@@ -74,9 +75,14 @@ describe('RunsScreen', () => {
     const { user } = renderApp({ route: '/p/listings-daily/runs', api });
     await screen.findByRole('list', { name: 'Runs, newest first' });
     await user.click(screen.getByRole('button', { name: 'Run daily now' }));
-    expect(api.calls).toEqual([{ method: 'triggerRun', args: ['listings-daily', { trigger: 'daily' }] }]);
     expect(await screen.findByText(/^Run \d\d:\d\d · .+ started$/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Run daily now' })).toBeEnabled();
+    await user.click(screen.getByRole('button', { name: 'Run daily now' }));
+    // Each click sends a request id of its own, so the server never mistakes a second click for a retry.
+    const requests = api.calls.map((c) => c.args[1] as { trigger: string; requestId: string });
+    expect(requests.map((r) => r.trigger)).toEqual(['daily', 'daily']);
+    expect(requests[0]?.requestId).toMatch(/^[0-9a-f-]{36}$/);
+    expect(requests[1]?.requestId).not.toBe(requests[0]?.requestId);
   });
 
   it('offers no button for a webhook, and says when a firing fails', async () => {
@@ -87,11 +93,20 @@ describe('RunsScreen', () => {
         ...pipeline,
         triggers: [...pipeline.triggers, { name: 'hook', kind: 'webhook', stream: 'trigger.hook' }],
       });
-    api.triggerRun = () => Promise.reject(new ApiError(503, 'unavailable', 'no engine'));
+    const ids: (string | undefined)[] = [];
+    api.triggerRun = (_p, request) => {
+      ids.push(request?.requestId);
+      return Promise.reject(new ApiError(503, 'unavailable', 'no engine'));
+    };
     const { user } = renderApp({ route: '/p/listings-daily/runs', api });
     await user.click(await screen.findByRole('button', { name: 'Run daily now' }));
     expect(screen.queryByRole('button', { name: 'Run hook now' })).not.toBeInTheDocument();
-    expect(await screen.findByRole('alert')).toHaveTextContent('daily could not be fired: no engine');
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('daily could not be fired: no engine');
+    // Retry resends the same click: the same request id.
+    await user.click(within(alert).getByRole('button', { name: 'Retry' }));
+    await waitFor(() => expect(ids).toHaveLength(2));
+    expect(ids[1]).toBe(ids[0]);
   });
 
   it('retries after an error', async () => {
@@ -154,7 +169,14 @@ describe('RunScreen', () => {
     await user.click(step);
     expect(step).toHaveAttribute('aria-expanded', 'true');
     expect(screen.getByText(/score: deliveries over the run \(11\)/)).toBeInTheDocument();
-    const bars = screen.getAllByRole('button', { name: /deliveries$/ });
+    const bars = screen.getAllByRole('button', { name: /: \d+ deliver(y|ies)$/ });
+    // A bar of one says so in the singular, others in the plural.
+    expect(bars.map((b) => b.getAttribute('aria-label') ?? b.textContent)).toEqual(
+      expect.arrayContaining([
+        expect.stringMatching(/: 1 delivery$/),
+        expect.stringMatching(/: [02-9]\d* deliveries$/),
+      ]),
+    );
     await user.click(bars[0]!);
     expect(bars[0]).toHaveAttribute('aria-pressed', 'true');
     const items = screen.getByRole('list', { name: 'Items in this bar' });

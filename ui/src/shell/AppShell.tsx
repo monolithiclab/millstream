@@ -3,11 +3,13 @@ import { useTranslation } from 'react-i18next';
 import { NavLink, Outlet, useMatch, useNavigate } from 'react-router-dom';
 import { useResource } from '../common/useResource';
 import { liveUrls } from '../api/api';
+import { useDemo } from '../api/context';
 import { languages, type Language } from '../i18n';
 import { useLiveStream } from '../live/useLiveStream';
 import { themes, usePreferences, type Theme } from '../preferences';
 import { pipelinePath, pipelineScreens, screenPath, screens, workspaceScreens, type Screen } from '../routes';
 import { CommandPalette, type Command } from './CommandPalette';
+import { DemoBadge } from './DemoBadge';
 import { Kbd } from './Kbd';
 import { LiveIndicator } from './LiveIndicator';
 import { PipelineSwitcher } from './PipelineSwitcher';
@@ -89,6 +91,7 @@ export function AppShell() {
   const navigate = useNavigate();
   const pipeline = useMatch('/p/:pipeline/*')?.params.pipeline;
   const pipelines = useResource('pipelines', (api) => api.listPipelines());
+  const demo = useDemo();
   const live = useLiveStream(pipeline === undefined ? null : liveUrls.pipeline(pipeline));
   const [palette, setPalette] = useState(false);
   const [help, setHelp] = useState(false);
@@ -223,6 +226,7 @@ export function AppShell() {
               <path d="M3 5H15M3 9H15M3 13H15" stroke="currentColor" strokeWidth="1.6" />
             </svg>
           </button>
+          {demo && <DemoBadge />}
           <div className="flex-1" />
           {pipeline !== undefined && <LiveIndicator state={live} />}
           <button

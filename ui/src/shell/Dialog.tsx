@@ -9,7 +9,8 @@ const focusable =
 // control, else the dialog), Tab stays inside, Esc or the backdrop closes, and focus returns to where it came from.
 // A sheet rises from the bottom of a narrow screen (the 375 px inbox) and is an ordinary dialog from 640 px. It
 // renders at the end of <body> and makes everything else inert while open, so neither the pointer, the keyboard nor
-// assistive technology reaches the page behind it.
+// assistive technology reaches the page behind it. A dialog taller than the screen scrolls inside: the panel is as
+// tall as the overlay's padding leaves room for.
 export function Dialog({
   labelledBy,
   onClose,
@@ -68,7 +69,7 @@ export function Dialog({
 
   return createPortal(
     <div
-      className={`fixed inset-0 z-50 flex justify-center ${sheet ? 'items-end sm:items-start sm:p-4 sm:pt-[12vh]' : 'items-start p-4 pt-[12vh]'}`}
+      className={`fixed inset-0 z-50 flex justify-center ${sheet ? 'items-end pt-8 sm:items-start sm:p-4 sm:pt-[12dvh]' : 'items-start p-4 pt-[12dvh]'}`}
     >
       <div className="absolute inset-0 bg-ink/30" aria-hidden="true" data-testid="backdrop" onMouseDown={onClose} />
       <div
@@ -77,7 +78,7 @@ export function Dialog({
         aria-modal="true"
         aria-labelledby={labelledBy}
         tabIndex={-1}
-        className={`relative w-full max-w-xl overflow-hidden border border-control-line bg-surface shadow-2 ${sheet ? 'rounded-t-[24px] sm:rounded-3' : 'rounded-3'}`}
+        className={`relative w-full max-w-xl overflow-y-auto overscroll-contain border border-control-line bg-surface shadow-2 max-h-full ${sheet ? 'rounded-t-[24px] sm:rounded-3' : 'rounded-3'}`}
       >
         {children}
       </div>

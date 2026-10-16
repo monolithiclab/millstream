@@ -11,7 +11,9 @@
     "openMenu": "Ouvrir la navigation",
     "closeMenu": "Fermer la navigation",
     "search": "Chercher des items, des runs, des étapes",
-    "preferences": "Préférences"
+    "preferences": "Préférences",
+    "demo": "Données de démonstration",
+    "exitDemo": "Quitter la démo"
   },
   "switcher": {
     "label": "Changer de pipeline, affiché : {{name}}",
@@ -34,7 +36,6 @@
     "lessons": "Leçons"
   },
   "screen": {
-    "placeholder": "Cette vue n’est pas encore construite.",
     "inPipeline": "Pipeline {{pipeline}}",
     "notFound": {
       "title": "Page introuvable",
@@ -70,7 +71,8 @@
     "help": "Tous les raccourcis",
     "close": "Fermer un panneau ou une boîte de dialogue et revenir où vous étiez",
     "singleKeys": "Raccourcis à une touche",
-    "singleKeysHint": "Désactivez-les s’ils gênent la saisie vocale ou un autre outil. ⌘K et Ctrl+K restent actifs."
+    "singleKeysHint": "Désactivez-les s’ils gênent la saisie vocale ou un autre outil. ⌘K et Ctrl+K restent actifs.",
+    "esc": "Échap"
   },
   "dialog": {
     "close": "Fermer"
@@ -146,7 +148,8 @@
       "pace": "{{n}}/min",
       "p95": "p95 {{d}}",
       "errors": "err. {{p}}",
-      "slots": "{{n}} places",
+      "slotsOne": "{{n}} place",
+      "slotsOther": "{{n}} places",
       "filtered": "{{n}} filtrés"
     },
     "trigger": {
@@ -165,7 +168,8 @@
       "seeInsights": "Voir les constats",
       "toReview": "À revoir",
       "inFlight": "En cours",
-      "slots": "sur {{n}} places",
+      "slotsOne": "sur {{n}} place",
+      "slotsOther": "sur {{n}} places",
       "waiting": "En file",
       "pace": "Débit",
       "perMinute": "{{n}}/min",
@@ -390,6 +394,29 @@
       "error": "L’artefact n’a pas pu être chargé."
     }
   },
+  "items": {
+    "filters": "Filtrer les items",
+    "stream": "Flux",
+    "allStreams": "Tous les flux",
+    "streamOption": "{{stream}} ({{n}})",
+    "run": "Run",
+    "runPlaceholder": "Tous les runs",
+    "where": "Condition (CEL)",
+    "whereHint": "Sur item (le contenu), envelope, vars et run, comme replay --where.",
+    "whereInvalid": "Cette expression ne fonctionne pas : {{message}}",
+    "apply": "Appliquer",
+    "clear": "Effacer les filtres",
+    "list": "Items, du plus ancien au plus récent",
+    "shownOne": "{{n}} item affiché",
+    "shownOther": "{{n}} items affichés",
+    "more": "Afficher plus d’items",
+    "searchFurther": "Chercher plus loin",
+    "mayMatchFurther": "Une page filtrée lit un nombre limité d’items : d’autres peuvent correspondre plus loin.",
+    "noMatchYet": "Aucun résultat parmi les items lus jusqu’ici",
+    "noMatch": "Aucun item ne correspond à ces filtres",
+    "empty": "Pas encore d’items",
+    "emptyBody": "Les items apparaissent ici à mesure que les étapes du pipeline les publient."
+  },
   "pipelines": {
     "paused": "{{name}} en pause : ses livraisons attendent que vous le repreniez.",
     "resumed": "{{name}} a repris.",
@@ -434,6 +461,7 @@
   },
   "common": {
     "loading": "Chargement…",
+    "working": "{{action}} : en cours…",
     "loadFailed": "Le chargement a échoué.",
     "retry": "Réessayer",
     "yes": "oui",
@@ -482,6 +510,9 @@
     "left": "Reste : {{count}}.",
     "fixFields": "Corrigez le champ signalé avant d’approuver.",
     "undone": "Annulé : {{title}} revient dans la file.",
+    "undoHint": "Appuyez sur u pour annuler.",
+    "lateFailed": "Votre décision sur {{title}} n’a pas abouti une fois la revue quittée : {{message}}",
+    "lateConflict": "Votre décision sur {{title}} n’a pas été appliquée une fois la revue quittée : {{message}}",
     "toReview": "À revoir : {{count}}",
     "samples": "échantillons : {{count}}",
     "oldest": "le plus ancien : {{age}}",
@@ -562,7 +593,8 @@
       "drained": "vidé à {{time}}"
     },
     "density": "{{step}} : livraisons au fil du run ({{count}}). Choisissez une barre pour lister ses items.",
-    "bin": "De {{from}} à {{to}} : {{count}} livraisons",
+    "binOne": "De {{from}} à {{to}} : {{count}} livraison",
+    "binOther": "De {{from}} à {{to}} : {{count}} livraisons",
     "binItems": "Items de cette barre",
     "delivery": {
       "pending": "en attente",
@@ -586,7 +618,8 @@
     "noPath": "Pas encore de chemin critique.",
     "people": "personnes",
     "slowest": "Étapes les plus lentes",
-    "p95": "p95 {{p95}} · {{count}} livraisons · {{cost}}",
+    "p95One": "p95 {{p95}} · {{count}} livraison · {{cost}}",
+    "p95Other": "p95 {{p95}} · {{count}} livraisons · {{cost}}",
     "failures": "Échecs par groupe",
     "noFailures": "Aucun échec dans ce run.",
     "recovered": "rattrapés au nouvel essai : {{count}}",
@@ -732,7 +765,21 @@
     "added": "ajoutée le {{date}}",
     "fromInsight": "d’après le constat {{id}}",
     "fromReview": "d’après la revue {{id}}",
-    "fromProposal": "d’après la proposition {{id}}"
+    "fromProposal": "d’après la proposition {{id}}",
+    "review": {
+      "title": "Revue {{id}}",
+      "decision": "Décision",
+      "approved": "Approuvé",
+      "edited": "Approuvé avec modifications",
+      "rejected": "Rejeté",
+      "undecided": "Pas encore décidé",
+      "reviewer": "Par",
+      "decidedAt": "Quand",
+      "reason": "Motif",
+      "note": "Note",
+      "step": "Étape · boîte",
+      "changes": "Modifications"
+    }
   },
   "nodes": {
     "busy": "{{leases}} emplacements occupés sur {{slots}}",
@@ -775,6 +822,7 @@
     "empty": "En attente de lignes de journal…",
     "gap": "Connexion perdue : des lignes de ce moment peuvent manquer",
     "gapWindow": "Connexion perdue {{from}} → {{to}} · des lignes de cette période peuvent manquer",
-    "newLines": "{{count}} nouvelles · afficher"
+    "newLines": "{{count}} nouvelles · afficher",
+    "newLinesDropped": "{{count}} nouvelles, {{dropped}} perdues · afficher"
   }
 }

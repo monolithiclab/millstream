@@ -1,8 +1,10 @@
-import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { FakeApi } from '../api/fake';
 import { FakeEventSource } from '../live/fakeEventSource';
 import { renderApp } from '../test/render';
+import { DEMO_KEY } from '../storage';
+import { exitDemo } from './DemoBadge';
 
 const nav = () => within(screen.getByRole('navigation'));
 
@@ -240,5 +242,38 @@ describe('app shell', () => {
     ['/p/listings-daily', '/p/listings-daily/graph'],
   ])('redirects %s to %s', (route, target) => {
     expect(renderApp({ route }).location()).toBe(target);
+  });
+});
+
+describe('demo mode', () => {
+  it('shows a permanent Demo data badge with Exit demo, only on demo data', async () => {
+    renderApp({ route: '/pipelines', demo: true });
+    const header = screen.getByRole('banner');
+    expect(within(header).getByText('Demo data')).toBeInTheDocument();
+    expect(within(header).getByRole('button', { name: 'Exit demo' })).toBeInTheDocument();
+    cleanup();
+    renderApp({ route: '/pipelines', language: 'fr', demo: true });
+    expect(screen.getByRole('button', { name: 'Quitter la démo' })).toBeInTheDocument();
+    cleanup();
+    renderApp({ route: '/pipelines' });
+    expect(screen.queryByText('Demo data')).not.toBeInTheDocument();
+  });
+
+  it('exits by forgetting the flag and reloading without ?demo', () => {
+    window.sessionStorage.setItem(DEMO_KEY, '');
+    const assign = vi.fn();
+    exitDemo({ href: 'http://localhost/p/x/graph?demo&step=a', assign });
+    expect(window.sessionStorage.getItem(DEMO_KEY)).toBeNull();
+    expect(assign).toHaveBeenCalledWith('http://localhost/p/x/graph?step=a');
+  });
+});
+
+describe('shortcut help', () => {
+  it('names the Escape key in the reader’s language', async () => {
+    renderApp({ route: '/pipelines', language: 'fr' });
+    fireEvent.keyDown(document.body, { key: '?' });
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByText('Échap')).toBeInTheDocument();
+    expect(within(dialog).queryByText('Esc')).not.toBeInTheDocument();
   });
 });

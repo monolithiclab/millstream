@@ -3,18 +3,10 @@ import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiProvider } from '../api/context';
 import { FakeApi } from '../api/fake';
-import { demoEventSource, fakeEventSource, FakeEventSource } from './fakeEventSource';
-import {
-  BACKOFF_MAX_MS,
-  backoffDelay,
-  browserEventSource,
-  GRACE_MS,
-  resumeUrl,
-  STALE_MS,
-  useLiveStream,
-  type LiveMessage,
-  type LiveOptions,
-} from './useLiveStream';
+import { demoEventSource } from './demoEventSource';
+import { fakeEventSource, FakeEventSource } from './fakeEventSource';
+import { BACKOFF_MAX_MS, backoffDelay, GRACE_MS, resumeUrl, STALE_MS } from './hub';
+import { browserEventSource, useLiveStream, type LiveMessage, type LiveOptions } from './useLiveStream';
 
 function wrapper({ children }: { children: ReactNode }) {
   return (
@@ -164,6 +156,61 @@ describe('useLiveStream', () => {
     expect(second.closed).toBe(true);
     expect(FakeEventSource.instances).toHaveLength(2);
     unmount();
+  });
+
+  it('shares one connection per url between subscribers, and the last to leave closes it', () => {
+    const first = vi.fn();
+    const second = vi.fn();
+    interface Urls {
+      a: string | null;
+      b: string | null;
+      c: string | null;
+    }
+    const hooks = renderHook(
+      ({ a, b, c }: Urls) => [
+        useLiveStream(a, { events: ['state'], onMessage: first }),
+        useLiveStream(b, { events: ['log'], onMessage: second }),
+        useLiveStream(c),
+      ],
+      { wrapper, initialProps: { a: '/s', b: '/s', c: null } as Urls },
+    );
+    expect(FakeEventSource.instances).toHaveLength(1);
+    const es = FakeEventSource.latest();
+    act(() => {
+      es.open();
+      es.emit('state', 's', '1');
+      es.emit('log', 'l', '2');
+    });
+    // Both read the stream's state; each hears its own named events.
+    expect(hooks.result.current.map((s) => s.status)).toEqual(['live', 'live', 'connecting']);
+    expect(first.mock.calls.map(([m]) => (m as LiveMessage).type)).toEqual(['state']);
+    expect(second.mock.calls.map(([m]) => (m as LiveMessage).type)).toEqual(['log']);
+
+    // One leaving keeps the connection; a newcomer joins it, live at once.
+    hooks.rerender({ a: null, b: '/s', c: '/s' });
+    expect(es.closed).toBe(false);
+    expect(hooks.result.current[2]?.status).toBe('live');
+    expect(FakeEventSource.instances).toHaveLength(1);
+    hooks.rerender({ a: null, b: null, c: '/s' });
+    expect(es.closed).toBe(false);
+    hooks.rerender({ a: null, b: null, c: null });
+    expect(es.closed).toBe(true);
+
+    // A later subscriber opens a new connection.
+    hooks.rerender({ a: '/s', b: null, c: null });
+    expect(FakeEventSource.instances).toHaveLength(2);
+  });
+
+  it('keeps the cursor of heartbeat events for the next reconnection', () => {
+    subscribe('/h');
+    const es = FakeEventSource.latest();
+    act(() => {
+      es.open();
+      es.emit('heartbeat', '', '30');
+      es.fail();
+    });
+    act(() => vi.advanceTimersByTime(1000));
+    expect(FakeEventSource.latest().url).toBe('/h?lastEventId=30');
   });
 
   it('cancels a pending retry on unmount', () => {

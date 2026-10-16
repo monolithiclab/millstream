@@ -51,6 +51,21 @@ for (const theme of themes) {
   }
 }
 
+test('demo mode is marked, and Exit demo returns to the server', async ({ page }) => {
+  await page.goto('/pipelines?demo');
+  const header = page.getByRole('banner');
+  await expect(header.getByText('Demo data')).toBeVisible();
+  // It lasts for the tab, without ?demo.
+  await page.goto('/nodes');
+  await expect(header.getByText('Demo data')).toBeVisible();
+  await header.getByRole('button', { name: 'Exit demo' }).click();
+  await expect(page).not.toHaveURL(/demo/);
+  await expect(page.getByRole('heading', { level: 1, name: 'Nodes' })).toBeVisible();
+  await expect(header.getByText('Demo data')).toHaveCount(0);
+  await page.reload();
+  await expect(header.getByText('Demo data')).toHaveCount(0);
+});
+
 test('explicit data-theme overrides the system theme', async ({ page }) => {
   await page.emulateMedia({ colorScheme: 'light' });
   await page.addInitScript(() => window.localStorage.setItem('millstream.theme', 'dark'));

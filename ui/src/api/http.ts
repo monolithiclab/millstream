@@ -1,4 +1,4 @@
-import { ApiError, artifactPath, enc, withQuery, type Api, type Query, type Target } from './api';
+import { ApiError, artifactPath, enc, withQuery, type Api, type Query, type SendOptions, type Target } from './api';
 
 type Fetch = (input: string, init?: RequestInit) => Promise<Response>;
 
@@ -16,8 +16,9 @@ export class HttpApi implements Api {
     private readonly base = '/api/v1',
   ) {}
 
-  private async request<T>(method: string, path: string, body?: unknown): Promise<T> {
+  private async request<T>(method: string, path: string, body?: unknown, options: SendOptions = {}): Promise<T> {
     const init: RequestInit = { method, headers: { Accept: 'application/json' } };
+    if (options.keepalive) init.keepalive = true;
     if (body !== undefined) {
       init.headers = { Accept: 'application/json', 'Content-Type': 'application/json' };
       init.body = JSON.stringify(body);
@@ -49,8 +50,8 @@ export class HttpApi implements Api {
     return this.request<T>('GET', withQuery(path, query));
   }
 
-  private post<T>(path: string, body: unknown = {}) {
-    return this.request<T>('POST', path, body);
+  private post<T>(path: string, body: unknown = {}, options?: SendOptions) {
+    return this.request<T>('POST', path, body, options);
   }
 
   listPipelines: Api['listPipelines'] = () => this.get('/pipelines');
@@ -93,10 +94,10 @@ export class HttpApi implements Api {
     this.post(`${pipelinePath(p)}/dead-letters/replay`, selection);
   discardDeadLetters: Api['discardDeadLetters'] = (p, selection) =>
     this.post(`${pipelinePath(p)}/dead-letters/discard`, selection);
-  decideReview: Api['decideReview'] = (p, delivery, decision) =>
-    this.post(`${pipelinePath(p)}/reviews/${enc(delivery)}/decision`, decision);
-  decideSample: Api['decideSample'] = (p, delivery, decision) =>
-    this.post(`${pipelinePath(p)}/samples/${enc(delivery)}/decision`, decision);
+  decideReview: Api['decideReview'] = (p, delivery, decision, options) =>
+    this.post(`${pipelinePath(p)}/reviews/${enc(delivery)}/decision`, decision, options);
+  decideSample: Api['decideSample'] = (p, delivery, decision, options) =>
+    this.post(`${pipelinePath(p)}/samples/${enc(delivery)}/decision`, decision, options);
   acknowledgeInsight: Api['acknowledgeInsight'] = (p, insight) =>
     this.post(`${pipelinePath(p)}/insights/${enc(insight)}/acknowledge`);
   muteInsight: Api['muteInsight'] = (p, insight) => this.post(`${pipelinePath(p)}/insights/${enc(insight)}/mute`);

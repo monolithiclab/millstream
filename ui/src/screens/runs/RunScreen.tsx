@@ -8,6 +8,7 @@ import { formatClock, formatDuration, formatMoney, formatNumber, formatPercent }
 import { useCoalescedRefresh } from '../../live/useCoalescedRefresh';
 import { useLiveStream } from '../../live/useLiveStream';
 import { usePreferences } from '../../preferences';
+import { useFormat } from '../../common/useFormat';
 import { itemPath, pipelinePath, runPath } from '../../routes';
 import { ScreenPage } from '../ScreenPage';
 import { ConfirmDialog } from '../../common/ConfirmDialog';
@@ -399,6 +400,7 @@ function Density({
 }) {
   const { t } = useTranslation();
   const { language } = usePreferences();
+  const f = useFormat();
   const { bins, width } = density(row.deliveries, from, end);
   const most = Math.max(1, ...bins.map((b) => b.length));
   const [picked, setPicked] = useState<number | null>(null);
@@ -408,7 +410,7 @@ function Density({
       <p className="m-0 text-tiny text-ink-2">{t('runs.density', { step: row.step, count: row.deliveries.length })}</p>
       <div className="flex h-12 items-end gap-px">
         {bins.map((bin, i) => {
-          const label = t('runs.bin', {
+          const label = t(f.plural(bin.length, 'runs.binOne', 'runs.binOther'), {
             from: clock(from + i * width),
             to: clock(from + (i + 1) * width),
             count: bin.length,
@@ -478,6 +480,7 @@ function Report({
 }) {
   const { t } = useTranslation();
   const { language } = usePreferences();
+  const f = useFormat();
   const { run, report } = data;
   const open = !settledStates.has(run.state);
   const parked = data.deliveries.filter((d) => d.state === 'awaitingReview');
@@ -551,7 +554,7 @@ function Report({
               <li key={s.step} className="flex flex-wrap items-baseline gap-x-2.5">
                 <span className="font-mono text-tiny font-bold">{s.step}</span>
                 <span className="text-ink-2">
-                  {t('runs.p95', {
+                  {t(f.plural(s.deliveries, 'runs.p95One', 'runs.p95Other'), {
                     p95: formatDuration(s.p95Seconds * 1000, language),
                     count: formatNumber(s.deliveries, language),
                     cost: formatMoney(s.costUsd, language),

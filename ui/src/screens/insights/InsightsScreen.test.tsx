@@ -1,4 +1,4 @@
-import { screen, within } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '../../api/api';
 import { DEMO_NOW, demoFixtures } from '../../api/demo';
@@ -19,6 +19,20 @@ describe('InsightsScreen', () => {
     await screen.findAllByRole('article');
     return view;
   }
+
+  it('scrolls to and focuses the insight a link names, on its tab', async () => {
+    const scrolled = vi.fn();
+    Element.prototype.scrollIntoView = scrolled;
+    try {
+      await open(`${ROUTE}#in_cost_score`);
+      // A resolved insight: its tab opens, though the URL names none.
+      await waitFor(() => expect(document.activeElement?.id).toBe('in_cost_score'));
+      expect(scrolled).toHaveBeenCalledTimes(1);
+      expect(screen.getByRole('button', { name: 'Resolved 1' })).toHaveAttribute('aria-pressed', 'true');
+    } finally {
+      delete (Element.prototype as Partial<Element>).scrollIntoView;
+    }
+  });
 
   it('lists what needs attention, by kind, each with its evidence and a way in', async () => {
     await open();

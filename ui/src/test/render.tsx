@@ -24,7 +24,8 @@ export function renderApp({
   route = '/pipelines',
   api = new FakeApi(),
   language = 'en',
-}: { route?: string; api?: Api; language?: Language } = {}) {
+  demo = false,
+}: { route?: string; api?: Api; language?: Language; demo?: boolean } = {}) {
   // Under fake timers, user-event's own pauses advance them.
   const user = userEvent.setup({
     advanceTimers: (ms) => {
@@ -33,7 +34,7 @@ export function renderApp({
   });
   const result = render(
     <MemoryRouter initialEntries={[route]}>
-      <App api={api} eventSource={fakeEventSource} language={language}>
+      <App api={api} eventSource={fakeEventSource} language={language} demo={demo}>
         <AppRoutes />
         <LocationProbe />
       </App>

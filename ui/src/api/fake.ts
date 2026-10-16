@@ -191,13 +191,16 @@ export class FakeApi implements Api {
   getRunReport: Api['getRunReport'] = async (p, id) => report(await this.run(p, id), this.fixtures.reports[id]);
   listRunDeliveries: Api['listRunDeliveries'] = (p, run, { step, state } = {}) =>
     Promise.resolve(this.deliveries((d) => d.runId === run, p, step, state));
-  listItems: Api['listItems'] = (p, { stream, run } = {}) =>
-    Promise.resolve({
-      items: this.fixtures.items.filter(
-        (i) =>
-          i.pipeline === p && (stream === undefined || i.stream === stream) && (run === undefined || i.runId === run),
-      ),
-    });
+  // Pages by position (the cursor is the next index); where is not evaluated in memory.
+  listItems: Api['listItems'] = (p, { stream, run, cursor, limit } = {}) => {
+    const all = this.fixtures.items.filter(
+      (i) =>
+        i.pipeline === p && (stream === undefined || i.stream === stream) && (run === undefined || i.runId === run),
+    );
+    const from = cursor === undefined ? 0 : Number(cursor);
+    const to = limit === undefined ? all.length : from + limit;
+    return Promise.resolve({ items: all.slice(from, to), ...(to < all.length ? { next: String(to) } : {}) });
+  };
   getItem: Api['getItem'] = (p, id) =>
     this.found(
       this.fixtures.items.find((i) => i.pipeline === p && i.id === id),

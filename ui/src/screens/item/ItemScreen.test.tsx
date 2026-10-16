@@ -4,6 +4,7 @@ import { demoFixtures } from '../../api/demo';
 import { FakeApi } from '../../api/fake';
 import type { Lineage } from '../../api/schema';
 import { FakeEventSource } from '../../live/fakeEventSource';
+import { LIVE_REFRESH_MS } from '../../live/useCoalescedRefresh';
 import { mockMatchMedia } from '../../test/flow';
 import { renderApp } from '../../test/render';
 import { lineageRows } from './ItemParts';
@@ -106,6 +107,7 @@ describe('item detail', () => {
   });
 
   it('follows live state events, keeps the raw events, and tails the item’s logs', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
     const api = new FakeApi();
     const { user } = renderApp({ api, route });
     const journey = await screen.findByRole('region', { name: 'Journey' });
@@ -126,8 +128,16 @@ describe('item detail', () => {
         '41',
       );
       stream.emit('state', 'not json');
+      stream.emit(
+        'state',
+        JSON.stringify({ seq: 40, ts: '2026-10-15T06:19:00Z', pipeline: 'listings-daily', kind: 'leased', data: {} }),
+        '40',
+      );
     });
-    await waitFor(() => expect(reads).toHaveBeenCalled());
+    // A burst of events reloads the item once, after the coalescing window.
+    expect(reads).not.toHaveBeenCalled();
+    await act(() => vi.advanceTimersByTimeAsync(LIVE_REFRESH_MS));
+    expect(reads).toHaveBeenCalledTimes(1);
     await user.click(within(journey).getByRole('tab', { name: 'Raw events' }));
     expect(within(journey).getByText('reviewDecided')).toBeInTheDocument();
     // Arrow keys move between tabs.
@@ -139,6 +149,41 @@ describe('item detail', () => {
     expect(tail.url).toBe('/api/v1/live/logs?pipeline=listings-daily&item=it_7f3a9c21');
     // The shared log tail (common/LogTail, tested with the logs screen) over the item's scope.
     expect(within(journey).getByRole('log')).toHaveTextContent('Waiting for log lines…');
+  });
+
+  it('closes the item’s stream once nothing of it is waiting, running or in review', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const api = new FakeApi();
+    const real = api.listItemDeliveries;
+    let settled = false;
+    api.listItemDeliveries = async (p, item, query) => {
+      const list = await real(p, item, query);
+      return settled
+        ? list.map((d) => ({ ...d, state: d.state === 'awaitingReview' ? ('done' as const) : d.state }))
+        : list;
+    };
+    renderApp({ api, route });
+    await screen.findByRole('region', { name: 'Journey' });
+    const stream = FakeEventSource.instances.find((s) => s.url.startsWith('/api/v1/live/items/'))!;
+    expect(stream.closed).toBe(false);
+    settled = true;
+    act(() => {
+      stream.open();
+      stream.emit(
+        'state',
+        JSON.stringify({
+          seq: 50,
+          ts: '2026-10-15T06:30:00Z',
+          pipeline: 'listings-daily',
+          kind: 'reviewDecided',
+          data: {},
+        }),
+        '50',
+      );
+    });
+    await act(() => vi.advanceTimersByTimeAsync(LIVE_REFRESH_MS));
+    await waitFor(() => expect(stream.closed).toBe(true));
+    expect(FakeEventSource.instances.filter((s) => s.url.startsWith('/api/v1/live/items/') && !s.closed)).toEqual([]);
   });
 
   it('keeps each raw event once across a reconnection that resumes from the last event id', async () => {

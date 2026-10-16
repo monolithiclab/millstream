@@ -1,8 +1,9 @@
-import { useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, useParams } from 'react-router-dom';
 import { liveUrls } from '../../api/api';
 import type { Delivery, Event, Item, Lineage } from '../../api/schema';
+import { arrowKeys, optionAttrs } from '../../common/arrowKeys';
 import { buttons, card } from '../../common/styles';
 import { CopyButton } from '../../common/Copy';
 import { JsonViewer } from '../../common/JsonViewer';
@@ -12,6 +13,7 @@ import { ErrorState, Loading } from '../../common/States';
 import { useResource } from '../../common/useResource';
 import { StatusBadge, type StatusKey } from '../../common/Status';
 import { byteSize, formatBytes, useFormat } from '../../common/useFormat';
+import { useCoalescedRefresh } from '../../live/useCoalescedRefresh';
 import { parseData, useLiveStream } from '../../live/useLiveStream';
 import { pipelinePath, runPath } from '../../routes';
 import { ScreenPage } from '../ScreenPage';
@@ -24,6 +26,9 @@ const MAX_EVENTS = 200;
 const JOURNEY_DEPTH = 10;
 
 type Tab = 'journey' | 'payload' | 'lineage' | 'logs' | 'events';
+
+// The delivery states an item is still moving in.
+const live = new Set<Delivery['state']>(['pending', 'leased', 'awaitingReview']);
 
 // The words an item is called by: its title or name when the payload has one, else its key, else its id.
 export function itemTitle(item: Item): string {
@@ -65,17 +70,11 @@ function Tabs({
   onChange: (tab: Tab) => void;
   label: string;
 }) {
-  const refs = useRef(new Map<Tab, HTMLButtonElement>());
-  // Arrow keys move between tabs (WAI-ARIA tabs); only the current one is in the Tab order.
-  const onKeyDown = (event: KeyboardEvent) => {
-    if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') return;
-    const index = tabs.findIndex((tab) => tab.id === current);
-    const next = tabs[(index + (event.key === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length];
-    if (next === undefined) return;
-    event.preventDefault();
-    onChange(next.id);
-    refs.current.get(next.id)?.focus();
-  };
+  const onKeyDown = arrowKeys(
+    tabs.map((tab) => tab.id),
+    current,
+    onChange,
+  );
   return (
     // The tab list handles the arrow keys of its tabs.
     // eslint-disable-next-line jsx-a11y/interactive-supports-focus
@@ -85,19 +84,15 @@ function Tabs({
       onKeyDown={onKeyDown}
       className="flex gap-1 border-b border-line px-2 md:px-4"
     >
-      {tabs.map((tab) => (
+      {tabs.map((tab, i) => (
         <button
           key={tab.id}
-          ref={(el) => {
-            if (el === null) refs.current.delete(tab.id);
-            else refs.current.set(tab.id, el);
-          }}
           type="button"
           role="tab"
           id={`tab-${tab.id}`}
           aria-selected={current === tab.id}
           aria-controls={`panel-${tab.id}`}
-          tabIndex={current === tab.id ? 0 : -1}
+          {...optionAttrs(i, current === tab.id)}
           onClick={() => onChange(tab.id)}
           className={`min-h-11 flex-1 border-b-2 px-2 pt-3 pb-2.5 md:flex-none md:px-2.5 ${current === tab.id ? 'border-ink font-bold text-ink' : 'border-transparent text-ink-2'}`}
         >
@@ -135,8 +130,8 @@ function Meta({ label, children }: { label: string; children: ReactNode }) {
 
 // Item detail (canvas "Item" and its 375 px French board): what the item is and where it stands, its journey with
 // every attempt and the agent's transcript, its payload, artifacts and lineage, its live logs and raw events. Live:
-// each state event of the item's stream reloads it. Below the md breakpoint the payload and the lineage move into
-// tabs, as the phone board shows.
+// the item's state events reload it, coalesced, until it settles. Below the md breakpoint the payload and the
+// lineage move into tabs, as the phone board shows.
 export function ItemScreen() {
   const { pipeline = '', item: itemId = '' } = useParams();
   const { t } = useTranslation();
@@ -163,7 +158,11 @@ export function ItemScreen() {
     data.refresh();
     upstream.refresh();
   };
-  useLiveStream(liveUrls.item(pipeline, itemId), {
+  // State events come in bursts: one reload per LIVE_REFRESH_MS. Once nothing of the item is waiting, running or
+  // in review, it has settled: the stream closes (the logs tab keeps its own).
+  const scheduleRefresh = useCoalescedRefresh(data.refresh);
+  const settled = ready !== null && ready.deliveries.length > 0 && !ready.deliveries.some((d) => live.has(d.state));
+  useLiveStream(settled ? null : liveUrls.item(pipeline, itemId), {
     events: ['state'],
     onMessage: (message) => {
       const event = message.type === 'state' ? parseData<Event>(message) : null;
@@ -175,7 +174,7 @@ export function ItemScreen() {
           MAX_EVENTS,
         ),
       }));
-      data.refresh();
+      scheduleRefresh();
     },
     onReconnect: refresh,
     onSnapshotRequired: refresh,

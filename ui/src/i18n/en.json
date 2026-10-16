@@ -11,7 +11,9 @@
     "openMenu": "Open navigation",
     "closeMenu": "Close navigation",
     "search": "Search items, runs, steps",
-    "preferences": "Preferences"
+    "preferences": "Preferences",
+    "demo": "Demo data",
+    "exitDemo": "Exit demo"
   },
   "switcher": {
     "label": "Switch pipeline, showing {{name}}",
@@ -34,7 +36,6 @@
     "lessons": "Lessons"
   },
   "screen": {
-    "placeholder": "This view is not built yet.",
     "inPipeline": "Pipeline {{pipeline}}",
     "notFound": {
       "title": "Page not found",
@@ -70,7 +71,8 @@
     "help": "All shortcuts",
     "close": "Close a panel or dialog and return to where you were",
     "singleKeys": "Single-key shortcuts",
-    "singleKeysHint": "Turn them off if they get in the way of speech input or another tool. ⌘K and Ctrl+K stay on."
+    "singleKeysHint": "Turn them off if they get in the way of speech input or another tool. ⌘K and Ctrl+K stay on.",
+    "esc": "Esc"
   },
   "dialog": {
     "close": "Close"
@@ -146,7 +148,8 @@
       "pace": "{{n}}/min",
       "p95": "p95 {{d}}",
       "errors": "err {{p}}",
-      "slots": "{{n}} slots",
+      "slotsOne": "{{n}} slot",
+      "slotsOther": "{{n}} slots",
       "filtered": "{{n}} filtered"
     },
     "trigger": {
@@ -165,7 +168,8 @@
       "seeInsights": "See insights",
       "toReview": "To review",
       "inFlight": "In flight",
-      "slots": "of {{n}} slots",
+      "slotsOne": "of {{n}} slot",
+      "slotsOther": "of {{n}} slots",
       "waiting": "Waiting",
       "pace": "Pace",
       "perMinute": "{{n}}/min",
@@ -390,6 +394,29 @@
       "error": "The artifact could not be loaded."
     }
   },
+  "items": {
+    "filters": "Filter items",
+    "stream": "Stream",
+    "allStreams": "All streams",
+    "streamOption": "{{stream}} ({{n}})",
+    "run": "Run",
+    "runPlaceholder": "Any run",
+    "where": "Where (CEL)",
+    "whereHint": "Over item (the payload), envelope, vars and run, as replay --where.",
+    "whereInvalid": "This expression doesn’t work: {{message}}",
+    "apply": "Apply",
+    "clear": "Clear filters",
+    "list": "Items, oldest first",
+    "shownOne": "{{n}} item shown",
+    "shownOther": "{{n}} items shown",
+    "more": "Show more items",
+    "searchFurther": "Search further",
+    "mayMatchFurther": "A filtered page reads a bounded number of items: more may match further on.",
+    "noMatchYet": "No match in the items read so far",
+    "noMatch": "No item matches these filters",
+    "empty": "No items yet",
+    "emptyBody": "Items appear here as the pipeline’s steps publish them."
+  },
   "pipelines": {
     "paused": "{{name}} paused: its deliveries wait until you resume it.",
     "resumed": "{{name}} resumed.",
@@ -434,6 +461,7 @@
   },
   "common": {
     "loading": "Loading…",
+    "working": "{{action}}: in progress…",
     "loadFailed": "This could not be loaded.",
     "retry": "Retry",
     "yes": "yes",
@@ -482,6 +510,9 @@
     "left": "{{count}} left.",
     "fixFields": "Fix the highlighted field before approving.",
     "undone": "Undone: {{title}} is back in the queue.",
+    "undoHint": "Press u to undo.",
+    "lateFailed": "Your decision on {{title}} didn’t go through after you left the inbox: {{message}}",
+    "lateConflict": "Your decision on {{title}} wasn’t applied after you left the inbox: {{message}}",
     "toReview": "{{count}} to review",
     "samples": "{{count}} sampled",
     "oldest": "oldest {{age}}",
@@ -562,7 +593,8 @@
       "drained": "drained {{time}}"
     },
     "density": "{{step}}: deliveries over the run ({{count}}). Pick a bar to list its items.",
-    "bin": "{{from}} to {{to}}: {{count}} deliveries",
+    "binOne": "{{from}} to {{to}}: {{count}} delivery",
+    "binOther": "{{from}} to {{to}}: {{count}} deliveries",
     "binItems": "Items in this bar",
     "delivery": {
       "pending": "pending",
@@ -586,7 +618,8 @@
     "noPath": "No critical path yet.",
     "people": "people",
     "slowest": "Slowest steps",
-    "p95": "p95 {{p95}} · {{count}} deliveries · {{cost}}",
+    "p95One": "p95 {{p95}} · {{count}} delivery · {{cost}}",
+    "p95Other": "p95 {{p95}} · {{count}} deliveries · {{cost}}",
     "failures": "Failures by cluster",
     "noFailures": "No failure in this run.",
     "recovered": "recovered on retry: {{count}}",
@@ -732,7 +765,21 @@
     "added": "added {{date}}",
     "fromInsight": "from insight {{id}}",
     "fromReview": "from review {{id}}",
-    "fromProposal": "from proposal {{id}}"
+    "fromProposal": "from proposal {{id}}",
+    "review": {
+      "title": "Review {{id}}",
+      "decision": "Decision",
+      "approved": "Approved",
+      "edited": "Approved with changes",
+      "rejected": "Rejected",
+      "undecided": "Not decided yet",
+      "reviewer": "By",
+      "decidedAt": "When",
+      "reason": "Reason",
+      "note": "Note",
+      "step": "Step · inbox",
+      "changes": "Changes"
+    }
   },
   "nodes": {
     "busy": "{{leases}} of {{slots}} slots busy",
@@ -775,6 +822,7 @@
     "empty": "Waiting for log lines…",
     "gap": "Connection lost: lines from this moment may be missing",
     "gapWindow": "Connection lost {{from}} → {{to}} · lines from this window may be missing",
-    "newLines": "{{count}} new · show"
+    "newLines": "{{count}} new · show",
+    "newLinesDropped": "{{count}} new, {{dropped}} dropped · show"
   }
 }

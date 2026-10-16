@@ -13,7 +13,8 @@ export async function expectNoViolations(page: Page) {
 // clips (overflow hidden or clip, or an ellipsis) cuts its own text; and no button, link, label, heading, table
 // header or badge leaves the viewport. Exempt: what the design truncates on purpose (ids and URLs carry a title, the
 // queue's titles are class "truncate"), what is not shown, the graph's pane (it pans and clips by nature), and for
-// the viewport, content that scrolls in its own region (tables, the log tail, code).
+// the viewport, content that scrolls in its own region (tables, the log tail, code). Vertically, an open dialog fits
+// the viewport and scrolls what it cannot show.
 export async function expectNoClipping(page: Page) {
   const clipped = await page.evaluate(() => {
     const out: string[] = [];
@@ -44,6 +45,22 @@ export async function expectNoClipping(page: Page) {
         if (el.getBoundingClientRect().right > window.innerWidth + 1) {
           out.push(`${el.tagName} "${text(el)}" leaves the viewport`);
         }
+      }
+    }
+    // A dialog stays within the viewport's height, and what does not fit scrolls inside it, so every control is
+    // reachable on a short screen.
+    for (const dialog of document.querySelectorAll<HTMLElement>('[role="dialog"]')) {
+      const box = dialog.getBoundingClientRect();
+      const name = dialog.getAttribute('aria-labelledby') ?? '';
+      const title = (document.getElementById(name)?.textContent ?? '').trim();
+      if (box.top < -1 || box.bottom > window.innerHeight + 1) {
+        out.push(
+          `dialog "${title}" is cut off: ${Math.round(box.top)} to ${Math.round(box.bottom)} of ${window.innerHeight}`,
+        );
+      }
+      const scrolls = ['auto', 'scroll'].includes(getComputedStyle(dialog).overflowY);
+      if (dialog.scrollHeight > dialog.clientHeight + 1 && !scrolls) {
+        out.push(`dialog "${title}" hides content it cannot scroll to`);
       }
     }
     return out;

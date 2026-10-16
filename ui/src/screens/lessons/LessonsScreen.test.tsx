@@ -17,10 +17,7 @@ describe('LessonsScreen', () => {
       'href',
       '/p/listings-daily/insights#in_review_analyst',
     );
-    expect(within(score).getByRole('link', { name: 'from review dl_4b2e' })).toHaveAttribute(
-      'href',
-      '/api/v1/pipelines/listings-daily/reviews/dl_4b2e',
-    );
+    expect(within(score).getByRole('button', { name: 'from review dl_4b2e' })).toBeInTheDocument();
     expect(score).toHaveTextContent('"reason": "groundFloorMainRoad"');
     expect(score).toHaveTextContent('Reviewer lowered the score');
     expect(within(score).getByRole('link', { name: 'Open in the graph' })).toHaveAttribute(
@@ -29,6 +26,31 @@ describe('LessonsScreen', () => {
     );
     const enrich = screen.getByRole('region', { name: 'enrich' });
     expect(enrich).toHaveTextContent('No example.');
+  });
+
+  it('opens a cited review as a readable panel: the decision, who, when, and the item', async () => {
+    const api = new FakeApi();
+    const review = await api.getReview('listings-daily', 'dl_4b2e');
+    api.getReview = () =>
+      Promise.resolve({
+        ...review,
+        state: 'decided',
+        decision: 'approve',
+        reviewer: 'claire',
+        decidedAt: '2026-10-15T06:20:00Z',
+        patch: [{ op: 'replace', path: '/marginPct', value: 12 }],
+      });
+    const { user, location } = renderApp({ route: '/p/listings-daily/lessons', api });
+    const score = await screen.findByRole('region', { name: 'score' });
+    await user.click(within(score).getByRole('button', { name: 'from review dl_4b2e' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Review dl_4b2e' });
+    expect(await within(dialog).findByText('Approved with changes')).toBeInTheDocument();
+    expect(dialog).toHaveTextContent('Byclaire');
+    expect(dialog).toHaveTextContent('replace /marginPct → 12');
+    expect(dialog).not.toHaveTextContent('"deliveryId"');
+    await user.click(within(dialog).getByRole('link', { name: 'T3 · 68 m² · Paris 19e' }));
+    expect(location()).toBe(`/p/listings-daily/items/${review.item.id}`);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
   it('names an unknown source as it is, and a step without rules', async () => {

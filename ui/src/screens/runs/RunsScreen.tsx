@@ -3,19 +3,19 @@ import { useTranslation } from 'react-i18next';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import type { RunQuery } from '../../api/api';
 import { useApi } from '../../api/context';
-import type { Run, RunState } from '../../api/schema';
+import type { Run, RunPage, RunState } from '../../api/schema';
 import { formatDuration, formatMoney } from '../../i18n/format';
 import { usePreferences } from '../../preferences';
 import { runPath } from '../../routes';
 import { ScreenPage } from '../ScreenPage';
 import { Segmented } from '../../common/Segmented';
-import { NoticeRegion, errorMessage, runAction, useNotice } from '../../common/Notice';
+import { NoticeRegion, runAction, useNotice } from '../../common/Notice';
 import { StatusBadge, useStatusLabel } from '../../common/Status';
 import { EmptyState, ErrorState, QueryView } from '../../common/States';
 import { buttons, card } from '../../common/styles';
 import { useNow } from '../../common/useNow';
+import { appendPage, useLoadMore } from '../../common/useLoadMore';
 import { useResource } from '../../common/useResource';
-import { useLatest } from '../../useLatest';
 import { useRunName } from './runParts';
 
 const PAGE = 50;
@@ -42,38 +42,31 @@ export function RunsScreen() {
   const key = `runs:${pipeline}:${state}`;
   const runs = useResource(key, (api) => api.listRuns(pipeline, query));
   const api = useApi();
-  const keyRef = useLatest(key);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [moreError, setMoreError] = useState<string | null>(null);
+  // The next page by its cursor, appended without the runs an earlier page showed (a run that changed state while
+  // paging); one that arrives after the filter changed is dropped.
+  const { loadMore, loadingMore, moreError } = useLoadMore<RunPage, string>({
+    key,
+    mutate: runs.mutate,
+    read: (cursor) => api.listRuns(pipeline, { ...query, cursor }),
+    merge: appendPage,
+  });
   const now = useNow();
   const name = useRunName();
   const statusLabel = useStatusLabel();
   const label = (filter: Filter) => (filter === 'all' ? t('runs.filter.all') : statusLabel(filter));
 
-  // The next page by its cursor, appended; one that arrives after the filter changed is dropped.
-  const loadMore = async (cursor: string) => {
-    const asked = key;
-    setLoadingMore(true);
-    setMoreError(null);
-    try {
-      const page = await api.listRuns(pipeline, { ...query, cursor });
-      if (keyRef.current === asked)
-        runs.mutate((p) => ({ items: [...p.items, ...page.items], ...(page.next ? { next: page.next } : {}) }));
-    } catch (error) {
-      setMoreError(errorMessage(error));
-    } finally {
-      setLoadingMore(false);
-    }
-  };
   // Any trigger but a webhook can be fired by hand (spec section 4.6); a webhook is fired by its caller's token.
   const triggers = useResource(`pipeline:${pipeline}`, (a) => a.getPipeline(pipeline));
   const fireable = triggers.status === 'ready' ? triggers.data.triggers.filter((tr) => tr.kind !== 'webhook') : [];
   const [firing, setFiring] = useState(false);
   const { notice, setNotice, dismiss } = useNotice();
+  // Each click is its own request id: a retry of the same click (Retry, or a resent request) returns the same run
+  // instead of firing twice; a new click fires again.
   const fire = (trigger: string) => {
+    const requestId = crypto.randomUUID();
     setFiring(true);
     void runAction(setNotice, {
-      call: async () => t('runs.fired', { name: name(await api.triggerRun(pipeline, { trigger })) }),
+      call: async () => t('runs.fired', { name: name(await api.triggerRun(pipeline, { trigger, requestId })) }),
       failed: (message) => t('runs.fireFailed', { trigger, message }),
       settled: () => {
         setFiring(false);

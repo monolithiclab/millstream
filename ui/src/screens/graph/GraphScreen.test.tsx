@@ -21,22 +21,32 @@ function withFigures(change: (step: PipelineSnapshot['steps'][number]) => void, 
   return next;
 }
 
-// The graph's own live stream (the shell opens one too, for the live mark).
+// The pipeline's live stream, which the graph shares with the shell's live mark.
 function graphStream(): FakeEventSource {
   const streams = FakeEventSource.instances.filter((s) => s.url === '/api/v1/live/pipelines/listings-daily');
   return streams.at(-1)!;
 }
 
 function emit(data: PipelineSnapshot) {
-  act(() => {
-    for (const s of FakeEventSource.instances.filter((x) => x.url === '/api/v1/live/pipelines/listings-daily'))
-      s.emit('snapshot', JSON.stringify(data));
-  });
+  act(() => graphStream().emit('snapshot', JSON.stringify(data)));
 }
 
 const step = (name: string) => screen.findByRole('button', { name: new RegExp(`^${name},`) });
 
 describe('pipeline graph', () => {
+  it('shares the pipeline stream with the shell: one connection, open while either needs it', async () => {
+    const { user } = renderApp({ route: '/p/listings-daily/graph' });
+    await step('score');
+    const open = () =>
+      FakeEventSource.instances.filter((s) => s.url === '/api/v1/live/pipelines/listings-daily' && !s.closed);
+    expect(open()).toHaveLength(1);
+    act(() => graphStream().open());
+    expect(screen.getAllByRole('status').some((s) => s.textContent === 'Live')).toBe(true);
+    // Leaving for a workspace screen drops both subscribers: the connection closes.
+    await user.click(screen.getByRole('link', { name: 'Inbox' }));
+    expect(open()).toHaveLength(0);
+  });
+
   it('shows a skeleton, then every step as a button in topological order, with the table alternative', async () => {
     renderApp({ route: '/p/listings-daily/graph' });
     expect(screen.getByTestId('loading')).toBeInTheDocument();
