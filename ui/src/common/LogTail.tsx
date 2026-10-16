@@ -6,6 +6,7 @@ import { parseData, useLiveStream, type LiveMessage } from '../live/useLiveStrea
 import { usePreferences } from '../preferences';
 import { LiveIndicator } from '../shell/LiveIndicator';
 import { ScrollRegion } from './ScrollRegion';
+import { useThrottle } from './useThrottle';
 import { buttons } from './styles';
 
 // The tail keeps this many entries; history stays in the host's log tools (spec 10.3).
@@ -30,20 +31,11 @@ function Tail({ url, title, className = 'max-h-80' }: { url: string; title: stri
   const [frozenAt, setFrozenAt] = useState<number | null>(null);
   const pending = useRef<Entry[]>([]);
   const nextId = useRef(1);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const tail = useRef<HTMLDivElement>(null);
   // The last line's time, where the next gap's window starts.
   const lastTs = useRef<string | undefined>(undefined);
 
-  useEffect(
-    () => () => {
-      if (timer.current !== null) clearTimeout(timer.current);
-    },
-    [],
-  );
-
-  const paint = () => {
-    timer.current = null;
+  const paint = useThrottle(() => {
     const batch = pending.current;
     pending.current = [];
     setEntries((current) => {
@@ -58,7 +50,7 @@ function Tail({ url, title, className = 'max-h-80' }: { url: string; title: stri
       }
       return merged.slice(-MAX_LINES);
     });
-  };
+  }, PAINT_MS);
 
   const onMessage = (message: LiveMessage) => {
     if (message.type === 'log') {
@@ -71,7 +63,7 @@ function Tail({ url, title, className = 'max-h-80' }: { url: string; title: stri
     } else {
       return;
     }
-    if (timer.current === null) timer.current = setTimeout(paint, PAINT_MS);
+    paint();
   };
 
   const live = useLiveStream(url, { events: ['log', 'gap'], onMessage });

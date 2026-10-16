@@ -25,6 +25,7 @@ import { EmptyState, ErrorState, Loading } from '../../common/States';
 import { StatusBadge, isStatus, useStatusLabel } from '../../common/Status';
 import { useFormat } from '../../common/useFormat';
 import { useCoalescedRefresh } from '../../live/useCoalescedRefresh';
+import { useThrottle } from '../../common/useThrottle';
 import { parseData, useLiveStream } from '../../live/useLiveStream';
 import { pipelinePath, runPath } from '../../routes';
 import { ScreenPage } from '../ScreenPage';
@@ -64,16 +65,16 @@ function orderedSteps(model: GraphModel, order: string[]): StepModel[] {
 // newest of each window. A reconnection reloads the REST data around it.
 function useSnapshot(pipeline: string, onReconnect: () => void): PipelineSnapshot | null {
   const [state, setState] = useState<{ pipeline: string; snapshot: PipelineSnapshot } | null>(null);
-  const pending = useRef<PipelineSnapshot | null>(null);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(
-    () => () => {
-      if (timer.current !== null) clearTimeout(timer.current);
-      timer.current = null;
+  // The newest snapshot not painted yet, with its pipeline.
+  const pending = useRef<{ pipeline: string; snapshot: PipelineSnapshot } | null>(null);
+  // Paint the newest snapshot now, then once per window while more arrive.
+  const paint = useThrottle(
+    () => {
+      if (pending.current !== null) setState(pending.current);
       pending.current = null;
     },
-    [pipeline],
+    PAINT_MS,
+    { leading: true },
   );
 
   useLiveStream(liveUrls.pipeline(pipeline), {
@@ -82,20 +83,8 @@ function useSnapshot(pipeline: string, onReconnect: () => void): PipelineSnapsho
     onMessage: (message) => {
       const snapshot = message.type === 'snapshot' ? parseData<PipelineSnapshot>(message) : null;
       if (snapshot === null) return;
-      pending.current = snapshot;
-      if (timer.current !== null) return;
-      // Paint the newest snapshot now, then once per window while more arrive.
-      const tick = () => {
-        const next = pending.current;
-        pending.current = null;
-        if (next === null) {
-          timer.current = null;
-          return;
-        }
-        setState({ pipeline, snapshot: next });
-        timer.current = setTimeout(tick, PAINT_MS);
-      };
-      tick();
+      pending.current = { pipeline, snapshot };
+      paint();
     },
   });
   return state?.pipeline === pipeline ? state.snapshot : null;

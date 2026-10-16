@@ -1,8 +1,9 @@
-import { useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, useParams } from 'react-router-dom';
 import { liveUrls } from '../../api/api';
 import type { Delivery, Event, Item, Lineage } from '../../api/schema';
+import { arrowKeys, optionAttrs } from '../../common/arrowKeys';
 import { buttons, card } from '../../common/styles';
 import { CopyButton } from '../../common/Copy';
 import { JsonViewer } from '../../common/JsonViewer';
@@ -65,17 +66,11 @@ function Tabs({
   onChange: (tab: Tab) => void;
   label: string;
 }) {
-  const refs = useRef(new Map<Tab, HTMLButtonElement>());
-  // Arrow keys move between tabs (WAI-ARIA tabs); only the current one is in the Tab order.
-  const onKeyDown = (event: KeyboardEvent) => {
-    if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') return;
-    const index = tabs.findIndex((tab) => tab.id === current);
-    const next = tabs[(index + (event.key === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length];
-    if (next === undefined) return;
-    event.preventDefault();
-    onChange(next.id);
-    refs.current.get(next.id)?.focus();
-  };
+  const onKeyDown = arrowKeys(
+    tabs.map((tab) => tab.id),
+    current,
+    onChange,
+  );
   return (
     // The tab list handles the arrow keys of its tabs.
     // eslint-disable-next-line jsx-a11y/interactive-supports-focus
@@ -85,19 +80,15 @@ function Tabs({
       onKeyDown={onKeyDown}
       className="flex gap-1 border-b border-line px-2 md:px-4"
     >
-      {tabs.map((tab) => (
+      {tabs.map((tab, i) => (
         <button
           key={tab.id}
-          ref={(el) => {
-            if (el === null) refs.current.delete(tab.id);
-            else refs.current.set(tab.id, el);
-          }}
           type="button"
           role="tab"
           id={`tab-${tab.id}`}
           aria-selected={current === tab.id}
           aria-controls={`panel-${tab.id}`}
-          tabIndex={current === tab.id ? 0 : -1}
+          {...optionAttrs(i, current === tab.id)}
           onClick={() => onChange(tab.id)}
           className={`min-h-11 flex-1 border-b-2 px-2 pt-3 pb-2.5 md:flex-none md:px-2.5 ${current === tab.id ? 'border-ink font-bold text-ink' : 'border-transparent text-ink-2'}`}
         >

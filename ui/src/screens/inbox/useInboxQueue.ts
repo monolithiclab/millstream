@@ -1,9 +1,8 @@
-import { useCallback, useState } from 'react';
+import { useCallback } from 'react';
 import type { Api } from '../../api/api';
 import { useApi } from '../../api/context';
 import type { Review, Sample } from '../../api/schema';
-import { useLatest } from '../../useLatest';
-import { errorMessage } from '../../common/Notice';
+import { useLoadMore } from '../../common/useLoadMore';
 import { useResource } from '../../common/useResource';
 
 // One card of the queue: an open review, or an open review sample (an auto-approved item a person double-checks).
@@ -79,9 +78,6 @@ export function useInboxQueue(filters: Filters) {
   const key = `inbox:${JSON.stringify(filters)}`;
   const resource = useResource(key, (a) => page(a, filters, null));
   const { mutate } = resource;
-  const keyRef = useLatest(key);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [moreError, setMoreError] = useState<string | null>(null);
 
   const remove = useCallback(
     (entryKey: string) => mutate((q) => ({ ...q, entries: q.entries.filter((e) => e.key !== entryKey) })),
@@ -93,28 +89,18 @@ export function useInboxQueue(filters: Filters) {
     [mutate],
   );
 
+  const more = useLoadMore<Queue, Cursors>({
+    key,
+    mutate,
+    read: (cursors) => page(api, filters, cursors),
+    merge: (q, next) => {
+      const known = new Set(q.entries.map((e) => e.key));
+      return { entries: [...q.entries, ...next.entries.filter((e) => !known.has(e.key))].sort(byAge), next: next.next };
+    },
+  });
   const loadMore = async () => {
-    if (resource.status !== 'ready' || !hasMore(resource.data)) return;
-    const asked = key;
-    setLoadingMore(true);
-    setMoreError(null);
-    try {
-      const more = await page(api, filters, resource.data.next);
-      // A page that arrives after the filters changed belongs to the old queue.
-      if (keyRef.current !== asked) return;
-      mutate((q) => {
-        const known = new Set(q.entries.map((e) => e.key));
-        return {
-          entries: [...q.entries, ...more.entries.filter((e) => !known.has(e.key))].sort(byAge),
-          next: more.next,
-        };
-      });
-    } catch (error) {
-      setMoreError(errorMessage(error));
-    } finally {
-      setLoadingMore(false);
-    }
+    if (resource.status === 'ready' && hasMore(resource.data)) await more.loadMore(resource.data.next);
   };
 
-  return { ...resource, remove, restore, loadMore, loadingMore, moreError };
+  return { ...resource, remove, restore, loadMore, loadingMore: more.loadingMore, moreError: more.moreError };
 }

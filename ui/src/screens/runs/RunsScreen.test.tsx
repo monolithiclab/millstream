@@ -46,7 +46,8 @@ describe('RunsScreen', () => {
     const real = api.listRuns;
     api.listRuns = async (p, { cursor, ...query } = {}) => {
       const all = (await real(p, query)).items;
-      return cursor === undefined ? { items: all.slice(0, 2), next: 'c2' } : { items: all.slice(2) };
+      // The second page repeats the first page's last run, as when a run moves while paging: shown once.
+      return cursor === undefined ? { items: all.slice(0, 2), next: 'c2' } : { items: all.slice(1) };
     };
     const { user } = renderApp({ route: '/p/listings-daily/runs', api });
     const list = await screen.findByRole('list', { name: 'Runs, newest first' });
