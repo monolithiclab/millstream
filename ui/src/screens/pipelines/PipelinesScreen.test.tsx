@@ -1,7 +1,8 @@
 import { screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { ApiError } from '../../api/api';
-import { demoFixtures, FakeApi } from '../../api/fake';
+import { demoFixtures } from '../../api/demo';
+import { FakeApi } from '../../api/fake';
 import { renderApp } from '../../test/render';
 
 const row = (name: string) => screen.getByRole('row', { name: new RegExp(`^${name}`) });

@@ -1,0 +1,138 @@
+import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { Link, useParams, useSearchParams } from 'react-router-dom';
+import type { RunQuery } from '../../api/api';
+import { useApi } from '../../api/context';
+import type { Run, RunState } from '../../api/schema';
+import { formatDuration, formatMoney } from '../../i18n/format';
+import { usePreferences } from '../../preferences';
+import { ScreenPage } from '../ScreenPage';
+import { Segmented } from '../parts/Segmented';
+import { EmptyState, ErrorState, QueryView } from '../parts/States';
+import { button, card } from '../parts/styles';
+import { useNow } from '../parts/useNow';
+import { useResource } from '../parts/useResource';
+import { useLatest } from '../../useLatest';
+import { RunStateBadge, runPath, useRunName, useRunStateLabels } from './runParts';
+
+const PAGE = 50;
+type Filter = RunState | 'all';
+const filters: Filter[] = ['all', 'running', 'waitingReview', 'succeeded', 'completedWithErrors', 'cancelled'];
+
+const barTone: Record<RunState, string> = {
+  running: 'bg-accent',
+  waitingReview: 'bg-human',
+  succeeded: 'bg-accent',
+  completedWithErrors: 'bg-warn',
+  cancelled: 'bg-mute',
+};
+
+// A pipeline's runs, newest first, as run bars (canvas components board): when and state, the duration as a bar
+// against the longest run shown, duration and cost.
+export function RunsScreen() {
+  const { t } = useTranslation();
+  const { language } = usePreferences();
+  const { pipeline = '' } = useParams();
+  const [search, setSearch] = useSearchParams();
+  const state = (filters.find((f) => f === search.get('state')) ?? 'all') as Filter;
+  const query: RunQuery = state === 'all' ? { limit: PAGE } : { state, limit: PAGE };
+  const key = `runs:${pipeline}:${state}`;
+  const runs = useResource(key, (api) => api.listRuns(pipeline, query));
+  const api = useApi();
+  const keyRef = useLatest(key);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [moreError, setMoreError] = useState<string | null>(null);
+  const now = useNow();
+  const name = useRunName();
+  const labels: Record<Filter, string> = { all: t('runs.filter.all'), ...useRunStateLabels() };
+
+  // The next page by its cursor, appended; one that arrives after the filter changed is dropped.
+  const loadMore = async (cursor: string) => {
+    const asked = key;
+    setLoadingMore(true);
+    setMoreError(null);
+    try {
+      const page = await api.listRuns(pipeline, { ...query, cursor });
+      if (keyRef.current === asked)
+        runs.mutate((p) => ({ items: [...p.items, ...page.items], ...(page.next ? { next: page.next } : {}) }));
+    } catch (error) {
+      setMoreError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setLoadingMore(false);
+    }
+  };
+  const setState = (value: Filter) => setSearch(value === 'all' ? {} : { state: value });
+  const duration = (run: Run) => (run.settledAt ? Date.parse(run.settledAt) : now) - Date.parse(run.startedAt);
+
+  return (
+    <ScreenPage title={t('nav.runs')} eyebrow={<p className="m-0 font-mono text-small text-ink-2">{pipeline}</p>}>
+      <Segmented
+        label={t('runs.filter.label')}
+        segments={filters.map((value) => ({ value, label: labels[value] }))}
+        value={state}
+        onChange={setState}
+      />
+      <QueryView state={runs.state} onRetry={runs.reload}>
+        {(page) => {
+          if (page.items.length === 0) {
+            return (
+              <EmptyState title={state === 'all' ? t('runs.empty') : t('runs.emptyFiltered')}>
+                {state === 'all' && t('runs.emptyBody')}
+              </EmptyState>
+            );
+          }
+          const longest = Math.max(...page.items.map(duration));
+          const { next } = page;
+          return (
+            <div className={`${card} flex flex-col px-4 py-2 md:px-7`}>
+              <ul className="m-0 list-none p-0" aria-label={t('runs.list')}>
+                {page.items.map((run) => (
+                  <li key={run.id} className="border-b border-line last:border-b-0">
+                    <Link
+                      to={runPath(pipeline, run.id)}
+                      className="grid grid-cols-1 gap-1.5 py-2.5 text-ink no-underline md:grid-cols-[minmax(0,220px)_minmax(0,1fr)_minmax(0,auto)] md:items-center md:gap-3.5"
+                    >
+                      <span className="flex flex-col gap-0.5">
+                        <strong className="text-small">
+                          {name(run)}
+                          {run.kind === 'replay' && (
+                            <span className="font-normal text-ink-3"> · {t('runs.replay')}</span>
+                          )}
+                        </strong>
+                        <span>
+                          <RunStateBadge state={run.state} />
+                        </span>
+                      </span>
+                      <span aria-hidden="true" className="flex h-2.5 bg-surface-2">
+                        <span
+                          className={`${barTone[run.state]} ${run.settledAt ? '' : 'opacity-80'}`}
+                          style={{ width: `${Math.max(2, (duration(run) / Math.max(1, longest)) * 100)}%` }}
+                        />
+                      </span>
+                      <span className="font-mono text-tiny text-ink-2 md:text-right">
+                        {formatDuration(duration(run), language)} · {formatMoney(run.costUsd, language)}
+                      </span>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+              {next !== undefined && (
+                <div className="flex flex-col gap-2 py-2.5">
+                  {moreError !== null && <ErrorState message={moreError} />}
+                  <button
+                    type="button"
+                    disabled={loadingMore}
+                    onClick={() => void loadMore(next)}
+                    className={`${button.secondary} self-start`}
+                  >
+                    {t('runs.more')}
+                  </button>
+                </div>
+              )}
+            </div>
+          );
+        }}
+      </QueryView>
+    </ScreenPage>
+  );
+}

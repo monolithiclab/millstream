@@ -29,7 +29,7 @@ const text: [string, string][] = [
   ['accent-ink', 'accent'],
   ...statuses.flatMap((s) => [`${s}-soft`, 'surface', 'surface-2', 'bg'].map((bg): [string, string] => [s, bg])),
   ...[...statuses, 'accent'].map((s): [string, string] => ['ink', `${s}-soft`]),
-  ['log-ink', 'log-bg'],
+  ...['log-ink', 'log-dim', 'log-warn', 'log-bad'].map((fg): [string, string] => [fg, 'log-bg']),
 ];
 // The focus ring on every ground, the reconnecting outline, the switcher's ink border.
 const ui: [string, string][] = [

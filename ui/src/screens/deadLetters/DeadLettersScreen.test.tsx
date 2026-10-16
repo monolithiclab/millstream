@@ -1,7 +1,8 @@
 import { act, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { ApiError } from '../../api/api';
-import { demoFixtures, FakeApi } from '../../api/fake';
+import { demoFixtures } from '../../api/demo';
+import { FakeApi } from '../../api/fake';
 import { renderApp } from '../../test/render';
 import { groupsIn, headline } from './DeadLettersScreen';
 
@@ -62,9 +63,8 @@ describe('dead letters', () => {
   });
 
   it('offers migrate when a run is on an older revision, and sends it', async () => {
-    const fixtures = structuredClone(demoFixtures);
-    fixtures.runs[0]!.revision = 12;
-    const api = new FakeApi(fixtures);
+    const runs = demoFixtures.runs.map((r) => (r.id === 'run_0600' ? { ...r, revision: 12 } : r));
+    const api = new FakeApi({ ...demoFixtures, runs });
     const { user } = renderApp({ api, route });
     await screen.findByText(/Grouped by error fingerprint/);
     await user.click(within(group('fetch')).getByRole('button', { name: 'Replay 1' }));

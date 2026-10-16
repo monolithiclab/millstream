@@ -1,6 +1,7 @@
 import { act, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import { demoFixtures, FakeApi } from '../../api/fake';
+import { demoFixtures } from '../../api/demo';
+import { FakeApi } from '../../api/fake';
 import type { Lineage } from '../../api/schema';
 import { FakeEventSource } from '../../live/fakeEventSource';
 import { mockMatchMedia } from '../../test/flow';

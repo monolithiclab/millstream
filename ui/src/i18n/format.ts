@@ -6,14 +6,39 @@ import type { Language } from './index';
 export const intlLocale: Record<Language, string> = { en: 'en-US', fr: 'fr-FR' };
 const NBSP = ' ';
 
+// Building an Intl.NumberFormat is the costly part: lists format hundreds of figures per render.
+const numberFormats = new Map<string, Intl.NumberFormat>();
+
+function numberFormat(language: Language, options: Intl.NumberFormatOptions = {}): Intl.NumberFormat {
+  const key = `${language}|${JSON.stringify(options)}`;
+  let format = numberFormats.get(key);
+  if (format === undefined) {
+    format = new Intl.NumberFormat(intlLocale[language], options);
+    numberFormats.set(key, format);
+  }
+  return format;
+}
+
+const dateFormats = new Map<string, Intl.DateTimeFormat>();
+
+function dateFormat(language: Language, options: Intl.DateTimeFormatOptions): Intl.DateTimeFormat {
+  const key = `${language}|${JSON.stringify(options)}`;
+  let format = dateFormats.get(key);
+  if (format === undefined) {
+    format = new Intl.DateTimeFormat(intlLocale[language], options);
+    dateFormats.set(key, format);
+  }
+  return format;
+}
+
 export function formatNumber(value: number, language: Language, options?: Intl.NumberFormatOptions): string {
-  return new Intl.NumberFormat(intlLocale[language], options).format(value);
+  return numberFormat(language, options).format(value);
 }
 
 // USD, with four decimals under one cent (an agent call costs fractions of a cent), otherwise cents: $0.02, 0,02 $.
 export function formatMoney(usd: number, language: Language): string {
   const digits = usd !== 0 && Math.abs(usd) < 0.01 ? 4 : 2;
-  return new Intl.NumberFormat(intlLocale[language], {
+  return numberFormat(language, {
     style: 'currency',
     currency: 'USD',
     currencyDisplay: 'narrowSymbol',
@@ -57,9 +82,41 @@ export function formatRelativeTime(date: Date, now: Date, language: Language): s
 }
 
 export function formatDateTime(date: Date, language: Language, timeZone?: string): string {
-  return new Intl.DateTimeFormat(intlLocale[language], {
+  return dateFormat(language, {
     dateStyle: 'medium',
     timeStyle: 'medium',
     timeZone,
   }).format(date);
+}
+
+// A time of day, 06:31 in both languages (24-hour clock), to the second or the millisecond for log lines.
+export function formatClock(
+  date: Date,
+  language: Language,
+  precision: 'minute' | 'second' | 'millisecond' = 'minute',
+  timeZone?: string,
+): string {
+  return dateFormat(language, {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: precision === 'minute' ? undefined : '2-digit',
+    fractionalSecondDigits: precision === 'millisecond' ? 3 : undefined,
+    hourCycle: 'h23',
+    timeZone,
+  }).format(date);
+}
+
+// A short day: Thu 15 Oct, jeu. 15 oct.
+export function formatDay(date: Date, language: Language, timeZone?: string): string {
+  return dateFormat(language, {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    timeZone,
+  }).format(date);
+}
+
+// A share as a percentage: 34 %, 0.5 → 50 %.
+export function formatPercent(share: number, language: Language, digits = 0): string {
+  return formatNumber(share, language, { style: 'percent', maximumFractionDigits: digits });
 }

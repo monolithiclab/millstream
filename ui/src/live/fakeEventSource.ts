@@ -1,6 +1,5 @@
 import { liveUrls } from '../api/api';
-import { demoFixtures } from '../api/fake';
-import { demoLogEvents } from '../api/fakeData';
+import { demoFixtures, demoLogEvents } from '../api/demo';
 import type { EventSourceFactory, EventSourceLike } from './useLiveStream';
 
 // A scriptable EventSource: tests open, feed and fail it; ?demo opens it on the next tick.
@@ -50,11 +49,20 @@ export class FakeEventSource implements EventSourceLike {
 
 export const fakeEventSource: EventSourceFactory = (url) => new FakeEventSource(url);
 
-// What ?demo streams once open: a pipeline's snapshot, the log tail's lines.
-function demoEvents(url: string): [string, object][] {
+// What ?demo streams once open: a pipeline's snapshot, or the log lines of the stream's scope (?item=, ?step=, ...)
+// with the lost connection among them.
+function demoEvents(url: string): [type: string, data: object][] {
   const snapshot = demoFixtures.snapshots.find((s) => liveUrls.pipeline(s.pipeline) === url);
   if (snapshot !== undefined) return [['snapshot', snapshot]];
-  return url.startsWith(liveUrls.logs()) ? demoLogEvents : [];
+  const [path, query] = url.split('?');
+  if (path !== liveUrls.logs()) return [];
+  const scope = new URLSearchParams(query);
+  const fields = { pipeline: 'pipeline', run: 'runId', step: 'step', item: 'itemId' } as const;
+  return demoLogEvents.filter(
+    ([type, data]) =>
+      type === 'gap' ||
+      Object.entries(fields).every(([param, field]) => [null, data[field]].includes(scope.get(param))),
+  );
 }
 
 export const demoEventSource: EventSourceFactory = (url) => {

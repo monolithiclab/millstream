@@ -1,7 +1,8 @@
 import { act, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '../../api/api';
-import { demoFixtures, demoSnapshot, FakeApi } from '../../api/fake';
+import { demoFixtures } from '../../api/demo';
+import { FakeApi } from '../../api/fake';
 import type { PipelineSnapshot } from '../../api/schema';
 import { FakeEventSource } from '../../live/fakeEventSource';
 import { mockMatchMedia } from '../../test/flow';
@@ -10,7 +11,7 @@ import { PAINT_MS } from './GraphScreen';
 
 beforeEach(() => mockMatchMedia(() => false));
 
-const snapshot = demoSnapshot('listings-daily')!;
+const snapshot = demoFixtures.snapshots[0]!;
 
 function withFigures(change: (step: PipelineSnapshot['steps'][number]) => void, seq: number): PipelineSnapshot {
   const next = structuredClone(snapshot);
@@ -94,11 +95,11 @@ describe('pipeline graph', () => {
     emit(snapshot);
     expect(screen.getByText('2 dead')).toBeInTheDocument();
     expect(screen.getByText('1 dead')).toBeInTheDocument();
-    expect(within(screen.getByTestId('rf__node-step:geocode')).getByText('Slow')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /^geocode,/ })).toHaveAccessibleName(/^geocode, Action step, Slow/);
+    expect(within(screen.getByTestId('rf__node-step:enrich')).getByText('Slow')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^enrich,/ })).toHaveAccessibleName(/^enrich, Action step, Slow/);
     expect(screen.getByRole('button', { name: /^publish,/ })).toHaveAccessibleName(/^publish, Action step, Paused/);
     expect(screen.getByRole('button', { name: /^analyst-review,/ })).toHaveAccessibleName(
-      'analyst-review, Review step, Awaiting review, 9 to review',
+      'analyst-review, Review step, Awaiting review, 8 to review',
     );
     const before = screen.getByTestId('rf__node-step:score').style.transform;
     await user.click(screen.getByRole('button', { name: 'Errors' }));

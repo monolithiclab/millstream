@@ -176,6 +176,17 @@ describe('helpers', () => {
     demo.onopen = opened;
     vi.runAllTimers();
     expect(opened).toHaveBeenCalled();
+    // The log stream plays its scope's lines and the lost connection; a pipeline stream its snapshot.
+    const played = (url: string) => {
+      const source = demoEventSource(url) as FakeEventSource;
+      const seen: string[] = [];
+      for (const type of ['log', 'gap', 'snapshot']) source.addEventListener(type, () => seen.push(type));
+      vi.runAllTimers();
+      return seen;
+    };
+    expect(played('/api/v1/live/logs')).toEqual([...Array(6).fill('log'), 'gap', 'log', 'log', 'log']);
+    expect(played('/api/v1/live/logs?pipeline=listings-daily&item=it_51c0e8d4')).toEqual(['log', 'log', 'log', 'gap']);
+    expect(played('/api/v1/live/pipelines/listings-daily')).toEqual(['snapshot']);
     expect(() => {
       FakeEventSource.reset();
       FakeEventSource.latest();

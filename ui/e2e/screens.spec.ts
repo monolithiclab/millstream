@@ -1,113 +1,136 @@
-import AxeBuilder from '@axe-core/playwright';
-import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
+import { expectNoClipping, expectNoViolations } from './checks';
 
-// The pipeline graph, item detail, dead letters and pipelines screens against millstream run on the e2e fixture
-// (builtin steps only): axe finds no WCAG 2.2 AA violation in either theme or language at 375 and 1280 px, no text
-// is clipped and the page never scrolls sideways; then one flow: open the graph, select a step, open an item,
-// replay a dead letter.
+// Every built screen against millstream run on the e2e fixture, seeded by global.setup.ts: in both themes, both
+// languages, at 375 and 1280 px, axe finds no WCAG 2.2 AA violation and no text is clipped. Then the flows that
+// cross screens: the graph to an item to a replayed dead letter, the reject sheet, the timeline's density strip and
+// the metrics explorer.
 const themes = ['light', 'dark'] as const;
 const languages = ['en', 'fr'] as const;
 const widths = [375, 1280] as const;
 const api = '/api/v1/pipelines/listings-daily';
 
-async function expectNoViolations(page: Page) {
-  const results = await new AxeBuilder({ page })
-    .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'])
-    .analyze();
-  expect(results.violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(' ')).join(', ')}`)).toEqual([]);
+async function read<T>(page: Page, path: string): Promise<T> {
+  return (await (await page.request.get(`${api}${path}`)).json()) as T;
 }
 
-// Review focus 4: French runs longer, yet no text is cut by its box and the page never scrolls sideways. Ids and
-// URLs may truncate in the middle by design (they carry a title); the graph's pane pans and clips by nature.
-async function expectNoClipping(page: Page) {
-  const faults = await page.evaluate(() => {
-    const out: string[] = [];
-    if (document.documentElement.scrollWidth > window.innerWidth + 1)
-      out.push(`page scrolls sideways: ${document.documentElement.scrollWidth} > ${window.innerWidth}`);
-    for (const el of document.querySelectorAll<HTMLElement>('#main *')) {
-      if (el.closest('.react-flow, [title], .sr-only, [aria-hidden="true"]')) continue;
-      const own = [...el.childNodes].some((n) => n.nodeType === Node.TEXT_NODE && (n.textContent ?? '').trim() !== '');
-      if (!own) continue;
-      const style = getComputedStyle(el);
-      const clips = ['hidden', 'clip'].includes(style.overflowX) || style.textOverflow === 'ellipsis';
-      if (clips && el.scrollWidth > el.clientWidth + 1) out.push(`${el.tagName}: “${(el.textContent ?? '').trim()}”`);
-    }
-    return out;
-  });
-  expect(faults).toEqual([]);
+async function settledRun(page: Page): Promise<string> {
+  const { items } = await read<{ items: { id: string }[] }>(page, '/runs?state=succeeded');
+  return items[0]?.id ?? 'none';
 }
 
-// The data the screens show: one listing that dies at price-check (a division by zero), one that waits in review.
-// Request ids make the runs idempotent across tests and workers.
-async function seed(request: APIRequestContext): Promise<{ item: string; deadLetter: string }> {
-  for (const [requestId, payload] of [
-    ['e2e-dead', { title: 'T3 · 68 m² · Paris 19e', priceEur: 412000, surfaceM2: 0 }],
-    ['e2e-review', { title: 'Studio · 22 m² · Paris 11e', priceEur: 200000, surfaceM2: 22 }],
-  ] as const) {
-    const run = await request.post(`${api}/runs`, { data: { payload, requestId } });
-    expect(run.ok()).toBe(true);
-  }
-  let groups: { step: string; deadLetters: { id: string }[] }[] = [];
-  await expect
-    .poll(async () => {
-      groups = (await (await request.get(`${api}/dead-letters`)).json()) as typeof groups;
-      return groups.length;
-    })
-    .toBeGreaterThan(0);
-  const deadLetter = groups[0]?.deadLetters[0]?.id ?? '';
-  const letter = (await (await request.get(`${api}/items/${deadLetter}`)).json()) as { parents: string[] };
-  const item = letter.parents[0] ?? '';
-  expect([deadLetter, item]).not.toContain('');
-  return { item, deadLetter };
+// The listing that died at price-check: the dead letter's parent.
+async function deadItem(page: Page): Promise<string> {
+  const groups = await read<{ deadLetters: { id: string }[] }[]>(page, '/dead-letters');
+  const letter = await read<{ parents: string[] }>(page, `/items/${groups[0]?.deadLetters[0]?.id ?? 'none'}`);
+  return letter.parents[0] ?? 'none';
 }
 
-let data: { item: string; deadLetter: string };
-
-test.beforeAll(async ({ request }) => {
-  data = await seed(request);
-});
-
-async function open(page: Page, path: string, theme: string, language: string, width: number) {
-  await page.setViewportSize({ width, height: 900 });
-  await page.emulateMedia({ colorScheme: theme as 'light' | 'dark', reducedMotion: 'reduce' });
-  await page.addInitScript((lang) => window.localStorage.setItem('millstream.language', lang), language);
-  await page.goto(path);
-  await expect(page.locator('html')).toHaveAttribute('lang', language);
+interface ScreenCase {
+  name: string;
+  path: (page: Page) => Promise<string>;
+  // What shows the screen has loaded past its placeholders.
+  ready: (page: Page) => Promise<void>;
+  // A state the screen opens into (a side panel, a dialog), checked as well.
+  open?: (page: Page) => Promise<void>;
 }
 
-for (const theme of themes) {
-  for (const language of languages) {
-    for (const width of widths) {
-      test(`screens · ${theme} · ${language} · ${width}px`, async ({ page }) => {
-        await open(page, '/pipelines', theme, language, width);
-        await expect(page.getByRole('table')).toBeVisible();
-        await expectNoViolations(page);
-        await expectNoClipping(page);
+const screens: ScreenCase[] = [
+  {
+    name: 'pipelines',
+    path: async () => '/pipelines',
+    ready: (page) => expect(page.getByRole('table')).toBeVisible(),
+  },
+  {
+    name: 'graph',
+    path: async () => '/p/listings-daily/graph',
+    ready: (page) => expect(page.locator('[data-step="price-check"]')).toBeVisible(),
+    open: async (page) => {
+      await page.locator('[data-step="price-check"]').click();
+      await expect(page.getByRole('complementary')).toBeVisible();
+    },
+  },
+  {
+    name: 'item',
+    path: async (page) => `/p/listings-daily/items/${await deadItem(page)}`,
+    ready: (page) => expect(page.getByRole('tablist')).toBeVisible(),
+  },
+  {
+    name: 'dead letters',
+    path: async () => '/p/listings-daily/dead-letters',
+    ready: (page) => expect(page.getByRole('region').first()).toBeVisible(),
+    open: async (page) => {
+      await page
+        .getByRole('button', { name: /^(Replay|Rejouer) \d+$/ })
+        .first()
+        .click();
+      await expect(page.getByRole('dialog')).toBeVisible();
+    },
+  },
+  {
+    name: 'inbox',
+    path: async () => '/inbox?inbox=analysts',
+    ready: (page) => expect(page.getByRole('region', { name: /Item under review|Item en revue/ })).toBeVisible(),
+  },
+  {
+    name: 'runs',
+    path: async () => '/p/listings-daily/runs',
+    ready: (page) => expect(page.getByRole('list', { name: /Runs, newest first|Runs, du plus récent/ })).toBeVisible(),
+  },
+  {
+    name: 'run',
+    path: async (page) => `/p/listings-daily/runs/${await settledRun(page)}`,
+    ready: (page) => expect(page.getByRole('complementary', { name: /Run report|Rapport du run/ })).toBeVisible(),
+  },
+  {
+    name: 'metrics',
+    path: async () => '/metrics?range=1h',
+    ready: (page) => expect(page.getByTestId('loading')).toHaveCount(0),
+  },
+  {
+    name: 'insights',
+    path: async () => '/p/listings-daily/insights',
+    ready: (page) =>
+      expect(page.getByRole('complementary', { name: /Filter insights|Filtrer les constats/ })).toBeVisible(),
+  },
+  {
+    name: 'lessons',
+    path: async () => '/p/listings-daily/lessons',
+    ready: (page) => expect(page.getByTestId('loading')).toHaveCount(0),
+  },
+  {
+    name: 'nodes',
+    path: async () => '/nodes',
+    ready: (page) => expect(page.getByRole('table')).toBeVisible(),
+  },
+  {
+    name: 'logs',
+    path: async () => '/logs?pipeline=listings-daily',
+    ready: (page) => expect(page.getByRole('log')).toBeVisible(),
+  },
+];
 
-        await page.goto('/p/listings-daily/graph');
-        await expect(page.locator('[data-step="price-check"]')).toBeVisible();
-        await expectNoViolations(page);
-        await expectNoClipping(page);
-        await page.locator('[data-step="price-check"]').click();
-        await expect(page.getByRole('complementary')).toBeVisible();
-        await expectNoViolations(page);
-
-        await page.goto(`/p/listings-daily/items/${data.item}`);
-        await expect(page.getByRole('tablist')).toBeVisible();
-        await expectNoViolations(page);
-        await expectNoClipping(page);
-
-        await page.goto('/p/listings-daily/dead-letters');
-        await expect(page.getByRole('region').first()).toBeVisible();
-        await expectNoViolations(page);
-        await expectNoClipping(page);
-        await page
-          .getByRole('button', { name: /^(Replay|Rejouer) \d+$/ })
-          .first()
-          .click();
-        await expect(page.getByRole('dialog')).toBeVisible();
-        await expectNoViolations(page);
-      });
+for (const screen of screens) {
+  for (const theme of themes) {
+    for (const language of languages) {
+      for (const width of widths) {
+        test(`${screen.name} · ${theme} · ${language} · ${width}px`, async ({ page }) => {
+          await page.setViewportSize({ width, height: 900 });
+          await page.emulateMedia({ colorScheme: theme, reducedMotion: 'reduce' });
+          await page.addInitScript((lang) => window.localStorage.setItem('millstream.language', lang), language);
+          await page.goto(await screen.path(page));
+          await expect(page.locator('html')).toHaveAttribute('lang', language);
+          await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+          await screen.ready(page);
+          await expectNoViolations(page);
+          await expectNoClipping(page);
+          if (screen.open) {
+            await screen.open(page);
+            await expectNoViolations(page);
+            await expectNoClipping(page);
+          }
+        });
+      }
     }
   }
 }
@@ -144,4 +167,36 @@ test('open the graph, select a step, open an item, replay a dead letter', async 
 
   // The replay fails the same way: a new dead letter comes back, and the replayed one is kept as replayed.
   await expect(page.getByRole('button', { name: /^Replayed [1-9]/ })).toBeVisible();
+});
+
+test('the inbox at 375 px opens the reject sheet, also axe-clean', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 800 });
+  await page.addInitScript(() => window.localStorage.setItem('millstream.language', 'fr'));
+  await page.goto('/inbox?inbox=analysts');
+  await page.getByRole('button', { name: 'Rejeter…' }).click();
+  await expect(page.getByRole('dialog', { name: 'Pourquoi rejeter ?' })).toBeVisible();
+  await expectNoViolations(page);
+  await expectNoClipping(page);
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+});
+
+test('the run timeline expands a step into its density strip', async ({ page }) => {
+  await page.goto(`/p/listings-daily/runs/${await settledRun(page)}`);
+  const step = page.getByRole('button', { name: 'shortlist' });
+  await step.click();
+  await expect(step).toHaveAttribute('aria-expanded', 'true');
+  await expectNoViolations(page);
+});
+
+test('the metrics explorer draws a chart and keeps the view in the URL', async ({ page }) => {
+  await page.goto('/metrics?range=1h');
+  const metric = page.getByRole('combobox', { name: 'Metric' });
+  await expect(metric).toBeEnabled();
+  await metric.selectOption('items_in');
+  await expect(page).toHaveURL(/m=items_in/);
+  await expect(page.locator('canvas')).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole('combobox', { name: 'Metric' })).toHaveValue('items_in');
+  await expectNoViolations(page);
 });

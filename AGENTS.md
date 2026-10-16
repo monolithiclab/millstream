@@ -81,10 +81,12 @@ below) for the reasoning, and `make help` for every command.
   coverage in jsdom: fake timers and a `FakeApi`, never a network or a wall-clock wait. `make test-ui-e2e` builds,
   then runs Playwright with axe (WCAG 2.2 AA) on the shell in both themes, both languages, at 375 and 1280 px,
   reaching the build through `millstream run` (cross-compiled for the container with the UI embedded) serving the
-  API and the UI over `ui/e2e/fixture`, a package of builtin steps. `e2e/screens.spec.ts` seeds runs through the API
-  (the fixture's `price-check` dead-letters a listing whose surface is 0) and runs axe and a clipping check on the
-  graph, item, dead letters and pipelines screens, then a replay flow; `e2e/smoke.spec.ts` covers the shell on
-  `?demo`.
+  API and the UI over `ui/e2e/fixture`, a package of builtin steps. `e2e/global.setup.ts` seeds runs through the
+  API first: four listings parked in the analysts and triage inboxes, one filtered out so a run settles, and one the
+  fixture's `price-check` dead-letters (its surface is 0). `e2e/screens.spec.ts` runs axe and the clipping check of
+  `e2e/checks.ts` on every built screen, then the flows across screens (graph, item, replayed dead letter; the reject
+  sheet; the density strip; the metrics explorer); `e2e/inbox-flow.spec.ts` decides reviews from the keyboard in
+  French; `e2e/smoke.spec.ts` covers the shell on `?demo`.
   `make ui-shell` opens a shell in the node container (`npm run dev` serves on port 5173). Both test targets run in
   CI as their own jobs, not in `make ci`.
 - Tokens: `ui/src/styles/tokens.css` holds every colour, font, radius, shadow and motion token of the canvas identity
@@ -97,7 +99,8 @@ below) for the reasoning, and `make help` for every command.
   appears as a quoted literal: keep keys literal, no built-up names), and French typography (no-break space before
   `: ; ! ? »`). Numbers, money, durations and relative times go through `src/i18n/format.ts`.
 - API: `src/api/api.ts` is the `Api` interface, `http.ts` its fetch implementation, `fake.ts` the in-memory one for
-  tests and `?demo`. `src/api/openapi.d.ts` is generated from `internal/api/openapi.yaml` by `make ui-types` and
+  tests and `?demo`, over the one demo dataset of `demo.ts` (every screen's data, linked: an inbox card, a timeline
+  bar or an insight sample opens an item the item screen has). `src/api/openapi.d.ts` is generated from `internal/api/openapi.yaml` by `make ui-types` and
   committed; `src/api/schema.ts` aliases its schemas, so the rest of the UI imports resource types from there.
 
 ## HTTP API

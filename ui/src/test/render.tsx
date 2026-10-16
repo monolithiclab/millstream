@@ -2,6 +2,7 @@ import { render } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useEffect } from 'react';
 import { MemoryRouter, useLocation } from 'react-router-dom';
+import { vi } from 'vitest';
 import { App, AppRoutes } from '../App';
 import type { Api } from '../api/api';
 import { FakeApi } from '../api/fake';
@@ -24,7 +25,12 @@ export function renderApp({
   api = new FakeApi(),
   language = 'en',
 }: { route?: string; api?: Api; language?: Language } = {}) {
-  const user = userEvent.setup();
+  // Under fake timers, user-event's own pauses advance them.
+  const user = userEvent.setup({
+    advanceTimers: (ms) => {
+      if (vi.isFakeTimers()) vi.advanceTimersByTime(ms);
+    },
+  });
   const result = render(
     <MemoryRouter initialEntries={[route]}>
       <App api={api} eventSource={fakeEventSource} language={language}>

@@ -44,6 +44,11 @@
   --ms-hatch: light-dark(#d9d1c3, #4d463b);
   --ms-log-bg: light-dark(#24211d, #0f0d0b);
   --ms-log-ink: light-dark(#efeae2, #e6eae8);
+  /* The log tail stays dark in both themes: its timestamps, warnings, errors and gap rule (canvas components board) */
+  --ms-log-dim: light-dark(#8c969a, #8c969a);
+  --ms-log-warn: light-dark(#e8ae45, #e8ae45);
+  --ms-log-bad: light-dark(#f2806f, #f2806f);
+  --ms-log-rule: light-dark(#5a4a22, #5a4a22);
 
   /* Type: shared by both themes */
   --ms-font-display: 'Instrument Serif', 'Iowan Old Style', Georgia, serif;

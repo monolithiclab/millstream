@@ -27,25 +27,27 @@ describe('app shell', () => {
 
   it('adds the pipeline navigation and the live mark inside a pipeline', () => {
     vi.useFakeTimers();
+    // The live mark is the header's status; the screen below has its own.
+    const live = () => within(screen.getByRole('banner')).getByRole('status');
     renderApp({ route: '/p/listings-daily/runs' });
     expect(nav().getByRole('link', { name: 'Runs' })).toHaveAttribute('aria-current', 'page');
     expect(nav().getByRole('link', { name: 'Dead letters' })).toHaveAttribute('href', '/p/listings-daily/dead-letters');
-    expect(screen.getByText('Pipeline listings-daily')).toBeInTheDocument();
-    expect(screen.getByRole('status')).toHaveTextContent('Connecting');
+    expect(screen.getByRole('heading', { level: 1, name: 'Runs' })).toBeInTheDocument();
+    expect(live()).toHaveTextContent('Connecting');
     const es = FakeEventSource.latest();
     expect(es.url).toBe('/api/v1/live/pipelines/listings-daily');
     act(() => es.open());
-    expect(screen.getByRole('status')).toHaveTextContent('Live');
+    expect(live()).toHaveTextContent('Live');
     act(() => es.fail());
     act(() => vi.advanceTimersByTime(1000));
     act(() => FakeEventSource.latest().fail());
     act(() => vi.advanceTimersByTime(1000));
-    expect(screen.getByRole('status')).toHaveTextContent('Reconnecting · 1 s');
+    expect(live()).toHaveTextContent('Reconnecting · 1 s');
     act(() => vi.advanceTimersByTime(1000));
     act(() => FakeEventSource.latest().fail());
-    expect(screen.getByRole('status')).toHaveTextContent('Reconnecting · 4 s');
+    expect(live()).toHaveTextContent('Reconnecting · 4 s');
     act(() => vi.advanceTimersByTime(1000));
-    expect(screen.getByRole('status')).toHaveTextContent('Reconnecting · 3 s');
+    expect(live()).toHaveTextContent('Reconnecting · 3 s');
     expect(screen.getByRole('main')).not.toHaveClass('live-stale');
     act(() => vi.advanceTimersByTime(1000));
     expect(screen.getByRole('main')).toHaveClass('live-stale');
@@ -221,8 +223,8 @@ describe('app shell', () => {
 
   it('focuses the heading after navigating', async () => {
     const { user } = renderApp();
-    await user.click(nav().getByRole('link', { name: 'Metrics' }));
-    expect(screen.getByRole('heading', { level: 1, name: 'Metrics' })).toHaveFocus();
+    await user.click(nav().getByRole('link', { name: 'Nodes' }));
+    expect(screen.getByRole('heading', { level: 1, name: 'Nodes' })).toHaveFocus();
   });
 
   it('serves unknown addresses a not-found page', async () => {
