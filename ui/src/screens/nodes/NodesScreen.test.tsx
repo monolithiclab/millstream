@@ -19,7 +19,7 @@ describe('NodesScreen', () => {
 
   it('marks labels, an old version, a full node and a standby engine', async () => {
     const nodes = {
-      engine: { state: 'standby' as const, version: '0.9.2' },
+      engine: { state: 'standby' as const, version: '0.9.2', notificationsFailed: 0 },
       nodes: [
         {
           id: 'gpu-box',
@@ -51,7 +51,10 @@ describe('NodesScreen', () => {
 
   it('says when no node is connected, and retries a failed read', async () => {
     let fail = true;
-    const api = new FakeApi({ ...demoFixtures, nodes: { engine: { state: 'active', version: '1' }, nodes: [] } });
+    const api = new FakeApi({
+      ...demoFixtures,
+      nodes: { engine: { state: 'active', version: '1', notificationsFailed: 0 }, nodes: [] },
+    });
     const real = api.listNodes;
     api.listNodes = () => (fail ? Promise.reject(new ApiError(503, 'unavailable', 'engine switching over')) : real());
     const { user } = renderApp({ route: '/nodes', api, language: 'fr' });

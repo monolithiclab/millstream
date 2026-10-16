@@ -73,12 +73,14 @@ describe('FakeApi', () => {
     expect(await api.replayDeadLetters('p', { ids: ['a', 'b'] })).toEqual({ count: 0 });
     expect(await api.discardDeadLetters('p', { fingerprint: 'f' })).toEqual({ count: 0 });
     expect(
-      await api.decideReview('listings-daily', 'dl_4b2e', { decision: 'reject', reason: 'overpriced' }),
+      await api.decideReview('listings-daily', 'dl_4b2e', { decision: 'reject', version: 1, reason: 'overpriced' }),
     ).toMatchObject({ state: 'decided', decision: 'reject', reason: 'overpriced' });
     await expect(api.decideSample('p', 'sm', { decision: 'disagree' })).rejects.toBeInstanceOf(ApiError);
     await api.acknowledgeInsight('p', 'in');
     await api.muteInsight('p', 'in');
-    await expect(api.decideReview('listings-daily', 'dl_7c1d', { decision: 'approve' })).rejects.toMatchObject({
+    await expect(
+      api.decideReview('listings-daily', 'dl_7c1d', { decision: 'approve', version: 1 }),
+    ).rejects.toMatchObject({
       status: 409,
       message: expect.stringContaining('already decided') as unknown,
     });

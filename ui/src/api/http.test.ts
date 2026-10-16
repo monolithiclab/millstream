@@ -102,10 +102,10 @@ const cases: Case[] = [
   ],
   [
     'decideReview',
-    (a) => a.decideReview('p', 'd', { decision: 'reject', reason: 'duplicate' }),
+    (a) => a.decideReview('p', 'd', { decision: 'reject', version: 1, reason: 'duplicate' }),
     'POST',
     `${P}/reviews/d/decision`,
-    { decision: 'reject', reason: 'duplicate' },
+    { decision: 'reject', version: 1, reason: 'duplicate' },
   ],
   [
     'decideSample',
@@ -149,7 +149,7 @@ describe('HttpApi', () => {
     const { api } = setup(() =>
       Response.json({ error: { code: 'conflict', message: 'already decided' } }, { status: 409 }),
     );
-    await expect(api.decideReview('p', 'd', { decision: 'approve' })).rejects.toEqual(
+    await expect(api.decideReview('p', 'd', { decision: 'approve', version: 1 })).rejects.toEqual(
       new ApiError(409, 'conflict', 'already decided'),
     );
   });

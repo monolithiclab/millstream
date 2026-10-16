@@ -1172,7 +1172,7 @@ export const demoFixtures: Fixtures = {
   inbox: demoReviews,
   samples: demoSamples,
   nodes: {
-    engine: { state: 'active', version: '0.0.0' },
+    engine: { state: 'active', version: '0.0.0', notificationsFailed: 0 },
     nodes: [
       { id: 'mill-01', embedded: true, version: '0.0.0', slots: 8, leases: 2, labels: {}, runtimes: ['process'] },
     ],
