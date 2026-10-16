@@ -13,7 +13,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { liveUrls } from '../../api/api';
-import type { Pipeline, PipelineSnapshot } from '../../api/schema';
+import type { Pipeline, PipelineSnapshot, Run } from '../../api/schema';
 import { useApi } from '../../api/context';
 import { useResource } from '../../common/useResource';
 import { card } from '../../common/styles';
@@ -24,6 +24,7 @@ import { Segmented } from '../../common/Segmented';
 import { EmptyState, ErrorState, Loading } from '../../common/States';
 import { StatusBadge, isStatus, useStatusLabel } from '../../common/Status';
 import { useFormat } from '../../common/useFormat';
+import { useCoalescedRefresh } from '../../live/useCoalescedRefresh';
 import { parseData, useLiveStream } from '../../live/useLiveStream';
 import { pipelinePath, runPath } from '../../routes';
 import { ScreenPage } from '../ScreenPage';
@@ -98,6 +99,21 @@ function useSnapshot(pipeline: string, onReconnect: () => void): PipelineSnapsho
     },
   });
   return state?.pipeline === pipeline ? state.snapshot : null;
+}
+
+// Snapshots carry the live figures; the rest of the graph comes from REST reads (the current run, dead letters,
+// insight badges). A snapshot that reflects events the last one did not, such as a run fired elsewhere, refetches
+// them, coalesced.
+function useRefreshOnEvents(pipeline: string, snapshot: PipelineSnapshot | null, refresh: () => void) {
+  const schedule = useCoalescedRefresh(refresh);
+  const seen = useRef<{ pipeline: string; seq: number } | null>(null);
+  useEffect(() => {
+    if (snapshot === null) return;
+    const last = seen.current?.pipeline === pipeline ? seen.current.seq : null;
+    seen.current = { pipeline, seq: snapshot.seq };
+    // The first snapshot follows the REST reads just made.
+    if (last !== null && last !== snapshot.seq) schedule();
+  }, [pipeline, snapshot, schedule]);
 }
 
 function GraphCanvas({
@@ -371,15 +387,12 @@ function StepTable({ model, order }: { model: GraphModel; order: string[] }) {
 }
 
 // The current or last run so far (canvas footer): items per stream, each a door to them, and its dead letters.
-function RunStrip({ pipeline }: { pipeline: Pipeline }) {
+function RunStrip({ pipeline, run }: { pipeline: Pipeline; run: Run | null }) {
   const { t } = useTranslation();
   const f = useFormat();
   const last = pipeline.lastRun;
-  const run = useResource(last ? `run:${pipeline.name}:${last.id}` : null, (api) =>
-    api.getRun(pipeline.name, last?.id ?? ''),
-  );
-  if (last === undefined || run.status !== 'ready') return null;
-  const streams = pipeline.streams.filter((s) => !s.endsWith('.dlq') && (run.data.items?.[s] ?? 0) > 0);
+  if (last === undefined || run === null) return null;
+  const streams = pipeline.streams.filter((s) => !s.endsWith('.dlq') && (run.items?.[s] ?? 0) > 0);
   return (
     <section
       aria-label={t('graph.run.label', { time: f.clock(last.startedAt) })}
@@ -388,7 +401,7 @@ function RunStrip({ pipeline }: { pipeline: Pipeline }) {
       <Link to={runPath(pipeline.name, last.id)} className="font-display text-[20px] text-ink-2 italic">
         {t('graph.run.title', { time: f.clock(last.startedAt) })}
       </Link>
-      {isStatus(run.data.state) && <StatusBadge status={run.data.state} />}
+      {isStatus(run.state) && <StatusBadge status={run.state} />}
       {streams.map((s) => (
         <Link
           key={s}
@@ -397,7 +410,7 @@ function RunStrip({ pipeline }: { pipeline: Pipeline }) {
           data-live
         >
           <strong className="font-display text-[24px] font-normal text-ink underline decoration-line-strong decoration-1 underline-offset-4">
-            {f.num(run.data.items?.[s] ?? 0)}
+            {f.num(run.items?.[s] ?? 0)}
           </strong>{' '}
           <span className="font-mono">{s}</span>
         </Link>
@@ -407,14 +420,14 @@ function RunStrip({ pipeline }: { pipeline: Pipeline }) {
         className="inline-flex items-baseline gap-1.5 text-ink-2 no-underline"
       >
         <strong
-          className={`font-display text-[24px] font-normal underline decoration-line-strong decoration-1 underline-offset-4 ${(run.data.openDeadLetters ?? 0) > 0 ? 'text-bad' : 'text-ink'}`}
+          className={`font-display text-[24px] font-normal underline decoration-line-strong decoration-1 underline-offset-4 ${(run.openDeadLetters ?? 0) > 0 ? 'text-bad' : 'text-ink'}`}
         >
-          {f.num(run.data.openDeadLetters ?? 0)}
+          {f.num(run.openDeadLetters ?? 0)}
         </strong>{' '}
         {t('graph.run.deadLetters')}
       </Link>
       <span className="inline-flex items-baseline gap-1.5 text-ink-2">
-        <strong className="font-display text-[24px] font-normal text-ink">{f.money(run.data.costUsd)}</strong>{' '}
+        <strong className="font-display text-[24px] font-normal text-ink">{f.money(run.costUsd)}</strong>{' '}
         {t('graph.run.cost')}
       </span>
     </section>
@@ -451,16 +464,20 @@ export function GraphScreen() {
   const { notice, setNotice, dismiss } = useNotice();
 
   const data = useResource(`graph:${pipeline}`, async (a) => {
-    const [p, streams, deadLetters, insights] = await Promise.all([
-      a.getPipeline(pipeline),
+    // The run so far is read with the pipeline that names it; the strip is left out when it cannot be read.
+    const withRun = async (p: Pipeline) =>
+      [p, p.lastRun ? await a.getRun(pipeline, p.lastRun.id).catch(() => null) : null] as const;
+    const [[p, run], streams, deadLetters, insights] = await Promise.all([
+      a.getPipeline(pipeline).then(withRun),
       a.listStreams(pipeline),
       a.listDeadLetters(pipeline),
       a.listInsights({ pipeline, state: 'open' }),
     ]);
-    return { pipeline: p, streams, deadLetters, insights };
+    return { pipeline: p, run, streams, deadLetters, insights };
   });
   const { reload, refresh } = data;
   const snapshot = useSnapshot(pipeline, refresh);
+  useRefreshOnEvents(pipeline, snapshot, refresh);
   const ready = data.status === 'ready' ? data.data : null;
 
   const model = useMemo(() => (ready === null ? null : buildModel({ ...ready, snapshot })), [ready, snapshot]);
@@ -560,7 +577,7 @@ export function GraphScreen() {
                     {t('graph.figure.noSnapshot')}
                   </p>
                 )}
-                <RunStrip pipeline={ready.pipeline} />
+                <RunStrip pipeline={ready.pipeline} run={ready.run} />
                 <StepTable model={model} order={positions.order} />
               </div>
               {selectedModel !== undefined && (

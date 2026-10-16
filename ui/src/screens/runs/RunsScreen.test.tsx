@@ -5,7 +5,7 @@ import { DEMO_NOW, demoFixtures } from '../../api/demo';
 import { FakeApi } from '../../api/fake';
 import { FakeEventSource } from '../../live/fakeEventSource';
 import { renderApp } from '../../test/render';
-import { LIVE_REFRESH_MS } from './RunScreen';
+import { LIVE_REFRESH_MS } from '../../live/useCoalescedRefresh';
 
 const RUN = '/p/listings-daily/runs/run_0600';
 

@@ -7,6 +7,7 @@ import type { PipelineSnapshot } from '../../api/schema';
 import { FakeEventSource } from '../../live/fakeEventSource';
 import { mockMatchMedia } from '../../test/flow';
 import { renderApp } from '../../test/render';
+import { LIVE_REFRESH_MS } from '../../live/useCoalescedRefresh';
 import { PAINT_MS } from './GraphScreen';
 
 beforeEach(() => mockMatchMedia(() => false));
@@ -297,6 +298,38 @@ describe('pipeline graph', () => {
       '/p/listings-daily/items?stream=raw&run=run_0600',
     );
     expect(within(run).getByText('$9.84')).toBeInTheDocument();
+  });
+
+  it('picks up a run that starts while the graph is open: new events refetch what the REST reads show', async () => {
+    const api = new FakeApi();
+    const real = await api.getPipeline('listings-daily');
+    let started = false;
+    let reads = 0;
+    api.getPipeline = () => {
+      reads += 1;
+      const { lastRun, ...idle } = real;
+      return Promise.resolve(started && lastRun ? { ...idle, lastRun } : idle);
+    };
+    renderApp({ route: '/p/listings-daily/graph', api });
+    await step('score');
+    vi.useFakeTimers();
+    act(() => graphStream().open());
+    emit(snapshot);
+    expect(screen.queryByRole('region', { name: 'Run 06:00 so far' })).not.toBeInTheDocument();
+    // A snapshot that reflects no new event refetches nothing.
+    act(() => vi.advanceTimersByTime(LIVE_REFRESH_MS + PAINT_MS));
+    emit(snapshot);
+    act(() => vi.advanceTimersByTime(LIVE_REFRESH_MS + PAINT_MS));
+    const before = reads;
+    // The run is fired elsewhere: its events advance the snapshots' seq, and the graph reads again, once a window.
+    started = true;
+    emit({ ...snapshot, seq: snapshot.seq + 1 });
+    act(() => vi.advanceTimersByTime(PAINT_MS));
+    emit({ ...snapshot, seq: snapshot.seq + 2 });
+    await act(async () => vi.advanceTimersByTimeAsync(LIVE_REFRESH_MS));
+    expect(reads).toBe(before + 1);
+    vi.useRealTimers();
+    expect(await screen.findByRole('region', { name: 'Run 06:00 so far' })).toBeInTheDocument();
   });
 
   it('shows an error with Retry, and an empty graph', async () => {

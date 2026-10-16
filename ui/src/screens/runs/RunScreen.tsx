@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { useId, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, useParams } from 'react-router-dom';
 import { liveUrls, withQuery, type Api } from '../../api/api';
 import { useApi } from '../../api/context';
 import type { Delivery, Pipeline, Run, RunReport } from '../../api/schema';
 import { formatClock, formatDuration, formatMoney, formatNumber, formatPercent } from '../../i18n/format';
+import { useCoalescedRefresh } from '../../live/useCoalescedRefresh';
 import { useLiveStream } from '../../live/useLiveStream';
 import { usePreferences } from '../../preferences';
 import { itemPath, pipelinePath, runPath } from '../../routes';
@@ -62,10 +63,6 @@ function combine(live: Resource<Live>, context: Resource<Context>): Query<RunDat
   return { status: 'loading', reload };
 }
 
-// Live updates repaint at most this often (interaction notes: about 4 events a second, paint every 250 ms; a
-// refetch of the run is heavier, so once a second).
-export const LIVE_REFRESH_MS = 1000;
-
 // One run: its Gantt per step, the density strip of a step's deliveries, and the run report (what the run waits
 // on, ETA, critical path, slowest steps, failures by cluster, cost and figures against recent runs). Live while
 // the run is open.
@@ -79,21 +76,7 @@ export function RunScreen() {
   const refresh = live.refresh;
   const settled = data.status === 'ready' && settledStates.has(data.data.run.state);
 
-  // Coalesce live events into one refetch per LIVE_REFRESH_MS.
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const schedule = useCallback(() => {
-    if (timer.current !== null) return;
-    timer.current = setTimeout(() => {
-      timer.current = null;
-      refresh();
-    }, LIVE_REFRESH_MS);
-  }, [refresh]);
-  useEffect(
-    () => () => {
-      if (timer.current !== null) clearTimeout(timer.current);
-    },
-    [],
-  );
+  const schedule = useCoalescedRefresh(refresh);
   useLiveStream(data.status !== 'ready' || settled ? null : liveUrls.run(pipeline, id), {
     events: ['state'],
     onMessage: schedule,
