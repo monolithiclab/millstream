@@ -187,8 +187,10 @@ retryable, and the process is kept for the next item.
 Several outputs for one delivery where any has no key, or two share a key, is not a protocol violation but a
 key-rule error: it is deterministic, so the item is dead-lettered at once instead of retried.
 
-An action that receives something it does not understand should exit with a non-zero status, after logging why on
-stderr.
+An action exits with a non-zero status, after logging why on stderr, only on malformed protocol input: a line that is
+not JSON, a message `type` it does not know, or an `item` before `hello`. Config or payload values it cannot use are
+not a reason to exit: it answers the item with an `error` (`retryable: false`) saying why, and stays up for the next
+one.
 
 ## Conformance
 
