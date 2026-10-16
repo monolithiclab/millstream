@@ -69,6 +69,8 @@ const (
 	SourceManual TriggerSource = "manual"
 	// SourceImport is an import run's: its trigger is the imported stream, its key the producer run.
 	SourceImport TriggerSource = "import"
+	// SourceWebhook is a webhook trigger's request (spec section 4.6), keyed by its request id.
+	SourceWebhook TriggerSource = "webhook"
 )
 
 // DeadLetterKind is why a dead letter exists (spec section 5.6).
@@ -143,6 +145,7 @@ const (
 	EventResumed                = "resumed"
 	EventDisabled               = "disabled"
 	EventRolledBack             = "rolledBack"
+	EventTriggerTokenSet        = "triggerTokenSet"
 	EventFiringSkipped          = "firingSkipped"
 	EventBudgetReached          = "budgetReached"
 	EventInsightOpened          = "insightOpened"

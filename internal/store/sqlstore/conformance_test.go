@@ -165,6 +165,10 @@ func TestDisable(t *testing.T) {
 	storetest.TestDisable(t, memoryStore)
 }
 
+func TestTriggerTokens(t *testing.T) {
+	storetest.TestTriggerTokens(t, memoryStore)
+}
+
 func TestRollback(t *testing.T) {
 	storetest.TestRollback(t, memoryStore)
 }

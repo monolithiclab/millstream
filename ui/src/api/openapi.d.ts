@@ -152,6 +152,46 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/pipelines/{pipeline}/triggers/{trigger}/token': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        pipeline: components['parameters']['pipeline'];
+        trigger: components['parameters']['trigger'];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Replace a webhook trigger's token (millstream trigger token --rotate). The new token is answered this once, the store keeping only its hash; the old one stops working at once. */
+    post: operations['rotateTriggerToken'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/hooks/{pipeline}/{trigger}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        pipeline: components['parameters']['pipeline'];
+        trigger: components['parameters']['trigger'];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Fire a webhook trigger of the pipeline's active revision with the request's body (spec section 4.6). Served outside /api/v1 and outside its access rules: the caller is a service, not a browser, so neither the Host and Origin checks nor auth.token and the session cookie apply. The trigger's own token authenticates it, as a bearer token or the token query parameter (prefer the header: proxies log URLs). The body is validated against the trigger's input schema, up to 1 MiB; a paused pipeline fires (its deliveries wait), a disabled one is a conflict. Each trigger takes at most its rate (webhook.rate, 60/min by default). */
+    post: operations['fireWebhook'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/revisions': {
     parameters: {
       query?: never;
@@ -941,6 +981,7 @@ export interface components {
           | 'unauthorized'
           | 'forbidden'
           | 'unsupportedMediaType'
+          | 'tooManyRequests'
           | 'internal';
         message: string;
       };
@@ -987,6 +1028,10 @@ export interface components {
       kind: 'cron' | 'manual' | 'webhook';
       schedule?: string;
       stream: string;
+      /** @description A webhook trigger's path under the server's address: /hooks/{pipeline}/{trigger}. */
+      path?: string;
+      /** @description The most requests a webhook trigger's token makes per period, such as 60/min. */
+      rate?: string;
     };
     /** @description A stream the revision imports from another pipeline (spec section 4.12). */
     Import: {
@@ -1040,7 +1085,7 @@ export interface components {
       /** @description The scheduled time or request id */
       triggerKey: string;
       /** @enum {string} */
-      triggerSource: 'cron' | 'manual' | 'import';
+      triggerSource: 'cron' | 'manual' | 'webhook' | 'import';
       /** Format: date-time */
       scheduledAt?: string;
       generation: number;
@@ -1280,6 +1325,8 @@ export interface components {
         packageHash: string;
         /** @description False when the package was the active one already. */
         created: boolean;
+        /** @description The new tokens of its webhook triggers that had none, shown this once. */
+        tokens?: components['schemas']['TriggerToken'][];
       }[];
       warnings: {
         pipeline: string;
@@ -1287,6 +1334,19 @@ export interface components {
         path: string;
         message: string;
       }[];
+    };
+    /** @description A webhook trigger's token, shown once. */
+    TriggerToken: {
+      trigger: string;
+      token: string;
+      /** @description Where the trigger is served, under the server's address. */
+      path: string;
+    };
+    WebhookRun: {
+      pipeline: string;
+      runId: string;
+      /** @description False when the request id had already fired the run. */
+      created: boolean;
     };
     TriggerRequest: {
       /** @description The pipeline's first manual trigger by default. */
@@ -1581,6 +1641,7 @@ export interface components {
     item: string;
     delivery: string;
     insight: string;
+    trigger: string;
     artifactName: string;
     /** @description A page's next. */
     cursor: string;
@@ -1835,6 +1896,99 @@ export interface operations {
       404: components['responses']['Error'];
       409: components['responses']['Error'];
       415: components['responses']['Error'];
+      default: components['responses']['Error'];
+    };
+  };
+  rotateTriggerToken: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        pipeline: components['parameters']['pipeline'];
+        trigger: components['parameters']['trigger'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The new token, and the trigger's path. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['TriggerToken'];
+        };
+      };
+      400: components['responses']['Error'];
+      404: components['responses']['Error'];
+      415: components['responses']['Error'];
+      default: components['responses']['Error'];
+    };
+  };
+  fireWebhook: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The request id, 1 to 128 printable ASCII characters without spaces: the run's trigger key, so sending the request again fires nothing new. Generated when absent. */
+        'Idempotency-Key'?: string;
+      };
+      path: {
+        pipeline: components['parameters']['pipeline'];
+        trigger: components['parameters']['trigger'];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': unknown;
+      };
+    };
+    responses: {
+      /** @description The run the request id had already fired; nothing new was fired. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['WebhookRun'];
+        };
+      };
+      /** @description The run the request fired. */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['WebhookRun'];
+        };
+      };
+      400: components['responses']['Error'];
+      401: components['responses']['Error'];
+      404: components['responses']['Error'];
+      405: components['responses']['Error'];
+      409: components['responses']['Error'];
+      413: components['responses']['Error'];
+      415: components['responses']['Error'];
+      /** @description Over the trigger's rate; Retry-After says in how many seconds a request is accepted again. */
+      429: {
+        headers: {
+          'Retry-After'?: number;
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description A standby engine, or one stepping down: it names the active engine in X-Millstream-Active-Engine and X-Millstream-Active-Address when it knows them. */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
       default: components['responses']['Error'];
     };
   };

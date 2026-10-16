@@ -28,13 +28,16 @@ type ApplyOptions struct {
 	Message string
 }
 
-// Applied is one package ApplyPackages applied.
+// Applied is one package applied.
 type Applied struct {
 	Pipeline    string
 	Revision    store.RevisionID
 	PackageHash string
 	// Created is false when the package was the pipeline's active one already: applying it changed nothing.
 	Created bool
+	// Tokens are the tokens of the webhook triggers that had none, by trigger: shown once, since the store keeps
+	// only their hashes (spec section 4.6).
+	Tokens map[string]string
 }
 
 // Finding is a check finding of one pipeline.
@@ -81,15 +84,11 @@ func (e *Engine) ApplyPackages(ctx context.Context, pkgs []*pipeline.Package, op
 	}
 	out := make([]Applied, 0, len(pkgs))
 	for _, pkg := range pkgs {
-		before, err := e.st.ActiveRevision(ctx, pkg.Pipeline.Name)
-		if err != nil && !errors.Is(err, store.ErrNotFound) {
-			return out, findings, err
-		}
-		id, err := e.apply(ctx, pkg, opts.Message)
+		a, err := e.apply(ctx, pkg, opts.Message)
 		if err != nil {
 			return out, findings, err
 		}
-		out = append(out, Applied{Pipeline: pkg.Pipeline.Name, Revision: id, PackageHash: pkg.Hash, Created: id != before})
+		out = append(out, a)
 	}
 	return out, findings, nil
 }

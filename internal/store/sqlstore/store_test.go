@@ -100,8 +100,8 @@ func TestUnitsAreNamed(t *testing.T) {
 		}
 		seen[u] = true
 	}
-	if len(Units) != 25 {
-		t.Fatalf("%d units, want 25", len(Units))
+	if len(Units) != 26 { // spec section 5.11, Disable, Rollback and Trigger tokens
+		t.Fatalf("%d units, want 26", len(Units))
 	}
 }
 

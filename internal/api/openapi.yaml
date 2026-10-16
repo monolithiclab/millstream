@@ -160,6 +160,83 @@ paths:
         "400": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }
+  /pipelines/{pipeline}/triggers/{trigger}/token:
+    parameters: [{ $ref: "#/components/parameters/pipeline" }, { $ref: "#/components/parameters/trigger" }]
+    post:
+      operationId: rotateTriggerToken
+      summary: >-
+        Replace a webhook trigger's token (millstream trigger token --rotate). The new token is answered this once, the
+        store keeping only its hash; the old one stops working at once.
+      responses:
+        default: { $ref: "#/components/responses/Error" }
+        "415": { $ref: "#/components/responses/Error" }
+        "200":
+          description: The new token, and the trigger's path.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TriggerToken" }
+        "400": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+  /hooks/{pipeline}/{trigger}:
+    servers: [{ url: / }]
+    parameters:
+      - { $ref: "#/components/parameters/pipeline" }
+      - { $ref: "#/components/parameters/trigger" }
+    post:
+      operationId: fireWebhook
+      summary: >-
+        Fire a webhook trigger of the pipeline's active revision with the request's body (spec section 4.6). Served
+        outside /api/v1 and outside its access rules: the caller is a service, not a browser, so neither the Host and
+        Origin checks nor auth.token and the session cookie apply. The trigger's own token authenticates it, as a
+        bearer token or the token query parameter (prefer the header: proxies log URLs). The body is validated
+        against the trigger's input schema, up to 1 MiB; a paused pipeline fires (its deliveries wait), a disabled
+        one is a conflict. Each trigger takes at most its rate (webhook.rate, 60/min by default).
+      security: [{ webhookToken: [] }, { webhookTokenQuery: [] }]
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          description: >-
+            The request id, 1 to 128 printable ASCII characters without spaces: the run's trigger key, so sending
+            the request again fires nothing new. Generated when absent.
+          schema: { type: string, minLength: 1, maxLength: 128 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { description: Any JSON value the trigger's input schema accepts. }
+      responses:
+        default: { $ref: "#/components/responses/Error" }
+        "202":
+          description: The run the request fired.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WebhookRun" }
+        "200":
+          description: The run the request id had already fired; nothing new was fired.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WebhookRun" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "405": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "413": { $ref: "#/components/responses/Error" }
+        "415": { $ref: "#/components/responses/Error" }
+        "429":
+          description: Over the trigger's rate; Retry-After says in how many seconds a request is accepted again.
+          headers:
+            Retry-After: { schema: { type: integer } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "503":
+          description: >-
+            A standby engine, or one stepping down: it names the active engine in X-Millstream-Active-Engine and
+            X-Millstream-Active-Address when it knows them.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
   /revisions:
     post:
       operationId: applyPackages
@@ -814,6 +891,7 @@ components:
     item: { name: item, in: path, required: true, schema: { type: string } }
     delivery: { name: delivery, in: path, required: true, schema: { type: string } }
     insight: { name: insight, in: path, required: true, schema: { type: string } }
+    trigger: { name: trigger, in: path, required: true, schema: { type: string } }
     artifactName: { name: name, in: path, required: true, schema: { type: string } }
     cursor: { name: cursor, in: query, description: A page's next., schema: { type: string } }
     limit: { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 500, default: 50 } }
@@ -851,6 +929,15 @@ components:
       in: cookie
       name: millstream_session
       description: The session POST /session starts, for the web UI.
+    webhookToken:
+      type: http
+      scheme: bearer
+      description: A webhook trigger's own token, for its /hooks path only.
+    webhookTokenQuery:
+      type: apiKey
+      in: query
+      name: token
+      description: A webhook trigger's own token as a query parameter, for callers that cannot set a header.
   responses:
     Error:
       description: An error.
@@ -886,7 +973,7 @@ components:
             code:
               type: string
               enum: [notFound, conflict, invalid, unavailable, methodNotAllowed, tooLarge, unauthorized, forbidden,
-                unsupportedMediaType, internal]
+                unsupportedMediaType, tooManyRequests, internal]
             message: { type: string }
     RunState: { type: string, enum: [running, waitingReview, succeeded, completedWithErrors, cancelled] }
     DeliveryState:
@@ -934,6 +1021,8 @@ components:
         kind: { type: string, enum: [cron, manual, webhook] }
         schedule: { type: string }
         stream: { type: string }
+        path: { type: string, description: "A webhook trigger's path under the server's address: /hooks/{pipeline}/{trigger}." }
+        rate: { type: string, description: "The most requests a webhook trigger's token makes per period, such as 60/min." }
     Import:
       type: object
       description: A stream the revision imports from another pipeline (spec section 4.12).
@@ -995,7 +1084,7 @@ components:
         kind: { type: string, enum: [trigger, replay, import] }
         trigger: { type: string, description: The trigger, or for an import run the imported stream. }
         triggerKey: { type: string, description: The scheduled time or request id, or for an import run the producer run. }
-        triggerSource: { type: string, enum: [cron, manual, import] }
+        triggerSource: { type: string, enum: [cron, manual, webhook, import] }
         scheduledAt: { type: string, format: date-time }
         generation: { type: integer }
         state: { $ref: "#/components/schemas/RunState" }
@@ -1282,6 +1371,10 @@ components:
               revision: { type: integer }
               packageHash: { type: string }
               created: { type: boolean, description: False when the package was the active one already. }
+              tokens:
+                type: array
+                description: The new tokens of its webhook triggers that had none, shown this once.
+                items: { $ref: "#/components/schemas/TriggerToken" }
         warnings:
           type: array
           items:
@@ -1293,6 +1386,23 @@ components:
               severity: { type: string }
               path: { type: string }
               message: { type: string }
+    TriggerToken:
+      type: object
+      description: A webhook trigger's token, shown once.
+      required: [trigger, token, path]
+      additionalProperties: false
+      properties:
+        trigger: { type: string }
+        token: { type: string }
+        path: { type: string, description: "Where the trigger is served, under the server's address." }
+    WebhookRun:
+      type: object
+      required: [pipeline, runId, created]
+      additionalProperties: false
+      properties:
+        pipeline: { type: string }
+        runId: { type: string }
+        created: { type: boolean, description: False when the request id had already fired the run. }
     TriggerRequest:
       type: object
       additionalProperties: false

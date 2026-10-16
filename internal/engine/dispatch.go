@@ -80,7 +80,7 @@ func (e *Engine) lease(ctx context.Context, owner string, maxN int) ([]store.Lea
 	for ref, step := range steps {
 		free := max(step.Concurrency, 1) - perStep[ref]
 		if b := e.bucket(ref, step.Rate, now); b != nil {
-			tokens := b.available(now)
+			tokens := b.Available(now)
 			if tokens == 0 {
 				req.Exclude = append(req.Exclude, ref)
 				continue
@@ -103,7 +103,7 @@ func (e *Engine) lease(ctx context.Context, owner string, maxN int) ([]store.Lea
 			step: ref, runID: l.RunID, itemID: l.Item.ID, attempt: l.Attempt, token: l.FencingToken,
 		}
 		if b := e.buckets[ref]; b != nil {
-			b.take()
+			b.Take()
 		}
 	}
 	return leases, nil
@@ -169,7 +169,7 @@ func (e *Engine) countInflight() (map[store.StepRef]int, map[string]int) {
 
 // bucket returns the step's rate bucket, nil when it has no rate. A changed rate replaces the bucket. The caller
 // holds e.mu.
-func (e *Engine) bucket(ref store.StepRef, rate string, now time.Time) *bucket {
+func (e *Engine) bucket(ref store.StepRef, rate string, now time.Time) *Bucket {
 	if rate == "" {
 		delete(e.buckets, ref)
 		return nil
@@ -184,7 +184,7 @@ func (e *Engine) bucket(ref store.StepRef, rate string, now time.Time) *bucket {
 			"error", err.Error())
 		return nil
 	}
-	b := newBucket(rate, count, per, now)
+	b := NewBucket(rate, count, per, now)
 	if old == nil && e.opts.Takeover {
 		b.tokens = 0 // the step's first bucket under this engine: no burst on a takeover
 	}

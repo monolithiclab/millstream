@@ -56,9 +56,15 @@ type CronSpec struct {
 // ManualSpec is a manual trigger.
 type ManualSpec struct{}
 
-// WebhookSpec is a webhook trigger; M1 parses it and does not serve it.
+// DefaultWebhookRate is how many requests a webhook trigger accepts per period without its own rate.
+const DefaultWebhookRate = "60/min"
+
+// WebhookSpec is a webhook trigger (spec section 4.6): POST /hooks/<pipeline>/<trigger>, authenticated by the
+// trigger's token.
 type WebhookSpec struct {
-	Path string
+	// Rate is the most requests its token may make per period, as written (for example "10/s"), DefaultWebhookRate
+	// unless the trigger sets one; see ParseRate.
+	Rate string
 }
 
 // StreamDecl is an entry under streams: either settings for a stream of this pipeline, or an import of another

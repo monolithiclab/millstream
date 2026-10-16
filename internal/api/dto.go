@@ -47,12 +47,15 @@ type Step struct {
 	PauseCause  string   `json:"pauseCause,omitempty"`
 }
 
-// Trigger is a trigger of a revision: cron, manual or webhook.
+// Trigger is a trigger of a revision: cron, manual or webhook. A webhook trigger has its path, under the server's
+// address, and its rate.
 type Trigger struct {
 	Name     string `json:"name"`
 	Kind     string `json:"kind"`
 	Schedule string `json:"schedule,omitempty"`
 	Stream   string `json:"stream"`
+	Path     string `json:"path,omitempty"`
+	Rate     string `json:"rate,omitempty"`
 }
 
 // Revision is an applied revision; Graph is set when one revision is asked for.
@@ -461,7 +464,7 @@ func graph(p *pipeline.Pipeline, ps *store.PipelineState) Graph {
 		case t.Cron != nil:
 			tr.Kind, tr.Schedule = "cron", t.Cron.Expr
 		case t.Webhook != nil:
-			tr.Kind = "webhook"
+			tr.Kind, tr.Path, tr.Rate = "webhook", HookPath(p.Name, name), t.Webhook.Rate
 		default:
 			tr.Kind = "manual"
 		}

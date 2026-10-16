@@ -58,10 +58,12 @@ const DefaultMaxBody = 1 << 20
 // DefaultMaxPackagesBody bounds an apply's body, its packages' files, without Options.MaxPackagesBody.
 const DefaultMaxPackagesBody = 64 << 20
 
-// Engine is what the actions need of the engine beyond the store: firing a trigger and starting a replay run, which
-// resolve variables against the revision, and applying packages, which the engine checks and keeps.
+// Engine is what the actions need of the engine beyond the store: firing a trigger (by hand or for a webhook
+// request) and starting a replay run, which resolve variables against the revision, and applying packages, which the
+// engine checks and keeps.
 type Engine interface {
 	Fire(ctx context.Context, pipeline, trigger, key string, payload json.RawMessage) (string, bool, error)
+	FireWebhook(ctx context.Context, pipeline, trigger, key string, payload json.RawMessage) (string, bool, error)
 	Replay(ctx context.Context, req engine.ReplayRequest) (string, bool, error)
 	PackageFromFiles(files map[string][]byte) (*pipeline.Package, error)
 	ApplyPackages(ctx context.Context, pkgs []*pipeline.Package, opts engine.ApplyOptions) ([]engine.Applied,
@@ -139,7 +141,8 @@ type Server struct {
 	opts     Options
 	log      *slog.Logger
 	mux      *http.ServeMux
-	tokenSum [32]byte // the SHA-256 of Auth.Token
+	hooks    *http.ServeMux // the webhook triggers, served by Handler outside the browser guards
+	tokenSum [32]byte       // the SHA-256 of Auth.Token
 }
 
 // handler is a route's handler: an error is answered by writeError.
@@ -163,6 +166,7 @@ var routes = []route{
 	{http.MethodPost, "/pipelines/{pipeline}/resume", (*Server).resumePipeline},
 	{http.MethodPost, "/pipelines/{pipeline}/disable", (*Server).disablePipeline},
 	{http.MethodPost, "/pipelines/{pipeline}/rollback", (*Server).rollbackPipeline},
+	{http.MethodPost, "/pipelines/{pipeline}/triggers/{trigger}/token", (*Server).rotateTriggerToken},
 	{http.MethodPost, "/revisions", (*Server).applyPackages},
 	{http.MethodPost, "/pipelines/{pipeline}/steps/{step}/pause", (*Server).pauseStep},
 	{http.MethodPost, "/pipelines/{pipeline}/steps/{step}/resume", (*Server).resumeStep},
@@ -294,6 +298,16 @@ func New(opts Options) (*Server, error) {
 	s.mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeErrorBody(w, http.StatusNotFound, codeNotFound, "no such API path: "+r.URL.Path)
 	})
+	s.hooks = http.NewServeMux()
+	s.hooks.HandleFunc(hookRoute, func(w http.ResponseWriter, r *http.Request) {
+		if err := s.hook(w, r); err != nil {
+			s.writeError(w, r, err)
+		}
+	})
+	s.hooks.HandleFunc(HooksPrefix, func(w http.ResponseWriter, r *http.Request) {
+		writeErrorBody(w, http.StatusNotFound, codeNotFound, "no such webhook path: "+r.URL.Path+
+			": webhooks are POST "+hookRoute)
+	})
 	return s, nil
 }
 
@@ -333,19 +347,16 @@ func jsonContent(r *http.Request) bool {
 // No response may be framed by another page (clickjacking): every one says so, and the UI's pages carry a content
 // security policy that loads nothing from elsewhere. Artifacts replace it with their own sandbox (serveArtifact).
 //
-// Remote nodes' requests under NodePrefix go to Options.NodeAPI before the Host guard (see NodePrefix).
+// Remote nodes' requests under NodePrefix go to Options.NodeAPI before the Host guard (see NodePrefix), and webhook
+// requests under HooksPrefix to the server's webhook handler (see HooksPrefix).
 func Handler(s *Server, ui http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h := w.Header()
 		h.Set("X-Frame-Options", "DENY")
-		if r.URL.Path == NodePrefix || strings.HasPrefix(r.URL.Path, NodePrefix+"/") {
+		if mount := s.serviceMount(r.URL.Path); mount != nil { // not a browser: no Host guard, no auth.token
 			h.Set("Content-Security-Policy", apiPolicy)
 			h.Set("X-Content-Type-Options", "nosniff")
-			if s.opts.NodeAPI == nil {
-				writeErrorBody(w, http.StatusNotFound, codeNotFound, "this engine serves no remote nodes")
-				return
-			}
-			s.opts.NodeAPI.ServeHTTP(w, r)
+			mount.ServeHTTP(w, r)
 			return
 		}
 		next := ui
@@ -361,6 +372,30 @@ func Handler(s *Server, ui http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// serviceMount returns what serves path when a service rather than a browser calls it, nil otherwise: the node
+// protocol under NodePrefix and the webhook triggers under HooksPrefix, each authenticating its requests by a token
+// of its own, so neither the Host and Origin guards nor auth.token and the session cookie apply.
+func (s *Server) serviceMount(path string) http.Handler {
+	for _, m := range []struct {
+		prefix string
+		h      http.Handler
+	}{
+		{NodePrefix, s.opts.NodeAPI},
+		{strings.TrimSuffix(HooksPrefix, "/"), s.hooks},
+	} {
+		if path != m.prefix && !strings.HasPrefix(path, m.prefix+"/") {
+			continue
+		}
+		if m.h == nil {
+			return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				writeErrorBody(w, http.StatusNotFound, codeNotFound, "this engine serves no remote nodes")
+			})
+		}
+		return m.h
+	}
+	return nil
 }
 
 // prometheusRequest reports whether a request is a scrape of /metrics: one that does not accept HTML, since /metrics

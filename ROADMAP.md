@@ -151,3 +151,8 @@ earlier designs are in the git history of the spec.
 - Vault and Kubernetes secret sources.
 - NATS JetStream store for high-throughput deployments (D2).
 - Alerting rules in the engine (v1 relies on Prometheus alerting).
+- Webhook triggers (M4 Task 6): verifying a sender's signature (GitHub's `X-Hub-Signature-256`, Stripe's) as an
+  alternative to the bearer token, for senders that sign rather than authenticate; a deployment-wide default `rate`
+  in the environment file; the rate buckets live in the active engine's memory, so a failover or a restart starts
+  each one full; the apply's tokens and its revision are two units, so an apply interrupted between them leaves a
+  webhook trigger without a token until the same apply runs again or the token is rotated.

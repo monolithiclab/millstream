@@ -126,9 +126,8 @@ func (s *Server) tokenMatches(got string) bool {
 // credential returns how r authenticated: a bearer token, which must be the deployment's (a wrong one does not fall
 // back to the cookie), else a live session's cookie.
 func (s *Server) credential(r *http.Request) credential {
-	if h := r.Header.Get("Authorization"); h != "" {
-		scheme, token, _ := strings.Cut(h, " ")
-		if strings.EqualFold(scheme, "Bearer") && s.tokenMatches(strings.TrimSpace(token)) {
+	if token, ok := bearerToken(r); ok {
+		if s.tokenMatches(token) {
 			return bearerCredential
 		}
 		return noCredential
@@ -137,6 +136,20 @@ func (s *Server) credential(r *http.Request) credential {
 		return cookieCredential
 	}
 	return noCredential
+}
+
+// bearerToken returns the bearer token of the request's Authorization header, and whether it has the header at all:
+// a header of another scheme gives an empty token, which matches nothing.
+func bearerToken(r *http.Request) (string, bool) {
+	h := r.Header.Get("Authorization")
+	if h == "" {
+		return "", false
+	}
+	scheme, token, _ := strings.Cut(h, " ")
+	if !strings.EqualFold(scheme, "Bearer") {
+		return "", true
+	}
+	return strings.TrimSpace(token), true
 }
 
 // public reports whether a request goes without the token: signing in or out, and /metrics when metrics.public.

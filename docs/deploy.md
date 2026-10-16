@@ -97,6 +97,43 @@ unless `--direct` takes the leadership lock itself while no engine runs; `status
 and the other commands that only read open the database read-only, beside the running engine, with the same
 environment file.
 
+## Webhook triggers
+
+A pipeline's `webhook` trigger is served at `POST /hooks/<pipeline>/<trigger>` on the same listener as the API (spec
+section 4.6). `apply` prints each new trigger's token once, with its path; the store keeps only a hash, so copy it
+into the sender's configuration then, or replace it later:
+
+```sh
+millstream apply ./property-sourcing
+# property-sourcing revision 3 4f1c…
+# property-sourcing webhook listing: POST /hooks/property-sourcing/listing with Authorization: Bearer mswh_… (shown once: keep it now)
+millstream trigger token property-sourcing listing --rotate      # the old token stops working at once
+```
+
+The pipeline screen of the UI shows each webhook trigger's URL, with **Rotate token**. The sender posts JSON (at
+most 1 MiB, matching the trigger's `inputSchema`) with the token as a bearer token, or as `?token=` when it cannot
+set a header, and may name its delivery in `Idempotency-Key` so that a retry fires nothing new. Each trigger takes
+at most its `webhook: { rate: … }` (60 a minute by default); beyond it the engine answers `429` with
+`Retry-After`.
+
+Behind the reverse proxy, route `/hooks/` to the engines like the rest: the endpoint is outside the API's Host and
+Origin checks and needs neither `auth.token` nor a session, since the trigger's token is its authentication. To expose
+only the webhooks to the internet while the UI and the API stay on a private network, give the proxy a public site
+that forwards `/hooks/` alone, for example with Caddy:
+
+```text
+hooks.example.com {
+    handle /hooks/* {
+        reverse_proxy 127.0.0.1:7070
+    }
+    respond 404
+}
+```
+
+Keep the proxy's access log free of query strings if senders use `?token=`. With a standby, a webhook reaching it is
+answered `503` with the active engine's address, like any action: route `/hooks/` as the rest of the API (see
+Standby and failover).
+
 ## VPS with systemd
 
 On the engine host, Postgres 17 running locally or reachable:
@@ -154,6 +191,9 @@ A second `millstream serve` on the same Postgres database, with the same environ
   from that origin, and marks the session cookie `Secure`. Or let the engine serve HTTPS itself with
   `tls: { cert, key }` (PEM files, relative to the environment file). Never expose it as plain HTTP. Tokens are
   compared in constant time and never logged.
+- **Webhook tokens.** Each webhook trigger has its own token, stored as a hash and compared in constant time; it
+  admits that trigger's requests only, never the API. Rotate it with `millstream trigger token --rotate` or the UI
+  when it may have leaked.
 - **Node token and TLS.** Nodes present the deployment's node token, over TLS except on loopback (spec section 15.7).
   A node can fetch packages and artifacts only for the deliveries it holds. `millstream nodes revoke <id>` refuses
   a node; rotating the token disconnects every node until it has the new one. Revocation and the engine

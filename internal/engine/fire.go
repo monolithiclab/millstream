@@ -22,20 +22,15 @@ var ErrFiringConfig = errors.New("firing configuration")
 // Fire fires a trigger of the pipeline's active revision by hand under key, the request id of the firing, generated
 // when key is empty. The run id is a function of the key and the trigger, so firing the same key again returns the
 // existing run with created false. A cron trigger may be fired this way too: the run is recorded as manual and does
-// not move where catch-up resumes. The run's variables are resolved now, from Options.Flags, the environment and
+// not move where catch-up resumes. The payload must match the trigger's input schema, and the key be a request id
+// (requestKey). The run's variables are resolved now, from Options.Flags, the environment and
 // the defaults, and stored on the run with their sources; the pipeline's secrets must resolve too, or nothing is
 // fired (spec section 5.5, config errors). Secrets themselves are never stored: they are read again at each
 // dispatch.
 func (e *Engine) Fire(ctx context.Context, pipelineName, trigger, key string, payload json.RawMessage) (string, bool,
 	error,
 ) {
-	if key == "" {
-		key = NewRequestID(e.opts.Now())
-	}
-	return e.fire(ctx, store.Firing{
-		Pipeline: pipelineName, Trigger: trigger, Key: key, RunID: ids.ManualRun(key, trigger),
-		Source: store.SourceManual, Payload: payload,
-	})
+	return e.fireRequest(ctx, store.SourceManual, pipelineName, trigger, key, payload)
 }
 
 // FireCron fires a cron trigger for its scheduled time, with the cron run input {trigger, scheduledAt}, under the
@@ -64,9 +59,23 @@ func (e *Engine) fire(ctx context.Context, f store.Firing) (string, bool, error)
 	if err != nil {
 		return fail(err)
 	}
-	if _, ok := rev.p.Triggers[f.Trigger]; !ok {
+	t, ok := rev.p.Triggers[f.Trigger]
+	if !ok {
 		return fail(fmt.Errorf("%w: pipeline %s has no trigger %q: %w", ErrFiringConfig, f.Pipeline, f.Trigger,
 			store.ErrInvalid))
+	}
+	if f.Source == store.SourceWebhook {
+		if t.Webhook == nil {
+			return fail(fmt.Errorf("trigger %s is not a webhook trigger: %w", f.Trigger, store.ErrNotFound))
+		}
+		if err := e.takeWebhook(f.Pipeline, f.Trigger, t.Webhook.Rate); err != nil {
+			return "", false, err
+		}
+	}
+	if f.Source != store.SourceCron { // a request's input must fit the trigger's schema
+		if err := e.checkPayload(ctx, rev, f.Trigger, f.Payload); err != nil {
+			return fail(err)
+		}
 	}
 	res, err := pipeline.ResolveVarsWith(rev.p, e.declaredFlags(rev.p), e.opts.Env, e.secrets(rev.p.Name))
 	if err != nil {

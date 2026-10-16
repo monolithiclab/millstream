@@ -51,7 +51,7 @@ func (c ApplyCmd) Run(rt *Runtime) error {
 			return err
 		}
 		for _, a := range applied {
-			printApplied(rt, a.Pipeline, int64(a.Revision), a.PackageHash, a.Created)
+			printApplied(rt, api.AppliedOf(a))
 		}
 		return nil
 	})
@@ -71,17 +71,19 @@ func (c ApplyCmd) remote(rt *Runtime, cl *apiClient, pkgs []*pipeline.Package) e
 			Diagnostic: pipeline.Diagnostic{Severity: f.Severity, Path: f.Path, Message: f.Message}}.String())
 	}
 	for _, a := range res.Revisions {
-		printApplied(rt, a.Pipeline, a.Revision, a.PackageHash, a.Created)
+		printApplied(rt, a)
 	}
 	return nil
 }
 
-func printApplied(rt *Runtime, pipelineName string, revision int64, hash string, created bool) {
+// printApplied prints a revision an apply applied, and the new tokens of its webhook triggers.
+func printApplied(rt *Runtime, a api.AppliedRevision) {
 	suffix := ""
-	if !created {
+	if !a.Created {
 		suffix = " (already active)"
 	}
-	fmt.Fprintf(rt.IO.Out, "%s revision %d %s%s\n", pipelineName, revision, shortHash(hash), suffix)
+	fmt.Fprintf(rt.IO.Out, "%s revision %d %s%s\n", a.Pipeline, a.Revision, shortHash(a.PackageHash), suffix)
+	printTokens(rt, a.Pipeline, a.Tokens)
 }
 
 // shortHash is a package hash's first 12 characters.

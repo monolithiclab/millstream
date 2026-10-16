@@ -12,7 +12,7 @@ import (
 // size, a new rate starts a new bucket, and an invalid rate is logged and leaves the step unlimited.
 func TestBucket(t *testing.T) {
 	logs := &syncBuffer{}
-	e := &Engine{buckets: map[store.StepRef]*bucket{}, log: newLogger(logs)}
+	e := &Engine{buckets: map[store.StepRef]*Bucket{}, log: newLogger(logs)}
 	ref := store.StepRef{Pipeline: "p", Step: "a"}
 	now := t0
 	b := e.bucket(ref, "2/min", now)
@@ -25,17 +25,17 @@ func TestBucket(t *testing.T) {
 	}
 	for i, s := range steps {
 		now = now.Add(s.advance)
-		if got := b.available(now); got != s.want {
+		if got := b.Available(now); got != s.want {
 			t.Fatalf("step %d: %d available, want %d", i, got, s.want)
 		}
 		for range s.take {
-			b.take()
+			b.Take()
 		}
 	}
 	if e.bucket(ref, "2/min", now) != b {
 		t.Fatal("the same rate made a new bucket")
 	}
-	if nb := e.bucket(ref, "1/h", now); nb == b || nb.available(now) != 1 {
+	if nb := e.bucket(ref, "1/h", now); nb == b || nb.Available(now) != 1 {
 		t.Fatal("a new rate kept the old bucket")
 	}
 	if e.bucket(ref, "", now) != nil || len(e.buckets) != 0 {
@@ -48,16 +48,16 @@ func TestBucket(t *testing.T) {
 
 // An engine taking a deployment over starts each step's rate empty: its first token comes one interval in.
 func TestBucketAfterTakeover(t *testing.T) {
-	e := &Engine{buckets: map[store.StepRef]*bucket{}, opts: Options{Takeover: true}}
+	e := &Engine{buckets: map[store.StepRef]*Bucket{}, opts: Options{Takeover: true}}
 	ref := store.StepRef{Pipeline: "p", Step: "a"}
 	b := e.bucket(ref, "2/min", t0)
-	if got := b.available(t0); got != 0 {
+	if got := b.Available(t0); got != 0 {
 		t.Fatalf("%d tokens at the takeover, want 0", got)
 	}
-	if got := b.available(t0.Add(30 * time.Second)); got != 1 {
+	if got := b.Available(t0.Add(30 * time.Second)); got != 1 {
 		t.Fatalf("%d tokens one interval in, want 1", got)
 	}
-	if nb := e.bucket(ref, "1/h", t0); nb.available(t0) != 1 {
+	if nb := e.bucket(ref, "1/h", t0); nb.Available(t0) != 1 {
 		t.Fatal("a new rate after the takeover did not start full")
 	}
 }

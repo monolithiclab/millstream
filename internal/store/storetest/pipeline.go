@@ -1,6 +1,7 @@
 package storetest
 
 import (
+	"encoding/json"
 	"errors"
 	"reflect"
 	"strings"
@@ -237,4 +238,52 @@ func TestRevisionNumbersSurviveACrash(t *testing.T, open Opener) {
 	}
 	wantState(t, "revision applied again", e.apply(fixture), store.RevisionID(1))
 	wantState(t, "the next revision", e.apply(fixtureFixed), store.RevisionID(2))
+}
+
+// hooked is the fixture with a webhook trigger.
+var hooked = strings.Replace(fixture, "  adhoc: { manual: {} }\n", "  adhoc: { manual: {} }\n  hook: { webhook: {} }\n",
+	1)
+
+// A webhook trigger's token is stored as its hash (spec section 4.6): an apply stores one for each trigger without
+// one and leaves the others, a rotation replaces it, and neither names the token in its events. A webhook firing
+// is recorded as such.
+func TestTriggerTokens(t *testing.T, open Opener) {
+	e := newEnv(t, open, hooked)
+	_, err := e.s.TriggerTokenHash(e.ctx, "listings", "hook")
+	wantErr(t, err, store.ErrNotFound)
+	created, err := e.s.CreateTriggerTokens(e.ctx, "listings", map[string]string{"hook": "h1"})
+	if err != nil || len(created) != 1 || created[0] != "hook" {
+		t.Fatalf("CreateTriggerTokens = %v, %v", created, err)
+	}
+	// Applying again keeps the token the callers hold.
+	if created, err = e.s.CreateTriggerTokens(e.ctx, "listings", map[string]string{"hook": "h2"}); err != nil ||
+		len(created) != 0 {
+		t.Fatalf("CreateTriggerTokens again = %v, %v", created, err)
+	}
+	if h, err := e.s.TriggerTokenHash(e.ctx, "listings", "hook"); err != nil || h != "h1" {
+		t.Fatalf("TriggerTokenHash = %q, %v; want h1", h, err)
+	}
+	if err := e.s.RotateTriggerToken(e.ctx, "listings", "hook", "h3"); err != nil {
+		t.Fatal(err)
+	}
+	if h, err := e.s.TriggerTokenHash(e.ctx, "listings", "hook"); err != nil || h != "h3" {
+		t.Fatalf("TriggerTokenHash after rotation = %q, %v; want h3", h, err)
+	}
+	wantErr(t, e.s.RotateTriggerToken(e.ctx, "listings", "adhoc", "h4"), store.ErrInvalid)
+	wantErr(t, e.s.RotateTriggerToken(e.ctx, "listings", "nope", "h4"), store.ErrNotFound)
+	wantErr(t, e.s.RotateTriggerToken(e.ctx, "nope", "hook", "h4"), store.ErrNotFound)
+	evs := e.eventKinds(store.EventTriggerTokenSet)
+	wantState(t, "token events", len(evs), 2)
+	for _, ev := range evs {
+		if strings.Contains(string(ev.Data), "h1") || strings.Contains(string(ev.Data), "h3") {
+			t.Fatalf("event %s names the hash", ev.Data)
+		}
+	}
+	if _, err := e.s.Fire(e.ctx, store.Firing{Pipeline: "listings", Trigger: "hook", Key: "k1", RunID: "r1",
+		Source: store.SourceWebhook, Payload: json.RawMessage(`{}`)}); err != nil {
+		t.Fatal(err)
+	}
+	if r, err := e.s.Run(e.ctx, "listings", "r1"); err != nil || r.TriggerSource != store.SourceWebhook {
+		t.Fatalf("Run = %+v, %v; want a webhook firing", r, err)
+	}
 }

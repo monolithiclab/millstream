@@ -515,11 +515,14 @@ func (c *contract) validate(t testing.TB, method, path string, rec *httptest.Res
 	}
 }
 
+// hookOperation is the webhook route, served beside the API's routes and documented with them.
+var hookOperation = route{method: http.MethodPost, path: hookRoute}
+
 // checkEveryRouteCalled fails the run when a route was not called by any test.
 func checkEveryRouteCalled() int {
 	c := theContract()
 	var missed []string
-	for _, rt := range routes {
+	for _, rt := range append(slices.Clone(routes), hookOperation) {
 		if op := rt.method + " " + rt.path; !c.called[op] {
 			missed = append(missed, op)
 		}
@@ -560,6 +563,8 @@ func do(t testing.TB, h http.Handler, req request) *httptest.ResponseRecorder {
 		if method != r.Method && (method != http.MethodGet || r.Method != http.MethodHead) {
 			path = ""
 		}
+	} else if r.Pattern == hookRoute && r.Method == http.MethodPost { // documented at its own path, outside Prefix
+		path = hookRoute
 	}
 	theContract().validate(t, r.Method, path, rec)
 	return rec

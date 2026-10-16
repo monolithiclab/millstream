@@ -125,11 +125,11 @@ func newPackage(t *testing.T, pipelineYAML string, actions ...string) *pipeline.
 
 func (v *env) apply(pkg *pipeline.Package) store.RevisionID {
 	v.t.Helper()
-	id, err := v.e.Apply(v.ctx, pkg)
+	a, err := v.e.Apply(v.ctx, pkg)
 	if err != nil {
 		v.t.Fatalf("Apply: %v", err)
 	}
-	return id
+	return a.Revision
 }
 
 // fire fires a trigger under key and returns the run id.

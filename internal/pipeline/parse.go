@@ -190,12 +190,11 @@ func parseWebhook(n *yaml.Node, path string) (*WebhookSpec, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := f.allow("path"); err != nil {
+	if err := f.allow("rate"); err != nil {
 		return nil, err
 	}
-	w := &WebhookSpec{}
-	w.Path, err = f.requiredStr("path")
-	return w, err
+	w := &WebhookSpec{Rate: DefaultWebhookRate}
+	return w, optional(f, "rate", &w.Rate, rate)
 }
 
 func parseStreams(n *yaml.Node, path string) (map[string]StreamDecl, error) {

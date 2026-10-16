@@ -57,7 +57,7 @@ CREATE TABLE runs (
     revision           INTEGER NOT NULL REFERENCES revisions (id),
     trigger            TEXT NOT NULL,
     trigger_key        TEXT NOT NULL,
-    trigger_source     TEXT NOT NULL, -- cron | manual | import
+    trigger_source     TEXT NOT NULL, -- cron | manual | webhook | import
     scheduled_at       TEXT,          -- the scheduled time of a cron firing
     kind               TEXT NOT NULL, -- trigger | replay | import
     generation         INTEGER NOT NULL,
@@ -326,3 +326,13 @@ CREATE TABLE review_samples (
 );
 CREATE INDEX review_samples_open ON review_samples (state, inbox);
 CREATE INDEX review_samples_deadline ON review_samples (state, deadline);
+
+-- Webhook trigger tokens (spec section 4.6): the SHA-256 of each token, hex, never the token. A token outlives the
+-- revisions that declare its trigger, so a rollback finds it again.
+CREATE TABLE trigger_tokens (
+    pipeline   TEXT NOT NULL,
+    trigger    TEXT NOT NULL,
+    hash       TEXT NOT NULL,
+    created_at TEXT NOT NULL, -- set again by a rotation
+    PRIMARY KEY (pipeline, trigger)
+);

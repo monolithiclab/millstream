@@ -385,6 +385,16 @@ func packagePath(base, rel string) (p string, ok bool) {
 	return p, p != ".." && !strings.HasPrefix(p, "../")
 }
 
+// TriggerSchema returns the input schema of the pipeline's trigger, the schema of its stream, as a JSON document:
+// nil when the trigger declares none or does not exist.
+func (pkg *Package) TriggerSchema(trigger string) ([]byte, error) {
+	t, ok := pkg.Pipeline.Triggers[trigger]
+	if !ok || t.InputSchema == nil {
+		return nil, nil
+	}
+	return schemaDoc(pkg, ".", t.InputSchema)
+}
+
 // schemaDoc returns a schema as a JSON document: an inline schema as written, or {$ref: path} read from the file
 // at path, relative to base. A file may be JSON or YAML.
 func schemaDoc(pkg *Package, base string, v any) ([]byte, error) {
