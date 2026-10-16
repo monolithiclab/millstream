@@ -27,7 +27,6 @@ const secretValue = "tok-5f2a9c71"
 // node reports: the stored error, the dead letter and the dead-letter payload hold [redacted:apiToken] (spec section
 // 4.5). TestSecretsRedacted, in the e2e build, runs the whole path through a real node and action.
 func TestFailureRedacted(t *testing.T) {
-	t.Parallel()
 	v := newEnv(t, Options{Env: func(k string) (string, bool) {
 		return secretValue, k == pipeline.SecretEnv("apiToken")
 	}})

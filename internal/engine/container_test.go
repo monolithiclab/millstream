@@ -25,7 +25,6 @@ func (oneImage) Tags(string) ([]string, error) { return nil, nil }
 // TestContainerAssignment: a container action's delivery names its pinned image, its command and its network, and
 // carries none of the engine's environment.
 func TestContainerAssignment(t *testing.T) {
-	t.Parallel()
 	environ := map[string]string{"PATH": "/usr/bin", "HOME": "/home/u"}
 	v := newEnv(t, Options{
 		Env:      func(k string) (string, bool) { s, ok := environ[k]; return s, ok },

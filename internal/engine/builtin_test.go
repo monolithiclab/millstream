@@ -55,7 +55,6 @@ func (v *env) byStep(runID, step string) []store.Delivery {
 }
 
 func TestBuiltinsRunInTheEngine(t *testing.T) {
-	t.Parallel()
 	v := newEnv(t, Options{})
 	v.apply(newPackage(t, builtinPipeline, "a"))
 	id := v.fire("p", "adhoc", "r1")
@@ -99,7 +98,6 @@ func TestBuiltinsRunInTheEngine(t *testing.T) {
 
 // Builtin steps whose configuration fails fail their deliveries for good: the cases are the steps of one run.
 func TestBuiltinConfigErrors(t *testing.T) {
-	t.Parallel()
 	tests := []struct {
 		step, def, class, message string
 	}{

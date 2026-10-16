@@ -36,7 +36,6 @@ func runIDs(rs []store.Run) []string {
 // TestCatchup applies a pipeline per catch-up policy on 10 October, stops the engine until 13 October 08:00 (four
 // 06:00 firings missed), then starts a fresh engine: catch-up runs on its first tick.
 func TestCatchup(t *testing.T) {
-	t.Parallel()
 	missed := []string{
 		"run_2026-10-10T06:00Z_daily", "run_2026-10-11T06:00Z_daily", "run_2026-10-12T06:00Z_daily",
 		"run_2026-10-13T06:00Z_daily",
@@ -102,7 +101,6 @@ func TestCatchup(t *testing.T) {
 }
 
 func TestCronPayloadAndTimezone(t *testing.T) {
-	t.Parallel()
 	v := newEnv(t, Options{})
 	v.clock.Set(time.Date(2026, 10, 15, 3, 0, 0, 0, time.UTC))
 	v.apply(newPackage(t, cronPipeline("latest", `, tz: "Europe/Paris"`), "crawl"))
@@ -128,7 +126,6 @@ func TestCronPayloadAndTimezone(t *testing.T) {
 }
 
 func TestScheduleBadCronIsLoggedOnce(t *testing.T) {
-	t.Parallel()
 	v := newEnv(t, Options{})
 	v.apply(newPackage(t, strings.Replace(cronPipeline("latest", ""), "0 6 * * *", "61 6 * * *", 1), "crawl"))
 	v.e.schedule(v.ctx)
@@ -139,7 +136,6 @@ func TestScheduleBadCronIsLoggedOnce(t *testing.T) {
 }
 
 func TestScheduleFireErrorIsLogged(t *testing.T) {
-	t.Parallel()
 	v := newEnv(t, Options{})
 	src := strings.Replace(cronPipeline("latest", ""), "triggers:", "vars: { required: null }\ntriggers:", 1)
 	v.apply(newPackage(t, src, "crawl"))
@@ -151,7 +147,6 @@ func TestScheduleFireErrorIsLogged(t *testing.T) {
 }
 
 func TestScheduleDropsOldestBeyondBound(t *testing.T) {
-	t.Parallel()
 	v := newEnv(t, Options{})
 	v.e.maxDue = 5 // the bound, small: the production one would write 10000 skipped firings
 	v.clock.Set(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC))
@@ -171,7 +166,6 @@ func TestScheduleDropsOldestBeyondBound(t *testing.T) {
 
 // Firing a cron trigger by hand is recorded as manual and leaves catch-up alone: the next scheduled time fires.
 func TestManualFiringOfCronTrigger(t *testing.T) {
-	t.Parallel()
 	v := newEnv(t, Options{})
 	v.clock.Set(time.Date(2026, 10, 15, 5, 0, 0, 0, time.UTC))
 	v.apply(newPackage(t, cronPipeline("latest", ""), "crawl"))
@@ -211,7 +205,6 @@ func (f *failingFire) Fire(ctx context.Context, fi store.Firing) (bool, error) {
 
 // A firing that fails in the store is retried at the next tick rather than lost.
 func TestScheduleRetriesStoreErrors(t *testing.T) {
-	t.Parallel()
 	v := newEnv(t, Options{})
 	v.clock.Set(time.Date(2026, 10, 15, 5, 0, 0, 0, time.UTC))
 	v.apply(newPackage(t, cronPipeline("latest", ""), "crawl"))

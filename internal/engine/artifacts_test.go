@@ -10,7 +10,6 @@ import (
 )
 
 func TestArtifactCalls(t *testing.T) {
-	t.Parallel()
 	none := newEnv(t, Options{})
 	if _, err := none.e.PutArtifact(t.Context(), "listings", "a.txt", strings.NewReader("x")); !errors.Is(err, errNoArtifactStore) {
 		t.Fatalf("PutArtifact without a store: %v", err)

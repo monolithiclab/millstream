@@ -11,7 +11,6 @@ import (
 // A step's rate is a token bucket: it starts full, each lease takes a token, it refills continuously up to its
 // size, a new rate starts a new bucket, and an invalid rate is logged and leaves the step unlimited.
 func TestBucket(t *testing.T) {
-	t.Parallel()
 	logs := &syncBuffer{}
 	e := &Engine{buckets: map[store.StepRef]*bucket{}, log: newLogger(logs)}
 	ref := store.StepRef{Pipeline: "p", Step: "a"}

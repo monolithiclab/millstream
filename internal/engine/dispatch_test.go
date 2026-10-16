@@ -28,7 +28,6 @@ func fireN(v *env, pipelineName string, n int) []string {
 }
 
 func TestAssignment(t *testing.T) {
-	t.Parallel()
 	environ := map[string]string{
 		"PATH": "/usr/bin", "HOME": "/home/u", "MILLSTREAM_VAR_MAX_PRICE": "250000",
 		"MILLSTREAM_SECRET_API_TOKEN": "tok", "OTHER": "never passed",
@@ -72,9 +71,7 @@ func TestAssignment(t *testing.T) {
 }
 
 func TestConcurrencyAndLimits(t *testing.T) {
-	t.Parallel()
 	t.Run("step concurrency and pipeline limit", func(t *testing.T) {
-		t.Parallel()
 		v := newEnv(t, Options{})
 		v.apply(newPackage(t, manualPipeline("p", `
   a: { action: ./actions/a, in: trigger.adhoc, concurrency: 2 }
@@ -109,7 +106,6 @@ limits: { concurrency: 3 }
 		}
 	})
 	t.Run("leases of a previous engine count until they expire", func(t *testing.T) {
-		t.Parallel()
 		v := newEnv(t, Options{LeaseTTL: time.Minute})
 		pkg := newPackage(t, manualPipeline("p", `
   a: { action: ./actions/a, in: trigger.adhoc }
@@ -141,7 +137,6 @@ limits: { concurrency: 3 }
 }
 
 func TestPauseAndResume(t *testing.T) {
-	t.Parallel()
 	v := newEnv(t, Options{})
 	v.apply(newPackage(t, manualPipeline("p", `
   a: { action: ./actions/a, in: trigger.adhoc, concurrency: 10 }
@@ -174,7 +169,6 @@ func TestPauseAndResume(t *testing.T) {
 // Deliveries the engine cannot dispatch fail for good, each with its class: the cases are the steps of one run, and
 // a missing secret, which needs the secret unset after firing, is a second pipeline's run.
 func TestUndispatchableDeliveriesFail(t *testing.T) {
-	t.Parallel()
 	containerManifest := "name: c\nkind: container\nruntime: { container: { image: c:1 } }\n"
 	agentManifest := "name: g\nkind: agent\noutput: { type: object }\nruntime: { agent: { harness: api, model: m } }\n"
 	tests := []struct {
@@ -247,7 +241,6 @@ func TestUndispatchableDeliveriesFail(t *testing.T) {
 }
 
 func TestPackageNotLoadedRetries(t *testing.T) {
-	t.Parallel()
 	v := newEnv(t, Options{})
 	v.apply(newPackage(t, manualPipeline("p", "  a: { action: ./actions/a, in: trigger.adhoc }\n"), "a"))
 	id := v.fire("p", "adhoc", "k")
@@ -265,7 +258,6 @@ func TestPackageNotLoadedRetries(t *testing.T) {
 }
 
 func TestStubs(t *testing.T) {
-	t.Parallel()
 	src := manualPipeline("p", `
   crawl: { action: filter, in: trigger.adhoc, out: [listings] }
   score: { action: ./actions/a, in: listings, out: [scored] }
@@ -296,7 +288,6 @@ func TestStubs(t *testing.T) {
 }
 
 func TestHeartbeatAndStaleReports(t *testing.T) {
-	t.Parallel()
 	v := newEnv(t, Options{LeaseTTL: time.Minute})
 	v.apply(newPackage(t, manualPipeline("p", "  a: { action: ./actions/a, in: trigger.adhoc }\n"), "a"))
 	fireN(v, "p", 2)
@@ -342,7 +333,6 @@ func TestHeartbeatAndStaleReports(t *testing.T) {
 // TestCancelWhileLeased: a run cancelled while its delivery is leased discards the outputs reported later and
 // settles cancelled (review focus 5).
 func TestCancelWhileLeased(t *testing.T) {
-	t.Parallel()
 	v := newEnv(t, Options{})
 	v.apply(newPackage(t, manualPipeline("p", `
   a: { action: ./actions/a, in: trigger.adhoc, out: [listings] }
@@ -375,7 +365,6 @@ func TestCancelWhileLeased(t *testing.T) {
 // A step that only an older revision has keeps its concurrency and rate for the runs still on that revision: its
 // slots come from the revision of its live runs.
 func TestStepOfAnOlderRevisionKeepsItsLimits(t *testing.T) {
-	t.Parallel()
 	v := newEnv(t, Options{})
 	v.apply(newPackage(t, manualPipeline("p", `
   old: { action: ./actions/a, in: trigger.adhoc, concurrency: 1, rate: 2/h }

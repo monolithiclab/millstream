@@ -26,7 +26,6 @@ steps:
 `
 
 func TestFireStoresVarsAndSources(t *testing.T) {
-	t.Parallel()
 	environ := map[string]string{"MILLSTREAM_VAR_CITY": "Lyon", "MILLSTREAM_SECRET_API_TOKEN": "s3cr3t-value"}
 	v := newEnv(t, Options{
 		Flags: map[string]string{"maxPrice": "300000", "notDeclared": "x"},
@@ -74,7 +73,6 @@ func TestFireStoresVarsAndSources(t *testing.T) {
 }
 
 func TestFireErrors(t *testing.T) {
-	t.Parallel()
 	full := map[string]string{"MILLSTREAM_VAR_MAX_PRICE": "1", "MILLSTREAM_SECRET_API_TOKEN": "t"}
 	tests := []struct {
 		name     string
@@ -113,7 +111,6 @@ func TestFireErrors(t *testing.T) {
 }
 
 func TestNew(t *testing.T) {
-	t.Parallel()
 	if _, err := New(Options{}); err == nil {
 		t.Fatal("New without a store succeeded")
 	}

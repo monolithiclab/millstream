@@ -20,6 +20,9 @@ import (
 	"github.com/monolithiclab/millstream/internal/store/sqlite"
 )
 
+// The package's tests do not call t.Parallel: each runs a store, and the transpiled SQLite allocates under one
+// process-wide lock, so parallel tests contend instead of overlapping (the package took longer in parallel than
+// serially, as the store tests do).
 func TestMain(m *testing.M) {
 	// The tests allocate heavily (stores, CEL programs, the transpiled SQLite): a higher collector target trades memory
 	// for test time, as in the cli and store tests.

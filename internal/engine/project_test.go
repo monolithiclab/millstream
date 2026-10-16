@@ -43,7 +43,6 @@ func (v *env) insights() []store.Insight {
 // On its ticker, a pipeline's insights run only once insights.every has passed or a run settled since; Project runs
 // them whatever. A pass rolls the run's events up and records its insights.
 func TestProject(t *testing.T) {
-	t.Parallel()
 	v := stubbedEnv(t, Options{})
 	pass := func(what string, force, wantRan bool) {
 		t.Helper()
@@ -84,7 +83,6 @@ func TestProject(t *testing.T) {
 
 // The classes the insights and metrics call unschedulable are the engine's.
 func TestUnschedulableClasses(t *testing.T) {
-	t.Parallel()
 	if len(metrics.UnschedulableClasses) != 2 || !metrics.UnschedulableClasses[ClassUnsupported] ||
 		!metrics.UnschedulableClasses[ClassSandbox] {
 		t.Fatalf("UnschedulableClasses = %v", metrics.UnschedulableClasses)

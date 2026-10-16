@@ -39,7 +39,6 @@ func (w *webhook) posts() []string {
 // A review step parks what autoApprove does not approve, without holding a slot, tells its webhook, and passes the
 // rest at once as samples; the engine's timeout tick escalates, then rejects, what nobody decided.
 func TestReviewStepInTheEngine(t *testing.T) {
-	t.Parallel()
 	hook := &webhook{}
 	notifier := &review.Notifier{BaseURL: "https://ms.example", Client: &http.Client{Transport: hook}}
 	v := newEnv(t, Options{Notifier: notifier})

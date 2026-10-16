@@ -64,7 +64,6 @@ func agentPackage(t *testing.T, extra map[string]string, settings string) *pipel
 // mounted read-only, the manifest's network, the secrets passed by environment and the harness variables, its
 // recordings directory made absolute.
 func TestAgentAssignmentSandboxed(t *testing.T) {
-	t.Parallel()
 	environ := map[string]string{"MILLSTREAM_SECRET_KEY": "sk-0123456789", "PATH": "/usr/bin",
 		agent.EnvHarnessMode: agent.ModeReplay, agent.EnvHarnessDir: "testdata/recordings"}
 	a, _ := agentAssignment(t, Agents{
@@ -94,7 +93,6 @@ func TestAgentAssignmentSandboxed(t *testing.T) {
 // subcommand in the action directory, with the engine's variables the claude CLI needs (agent.ClaudeEnv, USER
 // included) only, logged at every start; a recordings directory being recorded is mounted writable in a sandbox.
 func TestAgentAssignmentUnsandboxed(t *testing.T) {
-	t.Parallel()
 	environ := map[string]string{"MILLSTREAM_SECRET_KEY": "sk-0123456789", "PATH": "/usr/bin", "OTHER": "x",
 		"USER": "u", "CLAUDE_CONFIG_DIR": "/c"}
 	a, v := agentAssignment(t, Agents{AllowUnsandboxed: true, Executable: "/usr/local/bin/millstream"}, environ)
@@ -120,7 +118,6 @@ func TestAgentAssignmentUnsandboxed(t *testing.T) {
 // cost replaces the reservation; with a day budget of one reservation, the next delivery is not leased and the
 // agent step is paused with its cause.
 func TestAgentBudgetReservation(t *testing.T) {
-	t.Parallel()
 	agents := Agents{AllowUnsandboxed: true, Executable: "/usr/local/bin/millstream"}
 	environ := map[string]string{"MILLSTREAM_SECRET_KEY": "sk-0123456789"}
 	manifest := strings.Replace(agentManifest, "apiKeySecret: key", "apiKeySecret: key, maxCostUsd: 0.5", 1)
@@ -155,7 +152,6 @@ func TestAgentBudgetReservation(t *testing.T) {
 // runs one either: its deliveries would reserve nothing, so any number could start while the spend is under the
 // limit. The delivery fails at dispatch as a config error, not retried.
 func TestAgentBudgetWithoutMaxCost(t *testing.T) {
-	t.Parallel()
 	agents := Agents{AllowUnsandboxed: true, Executable: "/usr/local/bin/millstream"}
 	environ := map[string]string{"MILLSTREAM_SECRET_KEY": "sk-0123456789"}
 	v, id := agentRun(t, agents, environ, nil, "budget: { runUsd: 1 }\n")
@@ -172,7 +168,6 @@ func TestAgentBudgetWithoutMaxCost(t *testing.T) {
 // TestAgentReservationOfTheRunRevision: a delivery reserves the maxCostUsd of its run's revision, as budget.runUsd is
 // that revision's, not the active revision's.
 func TestAgentReservationOfTheRunRevision(t *testing.T) {
-	t.Parallel()
 	agents := Agents{AllowUnsandboxed: true, Executable: "/usr/local/bin/millstream"}
 	environ := map[string]string{"MILLSTREAM_SECRET_KEY": "sk-0123456789"}
 	manifest := func(cost string) map[string]string {

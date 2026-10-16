@@ -70,7 +70,6 @@ func (v *env) pullOne() store.Lease {
 // An expiry tick racing a Done and a new lease of the expired delivery forgets only the lease it expired: the
 // delivery done meanwhile leaves no phantom entry, and the delivery leased again keeps its new entry.
 func TestExpiryTickRacingDoneAndPull(t *testing.T) {
-	t.Parallel()
 	v, h := newHookEnv(t)
 	v.apply(newPackage(t, manualPipeline("p", "  a: { action: ./actions/a, in: trigger.adhoc, concurrency: 2 }\n"),
 		"a"))
@@ -105,7 +104,6 @@ func TestExpiryTickRacingDoneAndPull(t *testing.T) {
 // Done and Fail release a delivery only when the store ended its lease: a store error leaves it counted until it
 // reports again or expires, and a stale report never releases a newer lease of the same delivery.
 func TestReleaseOnlyWhenTheLeaseEnded(t *testing.T) {
-	t.Parallel()
 	v, _ := newHookEnv(t)
 	v.apply(newPackage(t, manualPipeline("p", "  a: { action: ./actions/a, in: trigger.adhoc }\n"), "a"))
 	v.fire("p", "adhoc", "k1")
@@ -138,7 +136,6 @@ func TestReleaseOnlyWhenTheLeaseEnded(t *testing.T) {
 // The rebuild at start-up is ordered against a concurrent pull: a lease taken while Run reads the store is counted
 // once the rebuild is done, never dropped by it.
 func TestStartupResyncRacingPull(t *testing.T) {
-	t.Parallel()
 	v, h := newHookEnv(t)
 	v.apply(newPackage(t, manualPipeline("p", "  a: { action: ./actions/a, in: trigger.adhoc }\n"), "a"))
 	v.fire("p", "adhoc", "k1")

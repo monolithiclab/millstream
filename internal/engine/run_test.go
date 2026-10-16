@@ -10,7 +10,6 @@ import (
 
 // WaitSettled returns once the runs settled, woken by the end of a lease in flight, and honours its context.
 func TestWaitSettled(t *testing.T) {
-	t.Parallel()
 	v := newEnv(t, Options{})
 	v.apply(newPackage(t, manualPipeline("p", "  a: { action: ./actions/a, in: trigger.adhoc }\n"), "a"))
 	id := v.fire("p", "adhoc", "k")
@@ -37,7 +36,6 @@ func TestWaitSettled(t *testing.T) {
 // TestRunExpiresLeases runs the engine loop: a lease that expires by the store clock consumes its attempt, returns
 // to pending and is leased again after its backoff.
 func TestRunExpiresLeases(t *testing.T) {
-	t.Parallel()
 	v := newEnv(t, Options{LeaseTTL: time.Minute})
 	v.apply(newPackage(t, manualPipeline("p", "  a: { action: ./actions/a, in: trigger.adhoc }\n"), "a"))
 	id := v.fire("p", "adhoc", "k")
@@ -73,7 +71,6 @@ func TestRunExpiresLeases(t *testing.T) {
 }
 
 func TestRunReturnsWhenCancelledBeforeStart(t *testing.T) {
-	t.Parallel()
 	v := newEnv(t, Options{})
 	ctx, cancel := context.WithCancel(v.ctx)
 	cancel()

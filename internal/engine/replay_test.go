@@ -55,7 +55,6 @@ func (v *env) replay(req ReplayRequest) string {
 }
 
 func TestReplaySelection(t *testing.T) {
-	t.Parallel()
 	v := newEnv(t, Options{})
 	v.apply(newPackage(t, replayPipeline, "a"))
 	r1 := v.srcRun("r1", "1", "7")
@@ -116,7 +115,6 @@ func TestReplaySelection(t *testing.T) {
 // TestReplayRevisions: a replay runs on the active revision, or the one named; its deliveries run the step as that
 // revision defines it.
 func TestReplayRevisions(t *testing.T) {
-	t.Parallel()
 	v := newEnv(t, Options{})
 	rev1 := v.apply(newPackage(t, replayPipeline, "a"))
 	run := v.srcRun("r1", "1")
