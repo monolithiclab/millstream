@@ -110,6 +110,9 @@ earlier designs are in the git history of the spec.
   unavailable until it leads.
 - Postgres store: its indexes mirror SQLite's, plus a queue index for Lease; tune them on the section 16 benchmark,
   with a profile. The writer's statements rely on pgx's statement cache rather than preparing them as on SQLite.
+- Postgres out of resources (SQLSTATE class 53: disk full, out of memory, too many connections) reaches API clients
+  as `internal error`, the cause only in the engine's log (how `apply --server` failed on a full Docker disk); mapping
+  class 53 to `unavailable` with a generic reason would point an operator at the database.
 - Crash suite on Postgres: the failpoint matrices (run and commands) run on both stores; the seeded random kill
   points, the M2 agent path and the review fixtures still run on SQLite only.
 

@@ -68,14 +68,16 @@ func Test_serveOnPostgres(t *testing.T) {
 		env := map[string]string{ServerEnv: base, "MILLSTREAM_DSN": dsn}
 		return runCLICtx(t, ctx, env, append([]string{"--env-file", envFile}, argv...)...)
 	}
+	// An internal error names nothing to the client (the API logs the cause, not the store's internals): the serve
+	// log beside it says what failed, such as a Postgres out of disk (SQLSTATE 53100).
 	pkg := runPackage(t, "run")
 	if code, out, errOut := client("apply", pkg, "--message", "e2e"); code != 0 ||
 		!regexp.MustCompile(`^listings revision 1 `).MatchString(out) {
-		t.Fatalf("apply --server: %d %q %q", code, out, errOut)
+		t.Fatalf("apply --server: %d %q %q\nserve:\n%s", code, out, errOut, lastLines(activeErr.String(), 15))
 	}
 	code, out, errOut := client("trigger", "listings", "adhoc", "--request-id", "e2e")
 	if code != 0 || out != "run_e2e_adhoc\n" {
-		t.Fatalf("trigger --server: %d %q %q", code, out, errOut)
+		t.Fatalf("trigger --server: %d %q %q\nserve:\n%s", code, out, errOut, lastLines(activeErr.String(), 15))
 	}
 	events := readEvents(t, ctx, base+"/api/v1/live/runs/run_e2e_adhoc?pipeline=listings&lastEventId=0", "runSettled")
 	if len(events) < 4 {
