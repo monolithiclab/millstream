@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -13,6 +14,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/monolithiclab/millstream/internal/api"
 	"github.com/monolithiclab/millstream/internal/engine"
 	"github.com/monolithiclab/millstream/internal/node"
 	"github.com/monolithiclab/millstream/internal/pipeline"
@@ -35,7 +37,11 @@ type RunPackagesCmd struct {
 	Slots     int               `default:"4" help:"Deliveries the embedded node runs at once."`
 	RequestID string            `name:"request-id" help:"With --once, the request id of the manual firings, so a rerun resumes the same runs."`
 	LeaseTTL  time.Duration     `name:"lease-ttl" default:"60s" help:"Lease duration; a crashed run's leases are retried after it."`
+	Listen    string            `placeholder:"HOST:PORT" help:"Serve the API and the web UI on this loopback address (default: ui.listen, else 127.0.0.1:7070); not with --once."`
 }
+
+// defaultListen is where run serves the API and the UI without --listen or ui.listen.
+const defaultListen = "127.0.0.1:7070"
 
 // signalContext returns ctx cancelled on SIGINT or SIGTERM as well.
 func signalContext(ctx context.Context) (context.Context, context.CancelFunc) {
@@ -53,6 +59,15 @@ func (c RunPackagesCmd) Run(rt *Runtime) error {
 	env, err := environment(rt)
 	if err != nil {
 		return err
+	}
+	listen := ""
+	if !c.Once {
+		listen = cmp.Or(c.Listen, env.UIListen, defaultListen)
+		if err := api.CheckLoopback(listen); err != nil {
+			return usageError(err.Error())
+		}
+	} else if c.Listen != "" {
+		return usageError("--listen: run --once does not serve the API")
 	}
 	actions := resolver(rt, env, false)
 	pkgs, err := c.load(rt, log, actions, checkOptions(env))
@@ -78,10 +93,14 @@ func (c RunPackagesCmd) Run(rt *Runtime) error {
 				return err
 			}
 		}
-		pool := exec.NewPool(exec.PoolOptions{Options: exec.Options{Logger: log, Launchers: launchers(rt, env)}})
+		run := launchers(rt, env)
+		pool := exec.NewPool(exec.PoolOptions{Options: exec.Options{Logger: log, Launchers: run}})
 		defer func() { _ = pool.Close() }()
+		owner := "embedded-" + strconv.Itoa(os.Getpid())
+		// The node's lines about its deliveries, the actions' stderr among them, feed the live log tail too.
+		logs := api.NewLogRing(0, time.Now())
 		n, err := node.New(e, node.Options{
-			Owner: "embedded-" + strconv.Itoa(os.Getpid()), Slots: c.Slots, Pool: pool, Logger: log,
+			Owner: owner, Slots: c.Slots, Pool: pool, Logger: slog.New(logs.Handler(log.Handler())),
 			HeartbeatInterval: min(node.DefaultHeartbeatInterval, c.LeaseTTL/3),
 		})
 		if err != nil {
@@ -90,6 +109,21 @@ func (c RunPackagesCmd) Run(rt *Runtime) error {
 		runCtx, cancel := context.WithCancel(ctx)
 		defer cancel()
 		engineDone, nodeDone := make(chan error, 1), make(chan error, 1)
+		serveDone := make(chan error, 1)
+		if listen == "" {
+			serveDone <- nil
+		} else {
+			srv, err := c.server(rt, st, e, logs, api.Node{ID: owner, Embedded: true, Version: rt.Version,
+				Slots: c.Slots, Runtimes: sortedKeys(run)}, log)
+			if err != nil {
+				return err
+			}
+			if err := srv.listen(runCtx, listen); err != nil {
+				return err
+			}
+			fmt.Fprintf(rt.IO.Out, "Millstream is serving the UI and the API on %s\n", srv.url)
+			go func() { serveDone <- srv.serve(runCtx) }()
+		}
 		go func() { engineDone <- e.Run(runCtx) }()
 		// The node pulls only once the engine has rebuilt its leases in flight from the store.
 		select {
@@ -111,7 +145,7 @@ func (c RunPackagesCmd) Run(rt *Runtime) error {
 			<-runCtx.Done()
 		}
 		cancel()
-		if err := errors.Join(waitErr, <-nodeDone, <-engineDone); err != nil {
+		if err := errors.Join(waitErr, <-nodeDone, <-engineDone, <-serveDone); err != nil {
 			return err
 		}
 		if !c.Once {

@@ -45,6 +45,9 @@ type Environment struct {
 	// UIBaseURL is ui.baseUrl: where the web UI is reached, for the links review notifications carry; empty means
 	// the local default (review.DefaultBaseURL).
 	UIBaseURL string
+	// UIListen is ui.listen: the address millstream run serves the API and the web UI on; empty means
+	// 127.0.0.1:7070. Until token authentication (M4) it must be a loopback address.
+	UIListen string
 }
 
 // Price is a model's price per million tokens, in US dollars.
@@ -230,7 +233,10 @@ func readUI(f *fields, env *Environment) error {
 	if err != nil {
 		return err
 	}
-	if err := uf.allow("baseUrl"); err != nil {
+	if err := uf.allow("baseUrl", "listen"); err != nil {
+		return err
+	}
+	if err := optional(uf, "listen", &env.UIListen, nonEmptyStr); err != nil {
 		return err
 	}
 	if err := optional(uf, "baseUrl", &env.UIBaseURL, nonEmptyStr); err != nil {

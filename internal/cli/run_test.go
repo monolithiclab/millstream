@@ -55,6 +55,19 @@ func Test_runRejects(t *testing.T) {
 		!strings.Contains(errOut, "--slots and --lease-ttl must be positive") {
 		t.Fatalf("--slots 0: code %d, stderr %q", code, errOut)
 	}
+	// Until token auth (M4), the API is served on a loopback address only; run --once serves nothing.
+	for _, tt := range []struct{ argv, want []string }{
+		{[]string{"run", "--listen", "0.0.0.0:7070", pkg}, []string{"not a loopback address", "M4"}},
+		{[]string{"run", "--listen", "7070", pkg}, []string{"want host:port"}},
+		{[]string{"run", "--once", "--listen", "127.0.0.1:7070", pkg}, []string{"run --once does not serve"}},
+	} {
+		code, _, errOut := s.run(tt.argv...)
+		for _, w := range tt.want {
+			if code != 2 || !strings.Contains(errOut, w) {
+				t.Errorf("%v: code %d, stderr %q, want %q", tt.argv, code, errOut, w)
+			}
+		}
+	}
 	run := func(c RunPackagesCmd) RunPackagesCmd {
 		c.Once, c.Slots, c.LeaseTTL = true, 4, time.Minute
 		return c

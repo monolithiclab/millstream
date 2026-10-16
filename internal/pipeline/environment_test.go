@@ -15,7 +15,7 @@ runtime: { container: podman }
 prices: { claude-sonnet-5-5: { inPerMtok: 3, outPerMtok: 15.5 } }
 agents: { allowUnsandboxed: true, image: "agents:1", linuxBinary: /opt/millstream-linux }
 lessons: { maxTokens: 500 }
-ui: { baseUrl: "https://millstream.example" }
+ui: { baseUrl: "https://millstream.example", listen: "127.0.0.1:8080" }
 `))
 	if err != nil {
 		t.Fatal(err)
@@ -23,7 +23,8 @@ ui: { baseUrl: "https://millstream.example" }
 	if env.Registries["lab"] != "ghcr.io/monolithiclab/millstream-actions" ||
 		env.Registries["local"] != "localhost:5000/actions" || env.ContainerRuntime != RuntimePodman ||
 		env.Prices["claude-sonnet-5-5"] != (Price{InPerMtok: 3, OutPerMtok: 15.5}) || !env.AllowUnsandboxed ||
-		env.AgentImage != "agents:1" || env.AgentBinary != "/opt/millstream-linux" || env.LessonsMaxTokens != 500 || env.UIBaseURL != "https://millstream.example" {
+		env.AgentImage != "agents:1" || env.AgentBinary != "/opt/millstream-linux" || env.LessonsMaxTokens != 500 || env.UIBaseURL != "https://millstream.example" ||
+		env.UIListen != "127.0.0.1:8080" {
 		t.Fatalf("environment %+v", env)
 	}
 	empty, err := ParseEnvironment(nil)
