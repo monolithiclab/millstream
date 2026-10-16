@@ -23,8 +23,8 @@ import (
 
 // Error classes of deliveries the engine fails at dispatch.
 const (
-	// ClassUnsupported: the step's action is a builtin, or a kind this build cannot run yet (review arrives in M3),
-	// or it needs a runtime this machine lacks. Never retried.
+	// ClassUnsupported: the step's action is a builtin a resolver handed to a node, a kind this build cannot run, or
+	// it needs a runtime this machine lacks. Never retried.
 	ClassUnsupported = "unsupported"
 	// ClassConfig: the step's config does not interpolate, a secret is unset, the action does not resolve, or an
 	// agent step under a budget sets no maxCostUsd. Never retried (spec section 5.5).

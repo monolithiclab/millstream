@@ -30,12 +30,16 @@ import (
 
 // The fixture's package directories, built by TestMain: v1 is examples/m1-fixture as committed; v2 is the same
 // package with the rentability fix (strict: false), the revision a dead-letter replay migrates to; builtins is v1
-// with a dedupe and a filter step between crawl and score, so the crash suite reaches the builtin units.
+// with a dedupe, a filter and an auto-approving review step between crawl and score, so the crash suite reaches the
+// builtin units; review and review-timeout are v1 with a review step between score and rentability, the second with
+// a short timeout.
 var (
-	binary          string
-	fixtureV1       string
-	fixtureV2       string
-	fixtureBuiltins string
+	binary               string
+	fixtureV1            string
+	fixtureV2            string
+	fixtureBuiltins      string
+	fixtureReview        string
+	fixtureReviewTimeout string
 )
 
 // extraBuilds are the builds of the fixtures behind the e2e build tag, registered by their files' init functions;
@@ -94,11 +98,17 @@ func build(dir string) error {
 		return err
 	}
 	fixtureBuiltins = filepath.Join(dir, "builtins")
-	if err := os.CopyFS(fixtureBuiltins, os.DirFS(fixtureV1)); err != nil {
-		return err
+	fixtureReview = filepath.Join(dir, "review")
+	fixtureReviewTimeout = filepath.Join(dir, "review-timeout")
+	for _, d := range []string{fixtureBuiltins, fixtureReview, fixtureReviewTimeout} {
+		if err := os.CopyFS(d, os.DirFS(fixtureV1)); err != nil {
+			return err
+		}
 	}
 	return errors.Join(fixRentability(filepath.Join(fixtureV2, "pipeline.yaml")),
-		insertBuiltins(filepath.Join(fixtureBuiltins, "pipeline.yaml")))
+		insertBuiltins(filepath.Join(fixtureBuiltins, "pipeline.yaml")),
+		insertReview(filepath.Join(fixtureReview, "pipeline.yaml"), reviewStep),
+		insertReview(filepath.Join(fixtureReviewTimeout, "pipeline.yaml"), reviewTimeoutStep))
 }
 
 // buildFixture copies the fixture into dir/v1 with its actions compiled, and v1 into dir/v2.
@@ -154,7 +164,8 @@ func fixRentability(path string) error {
 
 // builtinSteps are the steps insertBuiltins puts between crawl and score: a dedupe on the listing id, which lets
 // every listing through since ids are unique (a key that repeated would make which item passes depend on delivery
-// order, and so differ after a crash), and a filter dropping the listings in good condition.
+// order, and so differ after a crash), a filter dropping the listings in good condition, and a review approving
+// every listing by rule, each one a review sample (the Park unit's auto-approval path).
 const builtinSteps = `  unique:
     action: dedupe
     in: listings.crawled
@@ -164,14 +175,47 @@ const builtinSteps = `  unique:
   affordable:
     action: filter
     in: listings.unique
-    out: listings.raw
+    out: listings.affordable
     config: { expr: "item.condition != 'good'" }
+
+  vetted:
+    action: review
+    in: listings.affordable
+    out: listings.raw
+    config: { inbox: analysts, autoApprove: "true", sampleRate: 1 }
 
   score:
 `
 
-// insertBuiltins turns v1 into the builtins variant: crawl writes listings.crawled, which unique and affordable
-// turn into the listings.raw score reads.
+// reviewStep is the review step insertReview puts between score and rentability: listings scoring 85 or more are
+// approved by rule, half of them sampled; the others wait in the analysts inbox.
+const reviewStep = `  vetting:
+    action: review
+    in: listings.shortlist
+    out: listings.vetted
+    config:
+      inbox: analysts
+      editable: [/monthlyRentEur]
+      reasons: [overpriced, stale]
+      autoApprove: "item.score >= 85"
+      sampleRate: 0.5
+      display: "{{.item.city}}: {{.item.priceEur}} EUR, score {{.item.score}}"
+
+  rentability:
+`
+
+// reviewTimeoutStep is reviewStep with a one-second timeout that rejects.
+var reviewTimeoutStep = strings.Replace(reviewStep, "inbox: analysts\n", "inbox: analysts\n      timeout: 1s\n", 1)
+
+// insertReview turns v1 into a review variant: score's shortlist goes through step, a review step writing the
+// listings.vetted rentability reads.
+func insertReview(path, step string) error {
+	return rewrite(path, [2]string{"    in: listings.shortlist\n", "    in: listings.vetted\n"},
+		[2]string{"  rentability:\n", step})
+}
+
+// insertBuiltins turns v1 into the builtins variant: crawl writes listings.crawled, which unique, affordable and
+// vetted turn into the listings.raw score reads.
 func insertBuiltins(path string) error {
 	return rewrite(path, [2]string{"    out: listings.raw\n", "    out: listings.crawled\n"},
 		[2]string{"  score:\n", builtinSteps})

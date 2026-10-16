@@ -291,26 +291,53 @@ steps:
 	}
 }
 
-func TestCheckBuiltinWarning(t *testing.T) {
+// Every review key is checked: a bad value of each is located by its key, and a valid config passes.
+func TestCheckReviewConfig(t *testing.T) {
 	t.Parallel()
 	pkg := checkPackage(t, checkHeader+`steps:
   keep: { action: filter, in: trigger.go, out: kept, config: { expr: "true" } }
-  gate: { action: review, in: kept }
+  gate:
+    action: review
+    in: kept
+    out: approved
+    config: { inbox: "a b", timeout: soon, editable: [notes, 3], notify: "ftp://x", display: "{{.item", reasons: [x, x],
+      autoApprove: "item.n >", sampleRate: 0.001, typo: 1 }
+  late: { action: review, in: kept, out: other, config: { onTimeout: approve } }
+  bad: { action: review, in: kept, out: third, config: { timeout: 1h, onTimeout: { escalate: "a/b" } } }
+  good:
+    action: review
+    in: kept
+    out: fourth
+    config: { inbox: analysts, timeout: 72h, onTimeout: { escalate: leads }, editable: [/notes], notify: "https://hooks.example/x",
+      display: "{{.item.n}}", reasons: [overpriced], autoApprove: "item.n > 3", sampleRate: 0.5 }
 `)
-	got := Check(pkg, Resolver{}, envOf(nil), CheckOptions{})
-	want := []string{ // filter and dedupe run from M2: only review warns
-		"warning steps.gate.action: the review builtin arrives in M3: check validates it, run cannot execute it yet",
-	}
-	if len(got) != len(want) {
-		t.Fatalf("got %v", got)
-	}
-	for i := range want {
-		if got[i].String() != want[i] {
-			t.Fatalf("got %q, want %q", got[i], want[i])
+	var got []string
+	for _, d := range Check(pkg, Resolver{}, envOf(nil), CheckOptions{}) {
+		if d.Severity == SeverityError { // the streams no step reads warn
+			got = append(got, d.String())
 		}
 	}
-	if HasErrors(got) {
-		t.Fatal("warnings must not count as errors")
+	want := []string{
+		"error steps.bad.config.onTimeout: must be reject, approve or { escalate: <inbox> }",
+		"error steps.gate.config.autoApprove: compile \"item.n >\": ERROR: <input>:1:9: Syntax error: ...",
+		"error steps.gate.config.display: template: display:1: unclosed action",
+		"error steps.gate.config.editable[0]: must be a JSON pointer such as /notes",
+		"error steps.gate.config.editable[1]: must be a non-empty string",
+		"error steps.gate.config.inbox: an inbox name is letters, digits, dots, dashes and underscores",
+		"error steps.gate.config.notify: must be an http or https URL",
+		"error steps.gate.config.reasons[1]: reason code x is listed twice",
+		"error steps.gate.config.sampleRate: must be at least 0.01, so the rule is always measured",
+		"error steps.gate.config.timeout: invalid duration \"soon\"",
+		"error steps.gate.config.typo: unknown key for the review builtin",
+		"error steps.late.config.onTimeout: needs a timeout",
+	}
+	for i := range got {
+		if j := strings.Index(got[i], "Syntax error:"); j >= 0 {
+			got[i] = got[i][:j] + "Syntax error: ..."
+		}
+	}
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("got:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
 	}
 }
 

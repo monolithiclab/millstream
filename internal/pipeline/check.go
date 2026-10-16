@@ -35,9 +35,6 @@ func HasErrors(diags []Diagnostic) bool {
 	return slices.ContainsFunc(diags, func(d Diagnostic) bool { return d.Severity == SeverityError })
 }
 
-// builtinMilestone is the milestone in which the engine starts running each builtin it cannot run yet.
-var builtinMilestone = map[string]string{BuiltinReview: "M3"}
-
 // builtinKeys are the config keys each builtin accepts (spec sections 4.7 and 8).
 var builtinKeys = map[string][]string{
 	BuiltinFilter: {"expr"},
@@ -192,10 +189,6 @@ func (c *checker) checkStep(name string, actions ActionResolver) {
 	switch {
 	case a == nil:
 	case a.Builtin:
-		if m, later := builtinMilestone[a.Name]; later {
-			c.warnf(joinPath(at, "action"), "the %s builtin arrives in %s: check validates it, run cannot execute it yet",
-				a.Name, m)
-		}
 		c.checkBuiltinConfig(a.Name, s.Config, cfgAt)
 	case a.Config != nil:
 		c.checkConfigSchema(a, cfg, skipped, cfgAt)
@@ -398,6 +391,13 @@ func (c *checker) checkConfigSchema(a *Action, cfg map[string]any, skipped []str
 
 // checkBuiltinConfig checks a builtin's config keys and compiles its item expressions.
 func (c *checker) checkBuiltinConfig(builtin string, cfg map[string]any, at string) {
+	if builtin == BuiltinReview { // ParseReview checks every key, unknown ones included
+		_, errs := ParseReview("", cfg)
+		for _, e := range errs {
+			c.errorf(joinPath(at, e.Key), "%s", e.Message)
+		}
+		return
+	}
 	for _, k := range slices.Sorted(maps.Keys(cfg)) {
 		if !slices.Contains(builtinKeys[builtin], k) {
 			c.errorf(joinPath(at, k), "unknown key for the %s builtin", builtin)
@@ -431,8 +431,6 @@ func (c *checker) checkBuiltinConfig(builtin string, cfg map[string]any, at stri
 				c.errorf(joinPath(at, "window"), "%v", err)
 			}
 		}
-	case BuiltinReview:
-		compileStr("autoApprove", false, compileItem)
 	}
 }
 
@@ -509,12 +507,6 @@ func components(nodes []string, g map[string][]string) [][]string {
 	return out
 }
 
-// origin is a schema items on a stream are known to satisfy, and what produced them.
-type origin struct {
-	from   string
-	schema []byte
-}
-
 // checkCompatibility checks, for every step with an input schema, each schema reaching each stream it reads
 // against that input schema (spec section 4.11).
 func (c *checker) checkCompatibility() {
@@ -524,59 +516,20 @@ func (c *checker) checkCompatibility() {
 			continue
 		}
 		for i, in := range c.p.Steps[name].In {
-			for _, o := range c.origins(in, map[string]bool{}) {
-				for _, f := range schema.Compatible(o.schema, a.Input) {
+			origins := Origins(c.pkg, func(step string) *Action { return c.actions[step] }, in,
+				func(at string, err error) { c.errorf(at, "%v", err) })
+			for _, o := range origins {
+				for _, f := range schema.Compatible(o.Schema, a.Input) {
 					where := ""
 					if f.Pointer != "" {
 						where = " at " + f.Pointer
 					}
 					c.add(f.Severity, indexPath(joinPath(joinPath("steps", name), "in"), i),
-						"%s on stream %s against the input schema of %s%s: %s", o.from, in, a.Ref, where, f.Message)
+						"%s on stream %s against the input schema of %s%s: %s", o.From, in, a.Ref, where, f.Message)
 				}
 			}
 		}
 	}
-}
-
-// origins returns the schemas of what reaches stream: each producing action's output schema, a trigger's input
-// schema, and through builtins, which pass items through unchanged, the origins of what they read. Each origin is
-// listed once, however many paths lead from it.
-func (c *checker) origins(stream string, visiting map[string]bool) []origin {
-	if visiting[stream] {
-		return nil
-	}
-	visiting[stream] = true
-	defer delete(visiting, stream)
-	if trigger, ok := strings.CutPrefix(stream, TriggerStreamPrefix); ok {
-		t := c.p.Triggers[trigger]
-		if t.InputSchema == nil {
-			return nil
-		}
-		doc, err := schemaDoc(c.pkg, ".", t.InputSchema)
-		if err != nil {
-			c.errorf(joinPath(joinPath("triggers", trigger), "inputSchema"), "%v", err)
-			return nil
-		}
-		return []origin{{from: "trigger " + trigger, schema: doc}}
-	}
-	var out []origin
-	for _, w := range c.producers[stream] {
-		s, a := c.p.Steps[w], c.actions[w]
-		if a == nil || !slices.Contains(s.Out.targets(), stream) {
-			continue // unresolved, or the stream is w's dead-letter stream, whose payload is not w's output
-		}
-		if !a.Builtin {
-			if a.Output != nil {
-				out = append(out, origin{from: "output of step " + w, schema: a.Output})
-			}
-			continue
-		}
-		for _, in := range s.In {
-			out = append(out, c.origins(in, visiting)...)
-		}
-	}
-	slices.SortFunc(out, func(a, b origin) int { return cmp.Compare(a.from, b.from) })
-	return slices.CompactFunc(out, func(a, b origin) bool { return a.from == b.from })
 }
 
 // checkExternalEffects warns when an agent step's output can reach a step with external effects without passing

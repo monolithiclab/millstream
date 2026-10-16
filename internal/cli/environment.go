@@ -1,11 +1,14 @@
 package cli
 
 import (
+	"log/slog"
+	"net/http"
 	"os"
 	"runtime"
 
 	"github.com/monolithiclab/millstream/internal/engine"
 	"github.com/monolithiclab/millstream/internal/pipeline"
+	"github.com/monolithiclab/millstream/internal/review"
 	"github.com/monolithiclab/millstream/internal/runtime/container"
 	"github.com/monolithiclab/millstream/internal/runtime/exec"
 )
@@ -62,4 +65,13 @@ func agents(rt *Runtime, env *pipeline.Environment) engine.Agents {
 // checkOptions are the environment file's settings check applies.
 func checkOptions(env *pipeline.Environment) pipeline.CheckOptions {
 	return pipeline.CheckOptions{LessonsMaxTokens: env.LessonsMaxTokens}
+}
+
+// notifier returns the notifier of review webhooks, with inbox links under ui.baseUrl.
+func notifier(rt *Runtime, env *pipeline.Environment, log *slog.Logger) *review.Notifier {
+	client := rt.HTTPClient
+	if client == nil {
+		client = &http.Client{}
+	}
+	return &review.Notifier{BaseURL: env.UIBaseURL, Client: client, Logger: log}
 }

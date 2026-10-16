@@ -116,7 +116,7 @@
       "2026-10-14T12:00:00Z",
       "2026-10-15T12:00:00Z"
     ],
-    "summary": "$0.14 for 5 outputs ($0.028 each), 2.333 turns per delivery, 1 schema failures",
+    "summary": "$0.14 for 5 outputs ($0.028 each, $- per approved item), 2.333 turns per delivery, 1 schema failures",
     "evidence": {
       "baselineCostPerOutput": 0.01,
       "byModel": {
@@ -129,6 +129,7 @@
           "turns": 14
         }
       },
+      "costPerApprovedItem": null,
       "costPerOutput": 0.028,
       "costUsd": 0.14,
       "outputs": 5,

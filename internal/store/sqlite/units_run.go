@@ -38,6 +38,9 @@ func (s *Store) Cancel(ctx context.Context, pipelineName, runID string) error {
 		if err := w.event(pipelineName, runID, store.EventRunCancelled, map[string]any{"cancelledDeliveries": n}); err != nil {
 			return err
 		}
+		if err := w.cancelReviews(pipelineName, runID); err != nil {
+			return err
+		}
 		return w.settle(pipelineName, runID)
 	})
 }

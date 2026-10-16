@@ -31,7 +31,7 @@ type RunCmd struct {
 type RunPackagesCmd struct {
 	Dirs      []string          `arg:"" optional:"" type:"path" help:"Package directories (default: the current one)."`
 	Var       map[string]string `help:"Set a variable (name=value)."`
-	Once      bool              `help:"Fire each pipeline's manual triggers (or its first cron trigger) once, wait for every run to settle, print a summary and exit."`
+	Once      bool              `help:"Fire each pipeline's manual triggers (or its first cron trigger) once, wait for every run to settle or wait only on reviews, print a summary and exit."`
 	Slots     int               `default:"4" help:"Deliveries the embedded node runs at once."`
 	RequestID string            `name:"request-id" help:"With --once, the request id of the manual firings, so a rerun resumes the same runs."`
 	LeaseTTL  time.Duration     `name:"lease-ttl" default:"60s" help:"Lease duration; a crashed run's leases are retried after it."`
@@ -62,7 +62,7 @@ func (c RunPackagesCmd) Run(rt *Runtime) error {
 	return withStore(rt, func(st *sqlite.Store) error {
 		e, err := engine.New(engine.Options{
 			Store: st, Logger: log, LeaseTTL: c.LeaseTTL, Env: rt.Env, Flags: c.Var, NoCron: c.Once,
-			Artifacts: artifactStore(rt), Resolver: actions, Agents: agents(rt, env),
+			Artifacts: artifactStore(rt), Resolver: actions, Agents: agents(rt, env), Notifier: notifier(rt, env, log),
 		})
 		if err != nil {
 			return err
@@ -204,14 +204,14 @@ func (c RunPackagesCmd) fire(ctx context.Context, e *engine.Engine, pkgs []*pipe
 	return runs, nil
 }
 
-// waitAll waits until the runs fired and every run of the packages' pipelines still unsettled have settled, and
-// returns them all.
+// waitAll waits until the runs fired and every run of the packages' pipelines still unsettled have settled or wait
+// only on reviews, and returns them all: a run decided since the last run --once resumes.
 func waitAll(ctx context.Context, e *engine.Engine, st store.Store, pkgs []*pipeline.Package,
 	fired []engine.RunRef,
 ) ([]engine.RunRef, error) {
 	runs := slices.Clone(fired)
 	for _, pkg := range pkgs {
-		open, err := st.Runs(ctx, store.RunFilter{Pipeline: pkg.Pipeline.Name, State: store.RunRunning})
+		open, err := st.Runs(ctx, store.RunFilter{Pipeline: pkg.Pipeline.Name, Unsettled: true})
 		if err != nil {
 			return nil, err
 		}

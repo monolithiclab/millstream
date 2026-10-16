@@ -58,17 +58,25 @@ func (w *wtx) done(req store.DoneRequest, outputs []payload) (store.DeliveryStat
 	if run.state == store.RunCancelled {
 		return w.cancelDelivery(d, req.CostUSD, req.Metrics)
 	}
+	return w.emit(d, run, req.Outputs, outputs, attemptEnd{cost: req.CostUSD, metrics: req.Metrics})
+}
+
+// emit ends delivery d of a live run with its outputs (spec section 5.11, Done): key rule, routing, publication, done,
+// cost and settlement; a key rule or routing failure fails the attempt instead. The caller checked d's state: a
+// leased delivery reporting, or a review approved.
+func (w *wtx) emit(d *deliveryRow, run *runRow, outs []store.Output, outputs []payload, end attemptEnd) (
+	store.DeliveryState, error,
+) {
 	rev, err := w.revision(run.revision)
 	if err != nil {
 		return "", err
 	}
-	end := attemptEnd{cost: req.CostUSD, metrics: req.Metrics}
 	step, ok := rev.stepOrOrphan(d.step)
 	if !ok {
 		return w.fail(d, run, rev, step, failure{class: store.ClassMissingStep, attemptEnd: end,
 			message: fmt.Sprintf("step %q is not in revision %s: its outputs have nowhere to go", d.step, rev.hash)})
 	}
-	if msg := keyRule(req.Outputs); msg != "" {
+	if msg := keyRule(outs); msg != "" {
 		return w.fail(d, run, rev, step, failure{class: store.ClassKeyRule, message: msg, attemptEnd: end})
 	}
 	routes := make([]routing, len(outputs))
@@ -78,7 +86,7 @@ func (w *wtx) done(req store.DoneRequest, outputs []payload) (store.DeliveryStat
 		}
 	}
 	for i, o := range outputs {
-		if err := w.publishOutput(rev, run, step, d, req.Outputs[i], i, o, routes[i]); err != nil {
+		if err := w.publishOutput(rev, run, step, d, outs[i], i, o, routes[i]); err != nil {
 			return "", err
 		}
 	}
@@ -86,7 +94,7 @@ func (w *wtx) done(req store.DoneRequest, outputs []payload) (store.DeliveryStat
 		WHERE pipeline = ? AND id = ?`, store.DeliveryDone, d.pipeline, d.id); err != nil {
 		return "", err
 	}
-	if err := w.addCost(d, req.CostUSD); err != nil {
+	if err := w.addCost(d, end.cost); err != nil {
 		return "", err
 	}
 	data, err := w.endAttempt(d, true, end)

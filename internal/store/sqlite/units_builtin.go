@@ -3,7 +3,6 @@ package sqlite
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -15,7 +14,7 @@ import (
 func (s *Store) Filter(ctx context.Context, f store.FilterRequest) (store.DeliveryState, error) {
 	var state store.DeliveryState
 	err := s.submit(ctx, unitFilter, func(w *wtx) error {
-		d, cancelled, err := w.leasedLive(f.LeaseRef, f.Attempt)
+		d, _, cancelled, err := w.leasedLive(f.LeaseRef, f.Attempt)
 		if err != nil || cancelled {
 			state = store.DeliveryCancelled
 			return err
@@ -36,7 +35,7 @@ func (s *Store) Dedupe(ctx context.Context, req store.DedupeRequest) (store.Deli
 	}
 	var state store.DeliveryState
 	err := s.submit(ctx, unitDedupe, func(w *wtx) error {
-		d, cancelled, err := w.leasedLive(req.LeaseRef, req.Attempt)
+		d, run, cancelled, err := w.leasedLive(req.LeaseRef, req.Attempt)
 		if err != nil || cancelled {
 			state = store.DeliveryCancelled
 			return err
@@ -52,21 +51,12 @@ func (s *Store) Dedupe(ctx context.Context, req store.DedupeRequest) (store.Deli
 			state, err = w.filter(d, store.FilterReasonDuplicate)
 			return err
 		}
-		var key, body, artifacts string
-		if err := w.queryRow(`SELECT key, payload, artifacts FROM items WHERE pipeline = ? AND id = ?`, d.pipeline,
-			d.itemID).Scan(&key, &body, &artifacts); err != nil {
-			return notFound(err, "item "+d.itemID)
-		}
-		o, err := canonical([]byte(body))
+		out, o, err := w.passItem(d)
 		if err != nil {
 			return err
 		}
-		out := store.Output{Key: key, Payload: o.raw}
-		if err := json.Unmarshal([]byte(artifacts), &out.Artifacts); err != nil {
-			return fmt.Errorf("item %s artifacts: %w", d.itemID, err)
-		}
-		if state, err = w.done(store.DoneRequest{LeaseRef: req.LeaseRef, Attempt: req.Attempt,
-			Outputs: []store.Output{out}}, []payload{o}); err != nil || state != store.DeliveryDone {
+		if state, err = w.emit(d, run, []store.Output{out}, []payload{o}, attemptEnd{}); err != nil ||
+			state != store.DeliveryDone {
 			return err
 		}
 		_, err = w.exec(`INSERT INTO dedupe_keys (pipeline, step, generation, key, first_item, seen_at)
@@ -77,21 +67,20 @@ func (s *Store) Dedupe(ctx context.Context, req store.DedupeRequest) (store.Deli
 	return state, err
 }
 
-// leasedLive returns the delivery a builtin unit names, refused unless still leased under the same fencing token and
+// leasedLive returns the delivery a builtin unit names, and its run, refused unless still leased under the same fencing token and
 // attempt. A delivery of a cancelled run is cancelled on the spot, and cancelled is true.
-func (w *wtx) leasedLive(ref store.LeaseRef, attempt int) (d *deliveryRow, cancelled bool, err error) {
+func (w *wtx) leasedLive(ref store.LeaseRef, attempt int) (d *deliveryRow, run *runRow, cancelled bool, err error) {
 	if d, err = w.leased(ref, attempt); err != nil {
-		return nil, false, err
+		return nil, nil, false, err
 	}
-	run, err := w.run(d.pipeline, d.runID)
-	if err != nil {
-		return nil, false, err
+	if run, err = w.run(d.pipeline, d.runID); err != nil {
+		return nil, nil, false, err
 	}
 	if run.state == store.RunCancelled {
 		_, err = w.cancelDelivery(d, 0, nil)
-		return nil, true, err
+		return nil, nil, true, err
 	}
-	return d, false, nil
+	return d, run, false, nil
 }
 
 // filter marks a leased delivery filtered with its reason and settles its run.

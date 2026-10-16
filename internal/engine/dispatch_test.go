@@ -181,7 +181,8 @@ func TestUndispatchableDeliveriesFail(t *testing.T) {
 		step, action, config, class, message string
 		files                                map[string]string
 	}{
-		{"builtin", "review", "", ClassUnsupported, "the review builtin arrives in M3", nil},
+		{"builtin", "review", `, config: { sampleRate: 2 }`, ClassConfig,
+			"review config of step builtin: sampleRate: must be a number from 0.01 to 1", nil},
 		{"registry", "lab/score@1", "", ClassUnsupported, "no registries are configured", nil},
 		{"container", "./actions/container", "", ClassUnsupported, "container actions need Docker or Podman",
 			map[string]string{"actions/container/action.yaml": containerManifest}},

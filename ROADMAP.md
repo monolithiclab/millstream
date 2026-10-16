@@ -47,6 +47,12 @@ earlier designs are in the git history of the spec.
   eight emptied in-memory databases, with their prepared statements, alive for the life of the process, and empties
   each table row by row on close. A long-running process opening Memory stores, or one with large ones, would need
   it bounded by size or turned off.
+- Review notifications: expose the `review_notifications_failed` counter with the Prometheus endpoint (M4; M3 keeps
+  it in memory and logs each failure), and sign webhook bodies so a receiver can tell them from forgeries.
+- Review: inbox access control (RBAC, commercial layer) and authenticated reviewers (M4; M3 takes `--as`/`$USER`);
+  escalation chains longer than one inbox (M3 rejects an escalated review that times out again); edit diffs element
+  by element for arrays (M3 replaces a changed array whole); attributing the cost per approved item to the steps on
+  the item's lineage (M3 divides a step's cost by every approval of the pipeline's review steps).
 - Container mounts: `--mount` refuses a path holding a comma, and never creates a missing source; quote such paths
   if Docker and Podman both accept a quoted CSV field.
 

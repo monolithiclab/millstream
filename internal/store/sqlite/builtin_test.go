@@ -26,17 +26,7 @@ const window30d = 30 * 24 * time.Hour
 // leaseOf leases the one due delivery of step in pipeline dd, holding the other steps back.
 func (e *env) leaseOf(step string) store.Lease {
 	e.t.Helper()
-	slots := map[store.StepRef]int{}
-	for _, s := range []string{"crawl", "unique", "gate", "sink"} {
-		if s != step {
-			slots[store.StepRef{Pipeline: "dd", Step: s}] = 0
-		}
-	}
-	ls, err := e.s.Lease(e.ctx, store.LeaseRequest{Owner: "node1", Max: 1, TTL: time.Minute, Slots: slots})
-	if err != nil || len(ls) != 1 {
-		e.t.Fatalf("lease %s: %v, %v", step, ls, err)
-	}
-	return ls[0]
+	return e.leaseOnly("dd", []string{"crawl", "unique", "gate", "sink"}, step)
 }
 
 // crawlOne fires a run of dd in generation gen whose crawl emits one listing with url, and leases the delivery of

@@ -2,11 +2,13 @@ package engine
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
 	"github.com/monolithiclab/millstream/internal/expr"
 	"github.com/monolithiclab/millstream/internal/pipeline"
+	"github.com/monolithiclab/millstream/internal/review"
 	"github.com/monolithiclab/millstream/internal/store"
 )
 
@@ -23,13 +25,17 @@ type builtin struct {
 	filter *expr.ItemExpr
 	key    *expr.KeyExpr
 	window time.Duration // zero: a key holds back its duplicates for ever
-	err    error
+	review *pipeline.Review
+	// spec is what a parked review keeps of the review step's config, its output schemas included.
+	spec store.ReviewSpec
+	err  error
 }
 
 // runBuiltin executes a leased delivery of a builtin step inside the engine (spec section 4.7) and reports whether
 // the step is a builtin; a node never receives one. filter passes the item on unchanged, through the Done unit so
-// routing applies, or filters the delivery; dedupe hands the item's key to the Dedupe unit. An expression that
-// fails for the item ends the delivery dead (class expr). It returns false, leaving the lease to assign, when the
+// routing applies, or filters the delivery; dedupe hands the item's key to the Dedupe unit; review parks it through
+// the Park unit, or passes it at once when autoApprove holds (spec section 8). An expression that fails for the item
+// ends the delivery dead (class expr). It returns false, leaving the lease to assign, when the
 // revision cannot be read or the step is not a builtin.
 func (e *Engine) runBuiltin(ctx context.Context, l store.Lease) bool {
 	rev, err := e.revision(ctx, l.Revision)
@@ -40,7 +46,11 @@ func (e *Engine) runBuiltin(ctx context.Context, l store.Lease) bool {
 	if !ok || !pipeline.IsBuiltin(step.Action) {
 		return false
 	}
-	b := e.builtin(rev, step)
+	b, err := e.builtin(rev, step)
+	if err != nil {
+		e.failDispatch(ctx, l, err)
+		return true
+	}
 	if b.err != nil {
 		e.failDispatch(ctx, l, b.err)
 		return true
@@ -82,11 +92,65 @@ func (e *Engine) runBuiltin(ctx context.Context, l store.Lease) bool {
 		err = e.complete(ref, func() (store.DeliveryState, error) {
 			return e.st.Dedupe(ctx, store.DedupeRequest{LeaseRef: ref, Attempt: l.Attempt, Key: key, Window: b.window})
 		})
+	case pipeline.BuiltinReview:
+		err = e.park(ctx, l, b, item, env, run.Vars, runInfo)
 	}
 	if err != nil {
 		e.leaseLog(l).Error("complete builtin delivery", "error", err.Error())
 	}
 	return true
+}
+
+// park applies the Park unit to a review delivery: auto-approved (and maybe sampled) when autoApprove holds,
+// parked in its inbox otherwise, with the step's webhook told after the commit.
+func (e *Engine) park(ctx context.Context, l store.Lease, b *builtin, item any, env expr.Envelope,
+	vars map[string]any, runInfo expr.Run,
+) error {
+	auto := false
+	if b.review.AutoApprove != nil {
+		var err error
+		if auto, err = b.review.AutoApprove.Eval(item, env, vars, runInfo); err != nil {
+			e.failDispatch(ctx, l, dispatchErr(ClassExpr, false, "autoApprove of step %s: %w", l.Step, err))
+			return nil
+		}
+	}
+	ref := l.Ref()
+	req := store.ParkRequest{LeaseRef: ref, Attempt: l.Attempt, Spec: b.spec, AutoApprove: auto,
+		Sample:  auto && review.Sampled(l.Item.ID, b.review.SampleRate),
+		Display: b.review.Render(item, l.Item.Key, l.Item.ID, l.Step)}
+	var state store.DeliveryState
+	err := e.complete(ref, func() (store.DeliveryState, error) {
+		var err error
+		state, err = e.st.Park(ctx, req)
+		return state, err
+	})
+	if err == nil && state == store.DeliveryAwaitingReview {
+		e.notify(b.spec.Notify, review.Notification{Pipeline: l.Pipeline, Step: l.Step, Inbox: b.spec.Inbox,
+			DeliveryID: l.DeliveryID, ItemKey: l.Item.Key, Display: req.Display,
+			Deadline: deadline(b.spec.Timeout, e.opts.Now())})
+	}
+	return err
+}
+
+// deadline estimates a parked review's deadline for its notification by the engine's clock; the store keeps the
+// exact one, from its batch instant.
+func deadline(timeout time.Duration, now time.Time) time.Time {
+	if timeout <= 0 {
+		return time.Time{}
+	}
+	return now.Add(timeout)
+}
+
+// notify posts a notification to a review step's webhook in the background, when it has one.
+func (e *Engine) notify(webhook string, n review.Notification) {
+	if webhook == "" || e.opts.Notifier == nil {
+		return
+	}
+	n.URL = webhook
+	e.mu.Lock()
+	ctx := e.notifyCtx
+	e.mu.Unlock()
+	e.opts.Notifier.Notify(ctx, n)
 }
 
 // complete applies a builtin's store unit to a delivery in flight, counting it out of flight like Done.
@@ -101,17 +165,62 @@ func (e *Engine) complete(ref store.LeaseRef, unit func() (store.DeliveryState, 
 }
 
 // builtin compiles a builtin step's config, once per revision and step. The config is not interpolated: its
-// strings are CEL expressions and a duration, which check validates.
-func (e *Engine) builtin(rev *revision, step pipeline.Step) *builtin {
+// strings are CEL expressions, durations and templates, which check validates. A review step also needs the output
+// schemas reaching it, from its revision's package: until that package is loaded, the delivery fails as retryable
+// and nothing is cached.
+func (e *Engine) builtin(rev *revision, step pipeline.Step) (*builtin, error) {
 	k := builtinKey{rev.hash, step.Name}
 	e.mu.Lock()
-	defer e.mu.Unlock()
-	if b := e.builtins[k]; b != nil {
-		return b
+	b := e.builtins[k]
+	e.mu.Unlock()
+	if b != nil {
+		return b, nil
 	}
-	b := compileBuiltin(step)
+	b = compileBuiltin(step)
+	if b.review != nil && b.err == nil {
+		schemas, err := e.reviewSchemas(rev, step)
+		if err != nil {
+			return nil, err
+		}
+		b.spec.Schemas = schemas
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
 	e.builtins[k] = b
-	return b
+	return b, nil
+}
+
+// reviewSchemas returns the output schemas of what reaches a review step (pipeline.Origins), one of which an edited
+// payload must match.
+func (e *Engine) reviewSchemas(rev *revision, step pipeline.Step) ([]json.RawMessage, error) {
+	e.mu.Lock()
+	pkg := e.packages[rev.hash]
+	e.mu.Unlock()
+	if pkg == nil {
+		return nil, dispatchErr(ClassEngine, true,
+			"the package of revision %d (%s) is not loaded in this engine: run it with that package", rev.id, rev.hash)
+	}
+	action := func(name string) *pipeline.Action {
+		s, ok := rev.p.Steps[name]
+		if !ok {
+			return nil
+		}
+		if pipeline.IsBuiltin(s.Action) {
+			return &pipeline.Action{Ref: s.Action, Builtin: true, Name: s.Action}
+		}
+		ra := e.action(rev, s.Action)
+		if ra.err != nil {
+			return nil
+		}
+		return ra.a
+	}
+	schemas := []json.RawMessage{}
+	for _, in := range step.In {
+		for _, o := range pipeline.Origins(pkg, action, in, nil) {
+			schemas = append(schemas, o.Schema)
+		}
+	}
+	return schemas, nil
 }
 
 func compileBuiltin(step pipeline.Step) *builtin {
@@ -133,9 +242,34 @@ func compileBuiltin(step pipeline.Step) *builtin {
 				b.err = dispatchErr(ClassConfig, false, "dedupe window of step %s: %w", step.Name, err)
 			}
 		}
-	default:
-		b.err = dispatchErr(ClassUnsupported, false, "the %s builtin arrives in M3: this build cannot run it",
-			step.Action)
+	case pipeline.BuiltinReview:
+		r, errs := pipeline.ParseReview(step.Name, step.Config)
+		if len(errs) > 0 {
+			b.err = dispatchErr(ClassConfig, false, "review config of step %s: %w", step.Name, errs[0])
+			break
+		}
+		b.review = r
+		b.spec = store.ReviewSpec{Inbox: r.Inbox, Timeout: r.Timeout, OnTimeout: r.OnTimeout, EscalateTo: r.EscalateTo,
+			Editable: r.Editable, Reasons: r.Reasons, Notify: r.Notify}
 	}
 	return b
+}
+
+// reviewTimeouts applies the Review timeout unit, and tells the webhook of each review escalated to another inbox.
+func (e *Engine) reviewTimeouts(ctx context.Context) {
+	ts, err := e.st.ReviewTimeouts(ctx)
+	if err != nil {
+		if ctx.Err() == nil {
+			e.log.Error("review timeouts", "error", err.Error())
+		}
+		return
+	}
+	for _, t := range ts {
+		e.log.Info("review timed out", "pipeline", t.Pipeline, "runId", t.RunID, "step", t.Step,
+			"deliveryId", t.DeliveryID, "applied", t.Action, "inbox", t.Inbox)
+		if t.Action == pipeline.OnTimeoutEscalate {
+			e.notify(t.Notify, review.Notification{Pipeline: t.Pipeline, Step: t.Step, Inbox: t.Inbox,
+				DeliveryID: t.DeliveryID, ItemKey: t.ItemKey, Display: t.Display, Escalated: true, Deadline: t.Deadline})
+		}
+	}
 }

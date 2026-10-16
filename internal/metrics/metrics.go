@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/monolithiclab/millstream/internal/review"
 	"github.com/monolithiclab/millstream/internal/store"
 )
 
@@ -68,7 +69,18 @@ const (
 	RunDuration = "run_duration_seconds"
 	// RunCost is a settled run's cost in US dollars {state}.
 	RunCost = "run_cost_usd"
+	// ReviewDecisions counts a review step's decisions {step, decision, reason}: approve or reject by a person or
+	// onTimeout (reason timeout), autoApprove by the rule; reason is the reason code, absent without one.
+	ReviewDecisions = "review_decisions"
+	// ReviewTimeToDecision is the time a person took to decide a review, parked to decided, in seconds {step}.
+	ReviewTimeToDecision = "review_time_to_decision_seconds"
+	// ReviewSamples counts the decided and expired review samples {step, agreement}: agree, disagree or
+	// unreviewed.
+	ReviewSamples = "review_samples"
 )
+
+// DecisionAutoApprove is the decision label of an item the autoApprove rule approved.
+const DecisionAutoApprove = "autoApprove"
 
 // UnschedulableClasses are the error classes of a delivery no runtime can take (spec sections 5.10 and 11.1): an
 // action kind or runtime this deployment lacks (engine.ClassUnsupported) and an agent step without a sandbox
@@ -81,7 +93,7 @@ var kinds = map[string]Kind{
 	ItemsDead: Counter, ItemsUnrouted: Counter, NondeterministicOutputs: Counter, LeaseExpiries: Counter,
 	Unschedulable: Counter, QueueDepth: Gauge, OldestPending: Gauge, DeliveryLatency: Histogram,
 	DeliveryWait: Distribution, DeliveryWork: Distribution, DeliveryCost: Distribution, RunDuration: Distribution,
-	RunCost: Distribution,
+	RunCost: Distribution, ReviewDecisions: Counter, ReviewTimeToDecision: Distribution, ReviewSamples: Counter,
 }
 
 // KindOf returns a metric's kind: an engine metric's own, Counter for a histogram's bucket series, and
@@ -125,6 +137,9 @@ type eventData struct {
 	DurationMS *int64         `json:"durationMs"`
 	CostUSD    float64        `json:"costUsd"`
 	Metrics    []store.Metric `json:"metrics"`
+	Decision   string         `json:"decision"`
+	Reviewer   string         `json:"reviewer"`
+	DecisionMS *int64         `json:"timeToDecisionMs"`
 }
 
 // Points returns the measurements an event carries. An event it cannot decode carries none.
@@ -169,6 +184,22 @@ func Points(ev store.Event) []Point {
 		if d.Kind == string(store.DeadLetterUnrouted) {
 			add(ItemsUnrouted, map[string]string{"step": d.OriginStep}, 1)
 		}
+	case store.EventReviewDecided:
+		labels := with("decision", d.Decision)
+		if d.Reviewer == review.ReviewerRule {
+			labels["decision"] = DecisionAutoApprove
+		}
+		if d.Reason != "" {
+			labels["reason"] = d.Reason
+		}
+		add(ReviewDecisions, labels, 1)
+		if d.Reviewer == review.ReviewerPerson && d.DecisionMS != nil {
+			add(ReviewTimeToDecision, step, seconds(*d.DecisionMS))
+		}
+	case store.EventSampleDecided:
+		add(ReviewSamples, with("agreement", d.Decision), 1)
+	case store.EventSampleExpired:
+		add(ReviewSamples, with("agreement", string(store.SampleUnreviewed)), 1)
 	case store.EventRunSettled:
 		state := map[string]string{"state": d.State}
 		if d.DurationMS != nil {

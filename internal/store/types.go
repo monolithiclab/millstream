@@ -17,7 +17,7 @@ type RevisionID int64
 // NextAttemptAt in the future.
 type DeliveryState string
 
-// Delivery states. Filtered belongs to the filter and dedupe builtins; AwaitingReview to review (M3).
+// Delivery states. Filtered belongs to the builtins (filter, dedupe, a review's rejection); AwaitingReview to review.
 const (
 	DeliveryPending        DeliveryState = "pending"
 	DeliveryLeased         DeliveryState = "leased"
@@ -40,7 +40,7 @@ func (s DeliveryState) Terminal() bool {
 // RunState is a run's state (spec section 5.4).
 type RunState string
 
-// Run states. WaitingReview is reserved for M3.
+// Run states. A run is waitingReview while only parked reviews remain (spec section 5.4).
 const (
 	RunRunning             RunState = "running"
 	RunWaitingReview       RunState = "waitingReview"
@@ -106,6 +106,10 @@ const (
 	FilterReasonExpr = "exprFalse"
 	// FilterReasonDuplicate: the dedupe builtin already let the item's key through (spec section 5.11).
 	FilterReasonDuplicate = "duplicate"
+	// FilterReasonRejected: a reviewer rejected the item without a reason code; with one, the code is the reason.
+	FilterReasonRejected = "rejected"
+	// FilterReasonTimeout: the review timed out and onTimeout rejected it.
+	FilterReasonTimeout = "timeout"
 )
 
 // MaxErrorMessage is the most bytes of an error message kept on a delivery (spec section 5.5).
@@ -137,6 +141,12 @@ const (
 	EventBudgetReached          = "budgetReached"
 	EventInsightOpened          = "insightOpened"
 	EventInsightResolved        = "insightResolved"
+	EventReviewParked           = "reviewParked"
+	EventReviewDecided          = "reviewDecided"
+	EventReviewEscalated        = "reviewEscalated"
+	EventReviewSampled          = "reviewSampled"
+	EventSampleDecided          = "sampleDecided"
+	EventSampleExpired          = "sampleExpired"
 )
 
 // Budget scopes (spec section 7.5): budget.runUsd bounds the spend of one run, budget.dayUsd the spend of the
@@ -553,7 +563,9 @@ type Event struct {
 type RunFilter struct {
 	Pipeline string
 	State    RunState
-	Limit    int
+	// Unsettled keeps the runs not settled yet, whatever their state (running, waitingReview, cancelled while live).
+	Unsettled bool
+	Limit     int
 }
 
 // ItemFilter selects items; empty fields match everything. Items come in insertion order.
@@ -669,4 +681,180 @@ type EvalResult struct {
 	Score float64
 	// At is when the store recorded it.
 	At time.Time
+}
+
+// ReviewState is a review's state (spec section 8).
+type ReviewState string
+
+// Review states. An open review's delivery is awaitingReview; decided and timedOut ones ended it (approved or
+// rejected, by a person, the autoApprove rule or onTimeout); a cancelled one's run was cancelled.
+const (
+	ReviewOpen      ReviewState = "open"
+	ReviewDecided   ReviewState = "decided"
+	ReviewTimedOut  ReviewState = "timedOut"
+	ReviewCancelled ReviewState = "cancelled"
+)
+
+// Review decisions.
+const (
+	DecisionApprove = "approve"
+	DecisionReject  = "reject"
+)
+
+// SampleState is a review sample's state (spec section 8): open until a person decides it, or unreviewed once its
+// step's timeout passed without a decision.
+type SampleState string
+
+// Review sample states.
+const (
+	SampleOpen       SampleState = "open"
+	SampleDecided    SampleState = "decided"
+	SampleUnreviewed SampleState = "unreviewed"
+)
+
+// Review sample decisions: whether the person agrees with the rule that approved the item.
+const (
+	SampleAgree    = "agree"
+	SampleDisagree = "disagree"
+)
+
+// ReviewSpec is what a parked review keeps of its step's config (spec section 8), so that deciding it or timing it
+// out needs neither the revision nor its package.
+type ReviewSpec struct {
+	Inbox string `json:"inbox"`
+	// Timeout is how long the item may wait, zero for ever; a review sample expires after it too.
+	Timeout time.Duration `json:"timeoutNs"`
+	// OnTimeout is reject, approve or escalate (to EscalateTo); an escalated review that times out again is
+	// rejected.
+	OnTimeout  string   `json:"onTimeout,omitempty"`
+	EscalateTo string   `json:"escalateTo,omitempty"`
+	Editable   []string `json:"editable"`
+	Reasons    []string `json:"reasons"`
+	// Notify is the step's webhook, told when the review is escalated as when it parked.
+	Notify string `json:"notify,omitempty"`
+	// Schemas are the output schemas of what reaches the step: an edited payload must satisfy one of them. Empty
+	// when no producer declares one.
+	Schemas []json.RawMessage `json:"schemas"`
+}
+
+// ParkRequest applies the Park unit to a leased delivery of a review step: it parks in Spec.Inbox, or, when
+// AutoApprove is set, passes at once and, with Sample, becomes a review sample. Display is the item rendered with the
+// step's display template.
+type ParkRequest struct {
+	LeaseRef
+	Attempt     int
+	Spec        ReviewSpec
+	Display     string
+	AutoApprove bool
+	Sample      bool
+}
+
+// ReviewDecisionRequest decides a parked review. Version is the review's version the reviewer saw: a review
+// escalated since, or decided, is a conflict. An approval applies Patch (a JSON Patch, within the step's editable
+// pointers) to the item's payload; a rejection needs a Reason among the step's reason codes when it has any.
+type ReviewDecisionRequest struct {
+	Pipeline   string
+	DeliveryID string
+	Version    int64
+	Decision   string
+	Patch      json.RawMessage
+	Reviewer   string
+	Reason     string
+	Text       string
+}
+
+// SampleDecisionRequest decides a review sample: agree or disagree with the rule.
+type SampleDecisionRequest struct {
+	Pipeline   string
+	DeliveryID string
+	Decision   string
+	Reviewer   string
+	Reason     string
+}
+
+// Review is a review of a delivery of a review step (spec section 8), with its item.
+type Review struct {
+	// Seq orders reviews by when they were first parked: the inbox's order and paging cursor.
+	Seq        int64
+	Pipeline   string
+	DeliveryID string
+	RunID      string
+	Step       string
+	State      ReviewState
+	// Version changes when the review is escalated or parked again: a decision names the version it saw.
+	Version int64
+	// Spec is the step's review config the review was parked with; its Inbox is where the review waits now,
+	// escalated or not.
+	Spec     ReviewSpec
+	Display  string
+	ParkedAt time.Time
+	// Deadline is when onTimeout applies, zero without a timeout.
+	Deadline time.Time
+	// Decision is approve or reject once decided or timed out; Reviewer a person, rule or timeout; Patch the edit's
+	// diff as a JSON Patch ([] without an edit).
+	Decision  string
+	Reviewer  string
+	Reason    string
+	Text      string
+	Patch     json.RawMessage
+	DecidedAt time.Time
+	Item      Item
+}
+
+// ReviewSample is a review sample: an auto-approved item given to a person to measure the rule (spec section 8).
+type ReviewSample struct {
+	Seq        int64
+	Pipeline   string
+	DeliveryID string
+	RunID      string
+	Step       string
+	Inbox      string
+	State      SampleState
+	Display    string
+	CreatedAt  time.Time
+	// Deadline is when an undecided sample becomes unreviewed, zero for never.
+	Deadline  time.Time
+	Decision  string
+	Reviewer  string
+	Reason    string
+	DecidedAt time.Time
+	Item      Item
+}
+
+// TimedOutReview is a review the Review timeout unit ended or escalated: Action is approve, reject or escalate, and
+// an escalated review's Inbox and Deadline are its new ones. A sample that expired has Action unreviewed.
+type TimedOutReview struct {
+	Pipeline   string
+	DeliveryID string
+	RunID      string
+	Step       string
+	Revision   RevisionID
+	Inbox      string
+	Action     string
+	Deadline   time.Time
+	ItemKey    string
+	Display    string
+	// Notify is the step's webhook, empty for none.
+	Notify string
+}
+
+// ReviewFilter selects reviews; empty fields match everything, but State defaults to open. Reviews come in Seq order,
+// those after the cursor After, at most Limit (all when zero).
+type ReviewFilter struct {
+	Pipeline string
+	Inbox    string
+	Step     string
+	State    ReviewState
+	After    int64
+	Limit    int
+}
+
+// SampleFilter selects review samples like ReviewFilter; State defaults to open.
+type SampleFilter struct {
+	Pipeline string
+	Inbox    string
+	Step     string
+	State    SampleState
+	After    int64
+	Limit    int
 }

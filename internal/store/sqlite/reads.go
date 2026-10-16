@@ -106,6 +106,9 @@ func (s *Store) Runs(ctx context.Context, f store.RunFilter) ([]store.Run, error
 	var w where
 	w.eq("pipeline", f.Pipeline)
 	w.eq("state", string(f.State))
+	if f.Unsettled {
+		w.conds = append(w.conds, "settled_at IS NULL")
+	}
 	q := `SELECT ` + runColumns + ` FROM runs` + w.String() + ` ORDER BY started_at DESC, rowid DESC`
 	if f.Limit > 0 {
 		q += ` LIMIT ?`

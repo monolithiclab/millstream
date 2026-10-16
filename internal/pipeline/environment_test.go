@@ -15,6 +15,7 @@ runtime: { container: podman }
 prices: { claude-sonnet-5-5: { inPerMtok: 3, outPerMtok: 15.5 } }
 agents: { allowUnsandboxed: true, image: "agents:1", linuxBinary: /opt/millstream-linux }
 lessons: { maxTokens: 500 }
+ui: { baseUrl: "https://millstream.example" }
 `))
 	if err != nil {
 		t.Fatal(err)
@@ -22,7 +23,7 @@ lessons: { maxTokens: 500 }
 	if env.Registries["lab"] != "ghcr.io/monolithiclab/millstream-actions" ||
 		env.Registries["local"] != "localhost:5000/actions" || env.ContainerRuntime != RuntimePodman ||
 		env.Prices["claude-sonnet-5-5"] != (Price{InPerMtok: 3, OutPerMtok: 15.5}) || !env.AllowUnsandboxed ||
-		env.AgentImage != "agents:1" || env.AgentBinary != "/opt/millstream-linux" || env.LessonsMaxTokens != 500 {
+		env.AgentImage != "agents:1" || env.AgentBinary != "/opt/millstream-linux" || env.LessonsMaxTokens != 500 || env.UIBaseURL != "https://millstream.example" {
 		t.Fatalf("environment %+v", env)
 	}
 	empty, err := ParseEnvironment(nil)
@@ -59,6 +60,9 @@ func TestParseEnvironmentErrors(t *testing.T) {
 		"lessons zero":      {"lessons: { maxTokens: 0 }\n", "lessons.maxTokens: must be a positive integer"},
 		"lessons key":       {"lessons: { max: 3 }\n", "lessons.max: unknown key"},
 		"lessons scalar":    {"lessons: 3\n", "lessons: must be a mapping"},
+		"ui scalar":         {"ui: x\n", "ui: must be a mapping"},
+		"ui key":            {"ui: { url: x }\n", "ui.url: unknown key"},
+		"ui base url":       {"ui: { baseUrl: \"ftp://x\" }\n", "ui.baseUrl: want an http or https URL"},
 		"yaml":              {"registries: [\n", "parse YAML"},
 	}
 	for name, tt := range tests {

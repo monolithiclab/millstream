@@ -56,7 +56,7 @@ func countsFor(raw []listing.Listing, fixed bool) map[string]int {
 }
 
 // expectedBuiltinCounts computes the items per stream of a run of the builtins fixture: every listing passes the
-// dedupe on its id, and the filter keeps those not in good condition.
+// dedupe on its id, the filter keeps those not in good condition, and the review approves them all by rule.
 func expectedBuiltinCounts() map[string]int {
 	all := listing.Generate(fixtureSeed, fixtureListings)
 	var raw []listing.Listing
@@ -66,7 +66,7 @@ func expectedBuiltinCounts() map[string]int {
 		}
 	}
 	counts := countsFor(raw, false)
-	counts["listings.crawled"], counts["listings.unique"] = len(all), len(all)
+	counts["listings.crawled"], counts["listings.unique"], counts["listings.affordable"] = len(all), len(all), len(raw)
 	return counts
 }
 

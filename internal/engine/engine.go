@@ -29,6 +29,7 @@ import (
 	"github.com/monolithiclab/millstream/internal/artifacts"
 	"github.com/monolithiclab/millstream/internal/pipeline"
 	"github.com/monolithiclab/millstream/internal/redact"
+	"github.com/monolithiclab/millstream/internal/review"
 	"github.com/monolithiclab/millstream/internal/runtime/exec"
 	"github.com/monolithiclab/millstream/internal/store"
 )
@@ -71,6 +72,8 @@ type Options struct {
 	Artifacts *artifacts.Store
 	// Agents says how agent steps run.
 	Agents Agents
+	// Notifier posts the notifications of review steps with a notify webhook (spec section 8); nil sends none.
+	Notifier *review.Notifier
 }
 
 // Agents says how the engine runs the agent adapter of agent steps (spec section 7.3): in a container sandbox when
@@ -126,6 +129,10 @@ type Engine struct {
 	// changed, made when WaitSettled first asks for it, is closed (and forgotten) when a lease in flight ends, the
 	// moments a run may settle.
 	changed chan struct{}
+
+	// notifyCtx bounds the review notifications in the background: Run's context once it runs, so they stop when the
+	// engine does rather than when the pull that parked their item ends. Guarded by mu.
+	notifyCtx context.Context
 
 	crons map[[2]string]*cronState // cron triggers by pipeline and name; the scheduler's goroutine only
 
@@ -191,7 +198,7 @@ func New(opts Options) (*Engine, error) {
 		packages: map[string]*pipeline.Package{}, revs: map[store.RevisionID]*revision{},
 		actions:  map[actionKey]*resolvedAction{},
 		lessonsC: map[actionKey]lessonsEntry{}, inflight: map[store.DeliveryKey]flight{}, buckets: map[store.StepRef]*bucket{},
-		builtins: map[builtinKey]*builtin{}, maxDue: maxDue,
+		builtins: map[builtinKey]*builtin{}, maxDue: maxDue, notifyCtx: context.Background(),
 		crons: map[[2]string]*cronState{}, ready: make(chan struct{}), lastInsights: map[string]time.Time{},
 		parser: cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor),
 	}, nil
@@ -218,8 +225,9 @@ func (e *Engine) Apply(ctx context.Context, pkg *pipeline.Package) (store.Revisi
 	return id, nil
 }
 
-// Run rebuilds the leases in flight from the store, closes Ready, then expires leases and runs the cron scheduler
-// every tick, and the projectors every ProjectInterval, until ctx is cancelled. It returns nil then, once the
+// Run rebuilds the leases in flight from the store and times out the overdue reviews, closes Ready, then expires
+// leases, times out reviews and runs the cron scheduler every tick, and the projectors every ProjectInterval, until
+// ctx is cancelled. It returns nil then, once the
 // projectors stopped. Nodes start pulling once Ready is closed, so the rebuild never races their leases.
 func (e *Engine) Run(ctx context.Context) error {
 	if err := e.resync(ctx); err != nil {
@@ -228,14 +236,25 @@ func (e *Engine) Run(ctx context.Context) error {
 		}
 		return err
 	}
+	e.mu.Lock()
+	e.notifyCtx = ctx
+	e.mu.Unlock()
+	// Reviews overdue while no engine ran time out before anything waits on their runs.
+	e.reviewTimeouts(ctx)
 	e.readyOnce.Do(func() { close(e.ready) })
 	var wg sync.WaitGroup
 	defer wg.Wait()
+	if e.opts.Notifier != nil {
+		defer e.opts.Notifier.Wait()
+	}
 	wg.Go(func() { e.projectLoop(ctx) })
 	tick := time.NewTicker(e.opts.TickInterval)
 	defer tick.Stop()
-	for {
+	for first := true; ; first = false {
 		e.expire(ctx)
+		if !first {
+			e.reviewTimeouts(ctx)
+		}
 		if !e.opts.NoCron {
 			e.schedule(ctx)
 		}
@@ -289,21 +308,22 @@ func (e *Engine) resync(ctx context.Context) error {
 	return nil
 }
 
-// Settled reports whether every run named is settled.
+// Settled reports whether every run named is settled or waiting only on reviews (waitingReview): nothing moves
+// them on without a person, or a review timeout.
 func (e *Engine) Settled(ctx context.Context, runs []RunRef) (bool, error) {
 	for _, r := range runs {
 		run, err := e.st.Run(ctx, r.Pipeline, r.ID)
 		if err != nil {
 			return false, fmt.Errorf("settled: %w", err)
 		}
-		if run.SettledAt.IsZero() {
+		if run.SettledAt.IsZero() && run.State != store.RunWaitingReview {
 			return false, nil
 		}
 	}
 	return true, nil
 }
 
-// WaitSettled waits until every run named is settled or ctx ends. It checks again whenever a lease in flight ends,
+// WaitSettled waits until every run named is settled, or waiting only on reviews, or ctx ends. It checks again whenever a lease in flight ends,
 // and polls for what settles a run elsewhere (another engine's nodes, a cancel).
 func (e *Engine) WaitSettled(ctx context.Context, runs []RunRef) error {
 	poll := time.NewTicker(50 * time.Millisecond)

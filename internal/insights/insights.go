@@ -1,7 +1,8 @@
 // Package insights is the insights projector and the run reports (spec section 11.1): deterministic analysis of the
 // log store, no LLM involved. The projector reads a pipeline's deliveries (their timings), the events that end
-// attempts (their errors, costs and the actions' metrics) and the critical paths of its recent runs, and finds the
-// kinds this build computes: slowStep, failureCluster, cost and unschedulable. Each insight's id is a fingerprint
+// attempts (their errors, costs and the actions' metrics), its review decisions and samples, and the critical paths
+// of its recent runs, and finds the kinds this build computes: slowStep, failureCluster, cost, reviewPattern and
+// unschedulable. Each insight's id is a fingerprint
 // of what it is about, so the store updates one row for a recurring problem and resolves it once the projector no
 // longer finds it.
 //
@@ -53,10 +54,9 @@ const (
 	SeverityError   = "error"
 )
 
-// Kinds are the insight kinds this build computes. reviewPattern arrives with review (M3); waste, drift and
-// distillable after it.
+// Kinds are the insight kinds this build computes; waste, drift and distillable arrive later.
 var Kinds = []string{pipeline.InsightSlowStep, pipeline.InsightFailureCluster, pipeline.InsightCost,
-	pipeline.InsightUnschedulable}
+	pipeline.InsightReviewPattern, pipeline.InsightUnschedulable}
 
 // Data is what the projector reads of one pipeline.
 type Data struct {
@@ -68,6 +68,10 @@ type Data struct {
 	Attempts []Attempt
 	// Paths are the critical paths of the runs settled in the window, at most 10, newest first.
 	Paths []Path
+	// Decisions are the review decisions and Samples the review samples' outcomes recorded in the window or the
+	// baseline, in order.
+	Decisions []Decision
+	Samples   []SampleOutcome
 }
 
 func (d *Data) windowStart() time.Time { return d.Now.Add(-Window) }
@@ -81,6 +85,9 @@ func Load(ctx context.Context, st store.Store, pipelineName string, now time.Tim
 		return nil, fmt.Errorf("insights of %s: %w", pipelineName, err)
 	}
 	if d.Attempts, _, err = readAttempts(ctx, st, pipelineName, since); err != nil {
+		return nil, fmt.Errorf("insights of %s: %w", pipelineName, err)
+	}
+	if d.Decisions, d.Samples, err = readReviews(ctx, st, pipelineName, since); err != nil {
 		return nil, fmt.Errorf("insights of %s: %w", pipelineName, err)
 	}
 	runs, err := st.Runs(ctx, store.RunFilter{Pipeline: pipelineName, Limit: 200})
@@ -144,6 +151,8 @@ func Compute(d *Data, kinds []string) []store.Insight {
 			found = failureClusters(d)
 		case pipeline.InsightCost:
 			found = costs(d)
+		case pipeline.InsightReviewPattern:
+			found = reviewPatterns(d)
 		case pipeline.InsightUnschedulable:
 			found = unschedulable(d)
 		}
@@ -388,8 +397,8 @@ func (s *spend) model(name string) *modelSpend {
 	return m
 }
 
-// costs reports the spend of every step that spent in the window: cost per output, turns per delivery and
-// schema-validation failures, by model. It is a warning when the cost per output regressed against the baseline or
+// costs reports the spend of every step that spent in the window: cost per output and per item the pipeline's
+// review steps approved in the window, turns per delivery and schema-validation failures, by model. It is a warning when the cost per output regressed against the baseline or
 // schema validation fails often.
 func costs(d *Data) []store.Insight {
 	items := map[string]string{}
@@ -447,6 +456,7 @@ func costs(d *Data) []store.Insight {
 			s.samples = appendSample(s.samples, it)
 		}
 	}
+	approved := d.approvals()
 	var out []store.Insight
 	for _, step := range slices.Sorted(maps.Keys(window)) {
 		s := window[step]
@@ -454,7 +464,11 @@ func costs(d *Data) []store.Insight {
 			continue // no spend and no harness
 		}
 		ev := map[string]any{"costUsd": round6(s.cost), "outputs": s.outputs, "costPerOutput": nil,
-			"baselineCostPerOutput": nil, "turnsPerDelivery": nil, "samples": nonNil(s.samples)}
+			"costPerApprovedItem": nil, "baselineCostPerOutput": nil, "turnsPerDelivery": nil,
+			"samples": nonNil(s.samples)}
+		if approved > 0 {
+			ev["costPerApprovedItem"] = round6(s.cost / float64(approved))
+		}
 		severity := SeverityInfo
 		var perOutput float64
 		if s.outputs > 0 {
@@ -557,10 +571,15 @@ func Summary(in store.Insight) string {
 		return fmt.Sprintf("%s failures (%s of attempts), %s recovered on retry: %s: %s", f("count"), p("rate"),
 			p("retrySuccessShare"), f("class"), f("message"))
 	case pipeline.InsightCost:
-		return fmt.Sprintf("$%s for %s outputs ($%s each), %s turns per delivery, %s schema failures", f("costUsd"),
-			f("outputs"), f("costPerOutput"), f("turnsPerDelivery"), f("schemaFailures"))
+		return fmt.Sprintf("$%s for %s outputs ($%s each, $%s per approved item), %s turns per delivery, %s schema "+
+			"failures", f("costUsd"), f("outputs"), f("costPerOutput"), f("costPerApprovedItem"), f("turnsPerDelivery"),
+			f("schemaFailures"))
 	case pipeline.InsightUnschedulable:
 		return fmt.Sprintf("%s attempts no runtime can take: %s: %s", f("count"), f("class"), f("example"))
+	case pipeline.InsightReviewPattern:
+		return fmt.Sprintf("%s rejected, %s edited, %s auto-approved, sampled agreement %s, intervention %s, p50 "+
+			"decision %ss", p("rejectionRate"), p("editRate"), p("autoApprovalRate"), p("sampledAgreement"),
+			p("interventionRate"), f("timeToDecisionP50Seconds"))
 	}
 	return string(in.Evidence)
 }

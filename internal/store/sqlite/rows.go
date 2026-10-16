@@ -54,7 +54,8 @@ type attemptEnd struct {
 }
 
 // endAttempt ends d's leased attempt at the batch instant: it adds the attempt's work time to the delivery and,
-// when terminal, marks it finished. It returns the fields the attempt's event carries.
+// when terminal, marks it finished. It returns the fields the attempt's event carries. A delivery whose leasedAt is
+// zero (a review decided after its attempt parked) records no work.
 func (w *wtx) endAttempt(d *deliveryRow, terminal bool, a attemptEnd) (map[string]any, error) {
 	work := int64(0)
 	if !d.leasedAt.IsZero() {
@@ -68,7 +69,10 @@ func (w *wtx) endAttempt(d *deliveryRow, terminal bool, a attemptEnd) (map[strin
 		work, finished, d.pipeline, d.id); err != nil {
 		return nil, err
 	}
-	data := map[string]any{"deliveryId": d.id, "step": d.step, "attempt": d.attempt, "workMs": work}
+	data := map[string]any{"deliveryId": d.id, "step": d.step, "attempt": d.attempt}
+	if !d.leasedAt.IsZero() { // a parked review's attempt ended when it parked: its decision adds no work
+		data["workMs"] = work
+	}
 	if terminal {
 		data["latencyMs"] = millis(w.now.Sub(d.createdAt))
 	}

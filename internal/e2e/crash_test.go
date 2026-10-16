@@ -34,7 +34,7 @@ func failpointEnv(name string) []string { return []string{failpoint.EnvVar + "="
 // commands (TestCrashInCommands), or, for skipFirings, only by a cron scheduler that missed a firing, which a
 // one-shot run never starts.
 var reachedByRun = []string{"applyRevision", "fire", "lease", "renew", "done", "fail", "expireLeases", "filter",
-	"dedupe", "rollup", "recordInsights"}
+	"dedupe", "park", "rollup", "recordInsights"}
 
 // slowCrawl makes the crawl hold its lease for several heartbeats, so the renew unit is reached for sure.
 var slowCrawl = []string{"--var", "crawlDelayMs=1500"}

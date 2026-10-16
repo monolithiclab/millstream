@@ -152,19 +152,22 @@ const notTerminal = "state NOT IN (?, ?, ?, ?)"
 var terminalStates = []any{store.DeliveryDone, store.DeliveryFiltered, store.DeliveryDead, store.DeliveryCancelled}
 
 // settle settles a run once every delivery it owns is terminal (spec section 5.4): succeeded without open or
-// discarded dead letters, completedWithErrors with some, and a cancelled run stays cancelled.
+// discarded dead letters, completedWithErrors with some, and a cancelled run stays cancelled. A run not yet settled is
+// waitingReview while only parked reviews remain, running otherwise.
 func (w *wtx) settle(pipelineName, runID string) error {
 	run, err := w.run(pipelineName, runID)
 	if err != nil || run.settled {
 		return err
 	}
-	var live int
-	if err := w.queryRow(`SELECT COUNT(*) FROM deliveries WHERE pipeline = ? AND run_id = ? AND `+notTerminal,
-		append([]any{pipelineName, runID}, terminalStates...)...).Scan(&live); err != nil {
+	var live, parked int
+	if err := w.queryRow(`SELECT COUNT(*), COALESCE(SUM(state = ?), 0) FROM deliveries
+		WHERE pipeline = ? AND run_id = ? AND `+notTerminal,
+		append([]any{store.DeliveryAwaitingReview, pipelineName, runID}, terminalStates...)...).
+		Scan(&live, &parked); err != nil {
 		return fmt.Errorf("count live deliveries: %w", err)
 	}
 	if live > 0 {
-		return nil
+		return w.waitingReview(run, live == parked)
 	}
 	state := run.state
 	if state != store.RunCancelled {
@@ -186,6 +189,20 @@ func (w *wtx) settle(pipelineName, runID string) error {
 	return w.event(pipelineName, runID, store.EventRunSettled, map[string]any{
 		"state": state, "durationMs": millis(w.now.Sub(run.startedAt)), "costUsd": cost,
 	})
+}
+
+// waitingReview moves a live run between running and waitingReview: waitingReview while only parked reviews remain
+// (spec section 5.4). A cancelled run stays cancelled.
+func (w *wtx) waitingReview(run *runRow, onlyReviews bool) error {
+	want := store.RunRunning
+	if onlyReviews {
+		want = store.RunWaitingReview
+	}
+	if run.state == want || run.state == store.RunCancelled {
+		return nil
+	}
+	_, err := w.exec(`UPDATE runs SET state = ? WHERE pipeline = ? AND id = ?`, want, run.pipeline, run.id)
+	return err
 }
 
 // addCost charges a delivery's attempt its cost, on the delivery, its run and its pipeline's UTC day, and clears

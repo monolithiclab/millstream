@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 
@@ -49,6 +50,8 @@ type Runtime struct {
 	EnvFile string
 	// Launchers, when set, replace the launchers the environment selects: tests run actions in-process with them.
 	Launchers map[string]exec.Launcher
+	// HTTPClient, when set, posts review notifications instead of a default client: tests point it at httptest.
+	HTTPClient *http.Client
 	// Store, when set, is the state database the commands use instead of opening --db, and leave open: tests run a
 	// series of commands against one store with it.
 	Store *sqlite.Store
@@ -94,6 +97,7 @@ type CLI struct {
 	Cancel   CancelCmd   `cmd:"" help:"Cancel a run."`
 	Replay   ReplayCmd   `cmd:"" help:"Replay dead letters into their run, or a step over past items in a replay run."`
 	DLQ      DLQCmd      `cmd:"" name:"dlq" help:"List and discard dead letters."`
+	Inbox    InboxCmd    `cmd:"" help:"List and decide reviews and review samples."`
 	Pause    PauseCmd    `cmd:"" help:"Pause a pipeline or one of its steps."`
 	Resume   ResumeCmd   `cmd:"" help:"Resume a pipeline or one of its steps."`
 	Init     InitCmd     `cmd:"" help:"Scaffold a pipeline package or an action."`

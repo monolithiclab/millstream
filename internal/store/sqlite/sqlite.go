@@ -43,7 +43,8 @@ import (
 var Units = []string{
 	unitApplyRevision, unitFire, unitLease, unitRenew, unitDone, unitFail, unitCancel,
 	unitReplay, unitDiscard, unitExpireLeases, unitSetPaused, unitSkipFirings, unitFilter, unitDedupe,
-	unitStartReplay, unitRecordEval, unitRollup, unitRecordInsights, unitSetInsightState,
+	unitStartReplay, unitRecordEval, unitRollup, unitRecordInsights, unitSetInsightState, unitPark,
+	unitReviewDecision, unitSampleDecision, unitReviewTimeout,
 }
 
 const (
@@ -66,6 +67,10 @@ const (
 	unitRollup          = "rollup"
 	unitRecordInsights  = "recordInsights"
 	unitSetInsightState = "setInsightState"
+	unitPark            = "park"
+	unitReviewDecision  = "reviewDecision"
+	unitSampleDecision  = "sampleDecision"
+	unitReviewTimeout   = "reviewTimeout"
 )
 
 // Memory opens a store on a fresh in-memory database, freed by Close: a database of SQLite's memdb VFS under a

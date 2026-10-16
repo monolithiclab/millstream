@@ -6,6 +6,8 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"os"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"testing"
@@ -78,6 +80,12 @@ steps:
 `
 
 var t0 = time.Date(2026, 10, 15, 6, 0, 0, 0, time.UTC)
+
+// TestMain raises the collector's target: the transpiled SQLite allocates heavily, and the tests trade memory for time.
+func TestMain(m *testing.M) {
+	debug.SetGCPercent(400)
+	os.Exit(m.Run())
+}
 
 // fakeClock is a settable clock.
 type fakeClock struct {
@@ -209,10 +217,16 @@ var fixtureSteps = []string{"crawl", "audit", "score", "report", "alert"}
 // leaseStep leases the oldest due delivery of step only, failing when there is none.
 func (e *env) leaseStep(step string) store.Lease {
 	e.t.Helper()
+	return e.leaseOnly("listings", fixtureSteps, step)
+}
+
+// leaseOnly leases the oldest due delivery of step in a pipeline, holding its other steps back.
+func (e *env) leaseOnly(pipelineName string, steps []string, step string) store.Lease {
+	e.t.Helper()
 	slots := map[store.StepRef]int{}
-	for _, s := range fixtureSteps {
+	for _, s := range steps {
 		if s != step {
-			slots[store.StepRef{Pipeline: "listings", Step: s}] = 0
+			slots[store.StepRef{Pipeline: pipelineName, Step: s}] = 0
 		}
 	}
 	ls, err := e.s.Lease(e.ctx, store.LeaseRequest{Owner: "node1", Max: 1, TTL: time.Minute, Slots: slots})

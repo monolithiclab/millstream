@@ -42,6 +42,9 @@ type Environment struct {
 	// LessonsMaxTokens is lessons.maxTokens: the size limit of a lessons file, in approximate tokens (spec section
 	// 11.4); zero means DefaultLessonsMaxTokens, which Check applies.
 	LessonsMaxTokens int
+	// UIBaseURL is ui.baseUrl: where the web UI is reached, for the links review notifications carry; empty means
+	// the local default (review.DefaultBaseURL).
+	UIBaseURL string
 }
 
 // Price is a model's price per million tokens, in US dollars.
@@ -94,7 +97,7 @@ func ParseEnvironment(data []byte) (*Environment, error) {
 			return nil, errAt(k, k.Value, "is not supported by this build yet")
 		}
 	}
-	if err := f.allow("registries", "runtime", "prices", "agents", "lessons"); err != nil {
+	if err := f.allow("registries", "runtime", "prices", "agents", "lessons", "ui"); err != nil {
 		return nil, err
 	}
 	for _, err := range []error{
@@ -103,6 +106,7 @@ func ParseEnvironment(data []byte) (*Environment, error) {
 		optional(f, "prices", &env.Prices, prices),
 		readAgents(f, env),
 		readLessons(f, env),
+		readUI(f, env),
 	} {
 		if err != nil {
 			return nil, err
@@ -215,4 +219,25 @@ func readLessons(f *fields, env *Environment) error {
 		return err
 	}
 	return optional(lf, "maxTokens", &env.LessonsMaxTokens, positiveInt)
+}
+
+func readUI(f *fields, env *Environment) error {
+	n := f.get("ui")
+	if isNull(n) {
+		return nil
+	}
+	uf, err := mapping(n, f.sub("ui"))
+	if err != nil {
+		return err
+	}
+	if err := uf.allow("baseUrl"); err != nil {
+		return err
+	}
+	if err := optional(uf, "baseUrl", &env.UIBaseURL, nonEmptyStr); err != nil {
+		return err
+	}
+	if env.UIBaseURL != "" && !httpURL(env.UIBaseURL) {
+		return errAt(uf.get("baseUrl"), uf.sub("baseUrl"), "want an http or https URL such as https://millstream.example")
+	}
+	return nil
 }

@@ -58,6 +58,23 @@ type Store interface {
 	// Done, when its key was not let through by the step in the same generation within the window; otherwise the
 	// delivery is filtered with FilterReasonDuplicate. It returns the state the delivery ended in, as Done does.
 	Dedupe(ctx context.Context, d DedupeRequest) (DeliveryState, error)
+	// Park is the Park unit (spec section 5.11): a leased delivery of a review step parks awaitingReview in its
+	// inbox, with a deadline when the step has a timeout, holding no lease or slot; or, auto-approved, it passes
+	// unchanged as by Done, recorded as approved by rule, and becomes a review sample when req.Sample is set. It
+	// returns awaitingReview, done (or what Done ends in) or cancelled.
+	Park(ctx context.Context, req ParkRequest) (DeliveryState, error)
+	// DecideReview is the Review decision unit: an open review at the version named is approved, its payload edited
+	// and validated and passed on as by Done, or rejected, its delivery filtered with the reason. A review decided,
+	// escalated or parked again since is ErrConflict, and one that timed out says when and what onTimeout applied;
+	// an edit outside the editable pointers, a payload no output schema accepts or a missing reason code is
+	// ErrInvalid.
+	DecideReview(ctx context.Context, req ReviewDecisionRequest) (DeliveryState, error)
+	// DecideSample is the Sample decision unit: an open review sample records agree or disagree; it never emits.
+	DecideSample(ctx context.Context, req SampleDecisionRequest) error
+	// ReviewTimeouts is the Review timeout unit: every open review past its deadline by the store clock gets its
+	// onTimeout applied once (reject, approve, or escalate to another inbox with a fresh deadline), and every open
+	// sample past its deadline becomes unreviewed. It returns what it changed.
+	ReviewTimeouts(ctx context.Context) ([]TimedOutReview, error)
 	// StartReplay is the Start replay unit (spec section 5.7): a replay run on the revision named, the pipeline's
 	// next generation, and a delivery of the step for each selected item. It returns the run's generation, and
 	// created false when the run already existed: the request already started it.
@@ -107,6 +124,15 @@ type Store interface {
 	MetricRollups(ctx context.Context, f MetricFilter) ([]MetricRollup, error)
 	// Insights returns the insights f selects.
 	Insights(ctx context.Context, f InsightFilter) ([]Insight, error)
+	// Reviews returns the reviews f selects, with their items.
+	Reviews(ctx context.Context, f ReviewFilter) ([]Review, error)
+	// Review returns the review of a delivery with its item; an empty pipeline looks in every pipeline, and a
+	// delivery id two pipelines share is then ErrConflict.
+	Review(ctx context.Context, pipeline, deliveryID string) (Review, error)
+	// ReviewSamples returns the review samples f selects, with their items.
+	ReviewSamples(ctx context.Context, f SampleFilter) ([]ReviewSample, error)
+	// ReviewSample returns the review sample of a delivery, looked up as Review does.
+	ReviewSample(ctx context.Context, pipeline, deliveryID string) (ReviewSample, error)
 	ActiveRevision(ctx context.Context, pipeline string) (RevisionID, error)
 	// OpenRevisions returns the revisions of the runs not yet settled, in ascending order: the revisions whose steps
 	// may still have deliveries to dispatch.

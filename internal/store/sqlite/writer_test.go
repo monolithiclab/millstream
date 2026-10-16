@@ -150,7 +150,7 @@ func TestUnitsAreNamed(t *testing.T) {
 		}
 		seen[u] = true
 	}
-	wantState(t, "units", len(Units), 19)
+	wantState(t, "units", len(Units), 23)
 }
 
 // A unit whose savepoint cannot be rolled back leaves the transaction in an unknown state: the whole batch is

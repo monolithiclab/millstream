@@ -1,0 +1,85 @@
+[
+  {
+    "id": "in_eb1f7979c99fa6e4",
+    "kind": "reviewPattern",
+    "scope": "gate",
+    "severity": "warning",
+    "window": [
+      "2026-10-14T12:00:00Z",
+      "2026-10-15T12:00:00Z"
+    ],
+    "summary": "38% rejected, 67% edited, 25% auto-approved, sampled agreement 50%, intervention 50%, p50 decision 60s",
+    "evidence": {
+      "autoApprovalRate": 0.25,
+      "decisions": {
+        "approved": 3,
+        "autoApproved": 2,
+        "rejected": 2,
+        "timedOut": 1
+      },
+      "editHotSpots": [
+        {
+          "pointer": "/notes",
+          "edits": 2
+        },
+        {
+          "pointer": "/price",
+          "edits": 2
+        }
+      ],
+      "editRate": 0.667,
+      "interventionRate": 0.5,
+      "rejectionRate": 0.375,
+      "rejectionsByReason": {
+        "overpriced": 1,
+        "rejected": 1,
+        "timeout": 1
+      },
+      "sampledAgreement": 0.5,
+      "samples": [
+        "it_d2",
+        "it_d3",
+        "it_d4",
+        "it_d5"
+      ],
+      "samplesReviewed": {
+        "agree": 1,
+        "disagree": 1,
+        "unreviewed": 1
+      },
+      "timeToDecisionP50Seconds": 60,
+      "timeToDecisionP95Seconds": 600
+    }
+  },
+  {
+    "id": "in_9ebab9e5937b9760",
+    "kind": "cost",
+    "scope": "score",
+    "severity": "info",
+    "window": [
+      "2026-10-14T12:00:00Z",
+      "2026-10-15T12:00:00Z"
+    ],
+    "summary": "$0.4 for 8 outputs ($0.05 each, $0.08 per approved item), 2 turns per delivery, 0 schema failures",
+    "evidence": {
+      "baselineCostPerOutput": null,
+      "byModel": {
+        "m": {
+          "attempts": 1,
+          "costUsd": 0.4,
+          "schemaFailures": 0,
+          "tokensIn": 0,
+          "tokensOut": 0,
+          "turns": 2
+        }
+      },
+      "costPerApprovedItem": 0.08,
+      "costPerOutput": 0.05,
+      "costUsd": 0.4,
+      "outputs": 8,
+      "samples": [],
+      "schemaFailures": 0,
+      "turnsPerDelivery": 2
+    }
+  }
+]
