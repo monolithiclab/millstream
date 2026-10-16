@@ -41,7 +41,7 @@ func TestArgs(t *testing.T) {
 			args := Launcher{Runtime: tt.rt}.Args(s, "/tmp/millstream-work-42")
 			common := []string{"run", "--interactive", "--rm", "--pull=never", "--name", "millstream-millstream-work-42",
 				"--read-only", "--tmpfs", "/tmp", "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
-				"--volume", "/tmp/millstream-work-42:/tmp/millstream-work-42", "--workdir", "/tmp/millstream-work-42",
+				"--mount", "type=bind,src=/tmp/millstream-work-42,dst=/tmp/millstream-work-42", "--workdir", "/tmp/millstream-work-42",
 				"--env", "MILLSTREAM_WORKDIR=/tmp/millstream-work-42"}
 			if !slices.Equal(args[:len(common)], common) {
 				t.Fatalf("args = %q", args)
@@ -62,21 +62,23 @@ func TestArgs(t *testing.T) {
 	}
 }
 
-// TestArgsMountsAndSecrets: extra mounts follow the working directory's, read-only when asked; a variable the CLI
+// TestArgsMountsAndSecrets: extra mounts follow the working directory's, read-only when asked, as --mount bind
+// mounts so a path may hold a colon (one with a comma, --mount's separator, is refused); a variable the CLI
 // does not have, a secret, is passed by name with its value only in the CLI's environment; one the CLI has (HOME) is
 // passed inline, so the CLI keeps its own.
 func TestArgsMountsAndSecrets(t *testing.T) {
 	t.Parallel()
 	l := Launcher{Runtime: Runtime{Name: pipeline.RuntimeDocker, Bin: "/usr/bin/docker", Env: []string{"PATH=/usr/bin", "HOME=/home/u"}}}
 	spec := exec.Spec{Action: "lab/agent", Image: "agents:1",
-		Mounts: []exec.Mount{{Source: "/opt/ms", Target: "/millstream", ReadOnly: true}, {Source: "/rec", Target: "/rec"}},
+		Mounts: []exec.Mount{{Source: "/opt/ms", Target: "/millstream", ReadOnly: true}, {Source: "/rec:a", Target: "/rec:a"}},
 		Env:    []string{"HOME=/tmp", "MILLSTREAM_SECRET_API_KEY=sk-123456"}}
 	cmd, err := l.Command(spec, "/w")
 	if err != nil {
 		t.Fatal(err)
 	}
 	args := strings.Join(cmd.Args, " ")
-	for _, want := range []string{"--volume /opt/ms:/millstream:ro --volume /rec:/rec --env HOME=/tmp",
+	for _, want := range []string{"--mount type=bind,src=/opt/ms,dst=/millstream,readonly " +
+		"--mount type=bind,src=/rec:a,dst=/rec:a --env HOME=/tmp",
 		"--env MILLSTREAM_SECRET_API_KEY agents:1"} {
 		if !strings.Contains(args, want) {
 			t.Fatalf("args %q lack %q", args, want)
@@ -86,6 +88,10 @@ func TestArgsMountsAndSecrets(t *testing.T) {
 		!slices.Contains(cmd.Env, "PATH=/usr/bin") || !slices.Contains(cmd.Env, "HOME=/home/u") ||
 		slices.Contains(cmd.Env, "HOME=/tmp") {
 		t.Fatalf("args %q, env %q", args, cmd.Env)
+	}
+	spec.Mounts = append(spec.Mounts, exec.Mount{Source: "/a,b", Target: "/a"})
+	if _, err := l.Command(spec, "/w"); err == nil || !strings.Contains(err.Error(), "comma") {
+		t.Fatalf("a mount path with a comma: %v", err)
 	}
 }
 

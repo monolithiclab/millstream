@@ -120,6 +120,11 @@ func (l Launcher) Command(spec exec.Spec, workdir string) (*osexec.Cmd, error) {
 	if spec.Image == "" {
 		return nil, fmt.Errorf("action %s: no image", spec.Action)
 	}
+	for _, p := range append([]string{workdir}, mountPaths(spec.Mounts)...) {
+		if strings.Contains(p, ",") {
+			return nil, fmt.Errorf("action %s: mount path %q holds a comma, which --mount cannot pass", spec.Action, p)
+		}
+	}
 	cmd := l.Runtime.command(context.Background(), l.Args(spec, workdir)...)
 	for _, kv := range spec.Env {
 		if k, _, _ := strings.Cut(kv, "="); !l.Runtime.hasEnv(k) {
@@ -140,7 +145,7 @@ func (l Launcher) Kill(_ exec.Spec, workdir string) {
 func (l Launcher) Args(spec exec.Spec, workdir string) []string {
 	args := []string{"run", "--interactive", "--rm", "--pull=never", "--name", Name(workdir),
 		"--read-only", "--tmpfs", "/tmp", "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
-		"--volume", workdir + ":" + workdir, "--workdir", workdir, "--env", "MILLSTREAM_WORKDIR=" + workdir}
+		"--mount", bindMount(workdir, workdir, false), "--workdir", workdir, "--env", "MILLSTREAM_WORKDIR=" + workdir}
 	if !spec.Network {
 		args = append(args, "--network", "none")
 	}
@@ -151,11 +156,7 @@ func (l Launcher) Args(spec exec.Spec, workdir string) []string {
 		args = append(args, "--user", l.Runtime.User)
 	}
 	for _, m := range spec.Mounts {
-		v := m.Source + ":" + m.Target
-		if m.ReadOnly {
-			v += ":ro"
-		}
-		args = append(args, "--volume", v)
+		args = append(args, "--mount", bindMount(m.Source, m.Target, m.ReadOnly))
 	}
 	for _, kv := range spec.Env {
 		if k, _, _ := strings.Cut(kv, "="); !l.Runtime.hasEnv(k) {
@@ -165,6 +166,26 @@ func (l Launcher) Args(spec exec.Spec, workdir string) []string {
 	}
 	args = append(args, spec.Image)
 	return append(args, spec.Command...)
+}
+
+// bindMount is a bind mount as --mount takes it: unlike --volume's src:dst:ro, a path may hold a colon (Command
+// refuses one with a comma, --mount's separator). Unlike --volume, it never creates a missing source as the
+// daemon's user: the container fails to start instead.
+func bindMount(src, dst string, readOnly bool) string {
+	m := "type=bind,src=" + src + ",dst=" + dst
+	if readOnly {
+		m += ",readonly"
+	}
+	return m
+}
+
+// mountPaths lists the sources and targets of mounts.
+func mountPaths(mounts []exec.Mount) []string {
+	var paths []string
+	for _, m := range mounts {
+		paths = append(paths, m.Source, m.Target)
+	}
+	return paths
 }
 
 // hasEnv reports whether the CLI's own environment sets k. The action's variables the CLI does not have are passed
