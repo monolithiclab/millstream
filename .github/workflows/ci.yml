@@ -64,7 +64,8 @@ jobs:
           go-version-file: go.mod
       - run: make test-ui-e2e
 
-  # The container image built from source (Dockerfile) and smoke-tested. Nothing is pushed: GoReleaser builds snapshots only in this phase.
+  # The container image built from source (Dockerfile) and smoke-tested, and the deployment files checked: Compose
+  # config and systemd-analyze. Nothing is pushed: GoReleaser builds snapshots only in this phase.
   image:
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -72,4 +73,4 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - run: make test-image
+      - run: make test-image test-deploy

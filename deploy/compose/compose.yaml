@@ -1,0 +1,86 @@
+# The VPS deployment of spec section 14: Postgres, two engines (one active, one hot standby) and two nodes.
+#   cp .env.example .env    # then set every value
+#   docker compose up -d
+# docs/deploy.md is the guide: TLS in front, backups, upgrades. Secrets come from .env, never from this file.
+#
+# M4 status: `millstream serve` (M4 Task 2), the standby takeover (Task 3) and `millstream node --join` (Task 4) are
+# not built yet. The services marked "Task N" reference those commands and start once that task lands; until then
+# `docker compose config` validates the file and `docker compose up postgres` runs the database alone.
+
+name: millstream
+
+x-millstream: &millstream
+  image: ${MILLSTREAM_IMAGE:-millstream:dev}
+  restart: unless-stopped
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  tmpfs: [/tmp]
+
+x-engine: &engine
+  <<: *millstream
+  # Task 2: serve runs the engine from the environment file.
+  command: ["serve", "--env-file", "/etc/millstream/millstream.yaml"]
+  environment:
+    MILLSTREAM_DSN: postgres://millstream:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/millstream?sslmode=disable
+    MILLSTREAM_TOKEN: ${MILLSTREAM_TOKEN:?set MILLSTREAM_TOKEN in .env}
+    MILLSTREAM_NODE_TOKEN: ${MILLSTREAM_NODE_TOKEN:?set MILLSTREAM_NODE_TOKEN in .env}
+  # The root file system is read-only: the engines' working directory is a volume they share, so artifacts kept in
+  # the local directory survive a failover.
+  volumes:
+    - ./millstream.yaml:/etc/millstream/millstream.yaml:ro
+    - engine:/home/nonroot
+  depends_on:
+    postgres: { condition: service_healthy }
+
+x-node: &node
+  <<: *millstream
+  # Task 4: a node joins the engine with the node token over TLS and follows the active engine across a failover.
+  # --allow-exec runs exec actions, which must be static Linux binaries in this image (docs/deploy.md).
+  command: ["node", "--join", "https://engine:7070", "--allow-exec"]
+  environment:
+    MILLSTREAM_NODE_TOKEN: ${MILLSTREAM_NODE_TOKEN:?set MILLSTREAM_NODE_TOKEN in .env}
+  depends_on: [engine]
+
+services:
+  # postgres:17-trixie, pinned by digest (resolved 2026-10-16). Not published: only the engines reach it.
+  postgres:
+    image: postgres:17-trixie@sha256:2d2b8998d31037bf721cfdf764d76ba74171b4fab3431b7f72c27c56ddbdf9e3
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: millstream
+      POSTGRES_DB: millstream
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    volumes:
+      - postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U millstream -d millstream"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  # The two engines are identical: whichever takes the store's advisory lock first is active, the other waits as the
+  # standby and takes over when the active one fails (Task 3). Each publishes its API on the host's loopback only.
+  engine:
+    <<: *engine
+    ports: ["127.0.0.1:7070:7070"]
+
+  engine-standby:
+    <<: *engine
+    ports: ["127.0.0.1:7071:7070"]
+
+  # Each node's working directory, its package cache, is a volume of its own.
+  node-1:
+    <<: *node
+    volumes: [node-1:/home/nonroot]
+
+  node-2:
+    <<: *node
+    volumes: [node-2:/home/nonroot]
+
+volumes:
+  postgres:
+  engine:
+  node-1:
+  node-2:

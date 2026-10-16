@@ -16,7 +16,7 @@ docs: ## Check Markdown links and 120-column prose
 
 .PHONY: lint-shell
 lint-shell:
-	@shellcheck scripts/check-docs scripts/test-times scripts/test-image
+	@shellcheck scripts/check-docs scripts/test-times scripts/test-image scripts/test-deploy
 
 # No store query binds a bare LIMIT parameter, which has SQLite compile the statement again at every run: the
 # queries use limitParam (internal/store/sqlite/reads.go).
@@ -161,8 +161,8 @@ ui-shell: ui-deps ## Open a shell in the node container, ui/ mounted, Vite's por
 	@$(UI_DOCKER) -it -p 5173:5173 $(UI_NODE_IMAGE) bash
 
 # The container image (Dockerfile): the UI built in the pinned node image, the binary with it embedded, distroless
-# static at runtime. One image is the engine and the node alike. test-image smoke-tests it;
-# it is not in make ci and runs in CI's image job.
+# static at runtime. One image is the engine and the node alike. test-image smoke-tests it, test-deploy checks
+# deploy/ (Compose and systemd); neither is in make ci, both run in CI's image job.
 IMAGE = millstream:dev
 
 .PHONY: image
@@ -172,3 +172,7 @@ image: ## Build the container image millstream:dev from source (UI and binary bu
 .PHONY: test-image
 test-image: image ## Smoke-test the image: version, and millstream run serving the built UI over the e2e fixture
 	@scripts/test-image $(IMAGE) $(UI_NODE_IMAGE)
+
+.PHONY: test-deploy
+test-deploy: ## Check deploy/: docker compose config, and systemd-analyze verify of the units in a container
+	@scripts/test-deploy
