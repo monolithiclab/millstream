@@ -59,6 +59,8 @@ type failover struct {
 	db      string
 	dir     string
 	envFile string
+	// serveArgs are more flags of the serve processes.
+	serveArgs []string
 }
 
 func newFailover(t *testing.T) *failover {
@@ -104,7 +106,8 @@ type engineProc struct {
 func (f *failover) startEngine(name, dsn string, extra ...string) *engineProc {
 	f.t.Helper()
 	p := &engineProc{name: name, log: newProcLog(), done: make(chan struct{})}
-	p.cmd = osexec.Command(binary, "--env-file", f.envFile, "serve", "--lease-ttl", failoverLeaseTTL) // #nosec G204 -- test binary
+	p.cmd = osexec.Command(binary, append([]string{"--env-file", f.envFile, "serve", "--lease-ttl", failoverLeaseTTL}, // #nosec G204 -- test binary
+		f.serveArgs...)...)
 	p.cmd.Env, p.cmd.Dir = f.environ(dsn, extra...), f.dir
 	p.cmd.Stdout, p.cmd.Stderr = p.log, p.log
 	p.cmd.WaitDelay = 10 * time.Second
