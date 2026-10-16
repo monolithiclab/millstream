@@ -12,7 +12,7 @@ export interface ShortcutHandlers {
 // How long g waits for its second key.
 export const SEQUENCE_MS = 1500;
 
-function isEditable(target: EventTarget | null): boolean {
+export function isEditable(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
   return target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName);
 }
