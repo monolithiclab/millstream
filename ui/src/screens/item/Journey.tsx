@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useApiQuery } from '../../api/context';
 import type { Attempt, Delivery } from '../../api/schema';
 import { ErrorText } from '../../common/Copy';
-import { ErrorState, Skeleton } from '../../common/States';
+import { QueryView } from '../../common/States';
+import { useResource } from '../../common/useResource';
 import { StatusGlyph, useStatusLabel, type StatusKey } from '../../common/Status';
 import { useFormat } from '../../common/useFormat';
 import { AttemptTranscript } from './Transcript';
@@ -88,18 +88,21 @@ function AttemptRow({ pipeline, delivery, attempt }: { pipeline: string; deliver
 // A delivery's attempts, read when its row opens (the list reads deliveries without them).
 function Attempts({ pipeline, delivery }: { pipeline: string; delivery: string }) {
   const { t } = useTranslation();
-  const read = useApiQuery(`delivery:${pipeline}:${delivery}`, (api) => api.getDelivery(pipeline, delivery));
-  if (read.status === 'loading') return <Skeleton rows={1} className="h-10" />;
-  if (read.status === 'error')
-    return <ErrorState title={t('item.journey.attemptsError')} error={read.error} onRetry={read.reload} />;
-  const attempts = read.data.attempts ?? [];
-  if (attempts.length === 0) return <p className="m-0 text-small text-ink-2">{t('item.journey.noAttempts')}</p>;
+  const read = useResource(`delivery:${pipeline}:${delivery}`, (api) => api.getDelivery(pipeline, delivery));
   return (
-    <ol className="m-0 flex list-none flex-col gap-4 p-0">
-      {attempts.map((a) => (
-        <AttemptRow key={a.attempt} pipeline={pipeline} delivery={delivery} attempt={a} />
-      ))}
-    </ol>
+    <QueryView query={read} title={t('item.journey.attemptsError')} rows={1} className="h-10">
+      {({ attempts = [] }) =>
+        attempts.length === 0 ? (
+          <p className="m-0 text-small text-ink-2">{t('item.journey.noAttempts')}</p>
+        ) : (
+          <ol className="m-0 flex list-none flex-col gap-4 p-0">
+            {attempts.map((a) => (
+              <AttemptRow key={a.attempt} pipeline={pipeline} delivery={delivery} attempt={a} />
+            ))}
+          </ol>
+        )
+      }
+    </QueryView>
   );
 }
 

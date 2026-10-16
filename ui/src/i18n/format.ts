@@ -3,33 +3,27 @@ import type { Language } from './index';
 // Number, money, duration and time formatting per the canvas interaction notes: Intl everywhere, so French gets
 // its narrow no-break group separator (1 240) and decimal comma, and English 1,240.
 
-export const intlLocale: Record<Language, string> = { en: 'en-US', fr: 'fr-FR' };
+const intlLocale: Record<Language, string> = { en: 'en-US', fr: 'fr-FR' };
 const NBSP = ' ';
 
-// Building an Intl.NumberFormat is the costly part: lists format hundreds of figures per render.
-const numberFormats = new Map<string, Intl.NumberFormat>();
+// Building an Intl formatter is the costly part (lists and the graph format hundreds of figures per render): each is
+// built once per kind, language and options, here and nowhere else.
+const formatters = new Map<string, unknown>();
 
-function numberFormat(language: Language, options: Intl.NumberFormatOptions = {}): Intl.NumberFormat {
-  const key = `${language}|${JSON.stringify(options)}`;
-  let format = numberFormats.get(key);
+function cached<T, O>(kind: string, language: Language, options: O, make: (locale: string, options: O) => T): T {
+  const key = `${kind}|${language}|${JSON.stringify(options)}`;
+  let format = formatters.get(key) as T | undefined;
   if (format === undefined) {
-    format = new Intl.NumberFormat(intlLocale[language], options);
-    numberFormats.set(key, format);
+    format = make(intlLocale[language], options);
+    formatters.set(key, format);
   }
   return format;
 }
 
-const dateFormats = new Map<string, Intl.DateTimeFormat>();
-
-function dateFormat(language: Language, options: Intl.DateTimeFormatOptions): Intl.DateTimeFormat {
-  const key = `${language}|${JSON.stringify(options)}`;
-  let format = dateFormats.get(key);
-  if (format === undefined) {
-    format = new Intl.DateTimeFormat(intlLocale[language], options);
-    dateFormats.set(key, format);
-  }
-  return format;
-}
+const numberFormat = (language: Language, options: Intl.NumberFormatOptions = {}) =>
+  cached('number', language, options, (l, o) => new Intl.NumberFormat(l, o));
+const dateFormat = (language: Language, options: Intl.DateTimeFormatOptions) =>
+  cached('date', language, options, (l, o) => new Intl.DateTimeFormat(l, o));
 
 export function formatNumber(value: number, language: Language, options?: Intl.NumberFormatOptions): string {
   return numberFormat(language, options).format(value);
@@ -72,7 +66,12 @@ export function formatDuration(ms: number, language: Language): string {
 
 // Relative time for lists ("4 minutes ago", "il y a 4 minutes"); formatDateTime gives the absolute value for hover.
 export function formatRelativeTime(date: Date, now: Date, language: Language): string {
-  const format = new Intl.RelativeTimeFormat(intlLocale[language], { numeric: 'auto' });
+  const format = cached(
+    'relative',
+    language,
+    { numeric: 'auto' } as const,
+    (l, o) => new Intl.RelativeTimeFormat(l, o),
+  );
   const seconds = (date.getTime() - now.getTime()) / 1000;
   const abs = Math.abs(seconds);
   if (abs < 60) return format.format(Math.round(seconds), 'second');
@@ -119,4 +118,9 @@ export function formatDay(date: Date, language: Language, timeZone?: string): st
 // A share as a percentage: 34 %, 0.5 → 50 %.
 export function formatPercent(share: number, language: Language, digits = 0): string {
   return formatNumber(share, language, { style: 'percent', maximumFractionDigits: digits });
+}
+
+// The plural category of a count: French counts 0 and 1 as singular, English only 1.
+export function pluralCategory(count: number, language: Language): Intl.LDMLPluralRule {
+  return cached('plural', language, {}, (l) => new Intl.PluralRules(l)).select(count);
 }

@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
-import { enc, withQuery } from '../../api/api';
+import { withQuery } from '../../api/api';
 import { useApi } from '../../api/context';
 import type { Insight, InsightState } from '../../api/schema';
 import {
@@ -13,27 +13,25 @@ import {
   formatRelativeTime,
 } from '../../i18n/format';
 import { usePreferences } from '../../preferences';
-import { pipelinePath } from '../../routes';
+import { itemPath, pipelinePath } from '../../routes';
 import { ScreenPage } from '../ScreenPage';
-import { Id } from '../parts/Id';
-import { Segmented } from '../parts/Segmented';
-import { EmptyState, ErrorState, QueryView } from '../parts/States';
-import { StatusBadge, type GlyphName } from '../parts/Status';
-import { button, card, field } from '../parts/styles';
-import { useNow } from '../parts/useNow';
-import { useResource } from '../parts/useResource';
+import { Id } from '../../common/Id';
+import { errorMessage } from '../../common/Notice';
+import { Segmented } from '../../common/Segmented';
+import { EmptyState, ErrorState, QueryView } from '../../common/States';
+import { useInsightKindLabel } from '../../common/insightKind';
+import { StatusBadge, useStatusLabel, type StatusKey } from '../../common/Status';
+import { buttons, card, field } from '../../common/styles';
+import { useNow } from '../../common/useNow';
+import { useResource } from '../../common/useResource';
 
 // The canvas groups open and acknowledged insights as needing attention.
 type Tab = 'attention' | 'resolved' | 'muted';
 const tabOf = (state: InsightState): Tab =>
   state === 'resolved' ? 'resolved' : state === 'muted' ? 'muted' : 'attention';
 
-const stateGlyph: Record<InsightState, GlyphName> = {
-  open: 'retry',
-  acknowledged: 'ack',
-  resolved: 'ok',
-  muted: 'stopped',
-};
+// An open insight wants attention: the warning triangle, not the open dead letter's square.
+const stateGlyph = (state: InsightState): StatusKey => (state === 'open' ? 'slow' : state);
 
 type Evidence = Record<string, unknown>;
 const num = (ev: Evidence, key: string): number | null => (typeof ev[key] === 'number' ? (ev[key] as number) : null);
@@ -53,10 +51,11 @@ export function InsightsScreen() {
   const [search, setSearch] = useSearchParams();
   const tab = (['attention', 'resolved', 'muted'] as const).find((x) => x === search.get('state')) ?? 'attention';
   const insights = useResource(`insights:${pipeline}`, (api) => api.listInsights({ pipeline }));
+  const kindLabel = useInsightKindLabel();
   const [hidden, setHidden] = useState<string[]>([]);
   const [step, setStep] = useState('');
 
-  const all = insights.state.status === 'ready' ? insights.state.data : [];
+  const all = insights.status === 'ready' ? insights.data : [];
   const counts = { attention: 0, resolved: 0, muted: 0 };
   for (const i of all) counts[tabOf(i.state)] += 1;
   const inTab = all.filter((i) => tabOf(i.state) === tab);
@@ -76,7 +75,7 @@ export function InsightsScreen() {
           <Segmented<Tab>
             label={t('insights.stateLabel')}
             value={tab}
-            segments={[
+            options={[
               { value: 'attention', label: t('insights.tab.attention', { count: counts.attention }) },
               { value: 'resolved', label: t('insights.tab.resolved', { count: counts.resolved }) },
               { value: 'muted', label: t('insights.tab.muted', { count: counts.muted }) },
@@ -87,7 +86,7 @@ export function InsightsScreen() {
         </>
       }
     >
-      <QueryView state={insights.state} onRetry={insights.reload}>
+      <QueryView query={insights}>
         {() => (
           <div className="flex flex-wrap items-start gap-6">
             <aside
@@ -108,9 +107,7 @@ export function InsightsScreen() {
                     }
                     className="size-[15px] accent-accent"
                   />
-                  <span className="flex-1">
-                    <KindName kind={kind} />
-                  </span>
+                  <span className="flex-1">{kindLabel(kind)}</span>
                   <span className="font-mono text-tiny text-ink-3">{inTab.filter((i) => i.kind === kind).length}</span>
                 </label>
               ))}
@@ -136,7 +133,7 @@ export function InsightsScreen() {
               {shown.length === 0 ? (
                 <EmptyState
                   title={tab === 'attention' ? t('insights.none') : t('insights.noneHere')}
-                  tick={tab === 'attention'}
+                  done={tab === 'attention'}
                 >
                   {tab === 'attention' && t('insights.noneBody')}
                 </EmptyState>
@@ -151,18 +148,6 @@ export function InsightsScreen() {
       </QueryView>
     </ScreenPage>
   );
-}
-
-function KindName({ kind }: { kind: string }) {
-  const { t } = useTranslation();
-  const names: Record<string, string> = {
-    slowStep: t('insights.kind.slowStep'),
-    failureCluster: t('insights.kind.failureCluster'),
-    cost: t('insights.kind.cost'),
-    reviewPattern: t('insights.kind.reviewPattern'),
-    unschedulable: t('insights.kind.unschedulable'),
-  };
-  return <>{names[kind] ?? kind}</>;
 }
 
 // The title, body, figures and way in of an insight, from its kind's evidence (internal/insights).
@@ -296,12 +281,8 @@ function InsightCard({ insight, now, onChanged }: { insight: Insight; now: numbe
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const samples = Array.isArray(insight.evidence.samples) ? (insight.evidence.samples as string[]) : [];
-  const stateLabel: Record<InsightState, string> = {
-    open: t('insights.state.open'),
-    acknowledged: t('insights.state.acknowledged'),
-    resolved: t('insights.state.resolved'),
-    muted: t('insights.state.muted'),
-  };
+  const statusLabel = useStatusLabel();
+  const kindLabel = useInsightKindLabel();
   const act = (action: (p: string, i: string) => Promise<void>) => {
     setBusy(true);
     setError(null);
@@ -312,7 +293,7 @@ function InsightCard({ insight, now, onChanged }: { insight: Insight; now: numbe
       },
       (e: unknown) => {
         setBusy(false);
-        setError(e instanceof Error ? e.message : String(e));
+        setError(errorMessage(e));
       },
     );
   };
@@ -323,10 +304,8 @@ function InsightCard({ insight, now, onChanged }: { insight: Insight; now: numbe
       className={`${card} flex flex-col gap-3 px-5 py-[18px]`}
     >
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-tiny">
-        <StatusBadge name={stateGlyph[insight.state]}>{stateLabel[insight.state]}</StatusBadge>
-        <span className="font-bold text-ink-2">
-          <KindName kind={insight.kind} />
-        </span>
+        <StatusBadge status={stateGlyph(insight.state)} label={statusLabel(insight.state)} />
+        <span className="font-bold text-ink-2">{kindLabel(insight.kind)}</span>
         <Link
           to={withQuery(pipelinePath(insight.pipeline, 'graph'), { step: insight.scope })}
           className="font-mono font-bold text-ink"
@@ -359,7 +338,7 @@ function InsightCard({ insight, now, onChanged }: { insight: Insight; now: numbe
         <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5 text-tiny">
           <span className="text-ink-3">{t('insights.samples')}</span>
           {samples.map((id) => (
-            <Link key={id} to={pipelinePath(insight.pipeline, `items/${enc(id)}`)} className="text-ink">
+            <Link key={id} to={itemPath(insight.pipeline, id)} className="text-ink">
               <Id value={id} />
             </Link>
           ))}
@@ -370,7 +349,7 @@ function InsightCard({ insight, now, onChanged }: { insight: Insight; now: numbe
       )}
       <div className="flex flex-wrap gap-2 pt-1">
         {open && (
-          <Link to={open.to} className={`${button.primary} no-underline`}>
+          <Link to={open.to} className={`${buttons.primary} no-underline`}>
             {open.label}
           </Link>
         )}
@@ -379,13 +358,13 @@ function InsightCard({ insight, now, onChanged }: { insight: Insight; now: numbe
             type="button"
             disabled={busy}
             onClick={() => act(api.acknowledgeInsight)}
-            className={button.secondary}
+            className={buttons.secondary}
           >
             {t('insights.acknowledge')}
           </button>
         )}
         {insight.state !== 'muted' && insight.state !== 'resolved' && (
-          <button type="button" disabled={busy} onClick={() => act(api.muteInsight)} className={button.secondary}>
+          <button type="button" disabled={busy} onClick={() => act(api.muteInsight)} className={buttons.secondary}>
             {t('insights.mute')}
           </button>
         )}

@@ -5,12 +5,14 @@ import type { MetricSeries } from '../../api/schema';
 import { formatDateTime, formatDuration, formatMoney, formatNumber } from '../../i18n/format';
 import { usePreferences } from '../../preferences';
 import { ScreenPage } from '../ScreenPage';
-import { Segmented } from '../parts/Segmented';
-import { EmptyState, QueryView } from '../parts/States';
-import { card, cardTitle, field } from '../parts/styles';
-import { useNow } from '../parts/useNow';
-import { useResource } from '../parts/useResource';
-import { PipelineSelect } from '../parts/PipelineSelect';
+import { CopyButton } from '../../common/Copy';
+import { ScrollRegion } from '../../common/ScrollRegion';
+import { Segmented } from '../../common/Segmented';
+import { EmptyState, QueryView } from '../../common/States';
+import { card, cardTitle, field } from '../../common/styles';
+import { useNow } from '../../common/useNow';
+import { useResource } from '../../common/useResource';
+import { PipelineSelect } from '../../common/PipelineSelect';
 import { MetricChart, type ChartSeries, type Mark } from './MetricChart';
 import {
   bucket,
@@ -54,7 +56,7 @@ export function MetricsScreen() {
   const names = useResource(`metric-names:${asked.pipeline}`, (api) =>
     api.listMetricNames(asked.pipeline ? { pipeline: asked.pipeline, since: '30d' } : { since: '30d' }),
   );
-  const available = names.state.status === 'ready' ? names.state.data : [];
+  const available = names.status === 'ready' ? names.data : [];
   // Without a metric in the URL, the latency of deliveries when there is one, else the first.
   const fallback = available.includes('delivery_latency_seconds') ? 'delivery_latency_seconds' : (available[0] ?? '');
   const view: View = asked.metric ? asked : { ...asked, metric: fallback, stat: defaultStat(fallback) };
@@ -73,11 +75,11 @@ export function MetricsScreen() {
   );
   const marks = useMemo<Mark[]>(
     () =>
-      (revisions.state.status === 'ready' ? revisions.state.data : []).map((r) => ({
+      (revisions.status === 'ready' ? revisions.data : []).map((r) => ({
         t: Date.parse(r.appliedAt),
         label: t('metrics.applied', { revision: r.id }),
       })),
-    [revisions.state, t],
+    [revisions, t],
   );
   // A fixed range slides with the clock: read it again each minute, in the background.
   const refresh = series.refresh;
@@ -87,7 +89,6 @@ export function MetricsScreen() {
     lastTick.current = now;
     if (view.range !== 'custom') refresh();
   }, [now, view.range, refresh]);
-  const [copiedPath, setCopiedPath] = useState<string | null>(null);
   const labelInput = useId();
 
   const groupMode: GroupMode = view.by === '' ? 'none' : view.by === 'step' ? 'step' : 'label';
@@ -116,20 +117,15 @@ export function MetricsScreen() {
   );
 
   const path = `/metrics${search.toString() ? `?${search.toString()}` : ''}`;
-  const copy = () => {
-    void navigator.clipboard?.writeText(window.location.origin + path).then(() => setCopiedPath(path));
-  };
 
   const header = (
     <div className="flex max-w-full min-w-0 items-center rounded-1 border border-line bg-bg md:ml-auto">
       <span className="min-w-0 truncate px-2.5 py-1 font-mono text-tiny text-ink-2">{path}</span>
-      <button
-        type="button"
-        onClick={copy}
+      <CopyButton
+        text={window.location.origin + path}
+        label={t('metrics.copy')}
         className="border-l border-line px-2.5 py-1 text-tiny font-bold whitespace-nowrap text-accent"
-      >
-        {copiedPath === path ? t('metrics.copied') : t('metrics.copy')}
-      </button>
+      />
     </div>
   );
 
@@ -165,7 +161,7 @@ export function MetricsScreen() {
             <Segmented<GroupMode>
               label={t('metrics.groupBy')}
               value={groupMode}
-              segments={[
+              options={[
                 { value: 'none', label: t('metrics.group.none') },
                 { value: 'step', label: t('metrics.group.step') },
                 { value: 'label', label: t('metrics.group.label') },
@@ -201,7 +197,7 @@ export function MetricsScreen() {
           <Segmented<Range>
             label={t('metrics.rangeLabel')}
             value={view.range}
-            segments={ranges.map((value) => ({ value, label: rangeLabels[value] }))}
+            options={ranges.map((value) => ({ value, label: rangeLabels[value] }))}
             onChange={(range) => {
               const w = windowOf(view, now);
               set(
@@ -235,7 +231,7 @@ export function MetricsScreen() {
           <Segmented<Stat>
             label={t('metrics.statLabel')}
             value={view.stat}
-            segments={stats.map((value) => ({ value, label: statLabels[value] }))}
+            options={stats.map((value) => ({ value, label: statLabels[value] }))}
             onChange={(stat) => set({ stat })}
           />
         </div>
@@ -251,12 +247,12 @@ export function MetricsScreen() {
         </label>
       </div>
 
-      <QueryView state={names.state} onRetry={names.reload}>
+      <QueryView query={names}>
         {(list) =>
           list.length === 0 ? (
             <EmptyState title={t('metrics.empty')}>{t('metrics.emptyBody')}</EmptyState>
           ) : (
-            <QueryView state={series.state} onRetry={series.reload} lines={2}>
+            <QueryView query={series} rows={2}>
               {(data) => (
                 <Explorer
                   view={view}
@@ -386,8 +382,7 @@ function Explorer({
         <ChartPanel times={rolled.times} visible={visible} marks={marks} format={format} label={description} />
       </section>
 
-      {/* eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- it scrolls sideways on a phone, so it takes focus */}
-      <section aria-label={t('metrics.series')} tabIndex={0} className={`${card} overflow-x-auto`}>
+      <ScrollRegion label={t('metrics.series')} className={`${card} overflow-x-auto`}>
         <table className="w-full min-w-[560px] border-collapse text-small">
           <thead>
             <tr className="bg-surface-2 text-left text-tiny text-ink-3">
@@ -435,12 +430,11 @@ function Explorer({
             })}
           </tbody>
         </table>
-      </section>
+      </ScrollRegion>
 
       <details className={`${card} px-4 py-3 text-small`}>
         <summary className="cursor-pointer font-bold text-ink-2">{t('metrics.asTable')}</summary>
-        {/* eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- it scrolls, so it takes focus */}
-        <div role="region" aria-label={t('metrics.asTable')} tabIndex={0} className="mt-2 max-h-[420px] overflow-auto">
+        <ScrollRegion label={t('metrics.asTable')} className="mt-2 max-h-[420px] overflow-auto">
           <table className="w-full border-collapse text-tiny">
             <caption className="sr-only">{description}</caption>
             <thead>
@@ -477,7 +471,7 @@ function Explorer({
               ))}
             </tbody>
           </table>
-        </div>
+        </ScrollRegion>
       </details>
     </>
   );

@@ -14,17 +14,18 @@ import { useTranslation } from 'react-i18next';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { liveUrls } from '../../api/api';
 import type { Pipeline, PipelineSnapshot } from '../../api/schema';
-import { useApi, useApiQuery } from '../../api/context';
-import { card } from '../../common/buttons';
+import { useApi } from '../../api/context';
+import { useResource } from '../../common/useResource';
+import { card } from '../../common/styles';
 import { useDocumentVisible, useReducedMotion } from '../../common/motion';
 import { NoticeRegion, runAction, useNotice } from '../../common/Notice';
 import { ScrollRegion } from '../../common/ScrollRegion';
 import { Segmented } from '../../common/Segmented';
-import { EmptyState, ErrorState, Skeleton } from '../../common/States';
+import { EmptyState, ErrorState, Loading } from '../../common/States';
 import { StatusBadge, isStatus, useStatusLabel } from '../../common/Status';
 import { useFormat } from '../../common/useFormat';
 import { parseData, useLiveStream } from '../../live/useLiveStream';
-import { pipelinePath } from '../../routes';
+import { pipelinePath, runPath } from '../../routes';
 import { ScreenPage } from '../ScreenPage';
 import { useDeadLetterActions } from '../deadLetters/useDeadLetterActions';
 import { ChannelEdge, type ChannelEdgeType } from './ChannelEdge';
@@ -374,7 +375,7 @@ function RunStrip({ pipeline }: { pipeline: Pipeline }) {
   const { t } = useTranslation();
   const f = useFormat();
   const last = pipeline.lastRun;
-  const run = useApiQuery(last ? `run:${pipeline.name}:${last.id}` : null, (api) =>
+  const run = useResource(last ? `run:${pipeline.name}:${last.id}` : null, (api) =>
     api.getRun(pipeline.name, last?.id ?? ''),
   );
   if (last === undefined || run.status !== 'ready') return null;
@@ -384,9 +385,9 @@ function RunStrip({ pipeline }: { pipeline: Pipeline }) {
       aria-label={t('graph.run.label', { time: f.clock(last.startedAt) })}
       className={`${card} flex flex-wrap items-center gap-x-[22px] gap-y-2 px-5 py-3.5 text-small`}
     >
-      <span className="font-display text-[20px] text-ink-2 italic">
+      <Link to={runPath(pipeline.name, last.id)} className="font-display text-[20px] text-ink-2 italic">
         {t('graph.run.title', { time: f.clock(last.startedAt) })}
-      </span>
+      </Link>
       {isStatus(run.data.state) && <StatusBadge status={run.data.state} />}
       {streams.map((s) => (
         <Link
@@ -449,7 +450,7 @@ export function GraphScreen() {
   const [busy, setBusy] = useState(false);
   const { notice, setNotice, dismiss } = useNotice();
 
-  const data = useApiQuery(`graph:${pipeline}`, async (a) => {
+  const data = useResource(`graph:${pipeline}`, async (a) => {
     const [p, streams, deadLetters, insights] = await Promise.all([
       a.getPipeline(pipeline),
       a.listStreams(pipeline),
@@ -458,15 +459,15 @@ export function GraphScreen() {
     ]);
     return { pipeline: p, streams, deadLetters, insights };
   });
-  const reload = data.reload;
-  const snapshot = useSnapshot(pipeline, reload);
+  const { reload, refresh } = data;
+  const snapshot = useSnapshot(pipeline, refresh);
   const ready = data.status === 'ready' ? data.data : null;
 
   const model = useMemo(() => (ready === null ? null : buildModel({ ...ready, snapshot })), [ready, snapshot]);
   // Layout follows the REST reads only: live figures never move a node.
   const positions = useMemo(() => (ready === null ? null : layout(buildModel({ ...ready, snapshot: null }))), [ready]);
 
-  const actions = useDeadLetterActions({ pipeline, revision: ready?.pipeline.revision, onDone: reload, setNotice });
+  const actions = useDeadLetterActions({ pipeline, revision: ready?.pipeline.revision, onDone: refresh, setNotice });
 
   const open = useCallback(
     (name: string) =>
@@ -504,7 +505,7 @@ export function GraphScreen() {
       },
       failed: (message) =>
         paused ? t('graph.pauseFailed', { step, message }) : t('graph.resumeFailed', { step, message }),
-      settled: reload,
+      settled: refresh,
     });
     setBusy(false);
   };
@@ -533,8 +534,8 @@ export function GraphScreen() {
         <p className="m-0 text-tiny text-ink-3 md:ml-auto">{t('graph.hint')}</p>
       </div>
 
-      {data.status === 'loading' && <Skeleton rows={1} className="h-[420px]" />}
-      {data.status === 'error' && <ErrorState title={t('graph.error')} error={data.error} onRetry={reload} />}
+      {data.status === 'loading' && <Loading rows={1} className="h-[420px]" />}
+      {data.status === 'error' && <ErrorState title={t('graph.error')} message={data.error.message} onRetry={reload} />}
       {model !== null && positions !== null && ready !== null && (
         <>
           {model.steps.length === 0 ? (

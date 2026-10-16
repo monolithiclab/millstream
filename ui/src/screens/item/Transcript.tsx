@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next';
-import { useApiQuery } from '../../api/context';
-import { ErrorState, Skeleton } from '../../common/States';
+import { QueryView } from '../../common/States';
+import { useResource } from '../../common/useResource';
 import { useFormat } from '../../common/useFormat';
 
 // An attempt's transcript.json (internal/agent.Transcript, spec section 7.2).
@@ -175,12 +175,13 @@ export function AttemptTranscript({
   attempt: number;
 }) {
   const { t } = useTranslation();
-  const read = useApiQuery(`transcript:${pipeline}:${delivery}:${attempt}`, async (api) => {
+  const read = useResource(`transcript:${pipeline}:${delivery}:${attempt}`, async (api) => {
     const text = await api.readArtifact({ pipeline, delivery, attempt, name: 'transcript.json' });
     return JSON.parse(text) as TranscriptFile;
   });
-  if (read.status === 'loading') return <Skeleton rows={2} className="h-12" />;
-  if (read.status === 'error')
-    return <ErrorState title={t('item.transcript.error')} error={read.error} onRetry={read.reload} />;
-  return <TranscriptView transcript={read.data} />;
+  return (
+    <QueryView query={read} title={t('item.transcript.error')} rows={2} className="h-12">
+      {(transcript) => <TranscriptView transcript={transcript} />}
+    </QueryView>
+  );
 }

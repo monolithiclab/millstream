@@ -12,8 +12,10 @@ export interface ShortcutHandlers {
 // How long g waits for its second key.
 export const SEQUENCE_MS = 1500;
 
+// Where typing goes into a field: single keys never fire there. A checkbox or radio takes no text, so they do.
 export function isEditable(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
+  if (target instanceof HTMLInputElement && ['checkbox', 'radio'].includes(target.type)) return false;
   return target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName);
 }
 

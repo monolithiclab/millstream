@@ -6,14 +6,17 @@ import { useApi } from '../../api/context';
 import type { Run, RunState } from '../../api/schema';
 import { formatDuration, formatMoney } from '../../i18n/format';
 import { usePreferences } from '../../preferences';
+import { runPath } from '../../routes';
 import { ScreenPage } from '../ScreenPage';
-import { Segmented } from '../parts/Segmented';
-import { EmptyState, ErrorState, QueryView } from '../parts/States';
-import { button, card } from '../parts/styles';
-import { useNow } from '../parts/useNow';
-import { useResource } from '../parts/useResource';
+import { Segmented } from '../../common/Segmented';
+import { errorMessage } from '../../common/Notice';
+import { StatusBadge, useStatusLabel } from '../../common/Status';
+import { EmptyState, ErrorState, QueryView } from '../../common/States';
+import { buttons, card } from '../../common/styles';
+import { useNow } from '../../common/useNow';
+import { useResource } from '../../common/useResource';
 import { useLatest } from '../../useLatest';
-import { RunStateBadge, runPath, useRunName, useRunStateLabels } from './runParts';
+import { useRunName } from './runParts';
 
 const PAGE = 50;
 type Filter = RunState | 'all';
@@ -44,7 +47,8 @@ export function RunsScreen() {
   const [moreError, setMoreError] = useState<string | null>(null);
   const now = useNow();
   const name = useRunName();
-  const labels: Record<Filter, string> = { all: t('runs.filter.all'), ...useRunStateLabels() };
+  const statusLabel = useStatusLabel();
+  const label = (filter: Filter) => (filter === 'all' ? t('runs.filter.all') : statusLabel(filter));
 
   // The next page by its cursor, appended; one that arrives after the filter changed is dropped.
   const loadMore = async (cursor: string) => {
@@ -56,7 +60,7 @@ export function RunsScreen() {
       if (keyRef.current === asked)
         runs.mutate((p) => ({ items: [...p.items, ...page.items], ...(page.next ? { next: page.next } : {}) }));
     } catch (error) {
-      setMoreError(error instanceof Error ? error.message : String(error));
+      setMoreError(errorMessage(error));
     } finally {
       setLoadingMore(false);
     }
@@ -68,11 +72,11 @@ export function RunsScreen() {
     <ScreenPage title={t('nav.runs')} eyebrow={<p className="m-0 font-mono text-small text-ink-2">{pipeline}</p>}>
       <Segmented
         label={t('runs.filter.label')}
-        segments={filters.map((value) => ({ value, label: labels[value] }))}
+        options={filters.map((value) => ({ value, label: label(value) }))}
         value={state}
         onChange={setState}
       />
-      <QueryView state={runs.state} onRetry={runs.reload}>
+      <QueryView query={runs}>
         {(page) => {
           if (page.items.length === 0) {
             return (
@@ -100,7 +104,7 @@ export function RunsScreen() {
                           )}
                         </strong>
                         <span>
-                          <RunStateBadge state={run.state} />
+                          <StatusBadge status={run.state} />
                         </span>
                       </span>
                       <span aria-hidden="true" className="flex h-2.5 bg-surface-2">
@@ -123,7 +127,7 @@ export function RunsScreen() {
                     type="button"
                     disabled={loadingMore}
                     onClick={() => void loadMore(next)}
-                    className={`${button.secondary} self-start`}
+                    className={`${buttons.secondary} self-start`}
                   >
                     {t('runs.more')}
                   </button>

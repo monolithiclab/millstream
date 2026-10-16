@@ -1,22 +1,23 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, useParams } from 'react-router-dom';
-import { enc, liveUrls, withQuery, type Api } from '../../api/api';
-import { useApi, type QueryState } from '../../api/context';
+import { liveUrls, withQuery, type Api } from '../../api/api';
+import { useApi } from '../../api/context';
 import type { Delivery, Pipeline, Run, RunReport } from '../../api/schema';
 import { formatClock, formatDuration, formatMoney, formatNumber, formatPercent } from '../../i18n/format';
 import { useLiveStream } from '../../live/useLiveStream';
 import { usePreferences } from '../../preferences';
-import { pipelinePath } from '../../routes';
-import { Dialog } from '../../shell/Dialog';
+import { itemPath, pipelinePath, runPath } from '../../routes';
 import { ScreenPage } from '../ScreenPage';
-import { Id } from '../parts/Id';
-import { StatusGlyph } from '../parts/Status';
-import { QueryView } from '../parts/States';
-import { button, card, cardTitle } from '../parts/styles';
-import { useNow } from '../parts/useNow';
-import { useResource, type Resource } from '../parts/useResource';
-import { RunStateBadge, runPath, settledStates, useRunName } from './runParts';
+import { ConfirmDialog } from '../../common/ConfirmDialog';
+import { Id } from '../../common/Id';
+import { errorMessage } from '../../common/Notice';
+import { StatusBadge, StatusGlyph } from '../../common/Status';
+import { QueryView } from '../../common/States';
+import { buttons, card, cardTitle } from '../../common/styles';
+import { useNow } from '../../common/useNow';
+import { useResource, type Query, type Resource } from '../../common/useResource';
+import { settledStates, useRunName } from './runParts';
 import { buildTimeline, density, position, ticks, type SegmentKind, type StepRow, type Timeline } from './timeline';
 
 // What a live event changes; the pipeline and the neighbouring runs are read once.
@@ -47,25 +48,18 @@ async function readContext(api: Api, pipeline: string): Promise<Context> {
   return { pipeline: p, neighbours: page.items };
 }
 
-// Both reads as one: loading until both are in, the first error otherwise.
-function combine(live: Resource<Live>, context: Resource<Context>): { state: QueryState<RunData>; reload: () => void } {
-  const a = live.state;
-  const b = context.state;
-  const state: QueryState<RunData> =
-    a.status === 'error'
-      ? a
-      : b.status === 'error'
-        ? b
-        : a.status === 'ready' && b.status === 'ready'
-          ? { status: 'ready', data: { ...a.data, ...b.data } }
-          : { status: 'loading' };
-  return {
-    state,
-    reload: () => {
-      if (a.status === 'error') live.reload();
-      if (b.status === 'error') context.reload();
-    },
+// Both reads as one: loading until both are in, the first error otherwise; reload reads again what failed.
+function combine(live: Resource<Live>, context: Resource<Context>): Query<RunData> {
+  const reload = () => {
+    if (live.status === 'error') live.reload();
+    if (context.status === 'error') context.reload();
   };
+  if (live.status === 'error') return { status: 'error', error: live.error, reload };
+  if (context.status === 'error') return { status: 'error', error: context.error, reload };
+  if (live.status === 'ready' && context.status === 'ready') {
+    return { status: 'ready', data: { ...live.data, ...context.data }, reload };
+  }
+  return { status: 'loading', reload };
 }
 
 // Live updates repaint at most this often (interaction notes: about 4 events a second, paint every 250 ms; a
@@ -83,7 +77,7 @@ export function RunScreen() {
   const data = combine(live, context);
   const name = useRunName();
   const refresh = live.refresh;
-  const settled = data.state.status === 'ready' && settledStates.has(data.state.data.run.state);
+  const settled = data.status === 'ready' && settledStates.has(data.data.run.state);
 
   // Coalesce live events into one refetch per LIVE_REFRESH_MS.
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -100,14 +94,14 @@ export function RunScreen() {
     },
     [],
   );
-  useLiveStream(data.state.status !== 'ready' || settled ? null : liveUrls.run(pipeline, id), {
+  useLiveStream(data.status !== 'ready' || settled ? null : liveUrls.run(pipeline, id), {
     events: ['state'],
     onMessage: schedule,
     onReconnect: refresh,
     onSnapshotRequired: refresh,
   });
 
-  const title = data.state.status === 'ready' ? name(data.state.data.run) : t('runs.run');
+  const title = data.status === 'ready' ? name(data.data.run) : t('runs.run');
   return (
     <ScreenPage
       title={title}
@@ -122,9 +116,9 @@ export function RunScreen() {
           <span className="font-mono text-ink-3">{pipeline}</span>
         </p>
       }
-      header={data.state.status === 'ready' && <RunHeader data={data.state.data} onChanged={refresh} />}
+      header={data.status === 'ready' && <RunHeader data={data.data} onChanged={refresh} />}
     >
-      <QueryView state={data.state} onRetry={data.reload} lines={4}>
+      <QueryView query={data} rows={4}>
         {(d) => <RunBody data={d} />}
       </QueryView>
     </ScreenPage>
@@ -143,15 +137,14 @@ function RunHeader({ data, onChanged }: { data: RunData; onChanged: () => void }
   const [confirm, setConfirm] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const api = useApi();
-  const cancel = () => {
-    setConfirm(false);
+  const cancel = () =>
     api
       .cancelRun(run.pipeline, run.id)
-      .then(onChanged, (e: unknown) => setError(e instanceof Error ? e.message : String(e)));
-  };
+      .then(onChanged, (e: unknown) => setError(errorMessage(e)))
+      .finally(() => setConfirm(false));
   return (
     <>
-      <RunStateBadge state={run.state} />
+      <StatusBadge status={run.state} />
       <p className="m-0 text-small text-ink-2">
         {run.kind === 'replay' ? t('runs.replayRun') : t('runs.trigger', { trigger: run.trigger ?? run.triggerSource })}
         {' · '}
@@ -166,18 +159,18 @@ function RunHeader({ data, onChanged }: { data: RunData; onChanged: () => void }
       <div className="flex flex-1 flex-wrap justify-end gap-1.5">
         <nav aria-label={t('runs.neighbours')} className="flex flex-wrap gap-1.5">
           {older && (
-            <Link to={runPath(run.pipeline, older.id)} className={`${button.secondary} no-underline`}>
+            <Link to={runPath(run.pipeline, older.id)} className={`${buttons.secondary} no-underline`}>
               ← {name(older)}
             </Link>
           )}
           {newer && (
-            <Link to={runPath(run.pipeline, newer.id)} className={`${button.secondary} no-underline`}>
+            <Link to={runPath(run.pipeline, newer.id)} className={`${buttons.secondary} no-underline`}>
               {name(newer)} →
             </Link>
           )}
         </nav>
         {!settledStates.has(run.state) && (
-          <button type="button" onClick={() => setConfirm(true)} className={button.secondary}>
+          <button type="button" onClick={() => setConfirm(true)} className={buttons.secondary}>
             {t('runs.cancel')}
           </button>
         )}
@@ -187,31 +180,19 @@ function RunHeader({ data, onChanged }: { data: RunData; onChanged: () => void }
           {t('runs.cancelFailed')} {error}
         </p>
       )}
-      {confirm && <CancelDialog name={name(run)} onCancel={() => setConfirm(false)} onConfirm={cancel} />}
+      {confirm && (
+        <ConfirmDialog
+          title={t('runs.cancelTitle', { name: name(run) })}
+          confirmLabel={t('runs.cancelConfirm')}
+          cancelLabel={t('runs.keepRunning')}
+          destructive
+          onConfirm={cancel}
+          onCancel={() => setConfirm(false)}
+        >
+          <p className="m-0">{t('runs.cancelBody')}</p>
+        </ConfirmDialog>
+      )}
     </>
-  );
-}
-
-function CancelDialog({ name, onCancel, onConfirm }: { name: string; onCancel: () => void; onConfirm: () => void }) {
-  const { t } = useTranslation();
-  const titleId = useId();
-  return (
-    <Dialog labelledBy={titleId} onClose={onCancel}>
-      <div className="flex flex-col gap-2.5 px-5 py-[18px]">
-        <h2 id={titleId} className="m-0 text-heading font-extrabold">
-          {t('runs.cancelTitle', { name })}
-        </h2>
-        <p className="m-0 text-small text-ink-2">{t('runs.cancelBody')}</p>
-        <div className="flex flex-wrap justify-end gap-2">
-          <button type="button" onClick={onCancel} className={button.secondary}>
-            {t('runs.keepRunning')}
-          </button>
-          <button type="button" onClick={onConfirm} className={`${button.secondary} border-0 bg-ink text-bg`}>
-            {t('runs.cancelConfirm')}
-          </button>
-        </div>
-      </div>
-    </Dialog>
   );
 }
 
@@ -271,9 +252,7 @@ function Legend() {
         </li>
       ))}
       <li className="inline-flex items-center gap-1.5">
-        <span className="text-bad">
-          <StatusGlyph name="open" size={10} />
-        </span>
+        <StatusGlyph status="open" size={10} />
         {t('runs.legend.dead')}
       </li>
     </ul>
@@ -479,7 +458,7 @@ function Density({
         <ul className="m-0 flex list-none flex-wrap gap-x-3 gap-y-1 p-0 text-tiny" aria-label={t('runs.binItems')}>
           {(bins[picked] ?? []).map((d) => (
             <li key={d.id}>
-              <Link to={pipelinePath(pipeline, `items/${enc(d.itemId)}`)}>
+              <Link to={itemPath(pipeline, d.itemId)}>
                 <Id value={d.itemId} />
               </Link>{' '}
               <span className="text-ink-3">{t(deliveryState[d.state])}</span>

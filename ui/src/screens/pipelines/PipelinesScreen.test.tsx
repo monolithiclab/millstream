@@ -10,7 +10,7 @@ const row = (name: string) => screen.getByRole('row', { name: new RegExp(`^${nam
 describe('pipelines list', () => {
   it('shows a skeleton, then each pipeline with its state, revision, last run and dead letters', async () => {
     renderApp({ route: '/pipelines' });
-    expect(screen.getByTestId('skeleton')).toBeInTheDocument();
+    expect(screen.getByTestId('loading')).toBeInTheDocument();
     const table = await screen.findByRole('table');
     expect(within(table).getAllByRole('row')).toHaveLength(5);
     expect(screen.getByText(/4 pipelines/)).toHaveTextContent('4 pipelines · 1 running · 3 open dead letters');
@@ -25,7 +25,7 @@ describe('pipelines list', () => {
     expect(listings).toHaveTextContent('r14');
     expect(within(listings).getByRole('link', { name: 'Running' })).toHaveAttribute(
       'href',
-      '/p/listings-daily/runs?run=run_0600',
+      '/p/listings-daily/runs/run_0600',
     );
     expect(within(listings).getByRole('link', { name: '3 open dead letters' })).toHaveAttribute(
       'href',

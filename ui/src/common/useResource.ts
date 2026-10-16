@@ -1,22 +1,27 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import type { Api } from '../../api/api';
-import { useApi, type QueryState } from '../../api/context';
-import { useLatest } from '../../useLatest';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { Api } from '../api/api';
+import { useApi } from '../api/context';
+import { useLatest } from '../useLatest';
 
-export interface Resource<T> {
-  state: QueryState<T>;
-  // After an error: show loading and read again.
-  reload: () => void;
-  // Read again in the background (a live event, a decision): the current data stays until the answer, and a failed
-  // refresh keeps it.
+export type QueryState<T> = { status: 'loading' } | { status: 'ready'; data: T } | { status: 'error'; error: Error };
+
+// A read's state and how to read it again after an error: show loading and read again.
+export type Query<T> = QueryState<T> & { reload: () => void };
+
+export type Resource<T> = Query<T> & {
+  // Read again in the background (a live event, an action's outcome): the data stays on screen until the answer,
+  // so nothing flashes, and a failed refresh keeps it.
   refresh: () => void;
   // Changes the data in place (an optimistic edit), when there is data for the current key.
   mutate: (change: (data: T) => T) => void;
-}
+};
 
 const loading = { status: 'loading' } as const;
 
-// One API read per key, with retry and silent refresh; a null key reads nothing and stays loading.
+const asError = (error: unknown) => (error instanceof Error ? error : new Error(String(error)));
+
+// One API read per key: read again when the key changes, on reload or on refresh. A null key reads nothing and
+// stays loading (a read that waits on another).
 export function useResource<T>(key: string | null, read: (api: Api) => Promise<T>): Resource<T> {
   const api = useApi();
   const readRef = useLatest(read);
@@ -36,7 +41,7 @@ export function useResource<T>(key: string | null, read: (api: Api) => Promise<T
         setState((previous) =>
           quiet && previous.key === key && previous.value.status === 'ready'
             ? previous
-            : { key, value: { status: 'error', error: error instanceof Error ? error : new Error(String(error)) } },
+            : { key, value: { status: 'error', error: asError(error) } },
         );
       },
     );
@@ -53,7 +58,6 @@ export function useResource<T>(key: string | null, read: (api: Api) => Promise<T
     silent.current = true;
     setNonce((n) => n + 1);
   }, []);
-
   const mutate = useCallback(
     (change: (data: T) => T) =>
       setState((s) =>
@@ -64,5 +68,7 @@ export function useResource<T>(key: string | null, read: (api: Api) => Promise<T
     [key],
   );
 
-  return { state: state.key === key ? state.value : loading, reload, refresh, mutate };
+  // The same object until something changes, so it can be a hook dependency.
+  const value = state.key === key ? state.value : loading;
+  return useMemo(() => ({ ...value, reload, refresh, mutate }), [value, reload, refresh, mutate]);
 }

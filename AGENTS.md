@@ -63,14 +63,14 @@ below) for the reasoning, and `make help` for every command.
 
 ## Web UI
 
-- `ui/`: the React 18 + TypeScript (strict) + Vite + Tailwind CSS single-page app of spec section 12.2. `src/shell/`
-  is the app shell (navigation, pipeline switcher, command palette, shortcut help, live mark), `src/routes.ts` the
-  screens and their URLs, `src/screens/` one folder per screen, `src/common/` the pieces screens share (status
-  badges, loading, empty and error states, confirmation dialog, notices, JSON viewer, log tail, `useResource`,
-  `useFormat`), `src/api/` the HTTP API client, `src/live/` the server-sent events hook, `src/i18n/` the catalogues
-  and `Intl` formatting, `src/styles/` the tokens, `e2e/` the Playwright tests. The pipeline graph is React Flow
-  laid out by dagre; jsdom gets the browser APIs React Flow needs from `src/test/flow.ts`, installed for every test
-  file.
+- `ui/`: the React 18 + TypeScript (strict) + Vite + Tailwind CSS single-page app of spec section 12.2. `src/shell/` is
+  the app shell (navigation, pipeline switcher, command palette, shortcut help, live mark), `src/routes.ts` the screens
+  and their URLs, `src/screens/` one folder per screen, `src/common/` the pieces screens share, one module per concept
+  (status glyphs and badges, loading, empty and error states, confirmation dialog, notices, ids, the segmented toggle,
+  the pipeline filter, JSON viewer, log tail, class lists in `styles.ts`, `useResource` for every API read, `useFormat`,
+  `useNow`), `src/api/` the HTTP API client, `src/live/` the server-sent events hook, `src/i18n/` the catalogues and
+  `Intl` formatting, `src/styles/` the tokens, `e2e/` the Playwright tests. The pipeline graph is React Flow laid out by
+  dagre; jsdom gets the browser APIs React Flow needs from `src/test/flow.ts`, installed for every test file.
 - No host toolchain (D35): npm, Vite, Vitest and Playwright run only in containers, from images pinned by digest in
   `ui/images.mk`. Never install Node on the host. `node_modules` and the npm cache live in the named volumes
   `millstream-ui-node-modules` and `millstream-ui-npm-cache`; containers run as the host uid.

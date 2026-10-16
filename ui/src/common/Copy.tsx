@@ -1,20 +1,33 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { byteSize, formatBytes, useFormat } from './useFormat';
-import { buttons } from './buttons';
+import { buttons } from './styles';
 
 function copy(text: string): Promise<void> {
   return navigator.clipboard?.writeText(text) ?? Promise.reject(new Error('clipboard unavailable'));
 }
 
-// Copies text; the label turns to "Copied" until the next press. icon draws the 28 px square of the canvas.
-export function CopyButton({ text, label, icon = false }: { text: string; label: string; icon?: boolean }) {
+// Copies text; the label turns to "Copied" until the next press or a new text. icon draws the 28 px square of the canvas;
+// className replaces the link style.
+export function CopyButton({
+  text,
+  label,
+  icon = false,
+  className = buttons.link,
+}: {
+  text: string;
+  label: string;
+  icon?: boolean;
+  className?: string;
+}) {
   const { t } = useTranslation();
-  const [copied, setCopied] = useState(false);
+  // The text last copied: a new text is not copied yet.
+  const [copiedText, setCopiedText] = useState<string | null>(null);
+  const copied = copiedText === text;
   const onClick = () => {
     copy(text).then(
-      () => setCopied(true),
-      () => setCopied(false),
+      () => setCopiedText(text),
+      () => setCopiedText(null),
     );
   };
   if (icon) {
@@ -22,7 +35,7 @@ export function CopyButton({ text, label, icon = false }: { text: string; label:
       <button
         type="button"
         onClick={onClick}
-        aria-label={copied ? t('kit.copied') : label}
+        aria-label={copied ? t('common.copied') : label}
         title={label}
         className="inline-flex size-7 flex-none items-center justify-center rounded-1 border border-line bg-surface text-ink-2"
       >
@@ -33,8 +46,8 @@ export function CopyButton({ text, label, icon = false }: { text: string; label:
     );
   }
   return (
-    <button type="button" onClick={onClick} className={buttons.link}>
-      {copied ? t('kit.copied') : label}
+    <button type="button" onClick={onClick} className={className}>
+      {copied ? t('common.copied') : label}
     </button>
   );
 }
@@ -55,10 +68,10 @@ export function ErrorText({ text }: { text: string }) {
       <div className="flex flex-wrap gap-3.5">
         {long && (
           <button type="button" className={buttons.link} onClick={() => setFull(!full)} aria-expanded={full}>
-            {full ? t('kit.showLess') : t('kit.showFullError', { size: formatBytes(byteSize(text), f) })}
+            {full ? t('common.showLess') : t('common.showFullError', { size: formatBytes(byteSize(text), f) })}
           </button>
         )}
-        <CopyButton text={text} label={t('kit.copyError')} />
+        <CopyButton text={text} label={t('common.copyError')} />
       </div>
     </div>
   );

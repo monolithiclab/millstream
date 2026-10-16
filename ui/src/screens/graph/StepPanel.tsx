@@ -2,15 +2,16 @@ import { useEffect, useRef, type KeyboardEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 import type { DeadLetterGroup } from '../../api/schema';
-import { pipelinePath } from '../../routes';
-import { buttons } from '../../common/buttons';
+import { itemPath, pipelinePath } from '../../routes';
+import { buttons } from '../../common/styles';
 import { SH, StatusBadge, StatusText } from '../../common/Status';
-import { shortId, useFormat } from '../../common/useFormat';
+import { shortId } from '../../common/Id';
+import { useInsightKindLabel } from '../../common/insightKind';
+import { useFormat } from '../../common/useFormat';
 import { overlayOpen } from '../../shell/useDismiss';
 import { targetOf, type DeadLetterAction, type DeadLetterTarget } from '../deadLetters/useDeadLetterActions';
-import { itemPath } from '../item/ItemParts';
 import type { StepModel } from './model';
-import { KindIcon, useInsightLabel, useKindLabel } from './nodes';
+import { KindIcon, useKindLabel } from './nodes';
 
 // Recent failures shown in the panel; the rest are one link away.
 const RECENT = 3;
@@ -52,7 +53,7 @@ export function StepPanel({
   const { t } = useTranslation();
   const f = useFormat();
   const kindLabel = useKindLabel();
-  const insightLabel = useInsightLabel();
+  const insightLabel = useInsightKindLabel();
   const heading = useRef<HTMLHeadingElement>(null);
   const fig = model.figures;
   const paused = model.state === 'paused';

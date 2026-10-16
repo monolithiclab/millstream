@@ -18,7 +18,7 @@ import { ItemScreen } from './screens/item/ItemScreen';
 import { PipelinesScreen } from './screens/pipelines/PipelinesScreen';
 import { RunScreen } from './screens/runs/RunScreen';
 import { RunsScreen } from './screens/runs/RunsScreen';
-import { Loading } from './screens/parts/States';
+import { Loading } from './common/States';
 import { routePattern, screens, type Screen, type ScreenId } from './routes';
 import { AppShell } from './shell/AppShell';
 

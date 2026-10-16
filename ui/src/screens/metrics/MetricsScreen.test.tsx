@@ -169,7 +169,7 @@ describe('MetricsScreen', () => {
     expect(within(table).getAllByRole('row').length).toBeGreaterThan(50);
     await user.click(screen.getByRole('button', { name: 'Copy link' }));
     expect(writeText).toHaveBeenCalledWith('http://localhost:3000/metrics?m=items_in&range=1h');
-    expect(await screen.findByRole('button', { name: 'Link copied' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Copied' })).toBeInTheDocument();
   });
 
   it('teaches when there are no metrics, and says when a range is empty', async () => {

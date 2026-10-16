@@ -1,13 +1,13 @@
 import { forwardRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
-import { enc } from '../../api/api';
-import type { ArtifactRef, Item } from '../../api/schema';
+import { useApi } from '../../api/context';
+import type { Item } from '../../api/schema';
 import { formatDuration, formatNumber } from '../../i18n/format';
 import { usePreferences } from '../../preferences';
-import { pipelinePath } from '../../routes';
-import { Id } from '../parts/Id';
-import { StatusBadge } from '../parts/Status';
+import { itemPath } from '../../routes';
+import { Id } from '../../common/Id';
+import { StatusBadge } from '../../common/Status';
 import { payloadEntries, segments, type Change, type FieldKind, type Parsed } from './patch';
 import { subject, type Entry } from './useInboxQueue';
 
@@ -62,10 +62,6 @@ export function shortValue(value: unknown, none: string, language: 'en' | 'fr'):
   return text.length > 32 ? `${text.slice(0, 30)}…${text.endsWith('"') ? '"' : ''}` : text;
 }
 
-function artifactUrl(item: Item, artifact: ArtifactRef): string {
-  return `/api/v1/pipelines/${enc(item.pipeline)}/items/${enc(item.id)}/artifacts/${enc(artifact.name)}`;
-}
-
 export const fieldId = (index: number) => `review-field-${index}`;
 
 interface PanelProps {
@@ -86,6 +82,7 @@ export const ReviewPanel = forwardRef<HTMLHeadingElement, PanelProps>(function R
 ) {
   const { t } = useTranslation();
   const { language } = usePreferences();
+  const api = useApi();
   const s = subject(entry);
   const item = s.item;
   const { title, lines } = titleOf(entry);
@@ -106,10 +103,10 @@ export const ReviewPanel = forwardRef<HTMLHeadingElement, PanelProps>(function R
             <span className="font-mono">{s.pipeline}</span> ·{' '}
             {t('inbox.waiting', { age: formatDuration(waited, language) })}
           </span>
-          <Link to={pipelinePath(s.pipeline, `items/${enc(item.id)}`)} className="text-ink-2">
+          <Link to={itemPath(s.pipeline, item.id)} className="text-ink-2">
             <Id value={item.id} />
           </Link>
-          {entry.kind === 'sample' && <StatusBadge name="sample">{t('inbox.sample')}</StatusBadge>}
+          {entry.kind === 'sample' && <StatusBadge status="sample" />}
           {links.map(([key, url]) => (
             <a key={key} href={url} target="_blank" rel="noreferrer" className="font-bold md:ml-auto">
               {t('inbox.openLink', { field: key })}
@@ -141,7 +138,7 @@ export const ReviewPanel = forwardRef<HTMLHeadingElement, PanelProps>(function R
           {images.slice(0, 4).map((a) => (
             <img
               key={a.name}
-              src={artifactUrl(item, a)}
+              src={api.artifactUrl({ pipeline: item.pipeline, item: item.id, name: a.name })}
               alt={a.name}
               className="aspect-[4/3] w-full border border-line bg-surface-2 object-cover"
             />

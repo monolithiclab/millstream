@@ -1,22 +1,21 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useApiQuery } from '../../api/context';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import type { DeadLetter, DeadLetterGroup } from '../../api/schema';
-import { buttons, card } from '../../common/buttons';
+import { buttons, card } from '../../common/styles';
 import { ErrorText } from '../../common/Copy';
 import { NoticeRegion, useNotice } from '../../common/Notice';
-import { EmptyState, ErrorState, Skeleton } from '../../common/States';
+import { EmptyState, ErrorState, Loading } from '../../common/States';
+import { useResource } from '../../common/useResource';
 import { SH, StatusBadge, StatusGlyph } from '../../common/Status';
 import { ScrollRegion } from '../../common/ScrollRegion';
 import { Segmented } from '../../common/Segmented';
-import { overlayOpen } from '../../shell/useDismiss';
-import { isEditable } from '../../shell/useShortcuts';
-import { shortId, useFormat } from '../../common/useFormat';
+import { screenKeyAllowed } from '../../shell/useShortcuts';
+import { shortId } from '../../common/Id';
+import { useFormat } from '../../common/useFormat';
 import { usePreferences } from '../../preferences';
-import { pipelinePath } from '../../routes';
+import { itemPath, pipelinePath } from '../../routes';
 import { ScreenPage } from '../ScreenPage';
-import { itemPath } from '../item/ItemParts';
 import { targetOf, useDeadLetterActions, type DeadLetterAction } from './useDeadLetterActions';
 
 type State = DeadLetter['state'];
@@ -66,7 +65,7 @@ export function DeadLettersScreen() {
   const { notice, setNotice, dismiss } = useNotice();
   const list = useRef<HTMLDivElement>(null);
 
-  const data = useApiQuery(`deadLetters:${pipeline}`, async (api) => {
+  const data = useResource(`deadLetters:${pipeline}`, async (api) => {
     const [p, groups] = await Promise.all([api.getPipeline(pipeline), api.listDeadLetters(pipeline, { state: 'all' })]);
     return { pipeline: p, groups };
   });
@@ -79,7 +78,7 @@ export function DeadLettersScreen() {
   const actions = useDeadLetterActions({
     pipeline,
     revision: ready?.pipeline.revision,
-    onDone: data.reload,
+    onDone: data.refresh,
     setNotice,
   });
 
@@ -100,10 +99,9 @@ export function DeadLettersScreen() {
   };
 
   const onKeyDown = (event: KeyboardEvent) => {
-    if (!singleKeys || overlayOpen() || event.metaKey || event.ctrlKey || event.altKey || state !== 'open') return;
+    // A row's checkbox is where they work.
+    if (!singleKeys || state !== 'open' || !screenKeyAllowed(event.nativeEvent)) return;
     const target = event.target as HTMLElement;
-    // Single keys never fire in a field; a row's checkbox is where they work.
-    if (isEditable(target) && !(target instanceof HTMLInputElement && target.type === 'checkbox')) return;
     const boxes = [...(list.current?.querySelectorAll<HTMLInputElement>('input[data-row]') ?? [])];
     const index = boxes.indexOf(target as HTMLInputElement);
     if (event.key === 'j' || event.key === 'k') {
@@ -182,9 +180,9 @@ export function DeadLettersScreen() {
         )}
       </div>
 
-      {data.status === 'loading' && <Skeleton rows={2} className="h-48" />}
+      {data.status === 'loading' && <Loading rows={2} className="h-48" />}
       {data.status === 'error' && (
-        <ErrorState title={t('deadLetters.error')} error={data.error} onRetry={data.reload} />
+        <ErrorState title={t('deadLetters.error')} message={data.error.message} onRetry={data.reload} />
       )}
       {ready !== null && groups.length === 0 && (
         <EmptyState

@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
 // The canvas status set (Components board): every state is a shape, a word and a colour, never colour alone.
@@ -66,6 +67,11 @@ export const statuses = {
   paused: { tone: 'mute', d: SH.pause },
   failing: { tone: 'bad', d: SH.tri, filled: true },
   slow: { tone: 'warn', d: SH.tri },
+  unschedulable: { tone: 'bad', d: SH.square },
+  acknowledged: { tone: 'mute', d: SH.check },
+  resolved: { tone: 'ok', d: SH.check },
+  muted: { tone: 'mute', d: SH.circle, mark: SH.slash },
+  sample: { tone: 'human', d: SH.diamond },
 } satisfies Record<string, Glyph>;
 
 export type StatusKey = keyof typeof statuses;
@@ -93,6 +99,11 @@ const labels: Record<StatusKey, `status.${StatusKey}`> = {
   paused: 'status.paused',
   failing: 'status.failing',
   slow: 'status.slow',
+  unschedulable: 'status.unschedulable',
+  acknowledged: 'status.acknowledged',
+  resolved: 'status.resolved',
+  muted: 'status.muted',
+  sample: 'status.sample',
 };
 
 export function isStatus(value: string): value is StatusKey {
@@ -104,11 +115,18 @@ export function useStatusLabel() {
   return (status: StatusKey) => t(labels[status]);
 }
 
-export function StatusGlyph({ status, size = 12 }: { status: StatusKey; size?: number }) {
+// The state's shape in its tone; tone={false} draws it in the surrounding colour (a dark toast).
+export function StatusGlyph({ status, size = 12, tone = true }: { status: StatusKey; size?: number; tone?: boolean }) {
   const g: Glyph = statuses[status];
   const stroked = g.d === SH.check || g.d === SH.pause || g.d === SH.replay;
   return (
-    <svg width={size} height={size} viewBox="0 0 12 12" aria-hidden="true" className={`flex-none ${toneText[g.tone]}`}>
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 12 12"
+      aria-hidden="true"
+      className={`flex-none ${tone ? toneText[g.tone] : ''}`}
+    >
       <path
         d={g.d}
         fill={g.filled ? 'currentColor' : 'none'}
@@ -131,7 +149,7 @@ export function StatusGlyph({ status, size = 12 }: { status: StatusKey; size?: n
 }
 
 // A pill: shape, word and colour. label replaces the state's own word ("Awaiting review at analyst-review").
-export function StatusBadge({ status, label }: { status: StatusKey; label?: string | undefined }) {
+export function StatusBadge({ status, label }: { status: StatusKey; label?: ReactNode }) {
   const statusLabel = useStatusLabel();
   return (
     <span

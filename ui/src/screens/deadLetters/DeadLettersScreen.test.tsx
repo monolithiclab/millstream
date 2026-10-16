@@ -12,7 +12,7 @@ const group = (step: string) => screen.getByRole('region', { name: new RegExp(`^
 describe('dead letters', () => {
   it('groups open dead letters by fingerprint, largest first, with counts, step, times and the error', async () => {
     renderApp({ route });
-    expect(screen.getByTestId('skeleton')).toBeInTheDocument();
+    expect(screen.getByTestId('loading')).toBeInTheDocument();
     await screen.findByText(/Grouped by error fingerprint/);
     expect(screen.getByText(/Grouped by error fingerprint/)).toHaveTextContent(
       'Grouped by error fingerprint · 2 groups · 3 items',

@@ -38,7 +38,7 @@ const step = (name: string) => screen.findByRole('button', { name: new RegExp(`^
 describe('pipeline graph', () => {
   it('shows a skeleton, then every step as a button in topological order, with the table alternative', async () => {
     renderApp({ route: '/p/listings-daily/graph' });
-    expect(screen.getByTestId('skeleton')).toBeInTheDocument();
+    expect(screen.getByTestId('loading')).toBeInTheDocument();
     await step('fetch');
     const names = screen
       .getAllByRole('button')
@@ -138,7 +138,7 @@ describe('pipeline graph', () => {
     const panel = await screen.findByRole('complementary', { name: 'score' });
     emit(snapshot);
     expect(within(panel).getByText('Action step · agent.score · revision r14')).toBeInTheDocument();
-    expect(within(panel).getByText('Insight · failure cluster')).toBeInTheDocument();
+    expect(within(panel).getByText('Insight · Failure cluster')).toBeInTheDocument();
     expect(within(panel).getByText('In flight').nextElementSibling).toHaveTextContent('12');
     expect(within(panel).getByText('Waiting').nextElementSibling).toHaveTextContent('186');
     expect(within(panel).getByText('2 open dead letters')).toBeInTheDocument();
@@ -237,7 +237,7 @@ describe('pipeline graph', () => {
     renderApp({ route: '/p/listings-daily/graph' });
     await step('fetch');
     expect(screen.queryByLabelText('Minimap')).not.toBeInTheDocument();
-    const run = await screen.findByRole('region', { name: 'Run 06:00 AM so far' });
+    const run = await screen.findByRole('region', { name: 'Run 06:00 so far' });
     expect(within(run).getByRole('link', { name: '1,632 raw' })).toHaveAttribute(
       'href',
       '/p/listings-daily/items?stream=raw&run=run_0600',

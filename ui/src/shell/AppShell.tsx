@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { NavLink, Outlet, useMatch, useNavigate } from 'react-router-dom';
-import { useApiQuery } from '../api/context';
+import { useResource } from '../common/useResource';
 import { liveUrls } from '../api/api';
 import { languages, type Language } from '../i18n';
 import { useLiveStream } from '../live/useLiveStream';
@@ -88,7 +88,7 @@ export function AppShell() {
   const prefs = usePreferences();
   const navigate = useNavigate();
   const pipeline = useMatch('/p/:pipeline/*')?.params.pipeline;
-  const pipelines = useApiQuery('pipelines', (api) => api.listPipelines());
+  const pipelines = useResource('pipelines', (api) => api.listPipelines());
   const live = useLiveStream(pipeline === undefined ? null : liveUrls.pipeline(pipeline));
   const [palette, setPalette] = useState(false);
   const [help, setHelp] = useState(false);

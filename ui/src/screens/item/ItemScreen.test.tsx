@@ -15,14 +15,11 @@ const route = '/p/listings-daily/items/it_7f3a9c21';
 describe('item detail', () => {
   it('shows what the item is, where it stands, and its journey through its ancestors', async () => {
     renderApp({ route });
-    expect(screen.getByTestId('skeleton')).toBeInTheDocument();
+    expect(screen.getByTestId('loading')).toBeInTheDocument();
     expect(await screen.findByRole('heading', { level: 1, name: 'T3 lumineux, cour calme' })).toBeInTheDocument();
     expect(screen.getAllByText('it_7f3a9c21').length).toBeGreaterThan(0);
     expect(screen.getByText('Awaiting review at analyst-review')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'run_0600' })).toHaveAttribute(
-      'href',
-      '/p/listings-daily/runs?run=run_0600',
-    );
+    expect(screen.getByRole('link', { name: 'run_0600' })).toHaveAttribute('href', '/p/listings-daily/runs/run_0600');
     expect(screen.getByRole('link', { name: 'Review now' })).toHaveAttribute(
       'href',
       '/inbox?pipeline=listings-daily&delivery=dl_4b2e',
@@ -140,23 +137,8 @@ describe('item detail', () => {
     expect(logsTab).toHaveAttribute('aria-selected', 'true');
     const tail = FakeEventSource.latest();
     expect(tail.url).toBe('/api/v1/live/logs?pipeline=listings-daily&item=it_7f3a9c21');
-    expect(within(journey).getByText('No log lines yet.')).toBeInTheDocument();
-    act(() => {
-      tail.open();
-      tail.emit(
-        'log',
-        JSON.stringify({ ts: '2026-10-15T06:21:00Z', level: 'warn', message: 'retrying', step: 'score' }),
-        '7',
-      );
-      tail.emit('gap', JSON.stringify({ lastEventId: '7' }));
-      tail.emit('log', 'not json');
-    });
-    const log = within(journey).getByRole('log');
-    expect(log).toHaveTextContent('WARN');
-    expect(log).toHaveTextContent('score · retrying');
-    expect(log).toHaveTextContent('Lines missed while reconnecting');
-    await user.click(within(journey).getByRole('button', { name: 'Pause scroll' }));
-    expect(within(journey).getByRole('button', { name: 'Pause scroll' })).toHaveAttribute('aria-pressed', 'true');
+    // The shared log tail (common/LogTail, tested with the logs screen) over the item's scope.
+    expect(within(journey).getByRole('log')).toHaveTextContent('Waiting for log lines…');
   });
 
   it('moves the payload and the lineage into tabs at 375 px, in French', async () => {

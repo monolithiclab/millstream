@@ -18,16 +18,18 @@ import { Kbd } from '../../shell/Kbd';
 import { screenKeyAllowed } from '../../shell/useShortcuts';
 import { useLatest } from '../../useLatest';
 import { ScreenPage } from '../ScreenPage';
-import { PipelineSelect } from '../parts/PipelineSelect';
-import { EmptyState, ErrorState, Loading } from '../parts/States';
-import { StatusGlyph } from '../parts/Status';
-import { useNow } from '../parts/useNow';
-import { button, field as fieldClass } from '../parts/styles';
+import { PipelineSelect } from '../../common/PipelineSelect';
+import { EmptyState, ErrorState, Loading } from '../../common/States';
+import { StatusGlyph, useStatusLabel } from '../../common/Status';
+import { useNow } from '../../common/useNow';
+import { buttons, field as fieldClass } from '../../common/styles';
 import { changes, fieldKind, initialText, lookup, parseField, payloadEntries, toPatch } from './patch';
 import { ReasonDialog } from './ReasonDialog';
 import { ChangeList, fieldId, ReviewPanel, titleOf, type Field } from './ReviewPanel';
 import { useDecisions, type Decision, type Outcome } from './useDecisions';
 import { hasMore, subject, useInboxQueue, type Entry } from './useInboxQueue';
+
+const noEntries: Entry[] = [];
 
 // The review inbox: the queue on the left, the item on the right, decided from the keyboard (a, r then 1–9, e, u,
 // j and k) or the buttons. On a phone the queue folds into a list button and the actions sit at the bottom.
@@ -47,17 +49,18 @@ export function InboxScreen() {
   }, [pipelineFilter, inboxFilter]);
   const queue = useInboxQueue(filters);
   const now = useNow();
-  const entries = useMemo(() => (queue.state.status === 'ready' ? queue.state.data.entries : []), [queue.state]);
+  const entries = queue.status === 'ready' ? queue.data.entries : noEntries;
 
   const [chosen, setChosen] = useState<string | null>(null);
-  const linked = params.delivery;
+  // A review notification links to /inbox/<inbox>/<delivery>; the item screen to /inbox?pipeline=&delivery=.
+  const linked = params.delivery ?? search.get('delivery') ?? undefined;
   // The chosen card, else the one a notification links to, else the oldest.
   const byKey = entries.findIndex((e) => e.key === chosen);
   const byLink =
     chosen === null && linked !== undefined ? entries.findIndex((e) => subject(e).deliveryId === linked) : -1;
   const index = byKey >= 0 ? byKey : byLink >= 0 ? byLink : entries.length > 0 ? 0 : -1;
   const selected: Entry | undefined = entries[index];
-  const linkGone = queue.state.status === 'ready' && chosen === null && linked !== undefined && byLink < 0;
+  const linkGone = queue.status === 'ready' && chosen === null && linked !== undefined && byLink < 0;
 
   // The editable fields' text, for the selected card only.
   const [texts, setTexts] = useState<{ key: string | undefined; values: Record<string, string> }>({
@@ -222,7 +225,7 @@ export function InboxScreen() {
 
   const header = (
     <>
-      {queue.state.status === 'ready' && (
+      {queue.status === 'ready' && (
         <p className="m-0 text-small text-ink-2" data-live>
           <strong className="text-human">{t('inbox.toReview', { count: reviews })}</strong>
           {' · '}
@@ -255,20 +258,20 @@ export function InboxScreen() {
       <p role="status" aria-live="polite" className="sr-only">
         {announcement}
       </p>
-      {queue.state.status === 'loading' && <Loading />}
-      {queue.state.status === 'error' && <ErrorState message={queue.state.error.message} onRetry={queue.reload} />}
+      {queue.status === 'loading' && <Loading />}
+      {queue.status === 'error' && <ErrorState message={queue.error.message} onRetry={queue.reload} />}
       {alert && <ErrorState title={alert.title} message={alert.message} onDismiss={() => setAlert(null)} />}
       {linkGone && (
         <p role="status" className="m-0 rounded-2 bg-surface-2 px-3.5 py-2.5 text-small">
           {t('inbox.linkGone')}
         </p>
       )}
-      {queue.state.status === 'ready' && entries.length === 0 && (
-        <EmptyState title={t('inbox.zero')} tick>
+      {queue.status === 'ready' && entries.length === 0 && (
+        <EmptyState title={t('inbox.zero')} done>
           {t('inbox.zeroBody')}
         </EmptyState>
       )}
-      {queue.state.status === 'ready' && selected !== undefined && (
+      {queue.status === 'ready' && selected !== undefined && (
         <div className="flex flex-col gap-4 md:flex-row md:items-start md:gap-6">
           <div className="flex items-center gap-1 rounded-2 border border-line bg-surface px-1 py-1 md:hidden">
             <button
@@ -331,14 +334,14 @@ export function InboxScreen() {
                 />
               ))}
             </ul>
-            {hasMore(queue.state.data) && (
+            {hasMore(queue.data) && (
               <div className="flex flex-col gap-2 border-t border-line p-2.5">
-                {queue.moreError && <ErrorState message={queue.moreError.message} />}
+                {queue.moreError !== null && <ErrorState message={queue.moreError} />}
                 <button
                   type="button"
                   onClick={() => void queue.loadMore()}
                   disabled={queue.loadingMore}
-                  className={`${button.secondary} w-full`}
+                  className={`${buttons.secondary} w-full`}
                 >
                   {t('inbox.loadMore')}
                 </button>
@@ -363,7 +366,7 @@ export function InboxScreen() {
                 <button
                   type="button"
                   onClick={() => setReasonFor(selected)}
-                  className={`${button.danger} h-12 px-2 text-[15px] whitespace-normal md:h-11 md:px-4 md:text-ui`}
+                  className={`${buttons.danger} h-12 px-2 text-[15px] whitespace-normal md:h-11 md:px-4 md:text-ui`}
                 >
                   {selected.kind === 'sample' ? t('inbox.disagree') : t('inbox.reject')}
                   <span className="hidden md:inline">
@@ -374,7 +377,7 @@ export function InboxScreen() {
                   <button
                     type="button"
                     onClick={edit}
-                    className={`${button.secondary} h-12 px-2 text-[15px] md:hidden`}
+                    className={`${buttons.secondary} h-12 px-2 text-[15px] md:hidden`}
                   >
                     {t('inbox.edit')}
                   </button>
@@ -383,7 +386,7 @@ export function InboxScreen() {
                   <button
                     type="button"
                     onClick={discard}
-                    className={`${button.secondary} hidden h-11 px-4 text-ui md:inline-flex`}
+                    className={`${buttons.secondary} hidden h-11 px-4 text-ui md:inline-flex`}
                   >
                     {t('inbox.discard')}
                     <Kbd>Esc</Kbd>
@@ -394,7 +397,7 @@ export function InboxScreen() {
                 <button
                   type="button"
                   onClick={approve}
-                  className={`${button.primary} col-start-3 h-12 px-2 text-[15px] whitespace-normal md:h-11 md:px-[18px] md:text-ui`}
+                  className={`${buttons.primary} col-start-3 h-12 px-2 text-[15px] whitespace-normal md:h-11 md:px-[18px] md:text-ui`}
                 >
                   {selected.kind === 'sample'
                     ? t('inbox.agree')
@@ -414,7 +417,7 @@ export function InboxScreen() {
       {pending && (
         <div className="fixed inset-x-4 bottom-[96px] z-30 flex justify-center md:bottom-6">
           <div className="flex max-w-full flex-wrap items-center gap-3 rounded-2 bg-ink px-3.5 py-2.5 text-small text-bg shadow-2">
-            <StatusGlyph name="ok" size={12} />
+            <StatusGlyph status="done" size={12} tone={false} />
             <span className="min-w-0 break-words">
               {outcomeLabel[pending.outcome]} {titleOf(pending.entry).title}
             </span>
@@ -452,8 +455,8 @@ const QueueRow = memo(function QueueRow({
   current: boolean;
   onPick: (key: string) => void;
 }) {
-  const { t } = useTranslation();
   const { language } = usePreferences();
+  const statusLabel = useStatusLabel();
   const { title } = titleOf(entry);
   const figures = payloadEntries(subject(entry).item)
     .filter((e): e is [string, number] => typeof e[1] === 'number')
@@ -478,8 +481,8 @@ const QueueRow = memo(function QueueRow({
           ))}
           {entry.kind === 'sample' && (
             <span className="ml-auto inline-flex items-center gap-1 rounded-1 border border-human px-1.5 font-bold text-human">
-              <StatusGlyph name="sample" size={10} />
-              {t('inbox.sample')}
+              <StatusGlyph status="sample" size={10} />
+              {statusLabel('sample')}
             </span>
           )}
         </span>

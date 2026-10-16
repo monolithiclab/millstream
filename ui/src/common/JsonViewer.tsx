@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { buttons, card } from './buttons';
+import { buttons, card } from './styles';
 import { CopyButton } from './Copy';
 import { useFormat } from './useFormat';
 
@@ -82,8 +82,8 @@ export function JsonViewer({ value, title, meta }: { value: unknown; title: stri
     if (size === 0) return array ? '[]' : '{}';
     const n = f.num(size);
     return array
-      ? `[ ${t(f.plural(size, 'kit.jsonItemsOne', 'kit.jsonItemsOther'), { n })} ]`
-      : `{ ${t(f.plural(size, 'kit.jsonKeysOne', 'kit.jsonKeysOther'), { n })} }`;
+      ? `[ ${t(f.plural(size, 'common.jsonItemsOne', 'common.jsonItemsOther'), { n })} ]`
+      : `{ ${t(f.plural(size, 'common.jsonKeysOne', 'common.jsonKeysOther'), { n })} }`;
   };
 
   return (
@@ -98,10 +98,10 @@ export function JsonViewer({ value, title, meta }: { value: unknown; title: stri
             className={buttons.smallSecondary}
             onClick={() => setCollapsed(anyCollapsed ? new Set() : new Set(all))}
           >
-            {anyCollapsed ? t('kit.expandAll') : t('kit.collapseAll')}
+            {anyCollapsed ? t('common.expandAll') : t('common.collapseAll')}
           </button>
         )}
-        <CopyButton text={JSON.stringify(value, null, 2)} label={t('kit.copyJson')} />
+        <CopyButton text={JSON.stringify(value, null, 2)} label={t('common.copyJson')} />
       </div>
       <div className="py-2.5 font-mono text-tiny leading-5" data-testid="json">
         {rows.map((row, i) => {
@@ -117,7 +117,7 @@ export function JsonViewer({ value, title, meta }: { value: unknown; title: stri
                   <button
                     type="button"
                     aria-expanded={row.kind === 'open'}
-                    aria-label={row.kind === 'open' ? t('kit.collapse', { name }) : t('kit.expand', { name })}
+                    aria-label={row.kind === 'open' ? t('common.collapse', { name }) : t('common.expand', { name })}
                     onClick={() => toggle(row.path)}
                     className="text-ink-3"
                   >

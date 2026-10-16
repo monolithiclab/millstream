@@ -29,7 +29,7 @@ describe('RunsScreen', () => {
   it('filters by state through the URL and says when nothing matches', async () => {
     const { user, location } = renderApp({ route: '/p/listings-daily/runs' });
     await screen.findByRole('list', { name: 'Runs, newest first' });
-    await user.click(screen.getByRole('button', { name: 'Waiting on review' }));
+    await user.click(screen.getByRole('button', { name: 'Waiting for review' }));
     expect(location()).toBe('/p/listings-daily/runs?state=waitingReview');
     expect(await screen.findByText('No run in this state')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'All' }));

@@ -4,9 +4,9 @@ import { enc, withQuery } from '../../api/api';
 import type { StepLessons } from '../../api/schema';
 import { pipelinePath } from '../../routes';
 import { ScreenPage } from '../ScreenPage';
-import { EmptyState, QueryView } from '../parts/States';
-import { card, cardTitle } from '../parts/styles';
-import { useResource } from '../parts/useResource';
+import { EmptyState, QueryView } from '../../common/States';
+import { card, cardTitle } from '../../common/styles';
+import { useResource } from '../../common/useResource';
 
 // A lesson's source (spec 11.4) is "kind/id": an insight links to its card, a review to its recorded decision; a
 // proposal has no page until the Improve view (M5), so it is named only.
@@ -43,7 +43,7 @@ export function LessonsScreen() {
       eyebrow={<p className="m-0 font-mono text-small text-ink-2">{pipeline}</p>}
       header={<p className="m-0 text-tiny text-ink-3 md:ml-auto">{t('lessons.explain')}</p>}
     >
-      <QueryView state={lessons.state} onRetry={lessons.reload}>
+      <QueryView query={lessons}>
         {(steps) =>
           steps.length === 0 ? (
             <EmptyState title={t('lessons.empty')}>

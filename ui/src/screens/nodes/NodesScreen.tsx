@@ -4,10 +4,11 @@ import type { Node } from '../../api/schema';
 import { formatNumber } from '../../i18n/format';
 import { usePreferences } from '../../preferences';
 import { ScreenPage } from '../ScreenPage';
-import { EmptyState, QueryView } from '../parts/States';
-import { StatusBadge } from '../parts/Status';
-import { card } from '../parts/styles';
-import { useResource } from '../parts/useResource';
+import { ScrollRegion } from '../../common/ScrollRegion';
+import { EmptyState, QueryView } from '../../common/States';
+import { StatusBadge } from '../../common/Status';
+import { card } from '../../common/styles';
+import { useResource } from '../../common/useResource';
 
 // The API has no node stream: the screen reads again this often.
 export const NODES_REFRESH_MS = 10_000;
@@ -24,7 +25,7 @@ export function NodesScreen() {
     return () => clearInterval(timer);
   }, [refresh]);
 
-  const data = nodes.state.status === 'ready' ? nodes.state.data : null;
+  const data = nodes.status === 'ready' ? nodes.data : null;
   const slots = data?.nodes.reduce((n, node) => n + node.slots, 0) ?? 0;
   const leases = data?.nodes.reduce((n, node) => n + node.leases, 0) ?? 0;
 
@@ -43,7 +44,7 @@ export function NodesScreen() {
         )
       }
     >
-      <QueryView state={nodes.state} onRetry={nodes.reload} lines={2}>
+      <QueryView query={nodes} rows={2}>
         {({ engine, nodes: list }) => (
           <div className="flex flex-col gap-5">
             <div className="grid grid-cols-[repeat(auto-fit,minmax(min(300px,100%),1fr))] gap-4">
@@ -51,9 +52,9 @@ export function NodesScreen() {
                 <div className="flex items-center gap-2">
                   <span className="font-display text-[18px] text-ink-3 italic">{t('nodes.engine')}</span>
                   {engine.state === 'active' ? (
-                    <StatusBadge name="ok">{t('nodes.state.active')}</StatusBadge>
+                    <StatusBadge status="active" />
                   ) : (
-                    <StatusBadge name="pend">{t('nodes.state.standby')}</StatusBadge>
+                    <StatusBadge status="pending" label={t('nodes.standby')} />
                   )}
                 </div>
                 <p className="m-0 font-display text-[34px] leading-9">
@@ -70,9 +71,7 @@ export function NodesScreen() {
             {list.length === 0 ? (
               <EmptyState title={t('nodes.none')}>{t('nodes.noneBody')}</EmptyState>
             ) : (
-              // A region that scrolls sideways on a phone takes focus, so the keyboard can scroll it.
-              // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex
-              <div role="region" aria-label={t('nodes.table')} tabIndex={0} className={`${card} overflow-x-auto`}>
+              <ScrollRegion label={t('nodes.table')} className={`${card} overflow-x-auto`}>
                 <table className="w-full min-w-[760px] border-collapse text-small">
                   <caption className="sr-only">{t('nodes.table')}</caption>
                   <thead>
@@ -106,7 +105,7 @@ export function NodesScreen() {
                     ))}
                   </tbody>
                 </table>
-              </div>
+              </ScrollRegion>
             )}
           </div>
         )}
@@ -124,7 +123,7 @@ function NodeRow({ node, engineVersion }: { node: Node; engineVersion: string })
     <tr className="border-t border-line">
       <td className="py-3 pr-2 pl-4 font-mono font-bold">{node.id}</td>
       <td className="px-2 py-3">
-        <StatusBadge name="ok">{t('nodes.state.active')}</StatusBadge>
+        <StatusBadge status="active" />
         <div className="mt-[3px] text-tiny text-ink-3">{node.embedded ? t('nodes.embedded') : t('nodes.remote')}</div>
       </td>
       <td className="px-2 py-3">

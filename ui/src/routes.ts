@@ -49,6 +49,10 @@ export function pipelinePath(pipeline: string, segment = 'graph'): string {
   return `/p/${encodeURIComponent(pipeline)}/${segment}`;
 }
 
+// The URLs of one item and one run of a pipeline.
+export const itemPath = (pipeline: string, item: string) => pipelinePath(pipeline, `items/${encodeURIComponent(item)}`);
+export const runPath = (pipeline: string, run: string) => pipelinePath(pipeline, `runs/${encodeURIComponent(run)}`);
+
 // The URL of a screen; a pipeline screen without a pipeline falls back to the pipelines list.
 export function screenPath(screen: Screen, pipeline: string | undefined): string {
   if (screen.scope === 'workspace') return `/${screen.segment}`;

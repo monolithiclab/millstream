@@ -2,15 +2,16 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 import type { Pipeline } from '../../api/schema';
-import { useApi, useApiQuery } from '../../api/context';
-import { buttons, card } from '../../common/buttons';
+import { useApi } from '../../api/context';
+import { useResource } from '../../common/useResource';
+import { buttons, card } from '../../common/styles';
 import { ConfirmDialog, Consequences } from '../../common/ConfirmDialog';
 import { NoticeRegion, runAction, useNotice } from '../../common/Notice';
 import { ScrollRegion } from '../../common/ScrollRegion';
-import { EmptyState, ErrorState, Skeleton } from '../../common/States';
+import { EmptyState, ErrorState, Loading } from '../../common/States';
 import { StatusBadge, StatusText, isStatus } from '../../common/Status';
 import { useFormat } from '../../common/useFormat';
-import { pipelinePath } from '../../routes';
+import { pipelinePath, runPath } from '../../routes';
 import { ScreenPage } from '../ScreenPage';
 
 // Pipelines (canvas "Pipelines"): each pipeline's state, active revision, last run and open dead letters, each a door
@@ -22,7 +23,7 @@ export function PipelinesScreen() {
   const api = useApi();
   const { notice, setNotice, dismiss } = useNotice();
   const [confirm, setConfirm] = useState<Pipeline | null>(null);
-  const list = useApiQuery('pipelines:list', (a) => a.listPipelines());
+  const list = useResource('pipelines:list', (a) => a.listPipelines());
 
   const lifecycle = ({ name, state }: Pipeline) => {
     const pausing = state === 'active';
@@ -33,7 +34,7 @@ export function PipelinesScreen() {
       },
       failed: (message) =>
         pausing ? t('pipelines.pauseFailed', { name, message }) : t('pipelines.resumeFailed', { name, message }),
-      settled: list.reload,
+      settled: list.refresh,
     });
   };
 
@@ -60,8 +61,10 @@ export function PipelinesScreen() {
         </span>
       </div>
 
-      {list.status === 'loading' && <Skeleton rows={3} className="h-14" />}
-      {list.status === 'error' && <ErrorState title={t('pipelines.error')} error={list.error} onRetry={list.reload} />}
+      {list.status === 'loading' && <Loading rows={3} className="h-14" />}
+      {list.status === 'error' && (
+        <ErrorState title={t('pipelines.error')} message={list.error.message} onRetry={list.reload} />
+      )}
       {list.status === 'ready' && pipelines.length === 0 && (
         <EmptyState title={t('pipelines.empty.title')}>
           <p className="m-0">{t('pipelines.empty.body')}</p>
@@ -124,10 +127,7 @@ export function PipelinesScreen() {
                         <span className="text-ink-3">{t('pipelines.noRun')}</span>
                       ) : (
                         <>
-                          <Link
-                            to={`${pipelinePath(p.name, 'runs')}?run=${encodeURIComponent(run.id)}`}
-                            className="no-underline"
-                          >
+                          <Link to={runPath(p.name, run.id)} className="no-underline">
                             {isStatus(run.state) && <StatusText status={run.state} />}
                           </Link>
                           <div className="text-tiny text-ink-3" title={f.dateTime(run.startedAt)}>

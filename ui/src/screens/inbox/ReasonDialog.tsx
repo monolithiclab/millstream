@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { Dialog } from '../../shell/Dialog';
 import { Kbd } from '../../shell/Kbd';
 import { isEditable } from '../../shell/useShortcuts';
-import { button } from '../parts/styles';
+import { buttons } from '../../common/styles';
 
 // Reject (or disagree with a sample) with a reason: 1 to 9 picks a listed reason code, a note is optional. Picking
 // decides; the undo window covers a slip. Without reason codes, the button (or 1) decides with the note alone.
@@ -77,11 +77,11 @@ export function ReasonDialog({
           className="h-11 rounded-1 border border-control-line bg-bg px-3 text-[16px] text-ink"
         />
         <div className="grid grid-cols-[1fr_1.4fr] gap-2">
-          <button type="button" onClick={onClose} className={`${button.secondary} h-12`}>
+          <button type="button" onClick={onClose} className={`${buttons.secondary} h-12`}>
             {t('common.cancel')}
           </button>
           {reasons.length === 0 ? (
-            <button type="button" onClick={() => pick(undefined)} className={`${button.danger} h-12`}>
+            <button type="button" onClick={() => pick(undefined)} className={`${buttons.danger} h-12`}>
               {confirm}
               <Kbd>1</Kbd>
             </button>

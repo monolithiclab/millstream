@@ -1,7 +1,7 @@
 import { useId, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Dialog } from '../shell/Dialog';
-import { buttons } from './buttons';
+import { buttons } from './styles';
 
 // A confirmation per the interaction notes: the body states the consequence, the button repeats the verb and the
 // count ("Replay 2 items"). A destructive dialog opens on Cancel, any other on its primary action. The confirm button
@@ -10,6 +10,7 @@ export function ConfirmDialog({
   title,
   children,
   confirmLabel,
+  cancelLabel,
   destructive = false,
   onConfirm,
   onCancel,
@@ -17,6 +18,8 @@ export function ConfirmDialog({
   title: string;
   children: ReactNode;
   confirmLabel: string;
+  // When "Cancel" would be ambiguous (cancelling a run): what keeping things as they are means.
+  cancelLabel?: string;
   destructive?: boolean;
   onConfirm: () => Promise<unknown>;
   onCancel: () => void;
@@ -37,7 +40,7 @@ export function ConfirmDialog({
         <div className="flex flex-col gap-2 text-ui text-ink-2">{children}</div>
         <div className="mt-1 flex flex-wrap justify-end gap-2">
           <button type="button" className={buttons.secondary} onClick={onCancel} disabled={busy}>
-            {t('kit.cancel')}
+            {cancelLabel ?? t('common.cancel')}
           </button>
           <button
             type="button"

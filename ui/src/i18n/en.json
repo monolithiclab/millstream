@@ -86,28 +86,6 @@
     "en": "English",
     "fr": "Français"
   },
-  "kit": {
-    "loading": "Loading…",
-    "retry": "Retry",
-    "cancel": "Cancel",
-    "dismiss": "Dismiss",
-    "copied": "Copied",
-    "copyError": "Copy",
-    "showLess": "Show less",
-    "showFullError": "Show full error · {{size}}",
-    "expandAll": "Expand all",
-    "collapseAll": "Collapse all",
-    "copyJson": "Copy JSON",
-    "collapse": "Collapse {{name}}",
-    "expand": "Expand {{name}}",
-    "jsonItemsOne": "{{n}} item",
-    "jsonItemsOther": "{{n}} items",
-    "jsonKeysOne": "{{n}} key",
-    "jsonKeysOther": "{{n}} keys",
-    "pauseScroll": "Pause scroll",
-    "noLogs": "No log lines yet.",
-    "logGap": "Lines missed while reconnecting"
-  },
   "status": {
     "running": "Running",
     "leased": "Running",
@@ -129,7 +107,12 @@
     "replayed": "Replayed",
     "paused": "Paused",
     "failing": "Failing",
-    "slow": "Slow"
+    "slow": "Slow",
+    "unschedulable": "Unschedulable",
+    "acknowledged": "Acknowledged",
+    "resolved": "Resolved",
+    "muted": "Muted",
+    "sample": "Sample"
   },
   "graph": {
     "kind": {
@@ -137,13 +120,6 @@
       "dedupe": "Dedupe",
       "review": "Review",
       "filter": "Filter"
-    },
-    "insightKind": {
-      "slowStep": "slow step",
-      "failureCluster": "failure cluster",
-      "cost": "cost",
-      "reviewPattern": "review pattern",
-      "unschedulable": "unschedulable"
     },
     "figure": {
       "waiting": "no figures yet",
@@ -464,12 +440,24 @@
     "no": "no",
     "none": "empty",
     "cancel": "Cancel",
-    "dismiss": "Dismiss"
+    "dismiss": "Dismiss",
+    "copied": "Copied",
+    "copyError": "Copy",
+    "showLess": "Show less",
+    "showFullError": "Show full error · {{size}}",
+    "expandAll": "Expand all",
+    "collapseAll": "Collapse all",
+    "copyJson": "Copy JSON",
+    "collapse": "Collapse {{name}}",
+    "expand": "Expand {{name}}",
+    "jsonItemsOne": "{{n}} item",
+    "jsonItemsOther": "{{n}} items",
+    "jsonKeysOne": "{{n}} key",
+    "jsonKeysOther": "{{n}} keys"
   },
   "inbox": {
     "position": "{{position}} of {{total}}",
     "waiting": "waiting {{age}}",
-    "sample": "Sample",
     "openLink": "Open {{field}}",
     "sampleExplained": "Approved by the rule and already sent on. Your verdict only measures the rule: it recalls nothing and blocks nothing.",
     "editable": "You can edit these fields",
@@ -547,13 +535,6 @@
       "label": "Run state",
       "all": "All"
     },
-    "state": {
-      "running": "Running",
-      "waitingReview": "Waiting on review",
-      "succeeded": "Succeeded",
-      "completedWithErrors": "Completed with errors",
-      "cancelled": "Cancelled"
-    },
     "neighbours": "Neighbouring runs",
     "cancel": "Cancel run…",
     "cancelTitle": "Cancel {{name}}?",
@@ -623,7 +604,6 @@
   },
   "metrics": {
     "copy": "Copy link",
-    "copied": "Link copied",
     "metric": "Metric",
     "noMetric": "No metric yet",
     "pipeline": "Pipeline",
@@ -692,12 +672,6 @@
       "reviewPattern": "Review pattern",
       "unschedulable": "Unschedulable"
     },
-    "state": {
-      "open": "Open",
-      "acknowledged": "Acknowledged",
-      "resolved": "Resolved",
-      "muted": "Muted"
-    },
     "raised": "raised {{when}}",
     "title": {
       "slowStep": "{{step}} is slowing runs down",
@@ -763,10 +737,6 @@
     "engine": "Engine",
     "version": "Millstream {{version}}",
     "engineNote": "Runs the pipelines and an embedded node. A standby engine for failover arrives with M4.",
-    "state": {
-      "active": "Active",
-      "standby": "Standby"
-    },
     "capacity": "Free capacity",
     "freeSlots": "slots free for new deliveries",
     "none": "No node connected",
@@ -786,7 +756,8 @@
     "noLabels": "none",
     "behind": "{{version}} · behind",
     "slots": "{{used}} / {{total}}",
-    "slotsFull": "{{used}} / {{total}} full"
+    "slotsFull": "{{used}} / {{total}} full",
+    "standby": "Standby"
   },
   "logs": {
     "pipeline": "Pipeline",

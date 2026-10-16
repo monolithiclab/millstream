@@ -2,7 +2,7 @@ import { act, screen, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { FakeEventSource } from '../../live/fakeEventSource';
 import { renderApp } from '../../test/render';
-import { MAX_LINES, PAINT_MS } from './LogsScreen';
+import { MAX_LINES, PAINT_MS } from '../../common/LogTail';
 
 const line = (ts: string, level: string, message: string, step = 'score') =>
   JSON.stringify({ ts, level, message, pipeline: 'p', runId: 'r', step, itemId: '', deliveryId: '', attempt: 1 });

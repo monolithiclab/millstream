@@ -1,7 +1,8 @@
 import { useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { DeadLetterSelection } from '../../api/schema';
-import { useApi, useApiQuery } from '../../api/context';
+import { useApi } from '../../api/context';
+import { useResource } from '../../common/useResource';
 import { ConfirmDialog, Consequences } from '../../common/ConfirmDialog';
 import { runAction, type Notice } from '../../common/Notice';
 import { useFormat } from '../../common/useFormat';
@@ -54,7 +55,7 @@ function MigrateOption({
   const id = useId();
   // A run's revision is on the run: read the few distinct runs a selection spans.
   const distinct = [...new Set(runs)].slice(0, 10);
-  const read = useApiQuery(`runs:${pipeline}:${distinct.join(',')}`, (api) =>
+  const read = useResource(`runs:${pipeline}:${distinct.join(',')}`, (api) =>
     Promise.all(distinct.map((run) => api.getRun(pipeline, run))),
   );
   if (read.status !== 'ready') return null;

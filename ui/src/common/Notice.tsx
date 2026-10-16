@@ -25,7 +25,7 @@ export function NoticeRegion({ notice, onDismiss }: { notice: Notice | null; onD
           </svg>
           <span className="min-w-0 flex-1">{notice.message}</span>
           <button type="button" onClick={onDismiss} className="font-bold underline">
-            {t('kit.dismiss')}
+            {t('common.dismiss')}
           </button>
         </div>
       )}
@@ -40,11 +40,11 @@ export function NoticeRegion({ notice, onDismiss }: { notice: Notice | null; onD
           <span className="min-w-0 flex-1 break-words">{notice.message}</span>
           {notice.retry && (
             <button type="button" onClick={notice.retry} className="font-bold underline">
-              {t('kit.retry')}
+              {t('common.retry')}
             </button>
           )}
           <button type="button" onClick={onDismiss} className="font-bold underline">
-            {t('kit.dismiss')}
+            {t('common.dismiss')}
           </button>
         </div>
       )}

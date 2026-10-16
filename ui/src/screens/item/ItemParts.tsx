@@ -2,14 +2,13 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 import type { ArtifactRef, Item, Lineage, LineageNode } from '../../api/schema';
-import { useApi, useApiQuery } from '../../api/context';
-import { buttons, card } from '../../common/buttons';
-import { ErrorState, Skeleton } from '../../common/States';
-import { formatBytes, shortId, useFormat } from '../../common/useFormat';
-import { pipelinePath } from '../../routes';
-
-export const itemPath = (pipeline: string, item: string) =>
-  `${pipelinePath(pipeline, 'items')}/${encodeURIComponent(item)}`;
+import { useApi } from '../../api/context';
+import { buttons, card } from '../../common/styles';
+import { QueryView } from '../../common/States';
+import { useResource } from '../../common/useResource';
+import { shortId } from '../../common/Id';
+import { formatBytes, useFormat } from '../../common/useFormat';
+import { itemPath } from '../../routes';
 
 interface Row {
   node: LineageNode | null;
@@ -98,25 +97,27 @@ export function LineageTree({ pipeline, item, lineage }: { pipeline: string; ite
 
 function TextPreview({ pipeline, item, artifact }: { pipeline: string; item: string; artifact: ArtifactRef }) {
   const { t } = useTranslation();
-  const read = useApiQuery(`artifact:${pipeline}:${item}:${artifact.name}`, (api) =>
+  const read = useResource(`artifact:${pipeline}:${item}:${artifact.name}`, (api) =>
     api.readArtifact({ pipeline, item, name: artifact.name }),
   );
-  if (read.status === 'loading') return <Skeleton rows={1} className="h-10" />;
-  if (read.status === 'error')
-    return <ErrorState title={t('item.artifacts.error')} error={read.error} onRetry={read.reload} />;
-  let text = read.data;
-  if (artifact.type.includes('json')) {
-    try {
-      text = JSON.stringify(JSON.parse(text), null, 2);
-    } catch {
-      // Not JSON after all: show it as it is.
-    }
-  }
   return (
-    <pre className="m-0 max-h-64 overflow-auto rounded-1 bg-surface-2 px-3 py-2 font-mono text-tiny break-words whitespace-pre-wrap text-ink-2">
-      {text}
-    </pre>
+    <QueryView query={read} title={t('item.artifacts.error')} rows={1} className="h-10">
+      {(text) => (
+        <pre className="m-0 max-h-64 overflow-auto rounded-1 bg-surface-2 px-3 py-2 font-mono text-tiny break-words whitespace-pre-wrap text-ink-2">
+          {artifact.type.includes('json') ? indented(text) : text}
+        </pre>
+      )}
+    </QueryView>
   );
+}
+
+// JSON indented, or the text as it is when it is not JSON after all.
+function indented(text: string): string {
+  try {
+    return JSON.stringify(JSON.parse(text), null, 2);
+  } catch {
+    return text;
+  }
 }
 
 const textual = (type: string) => type.startsWith('text/') || type.includes('json');

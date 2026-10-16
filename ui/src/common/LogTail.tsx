@@ -1,87 +1,159 @@
-import { useEffect, useRef, useState } from 'react';
+import { memo, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { LogLine } from '../api/schema';
+import { formatClock } from '../i18n/format';
 import { parseData, useLiveStream, type LiveMessage } from '../live/useLiveStream';
+import { usePreferences } from '../preferences';
+import { LiveIndicator } from '../shell/LiveIndicator';
 import { ScrollRegion } from './ScrollRegion';
-import { buttons } from './buttons';
-import { useFormat } from './useFormat';
+import { buttons } from './styles';
 
-type Entry = { kind: 'line'; id: string; line: LogLine } | { kind: 'gap'; id: string };
+// The tail keeps this many entries; history stays in the host's log tools (spec 10.3).
+export const MAX_LINES = 1000;
+// Interaction notes: paint at most every 250 ms.
+export const PAINT_MS = 250;
 
-// Lines kept in memory: a tail, not a history (the host's log tools keep that).
-const MAX_LINES = 500;
+type Entry = { id: number; kind: 'line'; line: LogLine } | { id: number; kind: 'gap'; from?: string; to?: string };
 
-const levelClass: Record<string, string> = {
-  WARN: 'text-[#e8ae45]',
-  ERROR: 'text-[#f2806f]',
-};
+const levelTone: Record<string, string> = { WARN: 'text-log-warn', ERROR: 'text-log-bad', FATAL: 'text-log-bad' };
 
-// A live log tail over /live/logs (Components board): dark, monospace, a dashed gap marker where the stream dropped
-// lines, and Pause scroll. Best effort: the server keeps a ring, so a long disconnection loses lines.
-export function LogTail({ url, title }: { url: string | null; title: string }) {
+// A live log tail over /live/logs (Components board): dark, monospace, painted in batches. Best effort: after a
+// reconnection the server marks lost lines with a gap, shown as a dashed rule with the missing window. Scrolling
+// follows new lines unless paused; a paused tail counts what arrived. A new url is a new tail.
+export function LogTail(props: { url: string; title: string; className?: string }) {
+  return <Tail key={props.url} {...props} />;
+}
+
+function Tail({ url, title, className = 'max-h-80' }: { url: string; title: string; className?: string }) {
   const { t } = useTranslation();
-  const f = useFormat();
   const [entries, setEntries] = useState<Entry[]>([]);
-  const [paused, setPaused] = useState(false);
-  const box = useRef<HTMLDivElement>(null);
-  const seq = useRef(0);
+  const [frozenAt, setFrozenAt] = useState<number | null>(null);
+  const pending = useRef<Entry[]>([]);
+  const nextId = useRef(1);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const tail = useRef<HTMLDivElement>(null);
+  // The last line's time, where the next gap's window starts.
+  const lastTs = useRef<string | undefined>(undefined);
 
-  useLiveStream(url, {
-    events: ['log', 'gap'],
-    onMessage: (message: LiveMessage) => {
-      seq.current += 1;
-      const id = message.id ?? `local-${seq.current}`;
-      const line = message.type === 'log' ? parseData<LogLine>(message) : null;
-      const entry: Entry | null =
-        message.type === 'gap' ? { kind: 'gap', id } : line === null ? null : { kind: 'line', id, line };
-      if (entry !== null) setEntries((current) => [...current, entry].slice(-MAX_LINES));
+  useEffect(
+    () => () => {
+      if (timer.current !== null) clearTimeout(timer.current);
     },
-  });
+    [],
+  );
+
+  const paint = () => {
+    timer.current = null;
+    const batch = pending.current;
+    pending.current = [];
+    setEntries((current) => {
+      const merged = [...current];
+      for (const entry of batch) {
+        const last = merged.at(-1);
+        // The first line after a gap closes its window.
+        if (entry.kind === 'line' && last?.kind === 'gap' && last.to === undefined) {
+          merged[merged.length - 1] = { ...last, to: entry.line.ts };
+        }
+        merged.push(entry);
+      }
+      return merged.slice(-MAX_LINES);
+    });
+  };
+
+  const onMessage = (message: LiveMessage) => {
+    if (message.type === 'log') {
+      const line = parseData<LogLine>(message);
+      if (line === null) return;
+      pending.current.push({ id: nextId.current++, kind: 'line', line });
+      lastTs.current = line.ts;
+    } else if (message.type === 'gap') {
+      pending.current.push({ id: nextId.current++, kind: 'gap', ...(lastTs.current && { from: lastTs.current }) });
+    } else {
+      return;
+    }
+    if (timer.current === null) timer.current = setTimeout(paint, PAINT_MS);
+  };
+
+  const live = useLiveStream(url, { events: ['log', 'gap'], onMessage });
+
+  const shown = frozenAt === null ? entries : entries.filter((e) => e.id <= frozenAt);
+  const waiting = entries.length - shown.length;
 
   useEffect(() => {
-    const el = box.current;
-    if (!paused && el) el.scrollTop = el.scrollHeight;
-  }, [entries, paused]);
+    if (frozenAt === null && tail.current) tail.current.scrollTop = tail.current.scrollHeight;
+  }, [entries, frozenAt]);
+
+  const clear = () => {
+    pending.current = [];
+    lastTs.current = undefined;
+    setEntries([]);
+    setFrozenAt(null);
+  };
 
   return (
-    <section aria-label={title} className="flex flex-col gap-2">
-      <div className="flex items-center gap-2.5">
-        <h3 className="m-0 text-ui font-bold">{title}</h3>
-        <div className="flex-1" />
+    <div className="flex flex-col gap-2.5">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+        <LiveIndicator state={live} />
         <button
           type="button"
-          className={buttons.smallSecondary}
-          aria-pressed={paused}
-          onClick={() => setPaused(!paused)}
+          aria-pressed={frozenAt !== null}
+          onClick={() => setFrozenAt(frozenAt === null ? (entries.at(-1)?.id ?? 0) : null)}
+          className={buttons.secondary}
         >
-          {t('kit.pauseScroll')}
+          {frozenAt === null ? t('logs.pause') : t('logs.resume')}
+        </button>
+        <button type="button" onClick={clear} className={buttons.secondary}>
+          {t('logs.clear')}
         </button>
       </div>
-      <ScrollRegion
-        ref={box}
-        role="log"
-        live="off"
-        label={title}
-        className="max-h-80 overflow-auto rounded-1 bg-log-bg px-3 py-2.5 font-mono text-tiny leading-[19px] text-log-ink"
-      >
-        {entries.length === 0 && <p className="m-0">{t('kit.noLogs')}</p>}
-        {entries.map((entry) =>
-          entry.kind === 'gap' ? (
-            <div key={entry.id} className="my-1 border-y border-dashed border-log-ink/50 py-0.5 text-center">
-              {t('kit.logGap')}
-            </div>
-          ) : (
-            <div key={entry.id} className={`flex gap-2.5 ${levelClass[entry.line.level.toUpperCase()] ?? ''}`}>
-              <span className="flex-none opacity-80">{f.time(entry.line.ts)}</span>
-              <span className="flex-none font-bold">{entry.line.level.toUpperCase()}</span>
-              <span className="min-w-0 break-words [overflow-wrap:anywhere]">
-                {entry.line.step !== '' && <span className="opacity-80">{entry.line.step} · </span>}
-                {entry.line.message}
-              </span>
-            </div>
-          ),
+      <div className="relative">
+        <ScrollRegion
+          ref={tail}
+          role="log"
+          live="off"
+          label={title}
+          className={`${className} overflow-y-auto rounded-1 bg-log-bg px-3 py-2.5 font-mono text-tiny leading-[19px] text-log-ink`}
+        >
+          {shown.length === 0 && <p className="m-0 text-log-dim">{t('logs.empty')}</p>}
+          {shown.map((entry) => (
+            <LogRow key={entry.id} entry={entry} />
+          ))}
+        </ScrollRegion>
+        {waiting > 0 && (
+          <button
+            type="button"
+            onClick={() => setFrozenAt(null)}
+            className="absolute bottom-3 left-1/2 -translate-x-1/2 rounded-pill bg-accent px-3 py-1 text-tiny font-bold text-accent-ink shadow-2"
+          >
+            {t('logs.newLines', { count: waiting })}
+          </button>
         )}
-      </ScrollRegion>
-    </section>
+      </div>
+    </div>
   );
 }
+
+// One line or gap of the tail. Entries never change once painted, so a row renders once.
+const LogRow = memo(function LogRow({ entry }: { entry: Entry }) {
+  const { t } = useTranslation();
+  const { language } = usePreferences();
+  const clock = (ts: string) => formatClock(new Date(ts), language, 'millisecond');
+  if (entry.kind === 'gap') {
+    return (
+      <p className="my-1 border-y border-dashed border-log-rule py-1 text-center text-log-warn">
+        {entry.from && entry.to ? t('logs.gapWindow', { from: clock(entry.from), to: clock(entry.to) }) : t('logs.gap')}
+      </p>
+    );
+  }
+  const level = entry.line.level.toUpperCase();
+  return (
+    <p className={`m-0 flex gap-2.5 ${levelTone[level] ?? ''}`}>
+      <span className="flex-none text-log-dim">{clock(entry.line.ts)}</span>
+      <span className="w-11 flex-none font-bold">{level}</span>
+      <span className="min-w-0 break-words [overflow-wrap:anywhere]">
+        {entry.line.step && <span className="text-log-dim">{entry.line.step} · </span>}
+        {entry.line.message}
+      </span>
+    </p>
+  );
+});

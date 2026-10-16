@@ -86,28 +86,6 @@
     "en": "English",
     "fr": "Français"
   },
-  "kit": {
-    "loading": "Chargement…",
-    "retry": "Réessayer",
-    "cancel": "Annuler",
-    "dismiss": "Fermer",
-    "copied": "Copié",
-    "copyError": "Copier",
-    "showLess": "Afficher moins",
-    "showFullError": "Afficher l’erreur complète · {{size}}",
-    "expandAll": "Tout déplier",
-    "collapseAll": "Tout replier",
-    "copyJson": "Copier le JSON",
-    "collapse": "Replier {{name}}",
-    "expand": "Déplier {{name}}",
-    "jsonItemsOne": "{{n}} élément",
-    "jsonItemsOther": "{{n}} éléments",
-    "jsonKeysOne": "{{n}} clé",
-    "jsonKeysOther": "{{n}} clés",
-    "pauseScroll": "Suspendre le défilement",
-    "noLogs": "Aucune ligne de journal pour l’instant.",
-    "logGap": "Lignes perdues pendant la reconnexion"
-  },
   "status": {
     "running": "En cours",
     "leased": "En cours",
@@ -115,12 +93,12 @@
     "awaitingReview": "En attente de revue",
     "waitingReview": "En attente de revue",
     "done": "Terminé",
-    "succeeded": "Réussie",
+    "succeeded": "Réussi",
     "active": "Actif",
     "passed": "Retenu",
     "filtered": "Filtré",
     "failed": "Échec · sera relancé",
-    "completedWithErrors": "Terminée avec erreurs",
+    "completedWithErrors": "Terminé avec erreurs",
     "dead": "Mort",
     "unrouted": "Sans route",
     "open": "Ouvert",
@@ -129,7 +107,12 @@
     "replayed": "Rejoué",
     "paused": "En pause",
     "failing": "En échec",
-    "slow": "Lent"
+    "slow": "Lent",
+    "unschedulable": "Non planifiable",
+    "acknowledged": "Pris en compte",
+    "resolved": "Résolu",
+    "muted": "Masqué",
+    "sample": "Échantillon"
   },
   "graph": {
     "kind": {
@@ -137,13 +120,6 @@
       "dedupe": "Dédoublonnage",
       "review": "Revue",
       "filter": "Filtre"
-    },
-    "insightKind": {
-      "slowStep": "étape lente",
-      "failureCluster": "grappe d’échecs",
-      "cost": "coût",
-      "reviewPattern": "tendance de revue",
-      "unschedulable": "non planifiable"
     },
     "figure": {
       "waiting": "pas encore de chiffres",
@@ -163,7 +139,7 @@
       "cost": "Coût",
       "review": "Revue",
       "unschedulable": "Aucun nœud",
-      "insight": "Analyse"
+      "insight": "Constat"
     },
     "stepLabel": "{{name}}, étape {{kind}}, {{state}}, {{value}} {{label}}",
     "node": {
@@ -185,8 +161,8 @@
       "resume": "Reprendre l’étape",
       "pause": "Mettre en pause",
       "items": "Ouvrir ses items",
-      "insight": "Analyse · {{kind}}",
-      "seeInsights": "Voir les analyses",
+      "insight": "Constat · {{kind}}",
+      "seeInsights": "Voir les constats",
       "toReview": "À revoir",
       "inFlight": "En cours",
       "slots": "sur {{n}} places",
@@ -464,12 +440,24 @@
     "no": "non",
     "none": "vide",
     "cancel": "Annuler",
-    "dismiss": "Fermer"
+    "dismiss": "Fermer",
+    "copied": "Copié",
+    "copyError": "Copier",
+    "showLess": "Afficher moins",
+    "showFullError": "Afficher l’erreur complète · {{size}}",
+    "expandAll": "Tout déplier",
+    "collapseAll": "Tout replier",
+    "copyJson": "Copier le JSON",
+    "collapse": "Replier {{name}}",
+    "expand": "Déplier {{name}}",
+    "jsonItemsOne": "{{n}} élément",
+    "jsonItemsOther": "{{n}} éléments",
+    "jsonKeysOne": "{{n}} clé",
+    "jsonKeysOther": "{{n}} clés"
   },
   "inbox": {
     "position": "{{position}} sur {{total}}",
     "waiting": "attend depuis {{age}}",
-    "sample": "Échantillon",
     "openLink": "Ouvrir {{field}}",
     "sampleExplained": "Approuvé par la règle et déjà transmis. Votre avis mesure seulement la règle : il ne rappelle rien et ne bloque rien.",
     "editable": "Champs modifiables",
@@ -547,13 +535,6 @@
       "label": "État du run",
       "all": "Tous"
     },
-    "state": {
-      "running": "En cours",
-      "waitingReview": "En attente de revue",
-      "succeeded": "Réussi",
-      "completedWithErrors": "Terminé avec erreurs",
-      "cancelled": "Annulé"
-    },
     "neighbours": "Runs voisins",
     "cancel": "Annuler le run…",
     "cancelTitle": "Annuler le {{name}} ?",
@@ -623,7 +604,6 @@
   },
   "metrics": {
     "copy": "Copier le lien",
-    "copied": "Lien copié",
     "metric": "Métrique",
     "noMetric": "Aucune métrique",
     "pipeline": "Pipeline",
@@ -692,12 +672,6 @@
       "reviewPattern": "Tendance de revue",
       "unschedulable": "Non planifiable"
     },
-    "state": {
-      "open": "Ouvert",
-      "acknowledged": "Pris en compte",
-      "resolved": "Résolu",
-      "muted": "Masqué"
-    },
     "raised": "relevé {{when}}",
     "title": {
       "slowStep": "{{step}} ralentit les runs",
@@ -763,10 +737,6 @@
     "engine": "Moteur",
     "version": "Millstream {{version}}",
     "engineNote": "Exécute les pipelines et un nœud intégré. Un moteur de secours arrive avec M4.",
-    "state": {
-      "active": "Actif",
-      "standby": "En attente"
-    },
     "capacity": "Capacité libre",
     "freeSlots": "emplacements libres pour de nouvelles livraisons",
     "none": "Aucun nœud connecté",
@@ -786,7 +756,8 @@
     "noLabels": "aucun",
     "behind": "{{version}} · en retard",
     "slots": "{{used}} / {{total}}",
-    "slotsFull": "{{used}} / {{total}} plein"
+    "slotsFull": "{{used}} / {{total}} plein",
+    "standby": "En attente"
   },
   "logs": {
     "pipeline": "Pipeline",

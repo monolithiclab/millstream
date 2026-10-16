@@ -1,19 +1,19 @@
 import { useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useApiQuery } from '../../api/context';
 import { Link, useParams } from 'react-router-dom';
 import { liveUrls } from '../../api/api';
 import type { Delivery, Event, Item, Lineage } from '../../api/schema';
-import { buttons, card } from '../../common/buttons';
+import { buttons, card } from '../../common/styles';
 import { CopyButton } from '../../common/Copy';
 import { JsonViewer } from '../../common/JsonViewer';
 import { LogTail } from '../../common/LogTail';
 import { useMediaQuery, WIDE } from '../../common/motion';
-import { ErrorState, Skeleton } from '../../common/States';
+import { ErrorState, Loading } from '../../common/States';
+import { useResource } from '../../common/useResource';
 import { StatusBadge, type StatusKey } from '../../common/Status';
 import { byteSize, formatBytes, useFormat } from '../../common/useFormat';
 import { parseData, useLiveStream } from '../../live/useLiveStream';
-import { pipelinePath } from '../../routes';
+import { pipelinePath, runPath } from '../../routes';
 import { ScreenPage } from '../ScreenPage';
 import { Artifacts, LineageTree } from './ItemParts';
 import { Journey } from './Journey';
@@ -145,7 +145,7 @@ export function ItemScreen() {
   const [chosen, setTab] = useState<Tab>('journey');
   const [events, setEvents] = useState<{ item: string; list: Event[] }>({ item: itemId, list: [] });
 
-  const data = useApiQuery(`item:${pipeline}:${itemId}`, async (api) => {
+  const data = useResource(`item:${pipeline}:${itemId}`, async (api) => {
     const [item, lineage, deliveries] = await Promise.all([
       api.getItem(pipeline, itemId),
       api.getLineage(pipeline, itemId),
@@ -155,13 +155,13 @@ export function ItemScreen() {
   });
   const ready = data.status === 'ready' ? data.data : null;
   const ancestors = ready?.lineage.up.slice(0, JOURNEY_DEPTH).map((n) => n.id) ?? [];
-  const upstream = useApiQuery(ready === null ? null : `journey:${pipeline}:${ancestors.join(',')}`, (api) =>
+  const upstream = useResource(ready === null ? null : `journey:${pipeline}:${ancestors.join(',')}`, (api) =>
     Promise.all(ancestors.map((id) => api.listItemDeliveries(pipeline, id))),
   );
 
-  const reload = () => {
-    data.reload();
-    upstream.reload();
+  const refresh = () => {
+    data.refresh();
+    upstream.refresh();
   };
   useLiveStream(liveUrls.item(pipeline, itemId), {
     events: ['state'],
@@ -175,10 +175,10 @@ export function ItemScreen() {
           MAX_EVENTS,
         ),
       }));
-      data.reload();
+      data.refresh();
     },
-    onReconnect: reload,
-    onSnapshotRequired: reload,
+    onReconnect: refresh,
+    onSnapshotRequired: refresh,
   });
 
   const tabs: { id: Tab; label: string }[] = [];
@@ -204,9 +204,9 @@ export function ItemScreen() {
     return (
       <ScreenPage title={title} eyebrow={breadcrumb}>
         {data.status === 'error' ? (
-          <ErrorState title={t('item.error')} error={data.error} onRetry={data.reload} />
+          <ErrorState title={t('item.error')} message={data.error.message} onRetry={data.reload} />
         ) : (
-          <Skeleton rows={3} className="h-40" />
+          <Loading rows={3} className="h-40" />
         )}
       </ScreenPage>
     );
@@ -264,7 +264,7 @@ export function ItemScreen() {
       <div className="flex flex-wrap items-end gap-x-8 gap-y-4">
         <div className="flex min-w-0 flex-[1_1_480px] flex-wrap gap-x-[18px] gap-y-1.5 text-small text-ink-2">
           <Meta label={t('item.meta.run')}>
-            <Link to={`${pipelinePath(pipeline, 'runs')}?run=${encodeURIComponent(item.runId)}`} className="text-ink">
+            <Link to={runPath(pipeline, item.runId)} className="text-ink">
               {item.runId}
             </Link>
           </Meta>

@@ -42,19 +42,6 @@ export function useKindLabel() {
   return (kind: StepKind) => labels[kind];
 }
 
-// An insight kind in words (spec section 11.1).
-export function useInsightLabel() {
-  const { t } = useTranslation();
-  const labels: Record<string, string> = {
-    slowStep: t('graph.insightKind.slowStep'),
-    failureCluster: t('graph.insightKind.failureCluster'),
-    cost: t('graph.insightKind.cost'),
-    reviewPattern: t('graph.insightKind.reviewPattern'),
-    unschedulable: t('graph.insightKind.unschedulable'),
-  };
-  return (kind: string) => labels[kind] ?? kind;
-}
-
 interface StepNodeData extends Record<string, unknown> {
   model: StepModel;
   overlay: Overlay;

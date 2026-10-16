@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import uPlot from 'uplot';
 import 'uplot/dist/uPlot.min.css';
+import { useMediaQuery } from '../../common/motion';
 import { usePreferences } from '../../preferences';
 import { useLatest } from '../../useLatest';
 
@@ -28,18 +29,6 @@ function resolve(host: HTMLElement, token: string): string {
   return color;
 }
 
-// Redraws when the system colour scheme changes under a "follow the system" theme.
-function useSchemeVersion(): number {
-  const [version, setVersion] = useState(0);
-  useEffect(() => {
-    const query = typeof window.matchMedia === 'function' ? window.matchMedia('(prefers-color-scheme: dark)') : null;
-    const bump = () => setVersion((v) => v + 1);
-    query?.addEventListener('change', bump);
-    return () => query?.removeEventListener('change', bump);
-  }, []);
-  return version;
-}
-
 const HEIGHT = 320;
 
 // The uPlot line chart of the explorer: one line per visible series, dashes as well as colours, revision marks as
@@ -62,7 +51,8 @@ export function MetricChart({
 }) {
   const host = useRef<HTMLDivElement>(null);
   const { theme } = usePreferences();
-  const scheme = useSchemeVersion();
+  // Redraws when the system colour scheme changes under a "follow the system" theme.
+  const scheme = useMediaQuery('(prefers-color-scheme: dark)', false);
   const hover = useLatest(onHover);
   // Read by the plot's hooks, so a new format or new marks only need a redraw.
   const latest = useLatest({ marks, format, series });

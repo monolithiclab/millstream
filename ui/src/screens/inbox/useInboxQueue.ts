@@ -3,7 +3,8 @@ import type { Api } from '../../api/api';
 import { useApi } from '../../api/context';
 import type { Review, Sample } from '../../api/schema';
 import { useLatest } from '../../useLatest';
-import { useResource } from '../parts/useResource';
+import { errorMessage } from '../../common/Notice';
+import { useResource } from '../../common/useResource';
 
 // One card of the queue: an open review, or an open review sample (an auto-approved item a person double-checks).
 export type Entry =
@@ -80,7 +81,7 @@ export function useInboxQueue(filters: Filters) {
   const { mutate } = resource;
   const keyRef = useLatest(key);
   const [loadingMore, setLoadingMore] = useState(false);
-  const [moreError, setMoreError] = useState<Error | null>(null);
+  const [moreError, setMoreError] = useState<string | null>(null);
 
   const remove = useCallback(
     (entryKey: string) => mutate((q) => ({ ...q, entries: q.entries.filter((e) => e.key !== entryKey) })),
@@ -92,14 +93,13 @@ export function useInboxQueue(filters: Filters) {
     [mutate],
   );
 
-  const state = resource.state;
   const loadMore = async () => {
-    if (state.status !== 'ready' || !hasMore(state.data)) return;
+    if (resource.status !== 'ready' || !hasMore(resource.data)) return;
     const asked = key;
     setLoadingMore(true);
     setMoreError(null);
     try {
-      const more = await page(api, filters, state.data.next);
+      const more = await page(api, filters, resource.data.next);
       // A page that arrives after the filters changed belongs to the old queue.
       if (keyRef.current !== asked) return;
       mutate((q) => {
@@ -110,11 +110,11 @@ export function useInboxQueue(filters: Filters) {
         };
       });
     } catch (error) {
-      setMoreError(error instanceof Error ? error : new Error(String(error)));
+      setMoreError(errorMessage(error));
     } finally {
       setLoadingMore(false);
     }
   };
 
-  return { state, remove, restore, reload: resource.reload, loadMore, loadingMore, moreError };
+  return { ...resource, remove, restore, loadMore, loadingMore, moreError };
 }

@@ -1,7 +1,7 @@
 import { useId, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
-import type { QueryState } from '../api/context';
+import type { QueryState } from '../common/useResource';
 import type { Pipeline } from '../api/schema';
 import { pipelinePath } from '../routes';
 import { useDismiss } from './useDismiss';
