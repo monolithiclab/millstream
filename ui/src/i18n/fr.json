@@ -456,6 +456,7 @@
   },
   "common": {
     "loading": "Chargement…",
+    "working": "{{action}} : en cours…",
     "loadFailed": "Le chargement a échoué.",
     "retry": "Réessayer",
     "yes": "oui",

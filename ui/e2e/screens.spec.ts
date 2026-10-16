@@ -58,7 +58,8 @@ const screens: ScreenCase[] = [
   {
     name: 'items',
     path: async () => '/p/listings-daily/items',
-    ready: (page) => expect(page.getByRole('list', { name: /Items, oldest first|Items, du plus ancien/ })).toBeVisible(),
+    ready: (page) =>
+      expect(page.getByRole('list', { name: /Items, oldest first|Items, du plus ancien/ })).toBeVisible(),
     // A where the server cannot compile: its message at the field.
     open: async (page) => {
       const where = page.getByRole('textbox', { name: /Where \(CEL\)|Condition \(CEL\)/ });
@@ -207,6 +208,24 @@ test('the inbox at 375 px opens the reject sheet, also axe-clean', async ({ page
   await expect(page.getByRole('dialog', { name: 'Pourquoi rejeter ?' })).toBeVisible();
   await expectNoViolations(page);
   await expectNoClipping(page);
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+});
+
+test('the reject sheet with nine reasons scrolls on a short phone', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 600 });
+  await page.goto('/inbox?inbox=analysts');
+  await page.getByRole('button', { name: 'Reject…' }).click();
+  const sheet = page.getByRole('dialog', { name: 'Why reject?' });
+  await expect(sheet.getByRole('button')).toHaveCount(9 + 1);
+  await expectNoClipping(page);
+  // The last reason and the note are reachable by scrolling the sheet.
+  const last = sheet.getByRole('button', { name: /other/ });
+  await last.scrollIntoViewIfNeeded();
+  await expect(last).toBeInViewport();
+  await sheet.getByRole('textbox').scrollIntoViewIfNeeded();
+  await expect(sheet.getByRole('textbox')).toBeInViewport();
+  await expectNoViolations(page);
   await page.keyboard.press('Escape');
   await expect(page.getByRole('dialog')).toHaveCount(0);
 });

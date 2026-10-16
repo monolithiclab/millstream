@@ -25,7 +25,9 @@ steps:
     out: listings.reviewed
     config:
       inbox: analysts
-      reasons: [overpriced, stale]
+      # Nine reason codes, every digit: the reject sheet scrolls on a short phone.
+      reasons:
+        [overpriced, stale, duplicate, wrong-area, poor-condition, missing-photos, below-margin, legal-risk, other]
       editable: [/marginPct, /notes]
       display: "{{.item.title}}\n{{.item.where}}"
   triage:

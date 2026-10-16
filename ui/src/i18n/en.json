@@ -456,6 +456,7 @@
   },
   "common": {
     "loading": "Loading…",
+    "working": "{{action}}: in progress…",
     "loadFailed": "This could not be loaded.",
     "retry": "Retry",
     "yes": "yes",

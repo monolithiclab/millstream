@@ -37,4 +37,20 @@ describe('Dialog', () => {
     expect(screen.getByRole('dialog')).toHaveFocus();
     await user.tab();
   });
+
+  it('scrolls inside when taller than the screen, as a dialog and as a sheet', () => {
+    const { unmount } = render(
+      <Dialog labelledBy="t" onClose={() => undefined}>
+        <h2 id="t">Tall</h2>
+      </Dialog>,
+    );
+    expect(screen.getByRole('dialog')).toHaveClass('overflow-y-auto', 'max-h-[calc(88dvh-1rem)]');
+    unmount();
+    render(
+      <Dialog labelledBy="t" onClose={() => undefined} sheet>
+        <h2 id="t">Tall</h2>
+      </Dialog>,
+    );
+    expect(screen.getByRole('dialog')).toHaveClass('overflow-y-auto', 'max-h-[calc(100dvh-2rem)]');
+  });
 });
