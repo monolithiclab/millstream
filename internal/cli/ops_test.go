@@ -185,7 +185,7 @@ func Test_replayStepCommand(t *testing.T) {
 	}
 	// Through the parser: a usage error exits 2, a refusal of the engine 1.
 	if code, _, errOut := s.run("replay", "--pipeline", "listings", "--from", "dlq", "--step", "score"); code != 2 ||
-		!strings.Contains(errOut, "--from and --step are mutually exclusive") {
+		!strings.Contains(errOut, "--from, --step and --stream are mutually exclusive") {
 		t.Errorf("--from and --step: code %d, stderr %q", code, errOut)
 	}
 	if code, _, errOut := s.run("replay", "--pipeline", "listings", "--step", "nope"); code != 1 ||
@@ -194,7 +194,10 @@ func Test_replayStepCommand(t *testing.T) {
 	}
 	replayCmd := func(c ReplayCmd) ReplayCmd { c.Pipeline = "listings"; return c }
 	s.checkRefusals(t, nil, []refusal{
-		{replayCmd(ReplayCmd{}), true, "replay needs --from dlq or --step"},
+		{replayCmd(ReplayCmd{}), true, "replay needs --from dlq, --step or --stream"},
+		{replayCmd(ReplayCmd{Step: "score", Stream: "raw"}), true, "mutually exclusive"},
+		{replayCmd(ReplayCmd{Stream: "raw", RunID: "run_r1_adhoc"}), true, "a back-fill selects by --since and --where"},
+		{replayCmd(ReplayCmd{Stream: "raw"}), false, `does not import a stream "raw"`},
 		{replayCmd(ReplayCmd{From: "later"}), true, "--from later: only dlq is supported"},
 		{replayCmd(ReplayCmd{From: "dlq"}), true, "--from dlq needs --run"},
 		{replayCmd(ReplayCmd{From: "dlq", RunID: "run_r1_adhoc", Since: "7d"}), true, "go with --step"},

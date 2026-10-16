@@ -92,19 +92,21 @@ func (c CancelCmd) Run(rt *Runtime) error {
 	})
 }
 
-// ReplayCmd is "millstream replay": dead-letter replay into the origin run (--from dlq, spec section 5.6), or a
-// replay run of a step over past items (--step, spec section 5.7).
+// ReplayCmd is "millstream replay": dead-letter replay into the origin run (--from dlq, spec section 5.6), a replay
+// run of a step over past items (--step, spec section 5.7), or a back-fill of an imported stream over the producer's
+// retained items (--stream, spec section 4.12).
 type ReplayCmd struct {
-	From      string            `placeholder:"dlq" help:"Replay dead letters into their run: dlq. Exclusive with --step."`
+	From      string            `placeholder:"dlq" help:"Replay dead letters into their run: dlq. Exclusive with --step and --stream."`
 	Step      string            `help:"Start a replay run of this step over past items on its input streams."`
+	Stream    string            `help:"Start a replay run back-filling this imported stream from the producer's retained items on it."`
 	Pipeline  string            `required:"" help:"Pipeline name."`
 	RunID     string            `name:"run" help:"With --from dlq, the run whose dead letters to replay; with --step, replay only this run's items."`
 	Migrate   bool              `help:"With --from dlq, move the run to the pipeline's active revision first."`
-	Since     string            `help:"With --step, replay only the items published within this duration (7d, 12h)."`
-	Where     string            `help:"With --step, replay only the items for which this CEL expression holds."`
-	Revision  int64             `help:"With --step, the revision to run on (default: the active one)."`
-	RequestID string            `name:"request-id" help:"With --step, the request id naming the replay run; repeating it starts nothing new."`
-	Var       map[string]string `help:"With --step, set a variable (name=value)."`
+	Since     string            `help:"With --step or --stream, replay only the items published within this duration (7d, 12h)."`
+	Where     string            `help:"With --step or --stream, replay only the items for which this CEL expression holds."`
+	Revision  int64             `help:"With --step or --stream, the revision to run on (default: the active one)."`
+	RequestID string            `name:"request-id" help:"With --step or --stream, the request id naming the replay run; repeating it starts nothing new."`
+	Var       map[string]string `help:"With --step or --stream, set a variable (name=value)."`
 	IDs       []string          `arg:"" optional:"" name:"id" help:"With --from dlq, the dead letters to replay; all of the run's open ones when none."`
 }
 
@@ -112,16 +114,16 @@ type ReplayCmd struct {
 // dispatches the deliveries either creates.
 func (c ReplayCmd) Run(rt *Runtime) error {
 	switch {
-	case c.From != "" && c.Step != "":
-		return usageError("--from and --step are mutually exclusive")
+	case len(slices.DeleteFunc([]string{c.From, c.Step, c.Stream}, func(s string) bool { return s == "" })) > 1:
+		return usageError("--from, --step and --stream are mutually exclusive")
 	case c.From == "dlq":
 		return c.deadLetters(rt)
 	case c.From != "":
 		return usageError(fmt.Sprintf("--from %s: only dlq is supported", c.From))
-	case c.Step != "":
-		return c.replayStep(rt)
+	case c.Step != "", c.Stream != "":
+		return c.replayRun(rt)
 	default:
-		return usageError("replay needs --from dlq or --step")
+		return usageError("replay needs --from dlq, --step or --stream")
 	}
 }
 
@@ -130,7 +132,7 @@ func (c ReplayCmd) deadLetters(rt *Runtime) error {
 	case c.RunID == "":
 		return usageError("--from dlq needs --run")
 	case c.Since != "" || c.Where != "" || c.Revision != 0 || c.RequestID != "" || len(c.Var) > 0:
-		return usageError("--since, --where, --revision, --request-id and --var go with --step, not --from dlq")
+		return usageError("--since, --where, --revision, --request-id and --var go with --step or --stream, not --from dlq")
 	}
 	return withStore(rt, func(st store.Store) error {
 		n, err := st.ReplayDeadLetters(rt.Ctx, c.Pipeline, c.RunID, c.IDs, c.Migrate)
@@ -142,9 +144,12 @@ func (c ReplayCmd) deadLetters(rt *Runtime) error {
 	})
 }
 
-func (c ReplayCmd) replayStep(rt *Runtime) error {
-	if c.Migrate || len(c.IDs) > 0 {
-		return usageError("--migrate and dead-letter ids go with --from dlq, not --step")
+func (c ReplayCmd) replayRun(rt *Runtime) error {
+	switch {
+	case c.Migrate || len(c.IDs) > 0:
+		return usageError("--migrate and dead-letter ids go with --from dlq, not --step or --stream")
+	case c.Stream != "" && c.RunID != "":
+		return usageError("--run goes with --step or --from dlq: a back-fill selects by --since and --where")
 	}
 	var since time.Duration
 	if c.Since != "" {
@@ -162,7 +167,8 @@ func (c ReplayCmd) replayStep(rt *Runtime) error {
 			return err
 		}
 		id, created, err := e.Replay(rt.Ctx, engine.ReplayRequest{
-			Pipeline: c.Pipeline, Step: c.Step, Revision: store.RevisionID(c.Revision), Since: since, RunID: c.RunID,
+			Pipeline: c.Pipeline, Step: c.Step, Stream: c.Stream, Revision: store.RevisionID(c.Revision), Since: since,
+			RunID: c.RunID,
 			Where: c.Where, RequestID: c.RequestID,
 		})
 		if err != nil {
