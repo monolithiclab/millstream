@@ -127,7 +127,7 @@ func parseSSE(s string) []sseEvent {
 				ev.data = v
 			}
 		}
-		if ev.name != "" {
+		if ev.name != "" && ev.name != sseHeartbeat { // heartbeats carry no state: TestLiveCursor reads them
 			out = append(out, ev)
 		}
 	}
@@ -618,13 +618,15 @@ func TestCheckLoopback(t *testing.T) {
 	}
 }
 
-// A state stream sends its position with no data on subscribing and with each heartbeat, so a quiet stream's client
-// resumes from where the log is; every write has its own deadline.
+// A state stream sends its position as the id of a heartbeat event on subscribing and at each heartbeat, so a quiet
+// stream's client resumes from where the log is; every write has its own deadline.
 func TestLiveCursor(t *testing.T) {
 	e := newLiveEnv(t, BrokerOptions{}, scratch)
 	head := must(e.st.LastEventSeq(e.ctx))
 	s := e.open(t, "/api/v1/live/runs/r2?pipeline=listings", nil)
-	s.w.waitFor(t, func(out string) bool { return strings.Contains(out, "id: "+strconv.FormatInt(head, 10)+"\n\n") })
+	s.w.waitFor(t, func(out string) bool {
+		return strings.Contains(out, "event: heartbeat\nid: "+strconv.FormatInt(head, 10)+"\ndata: {}\n\n")
+	})
 	e.fire("cursor") // another run's events move the position on
 	e.b.pump(e.ctx)
 	later := must(e.st.LastEventSeq(e.ctx))
@@ -633,7 +635,8 @@ func TestLiveCursor(t *testing.T) {
 	}
 	e.clock.Advance(DefaultHeartbeat)
 	out := s.w.waitFor(t, func(out string) bool {
-		return strings.Contains(out, ": heartbeat\n\nid: "+strconv.FormatInt(later, 10)+"\n\n")
+		return strings.Count(out, "event: heartbeat\n") == 2 &&
+			strings.Contains(out, "event: heartbeat\nid: "+strconv.FormatInt(later, 10)+"\ndata: {}\n\n")
 	})
 	if evs := parseSSE(out); len(evs) != 0 {
 		t.Errorf("a quiet run's stream fired events: %+v", evs)

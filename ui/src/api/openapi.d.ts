@@ -793,7 +793,7 @@ export interface paths {
     };
     /**
      * Server-sent events: a run's state events ("state", data Event, id the sequence number).
-     * @description On subscribing and after each heartbeat the stream also sends its position as an id with no data ("id: <seq>"), which fires no event but moves the client's last event id.
+     * @description On subscribing and every heartbeat interval while quiet, the stream sends a "heartbeat" event (data {}) whose id is its position, so a client resumes from where the log is; one sent while events are queued has no id.
      */
     get: operations['liveRun'];
     put?: never;
@@ -822,7 +822,7 @@ export interface paths {
     };
     /**
      * Server-sent events: an item's state events: its publication and its deliveries' lifecycle.
-     * @description Sends its position as an id with no data on subscribing and after each heartbeat, as liveRun does.
+     * @description Sends "heartbeat" events carrying its position as their id, as liveRun does.
      */
     get: operations['liveItem'];
     put?: never;

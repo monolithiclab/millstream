@@ -32,6 +32,8 @@ const (
 	sseLog = "log"
 	// sseGap says log lines were lost since the client's cursor.
 	sseGap = "gap"
+	// sseHeartbeat is a state stream's heartbeat: data {}, with the stream's position as its id when it has one.
+	sseHeartbeat = "heartbeat"
 )
 
 // Event is an event of the log as a state event carries it.
@@ -113,14 +115,18 @@ func (s *sse) event(name, id string, data any) error {
 
 func (s *sse) heartbeat() error { return s.write(": heartbeat\n\n") }
 
-// cursor sends an id with no data: no event fires, but the client's last event id moves to seq, so a quiet stream
-// resumes from where the log is rather than from its last event in scope, which may fall out of retention.
-func (s *sse) cursor(sub *Subscription) error {
+// cursor sends a heartbeat event carrying the stream's position as its id, so a quiet stream resumes from where the
+// log is rather than from its last event in scope, which may fall out of retention. While events are queued (they
+// carry their own ids) the heartbeat has no id; with always unset, nothing is sent then.
+func (s *sse) cursor(sub *Subscription, always bool) error {
 	seq, ok := sub.Cursor()
-	if !ok {
-		return nil // events are queued, with their own ids
+	switch {
+	case ok:
+		return s.write("event: " + sseHeartbeat + "\nid: " + strconv.FormatInt(seq, 10) + "\ndata: {}\n\n")
+	case always:
+		return s.write("event: " + sseHeartbeat + "\ndata: {}\n\n")
 	}
-	return s.write("id: " + strconv.FormatInt(seq, 10) + "\n\n")
+	return nil
 }
 
 // cursor is the client's last event id: the Last-Event-ID header, or the lastEventId query parameter, which a
@@ -259,15 +265,10 @@ func (s *Server) streamEvents(w http.ResponseWriter, r *http.Request, f Filter) 
 			return nil
 		}
 	}
-	if out.cursor(sub) != nil {
+	if out.cursor(sub, false) != nil {
 		return nil
 	}
-	beat := func() error {
-		if err := out.heartbeat(); err != nil {
-			return err
-		}
-		return out.cursor(sub)
-	}
+	beat := func() error { return out.cursor(sub, true) }
 	// Done closes when the subscriber is dropped for falling behind or the broker stops: the client resumes.
 	stream(s, r, sub.Done(), sub.C(), send, beat)
 	return nil
