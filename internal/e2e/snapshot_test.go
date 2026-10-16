@@ -165,15 +165,18 @@ func readSnapshot(t *testing.T, db string) snapshot {
 	return s
 }
 
+// rowQuerier is a store that runs a query behind its units (the store's QueryRow, on its read pool).
+type rowQuerier interface {
+	QueryRow(ctx context.Context, query string, args ...any) *sql.Row
+}
+
 // checkLedgers checks the invariants of the tables the store API does not show whole: no reservation outlives its
 // lease; what the day budgets were charged, the runs' costs and the deliveries' costs add up to the same; and the
 // dedupe keys hold one row per key let through, the row naming the item of a done delivery of its step. The last
 // assumes no dedupe window elapses during a test, so no key passes twice.
 func checkLedgers(t *testing.T, st store.Store) {
 	t.Helper()
-	conn, ok := st.(interface {
-		QueryRow(ctx context.Context, query string, args ...any) *sql.Row
-	})
+	conn, ok := st.(rowQuerier)
 	if !ok {
 		t.Fatalf("%T has no QueryRow", st)
 	}

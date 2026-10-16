@@ -363,6 +363,9 @@ func TestCrashAtRandomPoints(t *testing.T) {
 	}
 }
 
+// deliveryDone is how the engine's log says a delivery was reported done.
+const deliveryDone = `"msg":"delivery done"`
+
 // doneWatcher passes a run's stderr through to w and closes reached once the engine has logged target deliveries
 // done (at once for a target of 0). Only the command's copying goroutine writes to it.
 type doneWatcher struct {
@@ -384,7 +387,7 @@ func (d *doneWatcher) Write(p []byte) (int, error) {
 		if !ok {
 			break
 		}
-		if bytes.Contains(line, []byte(`"msg":"delivery done"`)) {
+		if bytes.Contains(line, []byte(deliveryDone)) {
 			d.done++
 		}
 		d.partial = rest
