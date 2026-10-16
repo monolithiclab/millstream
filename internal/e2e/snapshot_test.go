@@ -4,9 +4,11 @@ package e2e
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"maps"
+	"math"
 	"slices"
 	"strings"
 	"sync"
@@ -163,7 +165,49 @@ func readSnapshot(t *testing.T, db string) snapshot {
 		}
 		delete(s.Refcounts, sha)
 	}
+	checkLedgers(t, db)
 	return s
+}
+
+// checkLedgers checks the invariants of the tables the store API does not show whole: no reservation outlives its
+// lease; what the day budgets were charged, the runs' costs and the deliveries' costs add up to the same; and the
+// dedupe keys hold one row per key let through, the row naming the item of a done delivery of its step. The last
+// assumes no dedupe window elapses during a test, so no key passes twice.
+func checkLedgers(t *testing.T, db string) {
+	t.Helper()
+	conn, err := sql.Open("sqlite", "file:"+db+"?mode=ro")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = conn.Close() }()
+	count := func(query string) float64 {
+		t.Helper()
+		var n float64
+		if err := conn.QueryRow(query).Scan(&n); err != nil {
+			t.Fatalf("%s: %v", query, err)
+		}
+		return n
+	}
+	if n := count(`SELECT COUNT(*) FROM deliveries WHERE reserved_usd != 0`); n != 0 {
+		t.Errorf("%g deliveries keep a budget reservation after the runs settled", n)
+	}
+	days := count(`SELECT COALESCE(SUM(spent_usd), 0) FROM budget_days`)
+	runs := count(`SELECT COALESCE(SUM(cost_usd), 0) FROM runs`)
+	deliveries := count(`SELECT COALESCE(SUM(cost_usd), 0) FROM deliveries`)
+	if math.Abs(days-runs) > 1e-9 || math.Abs(runs-deliveries) > 1e-9 {
+		t.Errorf("spend disagrees: budget days %g, runs %g, deliveries %g", days, runs, deliveries)
+	}
+	if n := count(`SELECT COUNT(*) FROM dedupe_keys k WHERE NOT EXISTS (SELECT 1 FROM deliveries d
+		WHERE d.pipeline = k.pipeline AND d.step = k.step AND d.generation = k.generation AND d.item_id = k.first_item
+		AND d.state = 'done')`); n != 0 {
+		t.Errorf("%g dedupe keys name an item no done delivery of their step let through", n)
+	}
+	keys := count(`SELECT COUNT(*) FROM dedupe_keys`)
+	passed := count(`SELECT COUNT(*) FROM deliveries d WHERE d.state = 'done' AND EXISTS (SELECT 1 FROM dedupe_keys k
+		WHERE k.pipeline = d.pipeline AND k.step = d.step)`)
+	if keys != passed {
+		t.Errorf("%g dedupe keys for %g deliveries let through", keys, passed)
+	}
 }
 
 // withoutTimestamp returns a dead letter's payload without the timestamp of the item it copies, which is when that
