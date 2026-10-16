@@ -266,6 +266,13 @@ type LeaseRef struct {
 	FencingToken int64
 }
 
+// DeliveryKey names a delivery: its id is unique within its pipeline only (two pipelines with the same step, fired
+// under the same key, have deliveries with the same id).
+type DeliveryKey struct{ Pipeline, ID string }
+
+// Key returns the key of the leased delivery.
+func (r LeaseRef) Key() DeliveryKey { return DeliveryKey{r.Pipeline, r.DeliveryID} }
+
 // Output is one output of a delivery: its payload and the artifacts already moved to the artifact store.
 type Output struct {
 	Key       string

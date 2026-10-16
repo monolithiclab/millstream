@@ -59,7 +59,7 @@ func (w *wtx) revision(id store.RevisionID) (*revision, error) {
 	if r := w.s.revs[hash]; r != nil {
 		return r, nil
 	}
-	key := hash + "\x00" + data
+	key := revisionKey{hash, data}
 	if r, ok := revisions.Load(key); ok {
 		w.s.revs[hash] = r.(*revision)
 		return r.(*revision), nil
@@ -77,6 +77,9 @@ func (w *wtx) revision(id store.RevisionID) (*revision, error) {
 // pipeline's routes costs more than most units, and the stores of a process (tests, millstream test) apply the same
 // few pipelines over and over.
 var revisions sync.Map
+
+// revisionKey keys revisions: the pipeline too, as tests make up package hashes.
+type revisionKey struct{ hash, pipeline string }
 
 // step returns a step of the revision, or an error naming it when the revision has no such step.
 func (r *revision) step(name string) (pipeline.Step, error) {

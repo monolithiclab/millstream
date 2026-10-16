@@ -95,7 +95,7 @@ func (e *Engine) lease(ctx context.Context, owner string, maxN int) ([]store.Lea
 	}
 	for _, l := range leases {
 		ref := store.StepRef{Pipeline: l.Pipeline, Step: l.Step}
-		e.inflight[keyOf(l.Ref())] = flight{
+		e.inflight[l.Ref().Key()] = flight{
 			step: ref, runID: l.RunID, itemID: l.Item.ID, attempt: l.Attempt, token: l.FencingToken,
 		}
 		if b := e.buckets[ref]; b != nil {
@@ -184,22 +184,16 @@ func (e *Engine) bucket(ref store.StepRef, rate string, now time.Time) *bucket {
 	return b
 }
 
-// deliveryKey identifies a delivery in flight: delivery ids are unique within a pipeline only (two pipelines with the
-// same step and trigger names fired under the same key derive the same ids).
-type deliveryKey struct{ pipeline, id string }
-
-func keyOf(ref store.LeaseRef) deliveryKey { return deliveryKey{ref.Pipeline, ref.DeliveryID} }
-
 // release forgets the delivery in flight under ref's lease, wakes WaitSettled, and returns what was recorded about
 // it. A newer lease of the same delivery, under another fencing token, is left alone.
 func (e *Engine) release(ref store.LeaseRef) (flight, bool) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	f, ok := e.inflight[keyOf(ref)]
+	f, ok := e.inflight[ref.Key()]
 	if !ok || f.token != ref.FencingToken {
 		return flight{}, false
 	}
-	delete(e.inflight, keyOf(ref))
+	delete(e.inflight, ref.Key())
 	if e.changed != nil {
 		close(e.changed)
 		e.changed = nil
@@ -211,7 +205,7 @@ func (e *Engine) release(ref store.LeaseRef) (flight, bool) {
 func (e *Engine) lookup(ref store.LeaseRef) flight {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	if f, ok := e.inflight[keyOf(ref)]; ok && f.token == ref.FencingToken {
+	if f, ok := e.inflight[ref.Key()]; ok && f.token == ref.FencingToken {
 		return f
 	}
 	return flight{}

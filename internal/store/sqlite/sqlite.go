@@ -114,61 +114,55 @@ func loadImage(image []byte, dstURI string) error {
 		return err
 	}
 	defer func() { _ = db.Close() }()
-	conn, err := db.Conn(context.Background())
-	if err != nil {
-		return err
-	}
-	defer func() { _ = conn.Close() }()
-	return conn.Raw(func(dc any) error {
-		c, ok := dc.(interface {
-			Deserialize(buf []byte) error
-			NewBackup(dstURI string) (*msqlite.Backup, error)
-		})
-		if !ok {
-			return fmt.Errorf("%T has no deserialize or backup API", dc)
-		}
+	return onRawConn(db, func(c rawConn) error {
 		if err := c.Deserialize(image); err != nil {
 			return err
 		}
-		b, err := c.NewBackup(dstURI)
-		if err != nil {
-			return err
-		}
-		_, err = b.Step(-1)
-		if ferr := b.Finish(); err == nil {
-			err = ferr
-		}
-		return err
+		return backup(c.NewBackup(dstURI))
 	})
 }
 
 // restore copies the database at srcURI, with SQLite's backup API, into the database db is open on.
 func restore(db *sql.DB, srcURI string) error {
+	if err := onRawConn(db, func(c rawConn) error { return backup(c.NewRestore(srcURI)) }); err != nil {
+		return fmt.Errorf("restore: %w", err)
+	}
+	return nil
+}
+
+// rawConn is what the store uses of a modernc.org/sqlite connection beyond database/sql.
+type rawConn interface {
+	Deserialize(buf []byte) error
+	NewBackup(dstURI string) (*msqlite.Backup, error)
+	NewRestore(srcURI string) (*msqlite.Backup, error)
+}
+
+// onRawConn runs fn on one of db's driver connections.
+func onRawConn(db *sql.DB, fn func(rawConn) error) error {
 	conn, err := db.Conn(context.Background())
 	if err != nil {
 		return err
 	}
 	defer func() { _ = conn.Close() }()
 	return conn.Raw(func(dc any) error {
-		r, ok := dc.(interface {
-			NewRestore(srcURI string) (*msqlite.Backup, error)
-		})
+		c, ok := dc.(rawConn)
 		if !ok {
-			return fmt.Errorf("restore: %T has no backup API", dc)
+			return fmt.Errorf("%T has no deserialize or backup API", dc)
 		}
-		b, err := r.NewRestore(srcURI)
-		if err != nil {
-			return fmt.Errorf("restore: %w", err)
-		}
-		_, err = b.Step(-1)
-		if ferr := b.Finish(); err == nil {
-			err = ferr
-		}
-		if err != nil {
-			return fmt.Errorf("restore: %w", err)
-		}
-		return nil
+		return fn(c)
 	})
+}
+
+// backup runs a backup b, opened with err, to its end.
+func backup(b *msqlite.Backup, err error) error {
+	if err != nil {
+		return err
+	}
+	_, err = b.Step(-1)
+	if ferr := b.Finish(); err == nil {
+		err = ferr
+	}
+	return err
 }
 
 // Options configures a store. The zero value is the production configuration.

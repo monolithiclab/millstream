@@ -43,16 +43,21 @@ type stmtCache struct {
 func (r *readDB) stmt(ctx context.Context, query string) *sql.Stmt {
 	c := r.stmts
 	c.mu.Lock()
-	defer c.mu.Unlock()
-	if st, ok := c.m[query]; ok {
+	st, ok := c.m[query]
+	full := len(c.m) >= maxStmts
+	c.mu.Unlock()
+	if ok || full {
 		return st
 	}
-	if len(c.m) >= maxStmts {
-		return nil
-	}
-	st, err := r.PrepareContext(ctx, query)
+	st, err := r.PrepareContext(ctx, query) // unlocked: other reads go on while SQLite compiles
 	if err != nil {
 		return nil
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if prev, ok := c.m[query]; ok { // another read prepared it meanwhile
+		_ = st.Close()
+		return prev
 	}
 	c.m[query] = st
 	return st
@@ -129,10 +134,7 @@ func takeMemory() *memoryDB {
 // putMemory empties m and keeps it for the next Memory store; it reports false, keeping nothing, when the pool is
 // full or m's schema changed since the template was restored (a test renamed a table, say).
 func putMemory(m *memoryDB) bool {
-	memoryPool.Lock()
-	full := len(memoryPool.idle) >= maxIdleMemory
-	memoryPool.Unlock()
-	if full || emptyMemory(m) != nil {
+	if emptyMemory(m) != nil {
 		return false
 	}
 	memoryPool.Lock()
