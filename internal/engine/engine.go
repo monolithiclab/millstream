@@ -28,6 +28,7 @@ import (
 	"github.com/robfig/cron/v3"
 
 	"github.com/monolithiclab/millstream/internal/artifacts"
+	"github.com/monolithiclab/millstream/internal/node"
 	"github.com/monolithiclab/millstream/internal/pipeline"
 	"github.com/monolithiclab/millstream/internal/redact"
 	"github.com/monolithiclab/millstream/internal/review"
@@ -73,7 +74,7 @@ type Options struct {
 	// Resolver resolves action references; nil means pipeline.Resolver{}.
 	Resolver pipeline.ActionResolver
 	// Artifacts is the artifact store nodes move artifacts through; nil fails every delivery that has any.
-	Artifacts *artifacts.Store
+	Artifacts artifacts.Store
 	// Agents says how agent steps run.
 	Agents Agents
 	// Notifier posts the notifications of review steps with a notify webhook (spec section 8); nil sends none.
@@ -99,27 +100,16 @@ type Leadership struct {
 	Epoch int64
 }
 
-// Agents says how the engine runs the agent adapter of agent steps (spec section 7.3): in a container sandbox when
-// one is configured, else as a child process only when the environment file allows it.
+// Agents says how the engine's embedded node runs the agent adapter of agent steps (node.Agents), and the model prices
+// the adapter is handed, which remote nodes receive from the engine too.
 type Agents struct {
-	// Sandbox runs the adapter in a container; nil when no container runtime, agent image or Linux build of
-	// millstream is available.
-	Sandbox *AgentSandbox
-	// AllowUnsandboxed lets the adapter run without a sandbox, as a child process of the node running Executable
-	// (agents.allowUnsandboxed); every such start is logged.
-	AllowUnsandboxed bool
-	// Executable is the millstream binary whose agent subcommand is the adapter, outside a sandbox.
-	Executable string
+	node.Agents
 	// Prices are the environment file's model prices, handed to the adapter for the model it runs.
 	Prices map[string]pipeline.Price
 }
 
-// AgentSandbox is the container the adapter runs in: Image (agents.image), with Binary, a Linux build of millstream,
-// mounted read-only at AgentBinaryPath, and the package mounted read-only at its own path.
-type AgentSandbox struct {
-	Image  string
-	Binary string
-}
+// AgentSandbox is the container the adapter runs in (node.AgentSandbox).
+type AgentSandbox = node.AgentSandbox
 
 // Stub is the fixed outcome of a stubbed step: its outputs, or an action error when Err is set.
 type Stub struct {
@@ -148,6 +138,7 @@ type Engine struct {
 	lessonsC map[actionKey]lessonsEntry     // agent steps' lessons by package hash and step
 	inflight map[store.DeliveryKey]flight   // leased deliveries
 	buckets  map[store.StepRef]*bucket      // step rate limits
+	nodes    map[string]*nodeEntry          // the nodes registered in this term, by id
 	builtins map[builtinKey]*builtin        // compiled builtin steps by package hash and step
 	// changed, made when WaitSettled first asks for it, is closed (and forgotten) when a lease in flight ends, the
 	// moments a run may settle.
@@ -185,6 +176,7 @@ type flight struct {
 	itemID  string
 	attempt int
 	token   int64
+	owner   string           // the node holding the lease
 	redact  *redact.Redactor // the secrets resolved for its dispatch; nil until then
 }
 
@@ -232,7 +224,7 @@ func New(opts Options) (*Engine, error) {
 		packages: map[string]*pipeline.Package{}, revs: map[store.RevisionID]*revision{},
 		actions:  map[actionKey]*resolvedAction{},
 		lessonsC: map[actionKey]lessonsEntry{}, inflight: map[store.DeliveryKey]flight{}, buckets: map[store.StepRef]*bucket{},
-		builtins: map[builtinKey]*builtin{}, maxDue: maxDue,
+		nodes: map[string]*nodeEntry{}, builtins: map[builtinKey]*builtin{}, maxDue: maxDue,
 		crons: map[[2]string]*cronState{}, ready: make(chan struct{}), lastInsights: map[string]time.Time{},
 		parser: cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor),
 	}
@@ -263,7 +255,7 @@ func (e *Engine) Apply(ctx context.Context, pkg *pipeline.Package) (store.Revisi
 }
 
 func (e *Engine) apply(ctx context.Context, pkg *pipeline.Package, message string) (store.RevisionID, error) {
-	bundle, err := EncodeBundle(pkg.Files)
+	bundle, err := pipeline.EncodeBundle(pkg.Files)
 	if err != nil {
 		return 0, fmt.Errorf("apply %s: encode bundle: %w", pkg.Pipeline.Name, err)
 	}
@@ -362,7 +354,7 @@ func (e *Engine) resync(ctx context.Context) error {
 	for _, d := range ds {
 		inflight[store.DeliveryKey{Pipeline: d.Pipeline, ID: d.ID}] = flight{
 			step: store.StepRef{Pipeline: d.Pipeline, Step: d.Step}, runID: d.RunID, itemID: d.ItemID,
-			attempt: d.Attempt, token: d.FencingToken,
+			attempt: d.Attempt, token: d.FencingToken, owner: d.LeaseOwner,
 		}
 	}
 	e.inflight = inflight
@@ -403,6 +395,10 @@ func (e *Engine) WaitSettled(ctx context.Context, runs []RunRef) error {
 		}
 	}
 }
+
+// Changes returns a channel closed when a lease in flight next ends: when new work may be due, which a remote
+// node's long poll waits for.
+func (e *Engine) Changes() <-chan struct{} { return e.changes() }
 
 // changes returns the channel closed when a lease in flight next ends.
 func (e *Engine) changes() <-chan struct{} {

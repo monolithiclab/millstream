@@ -1,7 +1,7 @@
 # A Millstream node on a host of its own (spec sections 14 and 15.7): `millstream node --join`, with the node token
 # over TLS. Install: docs/deploy.md, "systemd". MILLSTREAM_JOIN (the engine's URL) and MILLSTREAM_NODE_TOKEN go in
-# /etc/millstream/node.env (root-owned, mode 0600).
-# M4 status: `millstream node` arrives with Task 4 of the M4 plan; the unit is shipped ahead of it.
+# /etc/millstream/node.env (root-owned, mode 0600); MILLSTREAM_JOIN may list the engines, comma-separated, and a CA
+# the engine's certificate is not signed by a public authority goes in with --ca (docs/deploy.md, "Node TLS").
 #
 # Exec actions: --allow-exec lets this node run them, as children with the unit's privileges; they are trusted
 # code (spec section 15.3). Remove the flag on a node that should run container actions only.
@@ -22,7 +22,8 @@ After=network-online.target
 Type=exec
 ExecStart=/usr/local/bin/millstream node --join ${MILLSTREAM_JOIN} --allow-exec
 EnvironmentFile=/etc/millstream/node.env
-# SIGTERM drains: the node finishes or releases its leases, then exits.
+# SIGTERM drains, as `millstream node drain --state-dir /var/lib/millstream-node/.millstream/node` does: the node
+# finishes its deliveries within its drain timeout (30 s), releases the rest, then exits.
 TimeoutStopSec=90s
 Restart=on-failure
 RestartSec=5s

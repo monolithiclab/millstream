@@ -2,12 +2,10 @@
 # /etc/millstream/millstream.yaml in both engines. Secrets are never written here: each { env: NAME } reads the
 # variable compose.yaml passes from .env.
 #
-# M4 status: every key parses (Task 2 of the M4 plan) and the API checks auth.token (Task 7); key shapes marked
-# "Task N" may still change with that task.
 environment: production
 
 # Both engines share one Postgres database; the one holding its advisory lock is active, the other waits as the
-# standby, serving the UI read-only, and takes over when it fails (Task 3).
+# standby, serving the UI read-only, and takes over when it fails.
 store: { postgres: { dsn: { env: MILLSTREAM_DSN } } }
 # How each engine watches its write connection: a dead engine's lock is free, and a cut-off one steps down, within
 # lockCheck + 2 x keepalive (docs/deploy.md, Standby and failover).
@@ -19,13 +17,18 @@ engine: { lockCheck: 5s, keepalive: 5s }
 listen: 0.0.0.0:7070
 auth: { token: { env: MILLSTREAM_TOKEN } }
 
+# The engines serve HTTPS (HTTP/2) with this certificate, for the nodes and the reverse proxy alike: ./tls, mounted
+# at /etc/millstream/tls (docs/deploy.md, "Node TLS").
+tls: { cert: tls/cert.pem, key: tls/key.pem }
+
 # The work runs on the node containers, not inside the engines. Nodes authenticate with the node token over TLS
-# (spec section 15.7); the engine certificate's keys arrive with Task 4.
+# (spec section 15.7).
 node: { embedded: false, token: { env: MILLSTREAM_NODE_TOKEN } }
 
-# Artifacts: an S3-compatible store shared by both engines, so a failover keeps them (Task 4). Uncomment and set the
-# credentials in .env; without it the active engine keeps them in its working directory, the volume both engines
-# share.
+# Artifacts: an S3-compatible store shared by both engines, so a failover keeps them, which the nodes reach through
+# presigned URLs. Uncomment and set the credentials in .env (AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY passed to
+# the engines); without it the active engine keeps them in its working directory, the volume both engines share,
+# and proxies them to the nodes.
 # artifacts: { s3: { bucket: millstream-artifacts, endpoint: https://s3.fr-par.scw.cloud } }
 
 registries: { lab: ghcr.io/monolithiclab/millstream-actions }

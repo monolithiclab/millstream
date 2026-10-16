@@ -135,10 +135,15 @@ func (ExecLauncher) Kill(Spec, string) {}
 // Options tune processes. Zero values take the defaults.
 type Options struct {
 	// Launchers start the processes of each kind; exec actions default to ExecLauncher. A kind without one fails
-	// its deliveries, permanently.
+	// its deliveries, permanently, and so does a kind mapped to nil: exec on a remote node started without
+	// --allow-exec.
 	Launchers map[string]Launcher
 	// Logger receives stderr lines written before the first delivery; nil discards them.
-	Logger          *slog.Logger
+	Logger *slog.Logger
+	// WorkRoot is where each process's working directory is created (0700, removed when the process ends); empty
+	// means the system's temporary directory. A remote node points it at a tmpfs, so that what a delivery writes,
+	// secrets included, never reaches a disk (spec section 5.10).
+	WorkRoot        string
 	ReadyTimeout    time.Duration
 	ShutdownTimeout time.Duration
 	// maxLine replaces protocol.MaxLine as the longest line written to the process: tests refuse an oversized item at
@@ -168,7 +173,7 @@ func (o Options) launcher(kind string) (Launcher, bool) {
 		kind = pipeline.KindExec
 	}
 	if l, ok := o.Launchers[kind]; ok {
-		return l, true
+		return l, l != nil
 	}
 	if kind == pipeline.KindExec {
 		return ExecLauncher{}, true
@@ -244,7 +249,7 @@ func Start(ctx context.Context, spec Spec, opts Options) (*Process, error) {
 		return nil, &RuntimeError{Class: ClassCrash, Permanent: true,
 			Err: fmt.Errorf("action %s is of kind %s: this node has no runtime for it", spec.Action, spec.Kind)}
 	}
-	workdir, err := os.MkdirTemp("", "millstream-work-")
+	workdir, err := os.MkdirTemp(opts.WorkRoot, "millstream-work-")
 	if err != nil {
 		return nil, runtimeErr(ClassCrash, "create workdir: %w", err)
 	}

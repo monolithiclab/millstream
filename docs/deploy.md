@@ -5,10 +5,8 @@ environment file, `millstream.yaml`, says where (spec section 14). This guide co
 VPS with Docker Compose, and a VPS with systemd.
 
 > **M4 status.** `millstream serve`, `apply`, `rollback` and `disable`, every key of the environment file, the
-> standby's takeover, token auth and `/metrics` are in (Tasks 2, 3 and 7 of the [M4 plan](plans/20261016.m4-server.md);
-> see Standby and failover). Still to come: `millstream node --join`, node TLS and the S3 artifact store with Task 4,
-> retention with Task 8. The laptop target, a systemd engine and the Compose engines (on `0.0.0.0` inside their
-> containers, with the token) work today; the Compose nodes wait for Task 4.
+> standby's takeover, remote nodes with the node token over TLS, the S3 artifact store, token auth and `/metrics` are
+> in (Tasks 2, 3, 4 and 7 of the [M4 plan](plans/20261016.m4-server.md)). Still to come: retention with Task 8.
 
 ## The artefacts
 
@@ -61,8 +59,50 @@ docker compose up -d
   read-only; its keys are spec section 14's. It names secrets by variable (`{ env: MILLSTREAM_TOKEN }`) and
   `compose.yaml` passes those from `.env`, which is git-ignored. A pipeline's secrets need both: an entry under
   `secrets` and the variable added to the engines' `environment`.
-- **Nodes** run exec actions as static binaries only (see Laptop). For container actions, run nodes on hosts of
-  their own with systemd.
+- **Nodes** join both engines (`--join https://engine:7070,https://engine-standby:7070`) with the node token, over
+  TLS with the certificate of `./tls` (below), and follow the active one across a failover. They run exec actions as
+  static binaries only (see Laptop). For container actions, run nodes on hosts of their own with systemd.
+- **TLS.** Before the first `up`, put the engines' certificate in `deploy/compose/tls/` (git-ignored): `cert.pem` and
+  `key.pem`, naming `engine`, `engine-standby`, `localhost` and `127.0.0.1`, and `ca.pem`, the authority that signed
+  it, which the nodes trust (see Remote nodes). The API on the host's loopback is HTTPS too; point the reverse proxy at
+  it with that CA.
+
+## Remote nodes
+
+A node is `millstream node --join <url>[,<url>…]` on any host, with the deployment's node token in
+`MILLSTREAM_NODE_TOKEN` (`node.token` on the engines, which serve no node without it). It registers its id (kept in
+`--state-dir`, `.millstream/node` by default, with its package cache), its labels (`--labels gpu=true,zone=eu`) and
+what it can run: exec actions only with `--allow-exec` (trusted code, run with the node's privileges), container
+actions when Docker or Podman is installed (`runtime` in an environment file beside it), agents when `agents` there
+gives it a sandbox or allows them unsandboxed. Steps go only to the nodes matching their `placement.labels` and the
+runtime their action needs; a step no node can take is listed as unschedulable on the Nodes screen and in
+`/api/v1/nodes`, and raises an `unschedulable` insight.
+
+- **Node TLS.** A node reaches an engine on another host over HTTPS only (HTTP/2), checking its certificate against
+  the system's authorities and `--ca <pem>`; plain HTTP is accepted to a loopback engine. The engines serve HTTPS with
+  `tls: { cert, key }`. A private authority for a deployment:
+
+  ```sh
+  openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -days 3650 -subj /CN=millstream-ca \
+    -keyout ca.key -out ca.pem
+  openssl req -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -subj /CN=engine -keyout key.pem -out engine.csr
+  openssl x509 -req -in engine.csr -CA ca.pem -CAkey ca.key -CAcreateserial -days 825 -out cert.pem \
+    -extfile <(printf 'subjectAltName=DNS:engine,DNS:engine-standby,DNS:localhost,IP:127.0.0.1')
+  ```
+
+- **Failover.** List every engine in `--join`: a node tries them in turn, and follows the address a standby names
+  (an engine listening on `0.0.0.0` names none, so the list matters). It registers again with the new active engine
+  and resends the results it was holding; fencing refuses those whose lease ended meanwhile.
+- **Data.** Packages are fetched by hash into the node's cache; artifacts move through URLs the engine issues for
+  the deliveries the node holds: presigned ones with `artifacts.s3`, the engine's own proxy with a local directory.
+  Secrets reach the node inside its deliveries and stay in memory and in each delivery's working directory, created
+  on a tmpfs when the host has one (`$XDG_RUNTIME_DIR`, `/dev/shm`; the Compose nodes' `/tmp`), else 0700 in the
+  temporary directory, and removed when the process ends.
+- **Operations.** `millstream nodes` lists the nodes the store records with their health; `millstream node drain`
+  (or SIGTERM) on the node's host drains it before an upgrade; the Nodes screen drains or revokes a node, as
+  `POST /api/v1/nodes/{id}/drain` and `/revoke` do. `millstream nodes revoke <id>` refuses an id for good and ends
+  its leases at once. To rotate the node token, restart the engines with the new one: every node is refused and
+  exits until it is restarted with it.
 
 ## Signing in and monitoring
 
@@ -156,8 +196,7 @@ A second `millstream serve` on the same Postgres database, with the same environ
   compared in constant time and never logged.
 - **Node token and TLS.** Nodes present the deployment's node token, over TLS except on loopback (spec section 15.7).
   A node can fetch packages and artifacts only for the deliveries it holds. `millstream nodes revoke <id>` refuses
-  a node; rotating the token disconnects every node until it has the new one. Revocation and the engine
-  certificate's configuration arrive with Task 4.
+  a node; rotating the token disconnects every node until it has the new one (see Remote nodes).
 - **Secrets** live in `.env` or `/etc/millstream/*.env`, mode 0600, never in `millstream.yaml`, an image or Git.
 - **Supply chain.** Base images are pinned by digest (`make lint-pins` checks every `FROM`), the release build runs
   `go mod verify`, each archive has an SBOM, and checksums and images are signed with cosign (spec section 15.5).

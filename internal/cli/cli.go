@@ -121,6 +121,8 @@ type CLI struct {
 
 	Run      RunCmd      `cmd:"" help:"Apply packages and run the engine with an embedded node; run report prints a run's report."`
 	Serve    ServeCmd    `cmd:"" help:"Run an engine from the environment file; a second one on the same Postgres store waits as the standby."`
+	Node     NodeCmd     `cmd:"" help:"Run a remote node that joins the engine with the node token; node drain drains it."`
+	Nodes    NodesCmd    `cmd:"" help:"List the remote nodes, or revoke one."`
 	Apply    ApplyCmd    `cmd:"" help:"Check packages against the whole deployment and upload them as new revisions."`
 	Rollback RollbackCmd `cmd:"" help:"Reactivate an earlier revision of a pipeline."`
 	Disable  DisableCmd  `cmd:"" help:"Disable a pipeline: its triggers stop firing and its deliveries wait until resume."`

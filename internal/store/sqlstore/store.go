@@ -35,6 +35,7 @@ var Units = []string{
 	unitReplay, unitDiscard, unitExpireLeases, unitSetPaused, unitSkipFirings, unitFilter, unitDedupe,
 	unitStartReplay, unitRecordEval, unitRollup, unitRecordInsights, unitSetInsightState, unitPark,
 	unitReviewDecision, unitSampleDecision, unitReviewTimeout, unitDisable, unitRollback,
+	unitRegisterNode, unitSetNodeState,
 }
 
 const (
@@ -58,6 +59,8 @@ const (
 	unitRecordInsights  = "recordInsights"
 	unitSetInsightState = "setInsightState"
 	unitPark            = "park"
+	unitRegisterNode    = "registerNode"
+	unitSetNodeState    = "setNodeState"
 	unitReviewDecision  = "reviewDecision"
 	unitSampleDecision  = "sampleDecision"
 	unitReviewTimeout   = "reviewTimeout"

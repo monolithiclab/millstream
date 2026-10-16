@@ -51,18 +51,29 @@ func (e *Engine) project(ctx context.Context, force bool) error {
 	if err != nil {
 		return fmt.Errorf("insights: %w", err)
 	}
+	pending := map[string][]insights.PendingStep{}
+	if un, err := e.Unschedulable(ctx); err != nil {
+		e.log.Warn("unschedulable deliveries", "error", err.Error())
+	} else {
+		for _, u := range un {
+			pending[u.Pipeline] = append(pending[u.Pipeline],
+				insights.PendingStep{Step: u.Step, Count: u.Pending, Needs: u.Placement.String()})
+		}
+	}
 	var errs []error
 	for _, ps := range pipelines {
-		if err := e.projectInsights(ctx, ps, force); err != nil {
+		if err := e.projectInsights(ctx, ps, force, pending[ps.Name]); err != nil {
 			errs = append(errs, err)
 		}
 	}
 	return errors.Join(errs...)
 }
 
-// projectInsights runs a pipeline's insights projector when it is due, or always with force. The caller holds
-// projMu.
-func (e *Engine) projectInsights(ctx context.Context, ps store.PipelineState, force bool) error {
+// projectInsights runs a pipeline's insights projector when it is due, or always with force, with its steps no node
+// can take now. The caller holds projMu.
+func (e *Engine) projectInsights(ctx context.Context, ps store.PipelineState, force bool,
+	pending []insights.PendingStep,
+) error {
 	rev, err := e.revision(ctx, ps.ActiveRevision)
 	if err != nil {
 		return fmt.Errorf("insights of %s: %w", ps.Name, err)
@@ -79,7 +90,7 @@ func (e *Engine) projectInsights(ctx context.Context, ps store.PipelineState, fo
 			return err
 		}
 	}
-	if err := insights.Project(ctx, e.st, rev.p, now); err != nil {
+	if err := insights.Project(ctx, e.st, rev.p, now, pending); err != nil {
 		return err
 	}
 	e.lastInsights[ps.Name] = now

@@ -13,7 +13,7 @@ import (
 // artifactAssignment runs the fake action in artifact mode on an item carrying one input artifact, emitting one.
 func artifactAssignment(t *testing.T, tr *fakeTransport, id string) Assignment {
 	t.Helper()
-	input, err := tr.PutArtifact(t.Context(), "listings", "page.html", strings.NewReader("listing 42"))
+	input, err := tr.PutArtifact(t.Context(), store.LeaseRef{Pipeline: "listings"}, "page.html", strings.NewReader("listing 42"))
 	if err != nil {
 		t.Fatal(err)
 	}

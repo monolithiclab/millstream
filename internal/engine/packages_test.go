@@ -78,14 +78,6 @@ func TestApplyPackagesRefusesCheckErrors(t *testing.T) {
 	}
 }
 
-func TestDecodeBundleRefusesEscapingPaths(t *testing.T) {
-	for _, bundle := range []string{`{"../x":""}`, `{"/etc/x":""}`, `{"a/../b":""}`, `[]`} {
-		if _, err := DecodeBundle([]byte(bundle)); err == nil {
-			t.Errorf("DecodeBundle(%s): no error", bundle)
-		}
-	}
-}
-
 // A package directory written already is reused; without a package directory, or with files that are no package,
 // nothing is written.
 func TestPackageFromFiles(t *testing.T) {
@@ -110,7 +102,7 @@ func TestPackageFromFiles(t *testing.T) {
 		t.Fatal("no pipeline file: no error")
 	}
 	// A bundle whose files hash to another package than the one named is refused.
-	id, err := v.st.ApplyRevision(v.ctx, store.PackageRecord{Hash: "not-its-hash", Bundle: must(EncodeBundle(files)),
+	id, err := v.st.ApplyRevision(v.ctx, store.PackageRecord{Hash: "not-its-hash", Bundle: must(pipeline.EncodeBundle(files)),
 		Pipeline: first.Pipeline})
 	if err != nil {
 		t.Fatal(err)

@@ -31,6 +31,9 @@ var (
 	// ErrWriteLost means the store lost its write connection, and on Postgres the leadership lock it held (spec
 	// section 5.9): it can no longer write, and the engine steps down.
 	ErrWriteLost = errors.New("write connection lost")
+	// ErrRevoked means a node id was revoked (millstream nodes revoke): the engine refuses it from then on (spec
+	// section 15.7).
+	ErrRevoked = errors.New("node revoked")
 )
 
 // RollupBatch is the most events one Rollup pass reads.
@@ -53,7 +56,8 @@ type Store interface {
 	// Lease is the Lease unit: it leases up to req.Max pending deliveries that are due, oldest first per step,
 	// round-robin across pipelines.
 	Lease(ctx context.Context, req LeaseRequest) ([]Lease, error)
-	// Renew extends the leases still held by owner with matching fencing tokens and returns the others.
+	// Renew extends the leases still held by owner with matching fencing tokens and returns the others. A remote
+	// node's renewal records its heartbeat; a revoked node's is ErrRevoked.
 	Renew(ctx context.Context, owner string, refs []LeaseRef, ttl time.Duration) (lost []LeaseRef, err error)
 	// Done is the Done unit. It returns the state the delivery ended in: done, dead (key rule or a route that
 	// fails to evaluate) or cancelled (its run was cancelled).
@@ -129,6 +133,14 @@ type Store interface {
 	RecordInsights(ctx context.Context, r InsightReport) error
 	// SetInsightState acknowledges or mutes an insight, or reopens one (open).
 	SetInsightState(ctx context.Context, pipeline, id string, state InsightState) error
+	// RegisterNode records a remote node joining, or joining again from a new process: its version, labels,
+	// runtimes and slots, active, heard from now. A revoked id is ErrRevoked.
+	RegisterNode(ctx context.Context, n Node) error
+	// SetNodeState drains or revokes a node (spec sections 5.10 and 15.7). With expireLeases, every lease the node
+	// holds ends at once, as an expired lease does (its attempt consumed), and those leases are returned. Revoking
+	// an id never registered records it, so it is refused from then on; draining one is ErrNotFound. Renew updates
+	// a registered node's last heartbeat.
+	SetNodeState(ctx context.Context, id string, state NodeState, expireLeases bool) ([]LeaseRef, error)
 
 	Runs(ctx context.Context, f RunFilter) ([]Run, error)
 	Run(ctx context.Context, pipeline, id string) (Run, error)
@@ -180,6 +192,8 @@ type Store interface {
 	Pipelines(ctx context.Context) ([]PipelineState, error)
 	// EvalResults returns the recorded scores of an action, of every action when it is empty, newest first.
 	EvalResults(ctx context.Context, action string) ([]EvalResult, error)
+	// Nodes returns the remote nodes that registered or were revoked, by id.
+	Nodes(ctx context.Context) ([]Node, error)
 	// LastFiring returns the latest scheduled time the cron trigger fired a cron run for or skipped, zero when it
 	// never did: where catch-up resumes. Manual firings of the trigger do not count.
 	LastFiring(ctx context.Context, pipeline, trigger string) (time.Time, error)

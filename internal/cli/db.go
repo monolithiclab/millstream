@@ -2,9 +2,11 @@ package cli
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
 
 	"github.com/monolithiclab/millstream/internal/artifacts"
+	"github.com/monolithiclab/millstream/internal/artifacts/s3"
 	"github.com/monolithiclab/millstream/internal/pipeline"
 	"github.com/monolithiclab/millstream/internal/store"
 	"github.com/monolithiclab/millstream/internal/store/postgres"
@@ -20,9 +22,31 @@ func artifactsDir(rt *Runtime, env *pipeline.Environment) string {
 	return filepath.Join(filepath.Dir(env.Store.Path(rt.DB)), "artifacts")
 }
 
-// artifactStore is the local artifact store.
-func artifactStore(rt *Runtime, env *pipeline.Environment) *artifacts.Store {
-	return artifacts.New(artifactsDir(rt, env))
+// artifactStore is the artifact store the environment file names (spec section 9.2): the S3-compatible bucket of
+// artifacts.s3, its credentials read from their sources (else AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY), or the
+// local directory.
+func artifactStore(rt *Runtime, env *pipeline.Environment) (artifacts.Store, error) {
+	c := env.Artifacts.S3
+	if c == nil {
+		return artifacts.New(artifactsDir(rt, env)), nil
+	}
+	read := func(src *pipeline.SecretSource, variable string) (string, error) {
+		if src != nil {
+			return src.Value(rt.Env)
+		}
+		v, _ := rt.Env(variable)
+		return v, nil
+	}
+	key, err := read(c.AccessKeyID, "AWS_ACCESS_KEY_ID")
+	if err != nil {
+		return nil, fmt.Errorf("artifacts.s3.accessKeyId: %w", err)
+	}
+	secret, err := read(c.SecretAccessKey, "AWS_SECRET_ACCESS_KEY")
+	if err != nil {
+		return nil, fmt.Errorf("artifacts.s3.secretAccessKey: %w", err)
+	}
+	return s3.New(s3.Config{Bucket: c.Bucket, Endpoint: c.Endpoint, Region: c.Region, Prefix: c.Prefix,
+		AccessKeyID: key, SecretAccessKey: secret, HTTP: rt.HTTPClient})
 }
 
 // packageDir is where an engine writes the packages it loads from the store: packages, beside the local artifact

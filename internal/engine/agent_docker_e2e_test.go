@@ -55,16 +55,16 @@ func linuxMillstream(t *testing.T, dir, arch string) string {
 
 // storeArtifacts binds a local artifact store to one pipeline for the runtime.
 type storeArtifacts struct {
-	s        *artifacts.Store
+	s        *artifacts.Dir
 	pipeline string
 }
 
-func (a storeArtifacts) Open(_ context.Context, ref store.ArtifactRef) (io.ReadCloser, error) {
-	return a.s.Open(a.pipeline, ref.SHA256)
+func (a storeArtifacts) Open(ctx context.Context, ref store.ArtifactRef) (io.ReadCloser, error) {
+	return a.s.Open(ctx, a.pipeline, ref.SHA256)
 }
 
-func (a storeArtifacts) Put(_ context.Context, name string, r io.Reader) (store.ArtifactRef, error) {
-	return a.s.Put(a.pipeline, name, r)
+func (a storeArtifacts) Put(ctx context.Context, name string, r io.Reader) (store.ArtifactRef, error) {
+	return a.s.Put(ctx, a.pipeline, name, r)
 }
 
 // TestRealAgentSandbox runs an agent delivery in a real container: the engine's assignment for a sandboxed agent

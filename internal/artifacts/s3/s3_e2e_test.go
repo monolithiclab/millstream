@@ -1,0 +1,166 @@
+//go:build e2e
+
+package s3
+
+import (
+	"bytes"
+	"context"
+	"errors"
+	"io"
+	"io/fs"
+	"net/http"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+)
+
+// The store against a real S3-compatible server, so that the signatures are checked by someone else than their
+// author. MinIO stopped publishing its server images in 2025 (the Docker Hub repository is gone, quay.io's needs an
+// account), so the server is SeaweedFS's S3 gateway, with an identity whose keys it checks: chrislusf/seaweedfs,
+// pinned by digest (resolved 2026-10-17). Refresh: docker buildx imagetools inspect chrislusf/seaweedfs:latest.
+const s3Image = "chrislusf/seaweedfs@sha256:4e61d15fd35994cb1e43e1e553dff106794841fd9a99ade2fc8c8bfce4d7872d"
+
+const (
+	testAccessKey = "millstream-test"
+	testSecretKey = "millstream-test-secret"
+	testBucket    = "millstream-artifacts"
+)
+
+// startS3 starts the server in a container removed when the test ends, and returns its endpoint. Without Docker
+// the test skips.
+func startS3(t *testing.T) string {
+	t.Helper()
+	if err := exec.Command("docker", "version").Run(); err != nil {
+		t.Skip("S3 tests skipped: Docker is unavailable")
+	}
+	dir := t.TempDir()
+	config := `{"identities":[{"name":"test","credentials":[{"accessKey":"` + testAccessKey + `","secretKey":"` +
+		testSecretKey + `"}],"actions":["Admin","Read","Write","List","Tagging"]}]}`
+	if err := os.WriteFile(filepath.Join(dir, "s3.json"), []byte(config), 0o644); err != nil { // #nosec G306 -- read by the container's user
+		t.Fatal(err)
+	}
+	out, err := exec.Command("docker", "run", "-d", "--rm", "-p", "127.0.0.1::8333", "--tmpfs", "/data", // #nosec G204 -- the test's own container
+		"-v", dir+":/etc/seaweedfs-test:ro", s3Image, "server", "-dir=/data", "-s3", "-s3.port=8333",
+		"-s3.config=/etc/seaweedfs-test/s3.json").CombinedOutput()
+	if err != nil {
+		t.Fatalf("start the S3 server: %v: %s", err, out)
+	}
+	id := strings.TrimSpace(string(out))
+	t.Cleanup(func() { _ = exec.Command("docker", "rm", "-f", id).Run() }) // #nosec G204 -- the test's own container
+	port, err := exec.Command("docker", "port", id, "8333/tcp").Output()   // #nosec G204 -- the test's own container
+	if err != nil {
+		t.Fatal(err)
+	}
+	return "http://" + strings.TrimSpace(strings.SplitN(string(port), "\n", 2)[0])
+}
+
+func TestAgainstS3Server(t *testing.T) {
+	endpoint := startS3(t)
+	ctx := context.Background()
+	st, err := New(Config{Bucket: testBucket, Endpoint: endpoint, AccessKeyID: testAccessKey,
+		SecretAccessKey: testSecretKey, Prefix: "deploy", TmpDir: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Create the bucket, signed, waiting for the server to start.
+	deadline := time.Now().Add(time.Minute)
+	for {
+		req, _ := http.NewRequestWithContext(ctx, http.MethodPut, endpoint+"/"+testBucket, nil)
+		st.sign.sign(req, emptySHA256, time.Now())
+		resp, err := http.DefaultClient.Do(req)
+		if err == nil {
+			body, _ := io.ReadAll(resp.Body)
+			_ = resp.Body.Close()
+			if resp.StatusCode == http.StatusOK {
+				break
+			}
+			err = errors.New(resp.Status + ": " + string(body))
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("create the bucket: %v", err)
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+
+	content := bytes.Repeat([]byte("listing 42 "), 100)
+	ref, err := st.Put(ctx, "listings", "page.txt", bytes.NewReader(content))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ok, err := st.Exists(ctx, "listings", ref.SHA256); err != nil || !ok {
+		t.Fatalf("Exists = %v, %v", ok, err)
+	}
+	if ok, err := st.Exists(ctx, "other", ref.SHA256); err != nil || ok {
+		t.Fatalf("Exists in another pipeline = %v, %v", ok, err)
+	}
+	r, err := st.Open(ctx, "listings", ref.SHA256)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.Seek(500, io.SeekStart); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := io.ReadAll(r); err != nil || !bytes.Equal(got, content[500:]) {
+		t.Fatalf("ranged read: %d bytes, %v", len(got), err)
+	}
+	_ = r.Close()
+	if _, err := st.Open(ctx, "listings", strings.Repeat("0", 64)); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("open a missing object: %v", err)
+	}
+	if err := st.Copy(ctx, "listings", "deals", ref.SHA256); err != nil {
+		t.Fatal(err)
+	}
+	if ok, _ := st.Exists(ctx, "deals", ref.SHA256); !ok {
+		t.Fatal("the copy is missing")
+	}
+
+	// Presigned URLs, as a remote node uses them: no credentials of its own.
+	get, err := st.PresignGet("listings", ref.SHA256, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := http.Get(get) // #nosec G107 -- the test server's URL
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, _ := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusOK || !bytes.Equal(got, content) {
+		t.Fatalf("presigned GET: %s, %d bytes", resp.Status, len(got))
+	}
+	sha := strings.Repeat("ab", 32)
+	put, err := st.PresignPut("outputs", sha, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req, _ := http.NewRequestWithContext(ctx, http.MethodPut, put, strings.NewReader("an output"))
+	req.Header.Set("Content-Type", "text/plain")
+	resp, err = http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("presigned PUT: %s", resp.Status)
+	}
+	if ok, _ := st.Exists(ctx, "outputs", sha); !ok {
+		t.Fatal("the presigned PUT stored nothing")
+	}
+	// A tampered URL, and a wrong key, are refused by the server.
+	resp, err = http.Get(strings.Replace(get, "listings", "deals", 1)) // #nosec G107 -- the test server's URL
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("tampered presigned GET: %s", resp.Status)
+	}
+	wrong, _ := New(Config{Bucket: testBucket, Endpoint: endpoint, AccessKeyID: testAccessKey,
+		SecretAccessKey: "wrong", Prefix: "deploy"})
+	if _, err := wrong.Exists(ctx, "listings", ref.SHA256); err == nil {
+		t.Fatal("a wrong secret key was accepted")
+	}
+}

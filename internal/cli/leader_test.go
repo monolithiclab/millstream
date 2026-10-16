@@ -117,6 +117,7 @@ func testServer(t *testing.T) *server {
 func TestTermStepsDown(t *testing.T) {
 	s := testServer(t)
 	s.env.NodeEmbedded = false // the node's abandon has its own test (internal/node)
+	s.nodeToken = "node-token" // the term serves remote nodes
 	lose := make(chan struct{})
 	close(lose)
 	err := s.term(t.Context(), lostStore{Store: memoryStore(t), lose: lose}, leadership{identity: api.Identity{ID: s.id}})
@@ -172,6 +173,7 @@ func TestLeadLoop(t *testing.T) {
 func TestAcquireAndStandby(t *testing.T) {
 	s := testServer(t)
 	s.rt.DB = sqlite.Memory
+	s.nodeToken = "node-token" // the standby refuses remote nodes, naming the active engine
 	st, err := s.acquire(t.Context())
 	if err != nil {
 		t.Fatal(err)
@@ -196,7 +198,7 @@ func TestServeOn(t *testing.T) {
 	s.rt.Store = memoryStore(t)
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
-	if err := s.cmd.serveOn(ctx, s.rt, s.env, s.log, s.site, s.sec); err != nil && !errors.Is(err, context.Canceled) {
+	if err := s.cmd.serveOn(ctx, s.rt, s.env, s.log, s.site, s.sec, s.arts, ""); err != nil && !errors.Is(err, context.Canceled) {
 		t.Fatalf("serve on SQLite: %v", err)
 	}
 	s.rt.Store = nil
@@ -204,7 +206,7 @@ func TestServeOn(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := s.cmd.serveOn(t.Context(), s.rt, env, s.log, s.site, s.sec); err == nil ||
+	if err := s.cmd.serveOn(t.Context(), s.rt, env, s.log, s.site, s.sec, s.arts, ""); err == nil ||
 		!strings.Contains(err.Error(), "store.postgres.dsn") {
 		t.Fatalf("serve on Postgres without its DSN: %v", err)
 	}

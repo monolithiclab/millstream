@@ -881,7 +881,7 @@ func (s *Server) listLessons(w http.ResponseWriter, r *http.Request) error {
 	}
 	pkg := &pipeline.Package{Pipeline: p}
 	if len(bundle) > 0 {
-		if pkg.Files, err = engine.DecodeBundle(bundle); err != nil {
+		if pkg.Files, err = pipeline.DecodeBundle(bundle); err != nil {
 			return fmt.Errorf("package %s: %w", rev.PackageHash, err)
 		}
 	}
@@ -1123,7 +1123,29 @@ func (s *Server) listNodes(w http.ResponseWriter, r *http.Request) error {
 	for _, n := range s.opts.Nodes {
 		n.Leases = held[n.ID]
 		n.Labels, n.Runtimes = nonNilMap(n.Labels), orEmpty(n.Runtimes)
+		n.State, n.Health = string(store.NodeActive), engine.HealthHealthy
 		out.Nodes = append(out.Nodes, n)
+	}
+	remote, err := s.opts.Store.Nodes(r.Context())
+	if err != nil {
+		return err
+	}
+	now := s.opts.Clock.Now()
+	for _, n := range remote {
+		out.Nodes = append(out.Nodes, Node{ID: n.ID, Version: n.Version, Behind: n.Version != s.opts.Version,
+			Slots: n.Slots, Leases: held[n.ID], Labels: nonNilMap(n.Labels), Runtimes: orEmpty(n.Runtimes),
+			State: string(n.State), Health: engine.Health(n.LastHeartbeat, now, cmp.Or(s.opts.LeaseTTL, engine.DefaultLeaseTTL)), LastHeartbeat: timePtr(n.LastHeartbeat)})
+	}
+	if s.opts.Engine != nil {
+		un, err := s.opts.Engine.Unschedulable(r.Context())
+		if err != nil {
+			return err
+		}
+		out.Unschedulable = make([]UnschedulableStep, 0, len(un))
+		for _, u := range un {
+			out.Unschedulable = append(out.Unschedulable, UnschedulableStep{Pipeline: u.Pipeline, Step: u.Step,
+				Pending: u.Pending, Needs: u.Placement.String()})
+		}
 	}
 	writeJSON(w, http.StatusOK, out)
 	return nil

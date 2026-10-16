@@ -67,8 +67,7 @@ earlier designs are in the git history of the spec.
   approval of the pipeline's review steps).
 - Container mounts: `--mount` refuses a path holding a comma, and never creates a missing source; quote such paths
   if Docker and Podman both accept a quoted CSV field.
-- HTTP API: node drain or revoke arrive with the M4 commands they share a unit with (Task 4); a pipeline's items and
-  cost today, and unschedulable deliveries on the nodes view, are not computed yet.
+- HTTP API: a pipeline's items and cost today are not computed yet.
 - Apply (M4 Task 2): each package of one apply is its own unit, so a store failure part-way leaves the earlier ones
   applied; one unit for the whole apply would make it atomic. Apply re-checks every other pipeline's active package,
   so a pipeline broken by a change of the deployment (a secret unmapped) blocks every apply until it is fixed or
@@ -96,12 +95,18 @@ earlier designs are in the git history of the spec.
   another engine signs the UI out (shared sessions in the store would survive it); `/metrics` reads every rollup
   series on each scrape, aggregated in SQL (an incremental total would serve a store holding many months of rollups
   more cheaply).
-- Remote nodes (M4 Task 4) plug into `api.Options.NodeAPI`, served under `api.NodePrefix` (`/node/v1`) before the
-  Host guard and outside `auth.token` and the session cookie: a node is not a browser, so the node API must require
-  the node token on every request itself. Until then the prefix answers `notFound` on every engine.
+- Remote nodes (M4 Task 4): the node token is rotated by restarting the engines (a token read again from its file
+  source would rotate it live); a node's package cache is never pruned (Task 8's bounded caches); a presigned PUT
+  signs no payload hash, so S3 does not check what a node sends (nodes are trusted, D25); placement reads a step's
+  action kind from the newest revision defining the step, so a delivery of an older revision whose step changed kind
+  may land on a node lacking its runtime and fail `unsupported`; agents on a remote node read the `agents` and
+  `runtime` keys of an environment file beside the node. The Compose smoke test (Postgres, engines and nodes from
+  `deploy/compose` on `millstream:dev`) is not written: the e2e node chaos suite covers the same processes; the
+  standby names the active engine by its bound `listen` address, so engines on `0.0.0.0` need every engine listed in
+  `--join` (an advertised address key would fix it).
 - Live events: the broker wakes on this process's commits and polls every 15 seconds for other processes' writes on
   the same SQLite file; Postgres (M4) can wake it with `LISTEN`/`NOTIFY` instead. The live log tail relays the
-  embedded node only; remote nodes stream their lines with M4's node endpoint. Event retention (M4) is what makes a
+  embedded node's lines and those remote nodes relay every second. Event retention (M4) is what makes a
   cursor too old besides the 10,000-event resume limit.
 - Failover (M4 Task 3): the leadership row records the engine's bound `listen` address, which a standby names to
   clients; a deployment whose engines listen on `0.0.0.0` behind a proxy needs an advertised address key (with

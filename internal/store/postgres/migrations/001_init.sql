@@ -349,3 +349,16 @@ CREATE TABLE leadership (
     epoch     bigint NOT NULL,
     since     timestamptz NOT NULL
 );
+
+-- Remote nodes (spec section 5.10): what each registered with, its state and when the engine last heard from it
+-- (registration, heartbeats). A revoked id is refused from then on (spec section 15.7), so its row outlives it.
+CREATE TABLE nodes (
+    id             text PRIMARY KEY,
+    version        text NOT NULL DEFAULT '',
+    labels         text NOT NULL DEFAULT '{}', -- JSON object
+    runtimes       text NOT NULL DEFAULT '[]', -- JSON array
+    slots          integer NOT NULL DEFAULT 0,
+    state          text NOT NULL,              -- active | draining | revoked
+    registered_at  timestamptz,                -- NULL for an id revoked before it registered
+    last_heartbeat timestamptz
+);

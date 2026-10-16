@@ -7,6 +7,7 @@ import (
 	"runtime"
 
 	"github.com/monolithiclab/millstream/internal/engine"
+	"github.com/monolithiclab/millstream/internal/node"
 	"github.com/monolithiclab/millstream/internal/pipeline"
 	"github.com/monolithiclab/millstream/internal/review"
 	"github.com/monolithiclab/millstream/internal/runtime/container"
@@ -50,7 +51,7 @@ func launchers(rt *Runtime, env *pipeline.Environment) map[string]exec.Launcher 
 // installed and agents.image is set, with agents.linuxBinary as the adapter (the running binary on Linux); else
 // unsandboxed as this binary's agent subcommand, when agents.allowUnsandboxed allows it.
 func agents(rt *Runtime, env *pipeline.Environment) engine.Agents {
-	a := engine.Agents{AllowUnsandboxed: env.AllowUnsandboxed, Prices: env.Prices}
+	a := engine.Agents{Agents: node.Agents{AllowUnsandboxed: env.AllowUnsandboxed}, Prices: env.Prices}
 	a.Executable, _ = os.Executable()
 	bin := env.AgentBinary
 	if bin == "" && runtime.GOOS == "linux" {

@@ -43,7 +43,7 @@ const Prefix = "/api/v1"
 // MetricsPath is where the Prometheus exposition is served, beside the API.
 const MetricsPath = "/metrics"
 
-// NodePrefix is where remote nodes reach the engine (spec section 5.9, M4 Task 4). A node is not a browser: its
+// NodePrefix is where remote nodes reach the engine (spec section 5.10). A node is not a browser: its
 // requests bypass the Host and Origin guards, which defend the UI and the API against DNS rebinding and cross-site
 // pages, and neither auth.token nor the session cookie admits them. Options.NodeAPI serves the prefix and
 // authenticates every request by the node token itself.
@@ -66,6 +66,10 @@ type Engine interface {
 	PackageFromFiles(files map[string][]byte) (*pipeline.Package, error)
 	ApplyPackages(ctx context.Context, pkgs []*pipeline.Package, opts engine.ApplyOptions) ([]engine.Applied,
 		[]engine.Finding, error)
+	// SetNodeState drains or revokes a remote node (spec sections 5.10 and 15.7).
+	SetNodeState(ctx context.Context, id string, state store.NodeState, expireLeases bool) error
+	// Unschedulable returns the steps whose pending deliveries no registered node can take (spec section 5.10).
+	Unschedulable(ctx context.Context) ([]engine.UnschedulableStep, error)
 }
 
 // Deployment is what the server knows of its deployment's engines (spec section 5.9).
@@ -93,22 +97,26 @@ type Options struct {
 	// Engine fires triggers and starts replays; nil answers those actions unavailable.
 	Engine Engine
 	// Artifacts serves artifact downloads; nil answers them unavailable.
-	Artifacts *artifacts.Store
+	Artifacts artifacts.Store
 	// Broker feeds the live event streams; nil answers them unavailable.
 	Broker *Broker
 	// Logs feeds the live log tail; nil answers it unavailable.
 	Logs *LogRing
-	// Nodes are the nodes the engine serves (the embedded one in M3), without their leases, which come from the
-	// store.
+	// Nodes are the engine's embedded node, without its leases, which come from the store, as the remote nodes do
+	// with the rest of what the store records of them.
 	Nodes []Node
+	// LeaseTTL is the lease duration, which a remote node's health is measured against; zero means
+	// engine.DefaultLeaseTTL.
+	LeaseTTL time.Duration
 	// Version is the binary's version, reported for the engine and the embedded node.
 	Version string
 	// Identity is the engine serving the API, reported by /nodes.
 	Identity Identity
 	// Deployment lists the deployment's engines for /nodes; nil lists this one alone.
 	Deployment Deployment
-	// NodeAPI serves the node protocol under NodePrefix, outside the browser guards and outside auth.token: it must
-	// require the node token on every request. Nil answers the prefix notFound (no remote nodes, M4 Task 4).
+	// NodeAPI serves the node protocol under NodePrefix (package nodeapi; a standby's refuses every request, naming
+	// the active engine), outside the browser guards and outside auth.token: it must require the node token on every
+	// request. Nil answers the prefix notFound: no node.token, no remote nodes.
 	NodeAPI http.Handler
 	// Standby serves a standby engine's API (spec section 5.9): reads only, from a read-only store; every action
 	// answers 503 unavailable, naming the active engine in ActiveEngineHeader and ActiveAddressHeader when
@@ -200,6 +208,8 @@ var routes = []route{
 	{http.MethodGet, "/metrics", (*Server).getMetrics},
 	{http.MethodGet, "/metrics/names", (*Server).listMetricNames},
 	{http.MethodGet, "/nodes", (*Server).listNodes},
+	{http.MethodPost, "/nodes/{node}/drain", (*Server).drainNode},
+	{http.MethodPost, "/nodes/{node}/revoke", (*Server).revokeNode},
 	{http.MethodGet, "/live/pipelines/{pipeline}", (*Server).livePipeline},
 	{http.MethodGet, "/live/runs/{run}", (*Server).liveRun},
 	{http.MethodGet, "/live/items/{item}", (*Server).liveItem},
@@ -388,16 +398,16 @@ func CheckLoopback(addr string) error {
 	if err != nil {
 		return fmt.Errorf("listen address %q: want host:port, such as 127.0.0.1:7070: %w", addr, err)
 	}
-	if host != "" && loopbackHost(host) {
+	if host != "" && LoopbackHost(host) {
 		return nil
 	}
 	return fmt.Errorf("listen address %q is not a loopback address: without auth.token the API listens on "+
 		"127.0.0.1, ::1 or localhost only", addr)
 }
 
-// loopbackHost reports whether a Host header names this machine: localhost or a loopback address, with or without
+// LoopbackHost reports whether a Host header names this machine: localhost or a loopback address, with or without
 // a port.
-func loopbackHost(hostport string) bool {
+func LoopbackHost(hostport string) bool {
 	host := hostName(hostport)
 	if host == "localhost" {
 		return true

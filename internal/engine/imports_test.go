@@ -47,7 +47,7 @@ func TestImports(t *testing.T) {
 	env["MILLSTREAM_VAR_TAG"] = "hot"
 	v.apply(deal)
 
-	ref, err := v.e.PutArtifact(v.ctx, "src", "page.html", strings.NewReader("<p>listing</p>"))
+	ref, err := v.e.PutArtifact(v.ctx, store.LeaseRef{Pipeline: "src"}, "page.html", strings.NewReader("<p>listing</p>"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -69,7 +69,7 @@ func TestImports(t *testing.T) {
 
 	// The copy's artifact is the producer's file, copied into the consumer's directory on first open; a pipeline
 	// that holds no reference to it gets nothing.
-	r, err := v.e.OpenArtifact(v.ctx, "deal", ref)
+	r, err := v.e.OpenArtifact(v.ctx, store.LeaseRef{Pipeline: "deal"}, ref)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -78,7 +78,7 @@ func TestImports(t *testing.T) {
 	if string(b) != "<p>listing</p>" {
 		t.Fatalf("artifact content %q", b)
 	}
-	if _, err := v.e.OpenArtifact(v.ctx, "other", ref); !errors.Is(err, fs.ErrNotExist) {
+	if _, err := v.e.OpenArtifact(v.ctx, store.LeaseRef{Pipeline: "other"}, ref); !errors.Is(err, fs.ErrNotExist) {
 		t.Fatalf("an artifact of a pipeline without a reference: %v", err)
 	}
 

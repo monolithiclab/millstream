@@ -326,3 +326,16 @@ CREATE TABLE review_samples (
 );
 CREATE INDEX review_samples_open ON review_samples (state, inbox);
 CREATE INDEX review_samples_deadline ON review_samples (state, deadline);
+
+-- Remote nodes (spec section 5.10): what each registered with, its state and when the engine last heard from it
+-- (registration, heartbeats). A revoked id is refused from then on (spec section 15.7), so its row outlives it.
+CREATE TABLE nodes (
+    id             TEXT PRIMARY KEY,
+    version        TEXT NOT NULL DEFAULT '',
+    labels         TEXT NOT NULL DEFAULT '{}', -- JSON object
+    runtimes       TEXT NOT NULL DEFAULT '[]', -- JSON array
+    slots          INTEGER NOT NULL DEFAULT 0,
+    state          TEXT NOT NULL,              -- active | draining | revoked
+    registered_at  TEXT,                       -- NULL for an id revoked before it registered
+    last_heartbeat TEXT
+);

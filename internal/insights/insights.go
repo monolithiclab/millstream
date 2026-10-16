@@ -72,7 +72,22 @@ type Data struct {
 	// baseline, in order.
 	Decisions []Decision
 	Samples   []SampleOutcome
+	// Pending are the steps whose pending deliveries no registered node can take now (spec section 5.10), as the
+	// engine finds them.
+	Pending []PendingStep
 }
+
+// PendingStep is a step whose pending deliveries no registered node can take: Count of them, waiting for a node
+// that offers what Needs describes.
+type PendingStep struct {
+	Step  string
+	Count int64
+	Needs string
+}
+
+// ClassNoNode is the class of an unschedulable insight about pending deliveries no registered node can take, beside
+// the classes of the attempts no runtime could take (metrics.UnschedulableClasses).
+const ClassNoNode = "noNode"
 
 func (d *Data) windowStart() time.Time { return d.Now.Add(-Window) }
 
@@ -122,8 +137,9 @@ func runPath(ctx context.Context, st store.Store, r store.Run, now time.Time) (P
 }
 
 // Project runs the projector for a pipeline at now and records what it finds for the kinds its insights key leaves
-// on. With insights off it records nothing, and the insights already recorded keep their state.
-func Project(ctx context.Context, st store.Store, p *pipeline.Pipeline, now time.Time) error {
+// on, with the pipeline's steps no registered node can take now (pending). With insights off it records nothing, and
+// the insights already recorded keep their state.
+func Project(ctx context.Context, st store.Store, p *pipeline.Pipeline, now time.Time, pending []PendingStep) error {
 	cfg, err := p.InsightsConfig()
 	if err != nil {
 		return fmt.Errorf("insights of %s: %w", p.Name, err)
@@ -136,6 +152,7 @@ func Project(ctx context.Context, st store.Store, p *pipeline.Pipeline, now time
 	if err != nil {
 		return err
 	}
+	d.Pending = pending
 	return st.RecordInsights(ctx, store.InsightReport{Pipeline: p.Name, Kinds: kinds, Insights: Compute(d, kinds)})
 }
 
@@ -358,7 +375,8 @@ func failureClusters(d *Data) []store.Insight {
 	return out
 }
 
-// unschedulable groups the attempts no runtime could take, by step and class.
+// unschedulable groups the attempts no runtime could take, by step and class, and adds the steps whose pending
+// deliveries no registered node can take (class noNode).
 func unschedulable(d *Data) []store.Insight {
 	keep := func(a Attempt) bool { return metrics.UnschedulableClasses[a.Class] }
 	key := func(a Attempt) []string { return []string{a.Step, a.Class} }
@@ -369,6 +387,11 @@ func unschedulable(d *Data) []store.Insight {
 			"firstSeen": c.first, "lastSeen": c.last, "samples": nonNil(c.samples),
 		}
 		out = append(out, d.insight(pipeline.InsightUnschedulable, c.step, SeverityError, ev, c.step, c.class))
+	}
+	for _, p := range d.Pending {
+		ev := map[string]any{"class": ClassNoNode, "example": "no registered node offers " + p.Needs,
+			"count": p.Count, "deliveries": p.Count, "needs": p.Needs}
+		out = append(out, d.insight(pipeline.InsightUnschedulable, p.Step, SeverityError, ev, p.Step, ClassNoNode))
 	}
 	return out
 }
@@ -575,6 +598,9 @@ func Summary(in store.Insight) string {
 			"failures", f("costUsd"), f("outputs"), f("costPerOutput"), f("costPerApprovedItem"), f("turnsPerDelivery"),
 			f("schemaFailures"))
 	case pipeline.InsightUnschedulable:
+		if f("class") == ClassNoNode {
+			return fmt.Sprintf("%s deliveries waiting: %s", f("count"), f("example"))
+		}
 		return fmt.Sprintf("%s attempts no runtime can take: %s: %s", f("count"), f("class"), f("example"))
 	case pipeline.InsightReviewPattern:
 		return fmt.Sprintf("%s rejected, %s edited, %s auto-approved, sampled agreement %s, intervention %s, p50 "+

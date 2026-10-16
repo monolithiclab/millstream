@@ -141,6 +141,10 @@ func TestRenew(t *testing.T) {
 	storetest.TestRenew(t, memoryStore)
 }
 
+func TestNodes(t *testing.T) {
+	storetest.TestNodes(t, memoryStore)
+}
+
 func TestApplyRevision(t *testing.T) {
 	storetest.TestApplyRevision(t, memoryStore)
 }

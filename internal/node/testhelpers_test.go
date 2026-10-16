@@ -134,7 +134,7 @@ func (f *fakeTransport) Heartbeat(_ context.Context, _ string, refs []store.Leas
 }
 
 // PutArtifact keeps the content in memory, by hash.
-func (f *fakeTransport) PutArtifact(_ context.Context, pipelineName, name string, r io.Reader) (store.ArtifactRef, error) {
+func (f *fakeTransport) PutArtifact(_ context.Context, lease store.LeaseRef, name string, r io.Reader) (store.ArtifactRef, error) {
 	data, err := io.ReadAll(r)
 	if err != nil {
 		return store.ArtifactRef{}, err
@@ -149,15 +149,15 @@ func (f *fakeTransport) PutArtifact(_ context.Context, pipelineName, name string
 	if f.blobs == nil {
 		f.blobs = map[string][]byte{}
 	}
-	f.blobs[pipelineName+"/"+ref.SHA256] = data
+	f.blobs[lease.Pipeline+"/"+ref.SHA256] = data
 	return ref, nil
 }
 
 // OpenArtifact reads a content PutArtifact kept.
-func (f *fakeTransport) OpenArtifact(_ context.Context, pipelineName string, ref store.ArtifactRef) (io.ReadCloser, error) {
+func (f *fakeTransport) OpenArtifact(_ context.Context, lease store.LeaseRef, ref store.ArtifactRef) (io.ReadCloser, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	data, ok := f.blobs[pipelineName+"/"+ref.SHA256]
+	data, ok := f.blobs[lease.Pipeline+"/"+ref.SHA256]
 	if !ok {
 		return nil, fmt.Errorf("artifact %s: %w", ref.SHA256, fs.ErrNotExist)
 	}

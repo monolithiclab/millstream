@@ -7,9 +7,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"slices"
-	"strconv"
 
-	"github.com/monolithiclab/millstream/internal/agent"
 	"github.com/monolithiclab/millstream/internal/expr"
 	"github.com/monolithiclab/millstream/internal/ids"
 	"github.com/monolithiclab/millstream/internal/node"
@@ -28,7 +26,7 @@ const (
 	ClassUnsupported = "unsupported"
 	// ClassConfig: the step's config does not interpolate, a secret is unset, the action does not resolve, or an
 	// agent step under a budget sets no maxCostUsd. Never retried (spec section 5.5).
-	ClassConfig = "config"
+	ClassConfig = node.ClassConfig
 	// ClassInputSchema: the item's payload does not match the action's input schema (spec section 5.5). Never
 	// retried, and no process is started.
 	ClassInputSchema = "inputSchema"
@@ -37,14 +35,11 @@ const (
 	ClassEngine = "engine"
 	// ClassSandbox: an agent step has no container sandbox to run in and the environment file does not allow it to
 	// run without one (spec section 7.3). Never retried.
-	ClassSandbox = "sandbox"
+	ClassSandbox = node.ClassSandbox
 )
 
 // AgentBinaryPath is where a sandbox container sees the millstream binary that runs the agent adapter.
-const AgentBinaryPath = "/millstream"
-
-// envPassed are the variables of the engine's environment an action process receives; nothing else is passed.
-var envPassed = []string{"PATH", "HOME", "TMPDIR"}
+const AgentBinaryPath = node.AgentBinaryPath
 
 // dispatchError is why a lease could not become an assignment.
 type dispatchError struct {
@@ -74,7 +69,7 @@ type resolvedAction struct {
 
 // assign resolves a lease into what a node runs: the action process of the run's revision, the step's config
 // interpolated over the run's vars, run and the secrets read now, and the item message.
-func (e *Engine) assign(ctx context.Context, l store.Lease) (node.Assignment, error) {
+func (e *Engine) assign(ctx context.Context, owner string, l store.Lease) (node.Assignment, error) {
 	rev, err := e.revision(ctx, l.Revision)
 	if err != nil {
 		return node.Assignment{}, dispatchErr(ClassEngine, true, "revision %d: %w", l.Revision, err)
@@ -125,27 +120,43 @@ func (e *Engine) assign(ctx context.Context, l store.Lease) (node.Assignment, er
 				"config of step %s does not match the config schema of %s: %w", l.Step, step.Action, err)
 		}
 	}
-	spec := exec.Spec{
-		Action: act.a.Name, Version: act.a.Version, Kind: act.a.Kind, Digest: act.digest,
-		Command: slices.Clone(act.a.Command), Lifecycle: act.a.Lifecycle, Config: config, Vars: run.Vars,
+	launch := node.Launch{
+		Kind: act.a.Kind, Action: act.a.Name, Version: act.a.Version, Digest: act.digest, PackageHash: rev.hash,
+		Ref: step.Action, Lifecycle: act.a.Lifecycle, Config: config, Vars: run.Vars,
 	}
 	switch act.a.Kind {
 	case pipeline.KindContainer:
-		// A container gets no variable of the engine's environment: the host's PATH and HOME mean nothing in it.
-		spec.Image, spec.Network = act.a.Pin, act.a.Network
+		launch.Command, launch.Image, launch.Network = slices.Clone(act.a.Command), act.a.Pin, act.a.Network
 	case pipeline.KindAgent:
-		if spec.Lessons, err = e.lessons(rev, l.Step, step); err != nil {
+		if launch.Lessons, err = e.lessons(rev, l.Step, step); err != nil {
 			return node.Assignment{}, err
 		}
-		if err := e.agentSpec(&spec, act, rev.p.Secrets, secrets, l); err != nil {
+		launch.Network = len(act.a.Agent.Network) > 0
+		launch.Agent = &node.AgentLaunch{Secrets: rev.p.Secrets}
+		if price, ok := e.opts.Agents.Prices[act.a.Agent.Model]; ok {
+			launch.Agent.PriceIn, launch.Agent.PriceOut = &price.InPerMtok, &price.OutPerMtok
+		}
+	}
+	// The process spec is built where the delivery runs: here for the engine's own node, on a remote node from the
+	// launch, against its own package cache, environment and sandbox.
+	var spec exec.Spec
+	if !e.remote(owner) {
+		if spec, err = launch.Spec(node.Host{
+			Action: func(string) (*pipeline.Action, string, error) { return act.a, act.pkgDir, nil },
+			Env:    e.opts.Env, Agents: e.opts.Agents.Agents, Log: e.leaseLog(l),
+		}, secrets); err != nil {
+			var le *node.LaunchError
+			if errors.As(err, &le) {
+				return node.Assignment{}, &dispatchError{class: le.Class, retryable: le.Retryable, err: le.Err}
+			}
 			return node.Assignment{}, err
 		}
-	default:
-		spec.Dir, spec.Env = act.dir, e.processEnv()
 	}
 	return node.Assignment{
-		Lease: l,
-		Spec:  spec,
+		Lease:   l,
+		Launch:  launch,
+		Secrets: secrets,
+		Spec:    spec,
 		ItemMsg: protocol.Item{
 			Delivery: l.DeliveryID, ID: l.Item.ID, Key: l.Item.Key, Payload: l.Item.Payload,
 			Artifacts: []protocol.Artifact{},
@@ -237,20 +248,6 @@ func validateJSON(s *schema.Schema, doc []byte) error {
 	return s.Validate(v)
 }
 
-// processEnv is the environment of action processes: PATH, HOME and TMPDIR from the engine's, when set.
-func (e *Engine) processEnv() []string { return e.envOf(envPassed) }
-
-// envOf returns the variables keys of the engine's environment that are set.
-func (e *Engine) envOf(keys []string) []string {
-	var env []string
-	for _, k := range keys {
-		if v, ok := e.opts.Env(k); ok {
-			env = append(env, k+"="+v)
-		}
-	}
-	return env
-}
-
 // lessonsEntry is a step's lessons as hello carries them, or the dispatch error they resolve to.
 type lessonsEntry struct {
 	raw json.RawMessage
@@ -277,64 +274,4 @@ func (e *Engine) lessons(rev *revision, name string, step pipeline.Step) (json.R
 	}
 	e.lessonsC[k] = le
 	return le.raw, le.err
-}
-
-// agentSpec makes spec run the agent adapter for an agent action (spec section 7.3): millstream agent in the
-// sandbox container when one is configured, with the binary and the package mounted read-only and the manifest's
-// network policy; else as a child process when the environment file allows it, logged at every start; else the
-// delivery fails, not retried. The adapter receives the pipeline's secrets in its environment, for redaction and the
-// API key, and the record/replay variables of the engine's.
-func (e *Engine) agentSpec(spec *exec.Spec, act *resolvedAction, names []string, secrets map[string]string,
-	l store.Lease,
-) error {
-	ag := e.opts.Agents
-	args := []string{"agent", "--package", act.pkgDir, "--action", act.a.Ref}
-	var env []string
-	for _, name := range names {
-		args = append(args, "--secret", name)
-		env = append(env, pipeline.SecretEnv(name)+"="+secrets[name])
-	}
-	if price, ok := ag.Prices[act.a.Agent.Model]; ok {
-		args = append(args, "--price-in", strconv.FormatFloat(price.InPerMtok, 'f', -1, 64),
-			"--price-out", strconv.FormatFloat(price.OutPerMtok, 'f', -1, 64))
-	}
-	mode, _ := e.opts.Env(agent.EnvHarnessMode)
-	dir, _ := e.opts.Env(agent.EnvHarnessDir)
-	if dir != "" {
-		abs, err := filepath.Abs(dir) // the adapter does not run in the engine's working directory
-		if err != nil {
-			return dispatchErr(ClassConfig, false, "%s: %w", agent.EnvHarnessDir, err)
-		}
-		dir = abs
-		env = append(env, agent.EnvHarnessDir+"="+dir)
-	}
-	if mode != "" {
-		env = append(env, agent.EnvHarnessMode+"="+mode)
-	}
-	switch {
-	case ag.Sandbox != nil:
-		spec.Kind, spec.Image, spec.Network = pipeline.KindContainer, ag.Sandbox.Image, len(act.a.Agent.Network) > 0
-		spec.Command = append([]string{AgentBinaryPath}, args...)
-		spec.Mounts = []exec.Mount{
-			{Source: ag.Sandbox.Binary, Target: AgentBinaryPath, ReadOnly: true},
-			{Source: act.pkgDir, Target: act.pkgDir, ReadOnly: true},
-		}
-		if dir != "" {
-			spec.Mounts = append(spec.Mounts, exec.Mount{Source: dir, Target: dir, ReadOnly: mode != agent.ModeRecord})
-		}
-		// The root file system is read-only: HOME is the container's private /tmp, where a harness keeps its state.
-		spec.Env = append([]string{"HOME=/tmp"}, env...)
-	case ag.AllowUnsandboxed && ag.Executable != "":
-		e.log.Warn("agent running without a sandbox: agents.allowUnsandboxed is true in the environment file",
-			"pipeline", l.Pipeline, "step", l.Step, "deliveryId", l.DeliveryID)
-		spec.Kind, spec.Dir = pipeline.KindExec, act.dir
-		spec.Command = append([]string{ag.Executable}, args...)
-		// The adapter hands the claude CLI its own variables (agent.ClaudeEnv), a superset of envPassed.
-		spec.Env = append(e.envOf(agent.ClaudeEnv), env...)
-	default:
-		return dispatchErr(ClassSandbox, false, "agent step %s needs a container sandbox (a container runtime, "+
-			"agents.image, and off Linux a Linux build of millstream in agents.linuxBinary), or "+
-			"agents.allowUnsandboxed: true in the environment file", l.Step)
-	}
-	return nil
 }

@@ -303,11 +303,21 @@ type StepLessons struct {
 	Examples []pipeline.LessonExample `json:"examples"`
 }
 
-// Nodes is the engine serving the API, the deployment's engines and the nodes it serves.
+// Nodes is the engine serving the API, the deployment's engines and the nodes it serves, with the steps no node can
+// take (the active engine's view: absent from a standby's).
 type Nodes struct {
-	Engine  EngineInfo         `json:"engine"`
-	Engines []DeploymentEngine `json:"engines"`
-	Nodes   []Node             `json:"nodes"`
+	Engine        EngineInfo          `json:"engine"`
+	Engines       []DeploymentEngine  `json:"engines"`
+	Nodes         []Node              `json:"nodes"`
+	Unschedulable []UnschedulableStep `json:"unschedulable,omitempty"`
+}
+
+// UnschedulableStep is a step whose pending deliveries no registered node can take: what it needs.
+type UnschedulableStep struct {
+	Pipeline string `json:"pipeline"`
+	Step     string `json:"step"`
+	Pending  int64  `json:"pending"`
+	Needs    string `json:"needs"`
 }
 
 // Engine states (spec section 5.9).
@@ -338,15 +348,21 @@ type DeploymentEngine struct {
 	Address string     `json:"address,omitempty"`
 }
 
-// Node is a node the engine serves; Leases is how many deliveries it holds now.
+// Node is a node the engine serves: the embedded one, or a remote node as the store records it. Leases is how many
+// deliveries it holds now; Behind, that it runs another version than the engine serving the response; Health, how
+// long since its last heartbeat (healthy within three heartbeats, late within a lease, lost beyond).
 type Node struct {
-	ID       string            `json:"id"`
-	Embedded bool              `json:"embedded"`
-	Version  string            `json:"version"`
-	Slots    int               `json:"slots"`
-	Leases   int               `json:"leases"`
-	Labels   map[string]string `json:"labels"`
-	Runtimes []string          `json:"runtimes"`
+	ID            string            `json:"id"`
+	Embedded      bool              `json:"embedded"`
+	Version       string            `json:"version"`
+	Behind        bool              `json:"behind"`
+	Slots         int               `json:"slots"`
+	Leases        int               `json:"leases"`
+	Labels        map[string]string `json:"labels"`
+	Runtimes      []string          `json:"runtimes"`
+	State         string            `json:"state"`
+	Health        string            `json:"health"`
+	LastHeartbeat *time.Time        `json:"lastHeartbeat,omitempty"`
 }
 
 // Count is how many records an action changed.

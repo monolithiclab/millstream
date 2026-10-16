@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime/debug"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -418,7 +419,7 @@ func TestProjectKeys(t *testing.T) {
 				t.Fatal(err)
 			}
 			before := events()
-			if err := Project(s.ctx, s.st, p, now); err != nil {
+			if err := Project(s.ctx, s.st, p, now, nil); err != nil {
 				t.Fatal(err)
 			}
 			if got := recorded(); fmt.Sprint(got) != fmt.Sprint(tt.want) {
@@ -433,7 +434,7 @@ func TestProjectKeys(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := Project(context.Background(), nil, bad, now); err == nil {
+	if err := Project(context.Background(), nil, bad, now, nil); err == nil {
 		t.Error("Project accepted an invalid insights key")
 	}
 }
@@ -468,5 +469,25 @@ func TestGoldenReports(t *testing.T) {
 
 	if _, err := BuildReport(s.ctx, s.st, "shop", "missing", now); err == nil {
 		t.Error("a report of a missing run")
+	}
+}
+
+// TestUnschedulablePending: the steps whose pending deliveries no registered node can take are unschedulable
+// insights of class noNode, one per step, with what they need.
+func TestUnschedulablePending(t *testing.T) {
+	d := &Data{Pipeline: "shop", Now: now, Pending: []PendingStep{{Step: "score", Count: 3, Needs: "runtime exec"}}}
+	got := Compute(d, []string{pipeline.InsightUnschedulable})
+	if len(got) != 1 || got[0].Scope != "score" || got[0].Severity != SeverityError {
+		t.Fatalf("insights = %+v", got)
+	}
+	var ev map[string]any
+	if err := json.Unmarshal(got[0].Evidence, &ev); err != nil {
+		t.Fatal(err)
+	}
+	if ev["class"] != ClassNoNode || ev["count"] != float64(3) || ev["needs"] != "runtime exec" {
+		t.Fatalf("evidence = %v", ev)
+	}
+	if s := Summary(got[0]); !strings.Contains(s, "3 deliveries waiting: no registered node offers runtime exec") {
+		t.Fatalf("summary = %q", s)
 	}
 }

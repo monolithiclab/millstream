@@ -3,9 +3,8 @@
 #   docker compose up -d
 # docs/deploy.md is the guide: TLS in front, backups, upgrades. Secrets come from .env, never from this file.
 #
-# M4 status: `millstream serve` and token auth are in (M4 Tasks 2 and 7): `docker compose up postgres engine
-# engine-standby` runs the database and both engines. The standby takeover (Task 3) and `millstream node --join`
-# (Task 4) are not built yet; the services marked "Task N" start once that task lands.
+# The engines serve HTTPS with the certificate in ./tls (docs/deploy.md, "Node TLS"), which the nodes check against
+# ./tls/ca.pem: nodes reach an engine on another host over TLS only.
 
 name: millstream
 
@@ -29,15 +28,17 @@ x-engine: &engine
   # the local directory survive a failover.
   volumes:
     - ./millstream.yaml:/etc/millstream/millstream.yaml:ro
+    - ./tls:/etc/millstream/tls:ro
     - engine:/home/nonroot
   depends_on:
     postgres: { condition: service_healthy }
 
 x-node: &node
   <<: *millstream
-  # Task 4: a node joins the engine with the node token over TLS and follows the active engine across a failover.
-  # --allow-exec runs exec actions, which must be static Linux binaries in this image (docs/deploy.md).
-  command: ["node", "--join", "https://engine:7070", "--allow-exec"]
+  # A node joins the engines with the node token over TLS, trusting ./tls/ca.pem, and follows the active one across a
+  # failover. --allow-exec runs exec actions, which must be static Linux binaries in this image (docs/deploy.md).
+  command: ["node", "--join", "https://engine:7070,https://engine-standby:7070", "--allow-exec",
+    "--ca", "/etc/millstream/tls/ca.pem"]
   environment:
     MILLSTREAM_NODE_TOKEN: ${MILLSTREAM_NODE_TOKEN:?set MILLSTREAM_NODE_TOKEN in .env}
   depends_on: [engine]
@@ -61,7 +62,7 @@ services:
       start_period: 10s
 
   # The two engines are identical: whichever takes the store's advisory lock first is active, the other waits as the
-  # standby and takes over when the active one fails (Task 3). Each publishes its API on the host's loopback only.
+  # standby and takes over when the active one fails. Each publishes its API, over HTTPS, on the host's loopback only.
   engine:
     <<: *engine
     ports: ["127.0.0.1:7070:7070"]
@@ -73,11 +74,11 @@ services:
   # Each node's working directory, its package cache, is a volume of its own.
   node-1:
     <<: *node
-    volumes: [node-1:/home/nonroot]
+    volumes: [./tls/ca.pem:/etc/millstream/tls/ca.pem:ro, node-1:/home/nonroot]
 
   node-2:
     <<: *node
-    volumes: [node-2:/home/nonroot]
+    volumes: [./tls/ca.pem:/etc/millstream/tls/ca.pem:ro, node-2:/home/nonroot]
 
 volumes:
   postgres:

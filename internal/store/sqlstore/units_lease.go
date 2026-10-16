@@ -3,7 +3,9 @@ package sqlstore
 import (
 	"cmp"
 	"context"
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"maps"
 	"slices"
@@ -283,8 +285,8 @@ func (s *Store) roundRobin(queues map[string][]candidate, n int) []candidate {
 	return out
 }
 
-// Renew extends the leases owner still holds under the same fencing token and returns the ones it lost. Renewals
-// record no event: they change no state, only an expiry.
+// Renew extends the leases owner still holds under the same fencing token and returns the ones it lost, and records
+// that the owner, a remote node, was heard from; a revoked one is ErrRevoked. Renewals record no event: they change no state, only an expiry.
 func (s *Store) Renew(ctx context.Context, owner string, refs []store.LeaseRef, ttl time.Duration) ([]store.LeaseRef,
 	error,
 ) {
@@ -294,6 +296,18 @@ func (s *Store) Renew(ctx context.Context, owner string, refs []store.LeaseRef, 
 	var lost []store.LeaseRef
 	err := s.submit(ctx, unitRenew, func(w *wtx) error {
 		expires := formatTime(w.now.Add(ttl))
+		var state store.NodeState
+		switch err := w.queryRow(`SELECT state FROM nodes WHERE id = ?`, owner).Scan(&state); {
+		case errors.Is(err, sql.ErrNoRows): // the embedded node: no row
+		case err != nil:
+			return fmt.Errorf("renew: node %s: %w", owner, err)
+		case state == store.NodeRevoked:
+			return fmt.Errorf("renew: node %s: %w", owner, store.ErrRevoked)
+		default:
+			if _, err := w.exec(`UPDATE nodes SET last_heartbeat = ? WHERE id = ?`, w.ts(), owner); err != nil {
+				return err
+			}
+		}
 		for _, ref := range refs {
 			n, err := w.affected(`UPDATE deliveries SET lease_expires_at = ? WHERE pipeline = ? AND id = ?
 				AND state = ? AND lease_owner = ? AND fencing_token = ?`,
@@ -320,37 +334,9 @@ func (s *Store) Renew(ctx context.Context, owner string, refs []store.LeaseRef, 
 func (s *Store) ExpireLeases(ctx context.Context) ([]store.LeaseRef, error) {
 	var expired []store.LeaseRef
 	err := s.submit(ctx, unitExpireLeases, func(w *wtx) error {
-		expired = nil // the unit fills the result only when it applies
-		rows, err := w.query(`SELECT id, pipeline FROM deliveries WHERE state = ? AND lease_expires_at < ?
-			ORDER BY rowid`, store.DeliveryLeased, w.ts())
-		if err != nil {
-			return err
-		}
-		var refs []store.LeaseRef
-		for rows.Next() {
-			var ref store.LeaseRef
-			if err := rows.Scan(&ref.DeliveryID, &ref.Pipeline); err != nil {
-				_ = rows.Close()
-				return fmt.Errorf("scan expired lease: %w", err)
-			}
-			refs = append(refs, ref)
-		}
-		if err := closeRows(rows); err != nil {
-			return err
-		}
-		for _, ref := range refs {
-			d, err := w.delivery(ref.Pipeline, ref.DeliveryID)
-			if err != nil {
-				return err
-			}
-			if err := w.expire(d); err != nil {
-				return err
-			}
-			expired = append(expired, store.LeaseRef{
-				Pipeline: d.pipeline, DeliveryID: d.id, Step: d.step, FencingToken: d.token,
-			})
-		}
-		return nil
+		var err error
+		expired, err = w.expireWhere(`lease_expires_at < ?`, []any{w.ts()}, "")
+		return err
 	})
 	if err != nil {
 		return nil, err
@@ -358,9 +344,46 @@ func (s *Store) ExpireLeases(ctx context.Context) ([]store.LeaseRef, error) {
 	return expired, nil
 }
 
+// expireWhere ends, as expired, the leases of the leased deliveries cond selects (cond's arguments args), and returns
+// them with the fencing token each was held under. reason is the attempt's error message, the expiry's own when
+// empty.
+func (w *wtx) expireWhere(cond string, args []any, reason string) ([]store.LeaseRef, error) {
+	rows, err := w.query(`SELECT id, pipeline FROM deliveries WHERE state = ? AND `+cond+` ORDER BY rowid`,
+		append([]any{store.DeliveryLeased}, args...)...)
+	if err != nil {
+		return nil, err
+	}
+	var refs []store.LeaseRef
+	for rows.Next() {
+		var ref store.LeaseRef
+		if err := rows.Scan(&ref.DeliveryID, &ref.Pipeline); err != nil {
+			_ = rows.Close()
+			return nil, fmt.Errorf("scan expired lease: %w", err)
+		}
+		refs = append(refs, ref)
+	}
+	if err := closeRows(rows); err != nil {
+		return nil, err
+	}
+	expired := make([]store.LeaseRef, 0, len(refs))
+	for _, ref := range refs {
+		d, err := w.delivery(ref.Pipeline, ref.DeliveryID)
+		if err != nil {
+			return nil, err
+		}
+		if err := w.expire(d, reason); err != nil {
+			return nil, err
+		}
+		expired = append(expired, store.LeaseRef{
+			Pipeline: d.pipeline, DeliveryID: d.id, Step: d.step, FencingToken: d.token,
+		})
+	}
+	return expired, nil
+}
+
 // expire ends the expired lease of d as a failed attempt, or cancels d when its run is cancelled. Its budget
 // reservation is charged in full: the owner may have spent it without reporting (spec section 5.9).
-func (w *wtx) expire(d *deliveryRow) error {
+func (w *wtx) expire(d *deliveryRow, reason string) error {
 	run, err := w.run(d.pipeline, d.runID)
 	if err != nil {
 		return err
@@ -382,7 +405,7 @@ func (w *wtx) expire(d *deliveryRow) error {
 	step, _ := rev.stepOrOrphan(d.step)
 	_, err = w.fail(d, run, rev, step, failure{
 		class: store.ClassLeaseExpired, retryable: true, attemptEnd: attemptEnd{cost: d.reserved},
-		message: fmt.Sprintf("the lease held by %s expired before it reported", d.owner),
+		message: cmp.Or(reason, fmt.Sprintf("the lease held by %s expired before it reported", d.owner)),
 	})
 	return err
 }

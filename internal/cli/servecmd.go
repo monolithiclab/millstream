@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"net/http"
 	"os"
 	"strings"
 	"sync"
@@ -15,8 +16,10 @@ import (
 	"unicode"
 
 	"github.com/monolithiclab/millstream/internal/api"
+	"github.com/monolithiclab/millstream/internal/artifacts"
 	"github.com/monolithiclab/millstream/internal/engine"
 	"github.com/monolithiclab/millstream/internal/node"
+	"github.com/monolithiclab/millstream/internal/nodeapi"
 	"github.com/monolithiclab/millstream/internal/pipeline"
 	"github.com/monolithiclab/millstream/internal/store"
 	"github.com/monolithiclab/millstream/internal/store/postgres"
@@ -56,6 +59,14 @@ func (c ServeCmd) Run(rt *Runtime) error {
 	if err != nil {
 		return err
 	}
+	arts, err := artifactStore(rt, env)
+	if err != nil {
+		return err
+	}
+	nodeToken, err := readNodeToken(rt, env)
+	if err != nil {
+		return err
+	}
 	if identity(rt) == "" && env.AuthToken == nil {
 		return usageError("serve: no user to record review decisions under: set $USER, or auth.token and auth.user")
 	}
@@ -67,7 +78,7 @@ func (c ServeCmd) Run(rt *Runtime) error {
 	siteCtx, stopSite := context.WithCancel(ctx)
 	siteDone := make(chan error, 1)
 	go func() { siteDone <- site.serve(siteCtx) }()
-	err = c.serveOn(ctx, rt, env, log, site, sec)
+	err = c.serveOn(ctx, rt, env, log, site, sec, arts, nodeToken)
 	stopSite()
 	return errors.Join(err, <-siteDone)
 }
@@ -75,9 +86,10 @@ func (c ServeCmd) Run(rt *Runtime) error {
 // serveOn runs the engine on site until ctx ends: on SQLite (or a store a test hands in) one engine, without a
 // standby (spec section 5.9); on Postgres, lead's terms and standby.
 func (c ServeCmd) serveOn(ctx context.Context, rt *Runtime, env *pipeline.Environment, log *slog.Logger, site *site,
-	sec apiSecurity,
+	sec apiSecurity, arts artifacts.Store, nodeToken string,
 ) error {
-	s := &server{cmd: c, rt: rt, env: env, log: log, site: site, sec: sec, id: newEngineID()}
+	s := &server{cmd: c, rt: rt, env: env, log: log, site: site, sec: sec, id: newEngineID(), arts: arts,
+		nodeToken: nodeToken}
 	s.open, s.run = s.acquire, s.term
 	if rt.Store == nil && env.Store.PostgresDSN != nil {
 		return s.lead(ctx)
@@ -96,6 +108,9 @@ type server struct {
 	site *site
 	sec  apiSecurity // the API's token and TLS, the active engine's and the standby's
 	id   string      // the engine's id, the same across the process's terms
+	arts artifacts.Store
+	// nodeToken is node.token's value, empty without it: the node protocol is served only with it.
+	nodeToken string
 	// open and run are acquire and term: tests replace them.
 	open func(ctx context.Context) (store.Store, error)
 	run  func(ctx context.Context, st store.Store, lead leadership) error
@@ -188,9 +203,22 @@ func (s *server) standby(ctx context.Context, since time.Time) {
 	if e, ok := st.(engines); ok {
 		dep = pgDeployment{e}
 	}
-	a, err := api.New(api.Options{Store: st, Artifacts: artifactStore(s.rt, s.env), Version: s.rt.Version,
+	var nodes http.Handler
+	if s.nodeToken != "" {
+		nodes = nodeapi.NewStandby(s.nodeToken, func(ctx context.Context) (string, string) {
+			if dep == nil {
+				return "", ""
+			}
+			es, err := dep.Engines(ctx)
+			if err != nil || len(es) == 0 || es[0].State != "active" {
+				return "", ""
+			}
+			return es[0].ID, es[0].Address
+		})
+	}
+	a, err := api.New(api.Options{Store: st, Artifacts: s.arts, Version: s.rt.Version,
 		User: identity(s.rt), Auth: s.sec.auth, Logger: s.log, Identity: api.Identity{ID: s.id, Since: since},
-		Deployment: dep, Standby: true})
+		Deployment: dep, Standby: true, NodeAPI: nodes, LeaseTTL: s.cmd.LeaseTTL})
 	if err != nil {
 		s.log.Error("the standby serves no API", "error", err.Error())
 		return
@@ -208,7 +236,7 @@ func (s *server) term(ctx context.Context, st store.Store, lead leadership) erro
 	notes := notifier(rt, env, s.log)
 	e, err := engine.New(engine.Options{
 		Store: st, Logger: s.log, LeaseTTL: s.cmd.LeaseTTL, Env: rt.Env, Secrets: secrets(rt, env),
-		Artifacts: artifactStore(rt, env), Resolver: resolver(rt, env, false), Agents: agents(rt, env),
+		Artifacts: s.arts, Resolver: resolver(rt, env, false), Agents: agents(rt, env),
 		Notifier: notes, PackageDir: packageDir(rt, env), Check: checkOptions(rt, env),
 		Leadership: engine.Leadership{ID: s.id, Epoch: lead.identity.Epoch}, Takeover: true,
 	})
@@ -233,7 +261,7 @@ func (s *server) term(ctx context.Context, st store.Store, lead leadership) erro
 		}
 	}
 	h := engineHost{site: s.site, sec: s.sec, embedded: env.NodeEmbedded, slots: s.cmd.Slots, leaseTTL: s.cmd.LeaseTTL,
-		lead: lead}
+		lead: lead, arts: s.arts, nodeToken: s.nodeToken}
 	return h.run(ctx, rt, env, st, e, notes, s.log, wait)
 }
 
@@ -279,6 +307,18 @@ func newEngineID() string {
 		host = host[:24]
 	}
 	return cmp.Or(host, "engine") + "-" + strings.ToLower(rand.Text()[:6])
+}
+
+// readNodeToken reads node.token, empty without it: an engine serves remote nodes only with it (spec section 15.7).
+func readNodeToken(rt *Runtime, env *pipeline.Environment) (string, error) {
+	if env.NodeToken == nil {
+		return "", nil
+	}
+	token, err := env.NodeToken.Value(rt.Env)
+	if err != nil {
+		return "", fmt.Errorf("node.token: %w", err)
+	}
+	return token, nil
 }
 
 // checkListen refuses a listen address that is not a loopback one without auth.token: exposed, the API requires the

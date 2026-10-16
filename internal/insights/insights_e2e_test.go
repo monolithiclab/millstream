@@ -15,10 +15,10 @@ import (
 // a clean quick run, the failures and the unschedulable step are gone from the window.
 func TestProjectLifecycle(t *testing.T) {
 	s := fixture(t)
-	if err := Project(s.ctx, s.st, s.p, now); err != nil {
+	if err := Project(s.ctx, s.st, s.p, now, nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := Project(s.ctx, s.st, s.p, now.Add(time.Minute)); err != nil { // same findings: same rows
+	if err := Project(s.ctx, s.st, s.p, now.Add(time.Minute), nil); err != nil { // same findings: same rows
 		t.Fatal(err)
 	}
 	ins, err := s.st.Insights(s.ctx, store.InsightFilter{Pipeline: "shop", State: store.InsightOpen})
@@ -26,7 +26,7 @@ func TestProjectLifecycle(t *testing.T) {
 		t.Fatalf("open insights = %d, %v; want 6", len(ins), err)
 	}
 	s.quickRun("later", now.Add(26*time.Hour))
-	if err := Project(s.ctx, s.st, s.p, now.Add(27*time.Hour)); err != nil {
+	if err := Project(s.ctx, s.st, s.p, now.Add(27*time.Hour), nil); err != nil {
 		t.Fatal(err)
 	}
 	states := map[string]store.InsightState{}

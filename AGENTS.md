@@ -29,6 +29,12 @@ below) for the reasoning, and `make help` for every command.
 - `cmd/millstream/`: the binary's `main`.
 - `internal/`: `cli`, `pipeline`, `ids`, `expr`, `schema`, `protocol`, `store`, `failpoint`, `engine`, `node`,
   `redact` and the other packages named in the M1 plan's file structure.
+- Remote nodes (spec section 5.10): `nodewire` is the node protocol's JSON; `nodeapi` both its sides, the engine's
+  handler under `/node/v1` (`api.Options.NodeAPI`) and the node's `Client`, a `node.Transport`; `node.Launch` is a
+  delivery's action process as the engine resolves it, which a node builds its process spec from (`Launch.Spec`) for
+  its own platform and package cache. The engine's node registry, placement and lease-scoped fetches are
+  `engine/nodes.go`; `artifacts` is the artifact store interface over the local `Dir` and `artifacts/s3` (SigV4
+  written in-repo).
 - `internal/store/`: the log store interface; `sqlstore` is its implementation on `database/sql` (the writer loop,
   every unit, the reads), shared by `sqlite` and `postgres`, which open, migrate and hold the connections and give a
   `sqlstore.Dialect` for what the databases spell differently; `storetest` is the conformance suite both pass;
@@ -83,15 +89,18 @@ below) for the reasoning, and `make help` for every command.
   database once and copies a new database from it for each test, dropped when the test ends; `TestMain` calls
   `pgtest.Stop`. Without Docker they skip, saying so. Run them alone with
   `go test -tags e2e ./internal/store/postgres/...`.
-- `make test-e2e` (`go test -race -count=1 -tags e2e ./...`, and the SDK module's) runs everything, tagged and
-  untagged, under the race detector, and prints the whole suite's coverage (`make test` checks the default build's
-  against `COVERAGE_MIN`): the `internal/e2e` package (crash matrix on SQLite and Postgres, run with a second pipeline
-  importing the fixture's stream so that it covers a Done that imports, the failover chaos suite of
-  `failover_test.go` on the same two pipelines with token auth on, two `serve` processes on Postgres, M1 and M2
-  scenarios), the end-to-end CLI and engine tests, the real-process twins of the in-process tests (under the tag,
-  `fakeexec` runs the built fake binary), Docker and Postgres tests, and the long property runs. It is slow, is not
-  part of `make ci`, and runs in CI as its own job; run it before closing a milestone and after touching the exec
-  runtime, the node, the CLI's run path, the store's concurrency or the crash recovery.
+- `make test-e2e` (`go test -race -count=1 -tags e2e ./...`, and the SDK module's) runs everything, tagged and untagged,
+  under the race detector, and prints the whole suite's coverage (`make test` checks the default build's against
+  `COVERAGE_MIN`): the `internal/e2e` package (crash matrix on SQLite and Postgres, run with a second pipeline importing
+  the fixture's stream so that it covers a Done that imports, the failover chaos suite of `failover_test.go` on the same
+  two pipelines with token auth on, two `serve` processes on Postgres, the node chaos suite of `nodes_test.go` (remote
+  node processes killed, cut off by a proxy past their lease, revoked, refused a rotated token, following a failover)
+  and `nodes_tls_test.go` (a node over HTTPS and HTTP/2 with `--ca`), M1 and M2 scenarios), the S3 store against a real
+  S3-compatible server (SeaweedFS pinned by digest: MinIO publishes no server image any more), the end-to-end CLI and
+  engine tests, the real-process twins of the in-process tests (under the tag, `fakeexec` runs the built fake binary),
+  Docker and Postgres tests, and the long property runs. It is slow, is not part of `make ci`, and runs in CI as its own
+  job; run it before closing a milestone and after touching the exec runtime, the node, the CLI's run path, the store's
+  concurrency or the crash recovery.
 
 ## Web UI
 
@@ -200,8 +209,9 @@ below) for the reasoning, and `make help` for every command.
   each, checksums and local images in `dist/`, nothing signed or pushed. GoReleaser and syft are pinned in their own
   tools module, `tools/release/go.mod`, so their dependencies never move the linters' in `tools/go.mod`; bump them
   with `go get -tool -modfile=tools/release/go.mod <module>@<version>`.
-- `deploy/compose/millstream.yaml` and the units reference `node --join` (M4 Task 4) before it exists: a task that
-  changes that command or the environment file's keys updates `deploy/` and `docs/deploy.md` in the same commit.
+- `deploy/compose/millstream.yaml` and the units run `node --join` with TLS from `deploy/compose/tls/` (git-ignored,
+  made per deployment: docs/deploy.md): a change to that command or the environment file's keys updates `deploy/`
+  and `docs/deploy.md` in the same commit.
   `TestDeployEnvironmentParses` (`internal/pipeline`) parses the Compose environment file strictly.
 
 ## Where things go

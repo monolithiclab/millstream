@@ -708,3 +708,45 @@ func TestLineageAcrossPipelines(t *testing.T) {
 	wantError(t, post(`{"step":"notify","stream":"raw"}`), 400, codeInvalid)
 	wantError(t, post(`{"stream":"raw","run":"r5"}`), 400, codeInvalid)
 }
+
+// Remote nodes are listed from the store, with their health and whether they lag the engine's version; drain and
+// revoke go through the engine; the embedded node is neither.
+func TestNodeActions(t *testing.T) {
+	f := scratchFixture(t)
+	srv := f.server()
+	if err := f.st.RegisterNode(f.ctx, store.Node{ID: "gpu-1", Version: "v-old", Labels: map[string]string{"gpu": "true"},
+		Runtimes: []string{"exec"}, Slots: 2}); err != nil {
+		t.Fatal(err)
+	}
+	f.clock.Advance(20 * time.Second)
+	n := get[Nodes](t, srv, "/api/v1/nodes")
+	if len(n.Nodes) != 2 || n.Nodes[1].ID != "gpu-1" || !n.Nodes[1].Behind || n.Nodes[1].State != "active" ||
+		n.Nodes[1].Health != "late" || n.Nodes[1].LastHeartbeat == nil || n.Nodes[0].Behind ||
+		n.Nodes[0].Health != "healthy" || n.Unschedulable == nil {
+		t.Fatalf("nodes = %+v", n)
+	}
+	rec := do(t, srv, request{method: "POST", target: "/api/v1/nodes/gpu-1/drain", body: "{}"})
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("drain: %d %s", rec.Code, rec.Body.String())
+	}
+	if n := get[Nodes](t, srv, "/api/v1/nodes"); n.Nodes[1].State != "draining" {
+		t.Fatalf("drained = %+v", n.Nodes[1])
+	}
+	rec = do(t, srv, request{method: "POST", target: "/api/v1/nodes/gpu-1/revoke", body: "{}"})
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("revoke: %d %s", rec.Code, rec.Body.String())
+	}
+	if n := get[Nodes](t, srv, "/api/v1/nodes"); n.Nodes[1].State != "revoked" {
+		t.Fatalf("revoked = %+v", n.Nodes[1])
+	}
+	wantError(t, do(t, srv, request{method: "POST", target: "/api/v1/nodes/nobody/drain", body: "{}"}), 404,
+		codeNotFound)
+	wantError(t, do(t, srv, request{method: "POST", target: "/api/v1/nodes/embedded-1/revoke", body: "{}"}), 409,
+		codeConflict)
+	noEngine := must(New(Options{Store: f.st, Version: "v-test"}))
+	wantError(t, do(t, noEngine, request{method: "POST", target: "/api/v1/nodes/gpu-1/drain", body: "{}"}), 503,
+		codeUnavailable)
+	if n := get[Nodes](t, noEngine, "/api/v1/nodes"); n.Unschedulable != nil {
+		t.Fatalf("unschedulable without an engine = %+v", n.Unschedulable)
+	}
+}

@@ -180,7 +180,7 @@ func TestUndispatchableDeliveriesFail(t *testing.T) {
 		{"registry", "lab/score@1", "", ClassUnsupported, "no registries are configured", nil},
 		{"container", "./actions/container", "", ClassUnsupported, "container actions need Docker or Podman",
 			map[string]string{"actions/container/action.yaml": containerManifest}},
-		{"agent", "./actions/agent", "", ClassSandbox, "agent step agent needs a container sandbox",
+		{"agent", "./actions/agent", "", ClassSandbox, "agent action ./actions/agent needs a container sandbox",
 			map[string]string{"actions/agent/action.yaml": agentManifest, "actions/agent/prompt.md": "Score."}},
 		{"manifest", "./actions/none", "", ClassConfig, "no actions/none/action.yaml", nil},
 		{"interpolation", "./actions/a", `, config: { x: "${vars.nope}" }`, ClassConfig,

@@ -738,7 +738,9 @@ paths:
   /nodes:
     get:
       operationId: listNodes
-      summary: The engine serving the request, the deployment's engines, and the nodes, with the leases each holds.
+      summary: >-
+        The engine serving the request, the deployment's engines, the nodes with the leases each holds, and the steps
+        whose pending deliveries no node can take.
       responses:
         default: { $ref: "#/components/responses/Error" }
         "200":
@@ -746,6 +748,34 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Nodes" }
+  /nodes/{node}/drain:
+    parameters: [{ $ref: "#/components/parameters/node" }]
+    post:
+      operationId: drainNode
+      summary: >-
+        Drain a remote node: the engine leases it nothing more and it finishes what it holds; it is active again when
+        it registers from a new process (spec section 5.10). The embedded node cannot be drained (conflict).
+      responses:
+        default: { $ref: "#/components/responses/Error" }
+        "204": { description: Draining. }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "415": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+  /nodes/{node}/revoke:
+    parameters: [{ $ref: "#/components/parameters/node" }]
+    post:
+      operationId: revokeNode
+      summary: >-
+        Revoke a node id: the engine refuses it from then on and ends the leases it holds at once, each attempt
+        consumed as a lease expiry's, so fencing refuses anything it sends afterwards (spec section 15.7). An id never
+        registered is recorded revoked.
+      responses:
+        default: { $ref: "#/components/responses/Error" }
+        "204": { description: Revoked. }
+        "409": { $ref: "#/components/responses/Error" }
+        "415": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
   /live/pipelines/{pipeline}:
     parameters: [{ $ref: "#/components/parameters/pipeline" }]
     get:
@@ -814,6 +844,7 @@ components:
     item: { name: item, in: path, required: true, schema: { type: string } }
     delivery: { name: delivery, in: path, required: true, schema: { type: string } }
     insight: { name: insight, in: path, required: true, schema: { type: string } }
+    node: { name: node, in: path, required: true, schema: { type: string } }
     artifactName: { name: name, in: path, required: true, schema: { type: string } }
     cursor: { name: cursor, in: query, description: A page's next., schema: { type: string } }
     limit: { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 500, default: 50 } }
@@ -1498,7 +1529,25 @@ components:
             The deployment's engines, the active one first, then the standbys in the order they began to wait (spec
             section 5.9). On SQLite, the serving engine alone.
           items: { $ref: "#/components/schemas/DeploymentEngine" }
-        nodes: { type: array, items: { $ref: "#/components/schemas/Node" } }
+        nodes:
+          type: array
+          description: The embedded node, then the remote nodes that registered or were revoked, by id.
+          items: { $ref: "#/components/schemas/Node" }
+        unschedulable:
+          type: array
+          description: >-
+            The steps whose pending deliveries none of the registered nodes, active and heard from within a lease, can
+            take: none offers the runtime the step's action needs or carries its placement labels (spec section 5.10).
+            The active engine's view: a standby leaves it out.
+          items:
+            type: object
+            required: [pipeline, step, pending, needs]
+            additionalProperties: false
+            properties:
+              pipeline: { type: string }
+              step: { type: string }
+              pending: { type: integer }
+              needs: { type: string, description: 'What a node must offer, such as "runtime exec, labels gpu=true".' }
     DeploymentEngine:
       type: object
       required: [id, state, version]
@@ -1515,16 +1564,28 @@ components:
         address: { type: string, description: Where the active engine serves its API, when it serves one. }
     Node:
       type: object
-      required: [id, embedded, version, slots, leases, labels, runtimes]
+      required: [id, embedded, version, behind, slots, leases, labels, runtimes, state, health]
       additionalProperties: false
       properties:
         id: { type: string }
         embedded: { type: boolean }
         version: { type: string }
+        behind: { type: boolean, description: The node runs another version than the engine serving the response. }
         slots: { type: integer }
         leases: { type: integer }
         labels: { type: object, additionalProperties: { type: string } }
-        runtimes: { type: array, items: { type: string } }
+        runtimes:
+          type: array
+          description: "The runtimes it offers (spec section 5.10): exec, container, and agent:<harness> per harness."
+          items: { type: string }
+        state: { type: string, enum: [active, draining, revoked] }
+        health:
+          type: string
+          enum: [healthy, late, lost]
+          description: >-
+            From its last heartbeat: healthy within three heartbeat intervals, late within a lease, lost beyond (its
+            leases expire). The embedded node is always healthy.
+        lastHeartbeat: { type: string, format: date-time, description: A remote node's last registration or heartbeat. }
     Event:
       type: object
       description: The data of a "state" event.

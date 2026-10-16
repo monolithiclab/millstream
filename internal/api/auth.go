@@ -174,7 +174,7 @@ func (s *Server) sameOrigin(r *http.Request, cred credential) bool {
 // hostAllowed reports whether the server answers a request naming host: a loopback one, and with Auth one of its
 // Hosts.
 func (s *Server) hostAllowed(host string) bool {
-	if loopbackHost(host) {
+	if LoopbackHost(host) {
 		return true
 	}
 	if s.opts.Auth == nil {

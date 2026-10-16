@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"log/slog"
 	"maps"
+	"net/http"
 	"os"
+	osexec "os/exec"
 	"os/signal"
 	"slices"
 	"strconv"
@@ -15,8 +17,10 @@ import (
 	"time"
 
 	"github.com/monolithiclab/millstream/internal/api"
+	"github.com/monolithiclab/millstream/internal/artifacts"
 	"github.com/monolithiclab/millstream/internal/engine"
 	"github.com/monolithiclab/millstream/internal/node"
+	"github.com/monolithiclab/millstream/internal/nodeapi"
 	"github.com/monolithiclab/millstream/internal/pipeline"
 	"github.com/monolithiclab/millstream/internal/review"
 	"github.com/monolithiclab/millstream/internal/runtime/exec"
@@ -84,11 +88,15 @@ func (c RunPackagesCmd) Run(rt *Runtime) error {
 	if err != nil {
 		return err
 	}
+	arts, err := artifactStore(rt, env)
+	if err != nil {
+		return err
+	}
 	return withStoreMode(rt, engineStore, postgres.Options{}, func(st store.Store) error {
 		notes := notifier(rt, env, log)
 		e, err := engine.New(engine.Options{
 			Store: st, Logger: log, LeaseTTL: c.LeaseTTL, Env: rt.Env, Secrets: secrets(rt, env), Flags: c.Var,
-			NoCron: c.Once, Artifacts: artifactStore(rt, env), Resolver: actions, Agents: agents(rt, env),
+			NoCron: c.Once, Artifacts: arts, Resolver: actions, Agents: agents(rt, env),
 			Notifier: notes, PackageDir: packageDir(rt, env), Check: checkOptions(rt, env),
 		})
 		if err != nil {
@@ -121,7 +129,7 @@ func (c RunPackagesCmd) Run(rt *Runtime) error {
 			}
 		}
 		h := engineHost{listen: listen, sec: sec, embedded: true, slots: c.Slots, leaseTTL: c.LeaseTTL,
-			lead: leadership{identity: api.Identity{ID: newEngineID(), Since: time.Now()}}}
+			lead: leadership{identity: api.Identity{ID: newEngineID(), Since: time.Now()}}, arts: arts, laptop: true}
 		if err := h.run(ctx, rt, env, st, e, notes, log, wait); err != nil {
 			return err
 		}
@@ -142,6 +150,11 @@ type engineHost struct {
 	slots    int
 	leaseTTL time.Duration
 	lead     leadership // who the engine is on a deployment with a standby; zero for run
+	arts     artifacts.Store
+	// nodeToken serves the node protocol to remote nodes (serve with node.token); empty serves none.
+	nodeToken string
+	// laptop makes the embedded node take every delivery whatever its placement: run's, a laptop's only node.
+	laptop bool
 }
 
 // run runs the engine, its embedded node and the API server until ctx ends or wait, called once the engine is
@@ -167,7 +180,21 @@ func (h engineHost) run(ctx context.Context, rt *Runtime, env *pipeline.Environm
 		if err != nil {
 			return err
 		}
-		nodes = []api.Node{{ID: owner, Embedded: true, Version: rt.Version, Slots: h.slots, Runtimes: sortedKeys(run)}}
+		runtimes := node.Runtimes(sortedKeys(run), agents(rt, env).Agents, func(p string) bool {
+			_, err := osexec.LookPath(p)
+			return err == nil
+		})
+		e.AddNode(engine.NodeInfo{ID: owner, Version: rt.Version, Runtimes: runtimes, Slots: h.slots,
+			AnyPlacement: h.laptop})
+		nodes = []api.Node{{ID: owner, Embedded: true, Version: rt.Version, Slots: h.slots, Runtimes: runtimes}}
+	}
+	var nodeAPI http.Handler
+	if h.nodeToken != "" {
+		var err error
+		if nodeAPI, err = nodeapi.New(nodeapi.Options{Engine: e, Token: h.nodeToken, Artifacts: h.arts,
+			Version: rt.Version, Relay: slog.New(logs.Handler(log.Handler())), Logger: log}); err != nil {
+			return err
+		}
 	}
 	runCtx, cancel := context.WithCancelCause(ctx)
 	defer cancel(nil)
@@ -186,7 +213,8 @@ func (h engineHost) run(ctx context.Context, rt *Runtime, env *pipeline.Environm
 	if site == nil {
 		serveDone <- nil
 	} else {
-		srv, err := newAPIServer(rt, env, st, e, notes, logs, nodes, h.lead, h.sec, log)
+		srv, err := newAPIServer(st, e, notes, logs, apiExtras{rt: rt, arts: h.arts, nodes: nodes, nodeAPI: nodeAPI,
+			leaseTTL: h.leaseTTL}, h.lead, h.sec, log)
 		if err != nil {
 			cancel(nil)
 			return errors.Join(err, <-siteDone)

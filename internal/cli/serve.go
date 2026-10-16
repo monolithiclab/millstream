@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/monolithiclab/millstream/internal/api"
+	"github.com/monolithiclab/millstream/internal/artifacts"
 	"github.com/monolithiclab/millstream/internal/engine"
 	"github.com/monolithiclab/millstream/internal/pipeline"
 	"github.com/monolithiclab/millstream/internal/review"
@@ -42,20 +43,31 @@ type apiServer struct {
 // newAPIServer builds the API server of run and serve over the store and the engine: the broker wakes on the store's
 // commits. lead is who the engine is on a deployment with a standby (zero for run); sec turns token authentication
 // on.
-func newAPIServer(rt *Runtime, env *pipeline.Environment, st store.Store, e *engine.Engine, notes *review.Notifier,
-	logs *api.LogRing, nodes []api.Node, lead leadership, sec apiSecurity, log *slog.Logger,
+func newAPIServer(st store.Store, e *engine.Engine, notes *review.Notifier, logs *api.LogRing, x apiExtras,
+	lead leadership, sec apiSecurity, log *slog.Logger,
 ) (*apiServer, error) {
 	b, err := api.NewBroker(api.BrokerOptions{Store: st, Logger: log})
 	if err != nil {
 		return nil, err
 	}
-	a, err := api.New(api.Options{Store: st, Engine: e, Artifacts: artifactStore(rt, env), Broker: b, Logs: logs,
-		Nodes: nodes, Version: rt.Version, User: identity(rt), Auth: sec.auth, Logger: log, Identity: lead.identity,
-		Deployment: lead.deployment, NotificationFailures: notes.Failures})
+	a, err := api.New(api.Options{Store: st, Engine: e, Artifacts: x.arts, Broker: b, Logs: logs,
+		Nodes: x.nodes, Version: x.rt.Version, User: identity(x.rt), Auth: sec.auth, Logger: log,
+		Identity: lead.identity, Deployment: lead.deployment, NotificationFailures: notes.Failures,
+		NodeAPI: x.nodeAPI, LeaseTTL: x.leaseTTL})
 	if err != nil {
 		return nil, err
 	}
 	return &apiServer{st: st, broker: b, handler: api.Handler(a, ui.Handler())}, nil
+}
+
+// apiExtras are the rest of what the API server of run and serve serves: the artifact store, the embedded node, and
+// the node protocol for remote nodes.
+type apiExtras struct {
+	rt       *Runtime
+	arts     artifacts.Store
+	nodes    []api.Node
+	nodeAPI  http.Handler
+	leaseTTL time.Duration
 }
 
 // apiSecurity is what the API server reads from the environment, auth.token and tls: run and serve read it before
@@ -156,6 +168,9 @@ func listenSite(ctx context.Context, addr string, tc *tls.Config, announce func(
 	}
 	s := &site{ln: ln, addr: ln.Addr().String(), url: "http://" + ln.Addr().String() + "/", announce: announce}
 	if tc != nil {
+		// HTTP/2 over TLS: remote nodes keep one connection to the engine (spec section 5.10).
+		tc = tc.Clone()
+		tc.NextProtos = []string{"h2", "http/1.1"}
 		s.ln, s.url = tls.NewListener(ln, tc), "https://"+ln.Addr().String()+"/"
 	}
 	s.http = &http.Server{Handler: http.HandlerFunc(s.serveHTTP), ReadHeaderTimeout: 10 * time.Second,

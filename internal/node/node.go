@@ -34,8 +34,8 @@ const (
 	DefaultPullInterval      = time.Second
 	DefaultHeartbeatInterval = 5 * time.Second
 	DefaultDrainTimeout      = 30 * time.Second
-	// reportTimeout bounds each heartbeat, Done and Fail call.
-	reportTimeout = 30 * time.Second
+	// DefaultReportTimeout bounds each heartbeat, Done and Fail call.
+	DefaultReportTimeout = 30 * time.Second
 )
 
 // ErrAbandon, as the cause of Run's context cancellation (context.WithCancelCause), makes the node abandon its
@@ -49,6 +49,10 @@ var ErrDrainTimeout = errors.New("drain timeout")
 // Assignment is one leased delivery, resolved by the engine: the node only runs it.
 type Assignment struct {
 	Lease store.Lease
+	// Launch is the action process as the engine resolved it, which a remote node receives and builds Spec from.
+	Launch Launch
+	// Secrets are the values of the secrets resolved for the delivery, by name.
+	Secrets map[string]string
 	// Spec is the action process to run, with the step's config interpolated for the run.
 	Spec    exec.Spec
 	ItemMsg protocol.Item
@@ -59,13 +63,14 @@ type Assignment struct {
 	Redact *redact.Redactor
 }
 
-// Artifacts is the artifact store as a node reaches it (spec section 5.10): the engine's local store for the
-// embedded node; remote nodes (M4) move contents through signed URLs behind the same calls.
+// Artifacts is the artifact store as a node reaches it (spec section 5.10), for a delivery it holds: the engine's
+// store for the embedded node; a remote node moves contents through signed URLs the engine issues only for the
+// leases it holds (spec section 15.7).
 type Artifacts interface {
-	// PutArtifact stores an output artifact of pipeline and returns its reference under name.
-	PutArtifact(ctx context.Context, pipeline, name string, r io.Reader) (store.ArtifactRef, error)
-	// OpenArtifact opens an input artifact of pipeline.
-	OpenArtifact(ctx context.Context, pipeline string, ref store.ArtifactRef) (io.ReadCloser, error)
+	// PutArtifact stores an output artifact of the leased delivery's pipeline and returns its reference under name.
+	PutArtifact(ctx context.Context, lease store.LeaseRef, name string, r io.Reader) (store.ArtifactRef, error)
+	// OpenArtifact opens an input artifact of the leased delivery.
+	OpenArtifact(ctx context.Context, lease store.LeaseRef, ref store.ArtifactRef) (io.ReadCloser, error)
 }
 
 // Transport connects a node to the engine: in memory for the embedded node, over HTTP/2 for remote ones.
@@ -90,6 +95,12 @@ type Options struct {
 	PullInterval      time.Duration
 	HeartbeatInterval time.Duration
 	DrainTimeout      time.Duration
+	// ReportTimeout bounds each heartbeat, Done and Fail call: a remote node's transport resends a Done or Fail
+	// until the engine answers within it, across a reconnection.
+	ReportTimeout time.Duration
+	// IdleHeartbeat makes the node heartbeat while it holds no lease too: a remote node, whose heartbeats tell the
+	// engine it is alive (spec section 5.10).
+	IdleHeartbeat bool
 	// Logger receives the node's logs; nil discards them.
 	Logger *slog.Logger
 	// Pool runs the action processes. The node does not close it.
@@ -137,6 +148,9 @@ func New(t Transport, opts Options) (*Node, error) {
 	}
 	if opts.DrainTimeout <= 0 {
 		opts.DrainTimeout = DefaultDrainTimeout
+	}
+	if opts.ReportTimeout <= 0 {
+		opts.ReportTimeout = DefaultReportTimeout
 	}
 	if opts.Logger == nil {
 		opts.Logger = slog.New(slog.DiscardHandler)
@@ -225,6 +239,7 @@ func (l *loop) start(a Assignment) {
 	ctx, cancel := context.WithCancel(l.base)
 	ref := ls.Ref()
 	l.held[ref.Key()] = &running{ref: ref, log: log, cancel: cancel}
+	log.Info("delivery started")
 	go func() {
 		defer cancel()
 		l.execute(ctx, log, a)
@@ -236,14 +251,14 @@ func (l *loop) start(a Assignment) {
 // timed out, and the delivery belongs to whoever leases it next.
 func (l *loop) execute(ctx context.Context, log *slog.Logger, a Assignment) {
 	res, err := l.opts.Pool.Deliver(ctx, a.Spec, exec.Delivery{
-		Item: a.ItemMsg, Inputs: a.Lease.Item.Artifacts, Artifacts: pipelineArtifacts{l.t, a.Lease.Pipeline},
+		Item: a.ItemMsg, Inputs: a.Lease.Item.Artifacts, Artifacts: leaseArtifacts{l.t, a.Lease.Ref()},
 		Timeout: a.Timeout, Log: log,
 	})
 	if ctx.Err() != nil {
 		log.Warn("delivery abandoned, result dropped")
 		return
 	}
-	rctx, cancel := context.WithTimeout(l.base, reportTimeout)
+	rctx, cancel := context.WithTimeout(l.base, l.opts.ReportTimeout)
 	defer cancel()
 	ref, attempt := a.Lease.Ref(), a.Lease.Attempt
 	cost, metrics := protocol.CostUSD(res.Metrics), storeMetrics(log, a.Redact, res.Metrics)
@@ -301,30 +316,30 @@ func storeMetrics(log *slog.Logger, red *redact.Redactor, ms []protocol.Metric) 
 	return out
 }
 
-// pipelineArtifacts binds the transport's artifact store to one pipeline, as the runtime moves a delivery's files.
-type pipelineArtifacts struct {
-	t        Artifacts
-	pipeline string
+// leaseArtifacts binds the transport's artifact store to one lease, as the runtime moves a delivery's files.
+type leaseArtifacts struct {
+	t     Artifacts
+	lease store.LeaseRef
 }
 
-func (p pipelineArtifacts) Open(ctx context.Context, ref store.ArtifactRef) (io.ReadCloser, error) {
-	return p.t.OpenArtifact(ctx, p.pipeline, ref)
+func (p leaseArtifacts) Open(ctx context.Context, ref store.ArtifactRef) (io.ReadCloser, error) {
+	return p.t.OpenArtifact(ctx, p.lease, ref)
 }
 
-func (p pipelineArtifacts) Put(ctx context.Context, name string, r io.Reader) (store.ArtifactRef, error) {
-	return p.t.PutArtifact(ctx, p.pipeline, name, r)
+func (p leaseArtifacts) Put(ctx context.Context, name string, r io.Reader) (store.ArtifactRef, error) {
+	return p.t.PutArtifact(ctx, p.lease, name, r)
 }
 
 // heartbeat renews every held lease and cancels the deliveries whose lease is lost.
 func (l *loop) heartbeat() {
-	if len(l.held) == 0 {
+	if len(l.held) == 0 && !l.opts.IdleHeartbeat {
 		return
 	}
 	refs := make([]store.LeaseRef, 0, len(l.held))
 	for _, r := range l.held {
 		refs = append(refs, r.ref)
 	}
-	ctx, cancel := context.WithTimeout(l.base, reportTimeout)
+	ctx, cancel := context.WithTimeout(l.base, l.opts.ReportTimeout)
 	defer cancel()
 	lost, err := l.t.Heartbeat(ctx, l.opts.Owner, refs)
 	if err != nil {

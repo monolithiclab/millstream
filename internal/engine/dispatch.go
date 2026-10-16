@@ -15,14 +15,28 @@ import (
 
 var _ node.Transport = (*Engine)(nil)
 
+// resolveTimeout bounds resolving the deliveries one Pull leased.
+const resolveTimeout = 30 * time.Second
+
 // Pull implements node.Transport: it leases up to maxN deliveries within the steps' concurrency, the pipelines'
 // limits and the steps' rates, and resolves each into an assignment. Stubbed deliveries and builtin deliveries
 // (filter, dedupe) are completed on the spot by the engine and leasing continues, so a node never receives a builtin
 // and a fully stubbed pipeline runs to the end in one call; deliveries that cannot be dispatched (an unsupported
 // action kind, a config that fails to interpolate) are failed instead of returned.
 func (e *Engine) Pull(ctx context.Context, owner string, maxN int) ([]node.Assignment, error) {
+	// A lease taken is resolved into an assignment, or failed, even when the caller goes away meanwhile (a node's
+	// request cancelled, a drain): never left to expire, consuming an attempt, for a pull cancelled half-way. Leasing
+	// itself still ends with ctx, and resolving is bounded, so a store that stops answering cannot hold the caller.
+	resolve, cancel := context.WithTimeout(context.WithoutCancel(ctx), resolveTimeout)
+	defer cancel()
+	// A node abandoning its deliveries (its engine stepped down) reports nothing anyway: stop at once.
+	defer context.AfterFunc(ctx, func() {
+		if errors.Is(context.Cause(ctx), node.ErrAbandon) {
+			cancel()
+		}
+	})()
 	var out []node.Assignment
-	for len(out) < maxN {
+	for len(out) < maxN && ctx.Err() == nil {
 		leases, err := e.lease(ctx, owner, maxN-len(out))
 		if err != nil {
 			if len(out) > 0 {
@@ -33,17 +47,17 @@ func (e *Engine) Pull(ctx context.Context, owner string, maxN int) ([]node.Assig
 		completed := false
 		for _, l := range leases {
 			if stub, ok := e.opts.Stubs[store.StepRef{Pipeline: l.Pipeline, Step: l.Step}]; ok {
-				e.completeStub(ctx, l, stub)
+				e.completeStub(resolve, l, stub)
 				completed = true
 				continue
 			}
-			if e.runBuiltin(ctx, l) {
+			if e.runBuiltin(resolve, l) {
 				completed = true
 				continue
 			}
-			a, err := e.assign(ctx, l)
+			a, err := e.assign(resolve, owner, l)
 			if err != nil {
-				e.failDispatch(ctx, l, err)
+				e.failDispatch(resolve, l, err)
 				completed = true
 				continue
 			}
@@ -58,26 +72,34 @@ func (e *Engine) Pull(ctx context.Context, owner string, maxN int) ([]node.Assig
 
 // lease leases up to maxN deliveries under the in-memory limits and records them in flight.
 func (e *Engine) lease(ctx context.Context, owner string, maxN int) ([]store.Lease, error) {
-	active, steps, reserve, err := e.limitSources(ctx)
+	src, err := e.limitSources(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("pull: %w", err)
 	}
 
 	e.mu.Lock()
 	defer e.mu.Unlock()
+	ok, placed := e.leasable(owner)
+	if !ok {
+		return nil, nil // a draining or revoked node: nothing more
+	}
 	now := e.opts.Now()
 	req := store.LeaseRequest{
 		Owner: owner, Max: maxN, TTL: e.opts.LeaseTTL,
-		Slots: map[store.StepRef]int{}, PipelineSlots: map[string]int{}, Reserve: reserve,
+		Slots: map[store.StepRef]int{}, PipelineSlots: map[string]int{}, Reserve: src.reserve,
 	}
 	perStep, perPipeline := e.countInflight()
-	for _, rev := range active {
+	for _, rev := range src.active {
 		name := rev.p.Name
 		if limit := rev.p.Limits.Concurrency; limit > 0 {
 			req.PipelineSlots[name] = limit - perPipeline[name]
 		}
 	}
-	for ref, step := range steps {
+	for ref, step := range src.steps {
+		if placed != nil && !src.placement[ref].Matches(placed.info.Runtimes, placed.info.Labels) {
+			req.Exclude = append(req.Exclude, ref) // the node cannot run it (spec section 5.10)
+			continue
+		}
 		free := max(step.Concurrency, 1) - perStep[ref]
 		if b := e.bucket(ref, step.Rate, now); b != nil {
 			tokens := b.available(now)
@@ -100,7 +122,7 @@ func (e *Engine) lease(ctx context.Context, owner string, maxN int) ([]store.Lea
 	for _, l := range leases {
 		ref := store.StepRef{Pipeline: l.Pipeline, Step: l.Step}
 		e.inflight[l.Ref().Key()] = flight{
-			step: ref, runID: l.RunID, itemID: l.Item.ID, attempt: l.Attempt, token: l.FencingToken,
+			step: ref, runID: l.RunID, itemID: l.Item.ID, attempt: l.Attempt, token: l.FencingToken, owner: owner,
 		}
 		if b := e.buckets[ref]; b != nil {
 			b.take()
@@ -109,52 +131,62 @@ func (e *Engine) lease(ctx context.Context, owner string, maxN int) ([]store.Lea
 	return leases, nil
 }
 
-// limitSources returns each pipeline's active revision, whose limits apply, the definition each step's concurrency
-// and rate come from, and the agent steps of each revision with the budget reservation of each delivery (the
-// maxCostUsd of its action in its run's revision, as budget.runUsd is that revision's). A step's definition is the
-// active revision's, or, for a step only older revisions have, that of the newest revision with unsettled runs that
-// has it, so its remaining deliveries are still limited.
-func (e *Engine) limitSources(ctx context.Context) ([]*revision, map[store.StepRef]pipeline.Step,
-	map[store.AgentStep]float64, error,
-) {
+// sources are what the in-memory limits and placement read: each pipeline's active revision, whose limits apply;
+// the definition each step's concurrency and rate come from, and its placement; and the agent steps of each revision
+// with the budget reservation of each delivery (the maxCostUsd of its action in its run's revision, as budget.runUsd
+// is that revision's).
+type sources struct {
+	active    []*revision
+	steps     map[store.StepRef]pipeline.Step
+	placement map[store.StepRef]node.Placement
+	reserve   map[store.AgentStep]float64
+}
+
+// limitSources returns the sources of the limits. A step's definition is the active revision's, or, for a step only
+// older revisions have, that of the newest revision with unsettled runs that has it, so its remaining deliveries are
+// still limited.
+func (e *Engine) limitSources(ctx context.Context) (sources, error) {
 	pipelines, err := e.st.Pipelines(ctx)
 	if err != nil {
-		return nil, nil, nil, err
+		return sources{}, err
 	}
 	open, err := e.st.OpenRevisions(ctx)
 	if err != nil {
-		return nil, nil, nil, err
+		return sources{}, err
 	}
-	active := make([]*revision, 0, len(pipelines))
-	steps := map[store.StepRef]pipeline.Step{}
-	reserve := map[store.AgentStep]float64{}
+	src := sources{
+		active: make([]*revision, 0, len(pipelines)), steps: map[store.StepRef]pipeline.Step{},
+		placement: map[store.StepRef]node.Placement{}, reserve: map[store.AgentStep]float64{},
+	}
 	add := func(rev *revision) {
 		for name, step := range rev.p.Steps {
 			ref := store.StepRef{Pipeline: rev.p.Name, Step: name}
-			if ra := e.action(rev, step.Action); ra.err == nil && ra.a.Kind == pipeline.KindAgent {
-				reserve[store.AgentStep{StepRef: ref, Revision: rev.id}] = ra.a.Agent.MaxCostUSD
+			ra := e.action(rev, step.Action)
+			if ra.err == nil && ra.a.Kind == pipeline.KindAgent {
+				src.reserve[store.AgentStep{StepRef: ref, Revision: rev.id}] = ra.a.Agent.MaxCostUSD
 			}
-			if _, ok := steps[ref]; !ok {
-				steps[ref] = step
+			if _, ok := src.steps[ref]; !ok {
+				src.steps[ref] = step
+				src.placement[ref] = stepPlacement(rev.p, step, ra)
 			}
 		}
 	}
 	for _, ps := range pipelines {
 		rev, err := e.revision(ctx, ps.ActiveRevision)
 		if err != nil {
-			return nil, nil, nil, err
+			return sources{}, err
 		}
-		active = append(active, rev)
+		src.active = append(src.active, rev)
 		add(rev)
 	}
 	for _, id := range slices.Backward(open) { // newest first
 		rev, err := e.revision(ctx, id)
 		if err != nil {
-			return nil, nil, nil, err
+			return sources{}, err
 		}
 		add(rev)
 	}
-	return active, steps, reserve, nil
+	return src, nil
 }
 
 // countInflight counts the deliveries in flight per step and per pipeline. The caller holds e.mu.

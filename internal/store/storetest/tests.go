@@ -44,6 +44,7 @@ var Tests = append([]Test{
 	{"TestLease", TestLease},
 	{"TestLeaseSlotsAndExclusions", TestLeaseSlotsAndExclusions},
 	{"TestRenew", TestRenew},
+	{"TestNodes", TestNodes},
 	{"TestApplyRevision", TestApplyRevision},
 	{"TestApplyRevisionPausedSteps", TestApplyRevisionPausedSteps},
 	{"TestFire", TestFire},

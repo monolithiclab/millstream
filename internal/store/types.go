@@ -512,6 +512,34 @@ type Item struct {
 	ParentPipeline string
 }
 
+// NodeState is a remote node's state (spec section 5.10).
+type NodeState string
+
+// Node states.
+const (
+	// NodeActive: the node pulls deliveries.
+	NodeActive NodeState = "active"
+	// NodeDraining: the engine leases nothing more to the node, which finishes what it holds; a node that left is
+	// draining too. Registering again from a new process makes it active.
+	NodeDraining NodeState = "draining"
+	// NodeRevoked: the id is refused from then on (spec section 15.7).
+	NodeRevoked NodeState = "revoked"
+)
+
+// Node is a remote node as the store records it: what it registered with, its state and when the engine last
+// heard from it (registration and heartbeats, by the store clock).
+type Node struct {
+	ID       string
+	Version  string
+	Labels   map[string]string
+	Runtimes []string
+	Slots    int
+	State    NodeState
+	// RegisteredAt is zero for an id revoked before it ever registered.
+	RegisteredAt  time.Time
+	LastHeartbeat time.Time
+}
+
 // Delivery is a delivery record (spec section 5.3).
 type Delivery struct {
 	ID             string

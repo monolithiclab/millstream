@@ -7,22 +7,23 @@ import (
 	"testing"
 
 	"github.com/monolithiclab/millstream/internal/artifacts"
+	"github.com/monolithiclab/millstream/internal/store"
 )
 
 func TestArtifactCalls(t *testing.T) {
 	none := newEnv(t, Options{})
-	if _, err := none.e.PutArtifact(t.Context(), "listings", "a.txt", strings.NewReader("x")); !errors.Is(err, errNoArtifactStore) {
+	if _, err := none.e.PutArtifact(t.Context(), store.LeaseRef{Pipeline: "listings"}, "a.txt", strings.NewReader("x")); !errors.Is(err, errNoArtifactStore) {
 		t.Fatalf("PutArtifact without a store: %v", err)
 	}
 	v := newEnv(t, Options{Artifacts: artifacts.New(t.TempDir())})
-	ref, err := v.e.PutArtifact(t.Context(), "listings", "a.txt", strings.NewReader("report"))
+	ref, err := v.e.PutArtifact(t.Context(), store.LeaseRef{Pipeline: "listings"}, "a.txt", strings.NewReader("report"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := none.e.OpenArtifact(t.Context(), "listings", ref); !errors.Is(err, errNoArtifactStore) {
+	if _, err := none.e.OpenArtifact(t.Context(), store.LeaseRef{Pipeline: "listings"}, ref); !errors.Is(err, errNoArtifactStore) {
 		t.Fatalf("OpenArtifact without a store: %v", err)
 	}
-	r, err := v.e.OpenArtifact(t.Context(), "listings", ref)
+	r, err := v.e.OpenArtifact(t.Context(), store.LeaseRef{Pipeline: "listings"}, ref)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -49,6 +49,34 @@ func (s *Server) setPaused(w http.ResponseWriter, r *http.Request, step string, 
 	return nil
 }
 
+// drainNode drains a remote node: the engine leases it nothing more, and it finishes what it holds (spec section
+// 5.10).
+func (s *Server) drainNode(w http.ResponseWriter, r *http.Request) error {
+	return s.setNodeState(w, r, store.NodeDraining)
+}
+
+// revokeNode revokes a node id: refused from then on, its leases ended at once (spec section 15.7).
+func (s *Server) revokeNode(w http.ResponseWriter, r *http.Request) error {
+	return s.setNodeState(w, r, store.NodeRevoked)
+}
+
+func (s *Server) setNodeState(w http.ResponseWriter, r *http.Request, state store.NodeState) error {
+	if s.opts.Engine == nil {
+		return fmt.Errorf("node %s: no engine: %w", state, errUnavailable)
+	}
+	id := r.PathValue("node")
+	for _, n := range s.opts.Nodes {
+		if n.ID == id {
+			return fmt.Errorf("node %s is the engine's embedded node: %w", id, store.ErrConflict)
+		}
+	}
+	if err := s.opts.Engine.SetNodeState(r.Context(), id, state, false); err != nil {
+		return err
+	}
+	w.WriteHeader(http.StatusNoContent)
+	return nil
+}
+
 func (s *Server) disablePipeline(w http.ResponseWriter, r *http.Request) error {
 	if err := s.opts.Store.Disable(r.Context(), r.PathValue("pipeline")); err != nil {
 		return err

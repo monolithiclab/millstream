@@ -169,7 +169,7 @@ type fixture struct {
 	t     testing.TB
 	st    *sqlite.Store
 	clock *fakeClock
-	arts  *artifacts.Store
+	arts  *artifacts.Dir
 	dir   string
 	srv   *Server
 	ctx   context.Context
@@ -319,9 +319,9 @@ func (f *fixture) seed() {
 
 	f.fire("r1")
 	f.clock.Advance(time.Second)
-	f.photo = must(f.arts.Put("listings", "photo.png", bytes.NewReader([]byte("\x89PNG\r\n\x1a\nphoto"))))
-	f.transcript = must(f.arts.Put("listings", "transcript.jsonl", strings.NewReader(`{"role":"user"}`+"\n")))
-	f.page = must(f.arts.Put("listings", "page.html", strings.NewReader("<html><script>alert(1)</script></html>")))
+	f.photo = must(f.arts.Put(context.Background(), "listings", "photo.png", bytes.NewReader([]byte("\x89PNG\r\n\x1a\nphoto"))))
+	f.transcript = must(f.arts.Put(context.Background(), "listings", "transcript.jsonl", strings.NewReader(`{"role":"user"}`+"\n")))
+	f.page = must(f.arts.Put(context.Background(), "listings", "page.html", strings.NewReader("<html><script>alert(1)</script></html>")))
 	l := f.lease("crawl")
 	f.crawlDelivery, f.trigger = l.DeliveryID, l.Item
 	good := out("a", `{"price":100}`)
