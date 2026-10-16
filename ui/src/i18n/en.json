@@ -34,7 +34,6 @@
     "lessons": "Lessons"
   },
   "screen": {
-    "placeholder": "This view is not built yet.",
     "inPipeline": "Pipeline {{pipeline}}",
     "notFound": {
       "title": "Page not found",
@@ -389,6 +388,29 @@
       "noPdf": "This browser shows no PDF here: open it instead.",
       "error": "The artifact could not be loaded."
     }
+  },
+  "items": {
+    "filters": "Filter items",
+    "stream": "Stream",
+    "allStreams": "All streams",
+    "streamOption": "{{stream}} ({{n}})",
+    "run": "Run",
+    "runPlaceholder": "Any run",
+    "where": "Where (CEL)",
+    "whereHint": "Over item (the payload), envelope, vars and run, as replay --where.",
+    "whereInvalid": "This expression doesn’t work: {{message}}",
+    "apply": "Apply",
+    "clear": "Clear filters",
+    "list": "Items, oldest first",
+    "shownOne": "{{n}} item shown",
+    "shownOther": "{{n}} items shown",
+    "more": "Show more items",
+    "searchFurther": "Search further",
+    "mayMatchFurther": "A filtered page reads a bounded number of items: more may match further on.",
+    "noMatchYet": "No match in the items read so far",
+    "noMatch": "No item matches these filters",
+    "empty": "No items yet",
+    "emptyBody": "Items appear here as the pipeline’s steps publish them."
   },
   "pipelines": {
     "paused": "{{name}} paused: its deliveries wait until you resume it.",

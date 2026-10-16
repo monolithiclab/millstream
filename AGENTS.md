@@ -79,25 +79,25 @@ below) for the reasoning, and `make help` for every command.
 - `make ui` builds into `internal/ui/dist/`, which `internal/ui` embeds (`//go:embed all:dist`) and serves as an SPA
   (index.html for client routes, immutable caching for `assets/`). The build is not committed; the committed
   `internal/ui/dist/placeholder.html` is served until it exists, so `go build` never needs npm.
-- `make test-ui`: typecheck, ESLint (typescript-eslint, jsx-a11y, react-hooks), Prettier check, and Vitest with
-  coverage in jsdom: fake timers and a `FakeApi`, never a network or a wall-clock wait. `make test-ui-e2e` builds,
-  then runs Playwright with axe (WCAG 2.2 AA) on the shell in both themes, both languages, at 375 and 1280 px,
-  reaching the build through `millstream run` (cross-compiled for the container with the UI embedded) serving the
-  API and the UI over `ui/e2e/fixture`, a package of builtin steps. `e2e/global.setup.ts` seeds runs through the
-  API first: four listings parked in the analysts and triage inboxes, one filtered out so a run settles, and one the
-  fixture's `price-check` dead-letters (its surface is 0). `e2e/screens.spec.ts` runs axe and the clipping check of
-  `e2e/checks.ts` on every built screen, then the flows across screens (graph, item, replayed dead letter; the reject
-  sheet; the density strip; the metrics explorer); `e2e/inbox-flow.spec.ts` decides reviews from the keyboard in
-  French; `e2e/smoke.spec.ts` covers the shell on `?demo`. Then `make test-ui-e2e` runs the M3 reference demo,
-  `e2e/demo.spec.ts` (`playwright.demo.config.ts`; `make test-ui-demo` runs it alone), once in English and light,
+- `make test-ui`: typecheck, ESLint (typescript-eslint, jsx-a11y, react-hooks), Prettier check, and Vitest with coverage
+  in jsdom: fake timers and a `FakeApi`, never a network or a wall-clock wait. `make test-ui-e2e` builds, then runs
+  Playwright with axe (WCAG 2.2 AA) on the shell in both themes, both languages, at 375 and 1280 px, reaching the build
+  through `millstream run` (cross-compiled for the container with the UI embedded) serving the API and the UI over
+  `ui/e2e/fixture`, a package of builtin steps. `e2e/global.setup.ts` seeds runs through the API first: four listings
+  parked in the analysts and triage inboxes, one filtered out so a run settles, and one the fixture's `price-check`
+  dead-letters (its surface is 0). `e2e/screens.spec.ts` runs axe and the clipping check of `e2e/checks.ts` on every
+  built screen, then the flows across screens (graph, item, replayed dead letter; the items list's stream and CEL
+  filter; the reject sheet; the density strip; the metrics explorer); `e2e/inbox-flow.spec.ts` decides reviews from the
+  keyboard in French; `e2e/smoke.spec.ts` covers the shell on `?demo`. Then `make test-ui-e2e` runs the M3 reference
+  demo, `e2e/demo.spec.ts` (`playwright.demo.config.ts`; `make test-ui-demo` runs it alone), once in English and light,
   once in French and dark, each on a `millstream run` of its own over the package make assembles in `.build/demo`:
   `e2e/demo-fixture/pipeline.yaml` (the M2 fixture with a `review` step after `score`), the M2 fixture's actions with
   their Go exec actions compiled for the container, and its recordings replayed offline but L002's, withheld so that
   listing dead-letters; `e2e/demo-fixture/millstream.yaml` lets the agent run unsandboxed. It fires the run from the
-  Runs screen, watches the graph, reads a transcript, decides the reviews from the keyboard, checks the run settles
-  and the cost per approved item, replays the dead letter and opens the metrics, with axe on every state.
-  `make ui-shell` opens a shell in the node container (`npm run dev` serves on port 5173). Both test targets run in
-  CI as their own jobs, not in `make ci`.
+  Runs screen, watches the graph, reads a transcript, decides the reviews from the keyboard, checks the run settles and
+  the cost per approved item, replays the dead letter and opens the metrics, with axe on every state. `make ui-shell`
+  opens a shell in the node container (`npm run dev` serves on port 5173). Both test targets run in CI as their own
+  jobs, not in `make ci`.
 - Tokens: `ui/src/styles/tokens.css` holds every colour, font, radius, shadow and motion token of the canvas identity
   board as `--ms-*` custom properties, colours as `light-dark(light, dark)`. The theme follows
   `prefers-color-scheme` unless `<html data-theme="light|dark">` overrides it. `src/styles/index.css` maps the tokens

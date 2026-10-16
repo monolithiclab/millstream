@@ -56,6 +56,19 @@ const screens: ScreenCase[] = [
     ready: (page) => expect(page.getByRole('tablist')).toBeVisible(),
   },
   {
+    name: 'items',
+    path: async () => '/p/listings-daily/items',
+    ready: (page) => expect(page.getByRole('list', { name: /Items, oldest first|Items, du plus ancien/ })).toBeVisible(),
+    // A where the server cannot compile: its message at the field.
+    open: async (page) => {
+      const where = page.getByRole('textbox', { name: /Where \(CEL\)|Condition \(CEL\)/ });
+      await where.fill('item.priceEur >');
+      await where.press('Enter');
+      await expect(page.getByRole('alert')).toContainText(/where:/);
+      await expect(where).toHaveAttribute('aria-invalid', 'true');
+    },
+  },
+  {
     name: 'dead letters',
     path: async () => '/p/listings-daily/dead-letters',
     ready: (page) => expect(page.getByRole('region').first()).toBeVisible(),
@@ -167,6 +180,23 @@ test('open the graph, select a step, open an item, replay a dead letter', async 
 
   // The replay fails the same way: a new dead letter comes back, and the replayed one is kept as replayed.
   await expect(page.getByRole('button', { name: /^Replayed [1-9]/ })).toBeVisible();
+});
+
+test('the items list filters a stream with CEL and opens an item', async ({ page }) => {
+  await page.goto('/p/listings-daily/items');
+  await page.getByRole('combobox', { name: 'Stream' }).selectOption('listings.shortlist');
+  await expect(page).toHaveURL(/stream=listings.shortlist/);
+  const where = page.getByRole('textbox', { name: 'Where (CEL)' });
+  await where.fill('item.surfaceM2 > 60');
+  await where.press('Enter');
+  await expect(page).toHaveURL(/where=item.surfaceM2/);
+  const list = page.getByRole('list', { name: 'Items, oldest first' });
+  // T3 · 68 m² and T4 · 91 m² are over 60 m².
+  await expect(list.getByRole('link')).toHaveCount(2);
+  await list.getByRole('link', { name: /T4 · 91 m²/ }).click();
+  await expect(page.getByRole('heading', { level: 1, name: 'T4 · 91 m² · Montreuil' })).toBeVisible();
+  await page.goBack();
+  await expect(where).toHaveValue('item.surfaceM2 > 60');
 });
 
 test('the inbox at 375 px opens the reject sheet, also axe-clean', async ({ page }) => {

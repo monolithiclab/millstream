@@ -34,7 +34,6 @@
     "lessons": "Leçons"
   },
   "screen": {
-    "placeholder": "Cette vue n’est pas encore construite.",
     "inPipeline": "Pipeline {{pipeline}}",
     "notFound": {
       "title": "Page introuvable",
@@ -389,6 +388,29 @@
       "noPdf": "Ce navigateur n’affiche pas le PDF ici : ouvrez-le plutôt.",
       "error": "L’artefact n’a pas pu être chargé."
     }
+  },
+  "items": {
+    "filters": "Filtrer les items",
+    "stream": "Flux",
+    "allStreams": "Tous les flux",
+    "streamOption": "{{stream}} ({{n}})",
+    "run": "Run",
+    "runPlaceholder": "Tous les runs",
+    "where": "Condition (CEL)",
+    "whereHint": "Sur item (le contenu), envelope, vars et run, comme replay --where.",
+    "whereInvalid": "Cette expression ne fonctionne pas : {{message}}",
+    "apply": "Appliquer",
+    "clear": "Effacer les filtres",
+    "list": "Items, du plus ancien au plus récent",
+    "shownOne": "{{n}} item affiché",
+    "shownOther": "{{n}} items affichés",
+    "more": "Afficher plus d’items",
+    "searchFurther": "Chercher plus loin",
+    "mayMatchFurther": "Une page filtrée lit un nombre limité d’items : d’autres peuvent correspondre plus loin.",
+    "noMatchYet": "Aucun résultat parmi les items lus jusqu’ici",
+    "noMatch": "Aucun item ne correspond à ces filtres",
+    "empty": "Pas encore d’items",
+    "emptyBody": "Les items apparaissent ici à mesure que les étapes du pipeline les publient."
   },
   "pipelines": {
     "paused": "{{name}} en pause : ses livraisons attendent que vous le repreniez.",

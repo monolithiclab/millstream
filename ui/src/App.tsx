@@ -11,10 +11,10 @@ import { LessonsScreen } from './screens/lessons/LessonsScreen';
 import { LogsScreen } from './screens/logs/LogsScreen';
 import { NodesScreen } from './screens/nodes/NodesScreen';
 import { NotFound } from './screens/NotFound';
-import { Placeholder } from './screens/Placeholder';
 import { DeadLettersScreen } from './screens/deadLetters/DeadLettersScreen';
 import { GraphScreen } from './screens/graph/GraphScreen';
 import { ItemScreen } from './screens/item/ItemScreen';
+import { ItemsScreen } from './screens/items/ItemsScreen';
 import { PipelinesScreen } from './screens/pipelines/PipelinesScreen';
 import { RunScreen } from './screens/runs/RunScreen';
 import { RunsScreen } from './screens/runs/RunsScreen';
@@ -25,13 +25,14 @@ import { AppShell } from './shell/AppShell';
 // uPlot and its stylesheet load with the metrics screen, not with every screen.
 const MetricsScreen = lazy(() => import('./screens/metrics/MetricsScreen').then((m) => ({ default: m.MetricsScreen })));
 
-// The built screens; the others are placeholders until their task lands.
-const built: Partial<Record<ScreenId, () => ReactNode>> = {
+// Every screen's element.
+const built: Record<ScreenId, () => ReactNode> = {
   pipelines: () => <PipelinesScreen />,
   graph: () => <GraphScreen />,
   deadLetters: () => <DeadLettersScreen />,
   inbox: () => <InboxScreen />,
   runs: () => <RunsScreen />,
+  items: () => <ItemsScreen />,
   insights: () => <InsightsScreen />,
   lessons: () => <LessonsScreen />,
   nodes: () => <NodesScreen />,
@@ -43,7 +44,7 @@ const built: Partial<Record<ScreenId, () => ReactNode>> = {
   ),
 };
 
-const elementFor = (screen: Screen) => built[screen.id]?.() ?? <Placeholder screen={screen} />;
+const elementFor = (screen: Screen) => built[screen.id]();
 
 export function AppRoutes() {
   return (
