@@ -65,6 +65,10 @@ earlier designs are in the git history of the spec.
   by one reader shared with `insights`, an index on `deliveries (pipeline, finished_at)` for the live step stats,
   and a dead-letter replay across runs as one unit (the API applies one unit per run, so a failure part-way leaves
   the earlier runs replayed). Dead-letter fingerprints could share `insights`' error grouping.
+- Web UI screens of M3 Task 4: the Step resource has no action kind, so the graph draws agent steps as actions (no
+  agent mark, no cost per step); a dead letter carries neither its attempt count nor its original item's id (the
+  screen links the dead-letter item, whose parent is the original); dead letters have no CEL filter; the step panel
+  has no queue list (oldest waiting items) or throughput sparkline; every channel animates, not only those in view.
 - Live events: the broker wakes on this process's commits and polls every 15 seconds for other processes' writes on
   the same SQLite file; Postgres (M4) can wake it with `LISTEN`/`NOTIFY` instead. The live log tail relays the
   embedded node only; remote nodes stream their lines with M4's node endpoint. Event retention (M4) is what makes a

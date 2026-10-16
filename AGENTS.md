@@ -65,8 +65,12 @@ below) for the reasoning, and `make help` for every command.
 
 - `ui/`: the React 18 + TypeScript (strict) + Vite + Tailwind CSS single-page app of spec section 12.2. `src/shell/`
   is the app shell (navigation, pipeline switcher, command palette, shortcut help, live mark), `src/routes.ts` the
-  screens and their URLs, `src/api/` the HTTP API client, `src/live/` the server-sent events hook, `src/i18n/` the
-  catalogues and `Intl` formatting, `src/styles/` the tokens, `e2e/` the Playwright tests.
+  screens and their URLs, `src/screens/` one folder per screen, `src/common/` the pieces screens share (status
+  badges, loading, empty and error states, confirmation dialog, notices, JSON viewer, log tail, `useResource`,
+  `useFormat`), `src/api/` the HTTP API client, `src/live/` the server-sent events hook, `src/i18n/` the catalogues
+  and `Intl` formatting, `src/styles/` the tokens, `e2e/` the Playwright tests. The pipeline graph is React Flow
+  laid out by dagre; jsdom gets the browser APIs React Flow needs from `src/test/flow.ts`, installed for every test
+  file.
 - No host toolchain (D35): npm, Vite, Vitest and Playwright run only in containers, from images pinned by digest in
   `ui/images.mk`. Never install Node on the host. `node_modules` and the npm cache live in the named volumes
   `millstream-ui-node-modules` and `millstream-ui-npm-cache`; containers run as the host uid.
@@ -77,7 +81,10 @@ below) for the reasoning, and `make help` for every command.
   coverage in jsdom: fake timers and a `FakeApi`, never a network or a wall-clock wait. `make test-ui-e2e` builds,
   then runs Playwright with axe (WCAG 2.2 AA) on the shell in both themes, both languages, at 375 and 1280 px,
   reaching the build through `millstream run` (cross-compiled for the container with the UI embedded) serving the
-  API and the UI over `ui/e2e/fixture`, a package of builtin steps.
+  API and the UI over `ui/e2e/fixture`, a package of builtin steps. `e2e/screens.spec.ts` seeds runs through the API
+  (the fixture's `price-check` dead-letters a listing whose surface is 0) and runs axe and a clipping check on the
+  graph, item, dead letters and pipelines screens, then a replay flow; `e2e/smoke.spec.ts` covers the shell on
+  `?demo`.
   `make ui-shell` opens a shell in the node container (`npm run dev` serves on port 5173). Both test targets run in
   CI as their own jobs, not in `make ci`.
 - Tokens: `ui/src/styles/tokens.css` holds every colour, font, radius, shadow and motion token of the canvas identity

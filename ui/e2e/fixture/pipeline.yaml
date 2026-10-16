@@ -10,6 +10,13 @@ steps:
     in: trigger.adhoc
     out: listings.shortlist
     config: { expr: 'true' }
+  # Dies (class expr, never retried) on a listing whose surface is 0, so the e2e run has a dead letter to replay;
+  # every other payload passes.
+  price-check:
+    action: filter
+    in: trigger.adhoc
+    out: listings.priced
+    config: { expr: '!has(item.priceEur) || item.priceEur / item.surfaceM2 > 0' }
   analyst-review:
     action: review
     in: listings.shortlist
