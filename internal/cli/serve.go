@@ -19,6 +19,13 @@ import (
 // shutdownTimeout bounds how long run waits for the API's requests to end once it stops; live streams end at once.
 const shutdownTimeout = 5 * time.Second
 
+// The server's timeouts: reading a request (live streams lift it once open, api.startSSE) and an idle keep-alive
+// connection.
+const (
+	readTimeout = 30 * time.Second
+	idleTimeout = 2 * time.Minute
+)
+
 // apiServer serves the API and the web UI of millstream run (spec section 12), with the broker of its live streams.
 type apiServer struct {
 	st     *sqlite.Store
@@ -38,12 +45,13 @@ func (c RunPackagesCmd) server(rt *Runtime, st *sqlite.Store, e *engine.Engine, 
 		return nil, err
 	}
 	a, err := api.New(api.Options{Store: st, Engine: e, Artifacts: artifactStore(rt), Broker: b, Logs: logs,
-		Nodes: []api.Node{embedded}, Version: rt.Version, Env: rt.Env, Logger: log, NotificationFailures: notes.Failures})
+		Nodes: []api.Node{embedded}, Version: rt.Version, User: identity(rt), Logger: log,
+		NotificationFailures: notes.Failures})
 	if err != nil {
 		return nil, err
 	}
 	return &apiServer{st: st, broker: b, log: log, http: &http.Server{Handler: api.Handler(a, ui.Handler()),
-		ReadHeaderTimeout: 10 * time.Second}}, nil
+		ReadHeaderTimeout: 10 * time.Second, ReadTimeout: readTimeout, IdleTimeout: idleTimeout}}, nil
 }
 
 // listen binds the address and starts the broker at the end of the event log, so a client connecting at once sees

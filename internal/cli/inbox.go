@@ -168,25 +168,32 @@ func listOrDash(l []string) string {
 	return strings.Join(l, ", ")
 }
 
-// reviewerFlag is who decides: --as, else $USER (authentication arrives with M4).
+// reviewerFlag is who decides: --as, else $USER, else the system's account name (authentication arrives with M4).
 type reviewerFlag struct {
-	As string `name:"as" help:"Who decides (default: $USER)."`
+	As string `name:"as" help:"Who decides (default: $USER, else the account's name)."`
 }
 
 func (f reviewerFlag) reviewer(rt *Runtime) (string, error) {
 	if f.As != "" {
 		return f.As, nil
 	}
-	if u, ok := rt.Env("USER"); ok && u != "" {
+	if u := identity(rt); u != "" {
 		return u, nil
 	}
-	return "", usageError("--as: name who decides (no $USER)")
+	return "", usageError("--as: name who decides (no $USER, and the system names no account)")
+}
+
+// versionFlag is the version of the review the reviewer saw (inbox show prints it): a review escalated since is a
+// conflict.
+type versionFlag struct {
+	Version int64 `placeholder:"N" help:"The review's version you saw, as inbox show prints it (default: its current one, printed)."`
 }
 
 // InboxApproveCmd is "millstream inbox approve <delivery>".
 type InboxApproveCmd struct {
 	deliveryRef
 	reviewerFlag
+	versionFlag
 	Edit   string   `placeholder:"PATCH" help:"Apply this JSON Patch file (RFC 6902) to the item before approving."`
 	Set    []string `placeholder:"/PTR=VALUE" help:"Set a value before approving (repeatable): JSON, or else a string."`
 	Reason string   `help:"Reason code."`
@@ -200,7 +207,7 @@ func (c InboxApproveCmd) Run(rt *Runtime) error {
 		return err
 	}
 	return decide(rt, c.deliveryRef, c.reviewerFlag, store.ReviewDecisionRequest{
-		Decision: store.DecisionApprove, Patch: patch, Reason: c.Reason, Text: c.Text,
+		Decision: store.DecisionApprove, Version: c.Version, Patch: patch, Reason: c.Reason, Text: c.Text,
 	})
 }
 
@@ -240,6 +247,7 @@ func (c InboxApproveCmd) patch() (json.RawMessage, error) {
 type InboxRejectCmd struct {
 	deliveryRef
 	reviewerFlag
+	versionFlag
 	Reason string `help:"Reason code: required when the step lists reason codes."`
 	Text   string `help:"Free-text reason."`
 }
@@ -247,11 +255,12 @@ type InboxRejectCmd struct {
 // Run rejects the review: the delivery is filtered with the reason.
 func (c InboxRejectCmd) Run(rt *Runtime) error {
 	return decide(rt, c.deliveryRef, c.reviewerFlag, store.ReviewDecisionRequest{
-		Decision: store.DecisionReject, Reason: c.Reason, Text: c.Text,
+		Decision: store.DecisionReject, Version: c.Version, Reason: c.Reason, Text: c.Text,
 	})
 }
 
-// decide applies a decision to the review at the version it has now, and prints the outcome.
+// decide applies a decision to the review at the version named, or at the one it has now, saying so, and prints the
+// outcome.
 func decide(rt *Runtime, ref deliveryRef, who reviewerFlag, req store.ReviewDecisionRequest) error {
 	reviewer, err := who.reviewer(rt)
 	if err != nil {
@@ -262,7 +271,12 @@ func decide(rt *Runtime, ref deliveryRef, who reviewerFlag, req store.ReviewDeci
 		if err != nil {
 			return err
 		}
-		req.Pipeline, req.DeliveryID, req.Version, req.Reviewer = r.Pipeline, r.DeliveryID, r.Version, reviewer
+		if req.Version == 0 {
+			req.Version = r.Version
+			fmt.Fprintf(rt.IO.Err, "Deciding version %d of the review, its current one: pass --version to decide "+
+				"the version you saw.\n", r.Version)
+		}
+		req.Pipeline, req.DeliveryID, req.Reviewer = r.Pipeline, r.DeliveryID, reviewer
 		state, err := st.DecideReview(rt.Ctx, req)
 		if err != nil {
 			return err

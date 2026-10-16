@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/user"
 	"path/filepath"
 	"sync"
 
@@ -56,6 +57,30 @@ type Runtime struct {
 	// Store, when set, is the state database the commands use instead of opening --db, and leave open: tests run a
 	// series of commands against one store with it.
 	Store *sqlite.Store
+	// CurrentUser names the account running the command, for when $USER is unset; nil asks os/user.
+	CurrentUser func() (string, error)
+}
+
+// identity is who runs the command, the reviewer of its decisions until authentication (M4): $USER, else the
+// account the system names; "" when neither does.
+func identity(rt *Runtime) string {
+	if u, ok := rt.Env("USER"); ok && u != "" {
+		return u
+	}
+	lookup := rt.CurrentUser
+	if lookup == nil {
+		lookup = func() (string, error) {
+			u, err := user.Current()
+			if err != nil {
+				return "", err
+			}
+			return u.Username, nil
+		}
+	}
+	if u, err := lookup(); err == nil {
+		return u
+	}
+	return ""
 }
 
 // dirOrCurrent returns dir, or the current directory's absolute path when dir is empty. The directory arguments

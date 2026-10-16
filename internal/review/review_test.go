@@ -86,6 +86,17 @@ func TestPatch(t *testing.T) {
 	if _, err := ParsePatch([]byte(`{}`)); !errors.Is(err, ErrPatch) {
 		t.Fatalf("a patch that is not an array: %v", err)
 	}
+	// add, replace and test need a value, which may be null; the other ops take none.
+	for _, patch := range []string{`[{"op":"add","path":"/x"}]`, `[{"op":"replace","path":"/x"}]`,
+		`[{"op":"test","path":"/x"}]`} {
+		if _, err := ParsePatch([]byte(patch)); !errors.Is(err, ErrPatch) || !strings.Contains(err.Error(), "no value") {
+			t.Errorf("%s: %v", patch, err)
+		}
+	}
+	if ops, err := ParsePatch([]byte(`[{"op":"add","path":"/x","value":null},{"op":"remove","path":"/y"}]`)); err != nil ||
+		len(ops) != 2 || ops[0].Value != nil {
+		t.Errorf("a null value and a remove: %+v, %v", ops, err)
+	}
 }
 
 func TestDiffAndEditable(t *testing.T) {

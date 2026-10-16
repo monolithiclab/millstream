@@ -259,8 +259,7 @@ func (f *fixture) server() *Server {
 	}
 	srv, err := New(Options{Store: f.st, Engine: eng, Artifacts: f.arts, Version: "v-test",
 		Nodes: []Node{{ID: "embedded-1", Embedded: true, Version: "v-test", Slots: 4, Runtimes: []string{"exec"}}},
-		Env:   func(k string) (string, bool) { return map[string]string{"USER": "tester"}[k], k == "USER" },
-		Clock: f.clock, NotificationFailures: func() int64 { return 2 }})
+		User:  "tester", Clock: f.clock, NotificationFailures: func() int64 { return 2 }})
 	if err != nil {
 		panic(err)
 	}

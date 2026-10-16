@@ -135,15 +135,34 @@ func TestReviewDecisions(t *testing.T) {
 		t.Fatalf("deciding twice: %v", err)
 	}
 	wantErr(t, err, store.ErrConflict)
+	// The same decision sent again by its reviewer, its answer lost, succeeds again and changes nothing; the same
+	// approval with another edit, or by someone else, is a conflict.
+	decisions := len(e.eventKinds(store.EventReviewDecided))
+	edit := `[{"op":"replace","path":"/price","value":150},{"op":"add","path":"/notes","value":"checked"}]`
+	if state, err := e.decide(ids["b"], store.DecisionApprove, edit, ""); err != nil || state != store.DeliveryDone {
+		t.Fatalf("approve b again = %s, %v", state, err)
+	}
+	if state, err := e.decide(ids["c"], store.DecisionReject, "", "overpriced"); err != nil ||
+		state != store.DeliveryFiltered {
+		t.Fatalf("reject c again = %s, %v", state, err)
+	}
+	_, err = e.decide(ids["b"], store.DecisionApprove, `[{"op":"replace","path":"/price","value":151}]`, "")
+	wantErr(t, err, store.ErrConflict)
+	_, err = e.s.DecideReview(e.ctx, store.ReviewDecisionRequest{Pipeline: "listings", DeliveryID: ids["a"],
+		Version: e.review(ids["a"]).Version, Decision: store.DecisionApprove, Reviewer: "bob"})
+	wantErr(t, err, store.ErrConflict)
+	if n := len(e.eventKinds(store.EventReviewDecided)); n != decisions || len(e.items("listings.ok")) != 2 {
+		t.Fatalf("a repeated decision recorded again: %d decisions, %d items", n, len(e.items("listings.ok")))
+	}
 
 	// Two reviewers decide d at once: one wins, the other conflicts, and d's item is published once.
 	var wg sync.WaitGroup
 	errs := make([]error, 2)
 	version := e.review(ids["d"]).Version
-	for i := range errs {
+	for i, who := range []string{"ana", "bob"} {
 		wg.Go(func() {
 			_, errs[i] = e.s.DecideReview(e.ctx, store.ReviewDecisionRequest{Pipeline: "listings", DeliveryID: ids["d"],
-				Version: version, Decision: store.DecisionApprove, Reviewer: "ana"})
+				Version: version, Decision: store.DecisionApprove, Reviewer: who})
 		})
 	}
 	wg.Wait()
@@ -230,6 +249,9 @@ func TestReviewTimeouts(t *testing.T) {
 	if ok := e.items("listings.ok"); len(ok) != 1 || ok[0].Key != "a" {
 		t.Fatalf("approved on timeout: %+v", ok)
 	}
+	if a := e.review(ids["a"]); a.Reason != "" || a.Decision != store.DecisionApprove {
+		t.Fatalf("an approval on timeout carries no reason: %+v", a)
+	}
 	_, err := e.decide(ids["r"], store.DecisionApprove, "", "")
 	if msg := fmtErr(err); !strings.Contains(msg, "timed out at 2026-10-15T07:01:00Z, applied reject") {
 		t.Fatalf("late decision: %v", err)
@@ -314,4 +336,29 @@ func TestAutoApproveAndSamples(t *testing.T) {
 		t.Fatal("parking without an inbox succeeded")
 	}
 	wantState(t, "run after the samples", e.run("r1").State, store.RunSucceeded)
+}
+
+// A review that cannot time out is skipped and reported, its partial work rolled back: the others due time out.
+func TestReviewTimeoutSkipsABrokenReview(t *testing.T) {
+	e := newEnv(t, reviewFixture)
+	spec := store.ReviewSpec{Inbox: "analysts", Timeout: time.Hour, OnTimeout: store.DecisionApprove}
+	ids := e.parkAll(func(string) store.ReviewSpec { return spec }, "a", "b")
+	if err := e.s.submit(e.ctx, "test", func(w *wtx) error {
+		_, err := w.exec(`UPDATE reviews SET spec_json = 'not json' WHERE delivery_id = ?`, ids["a"])
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	e.clock.Advance(2 * time.Hour)
+	ts, err := e.s.ReviewTimeouts(e.ctx)
+	if err != nil || len(ts) != 2 {
+		t.Fatalf("timeouts = %+v, %v", ts, err)
+	}
+	byID := map[string]store.TimedOutReview{ts[0].DeliveryID: ts[0], ts[1].DeliveryID: ts[1]}
+	if byID[ids["a"]].Err == nil || byID[ids["b"]].Err != nil || byID[ids["b"]].Action != store.DecisionApprove {
+		t.Fatalf("timeouts = %+v", ts)
+	}
+	if b := e.review(ids["b"]); b.State != store.ReviewTimedOut {
+		t.Fatalf("the healthy review = %s", b.State)
+	}
 }

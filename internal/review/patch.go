@@ -40,10 +40,30 @@ func (o Op) MarshalJSON() ([]byte, error) {
 var ErrPatch = errors.New("invalid edit")
 
 // ParsePatch decodes a JSON Patch document: an array of operations.
+// An add, replace or test operation must carry a value, null included: one without is refused rather than read as
+// null.
 func ParsePatch(data []byte) ([]Op, error) {
-	var ops []Op
-	if err := json.Unmarshal(data, &ops); err != nil {
+	var raw []struct {
+		Op    string          `json:"op"`
+		Path  string          `json:"path"`
+		From  string          `json:"from"`
+		Value json.RawMessage `json:"value"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
 		return nil, fmt.Errorf("a JSON Patch is an array of operations: %w: %w", ErrPatch, err)
+	}
+	ops := make([]Op, len(raw))
+	for i, r := range raw {
+		ops[i] = Op{Op: r.Op, Path: r.Path, From: r.From}
+		if r.Value == nil {
+			if r.Op == "add" || r.Op == "replace" || r.Op == "test" {
+				return nil, fmt.Errorf("operation %d (%s %s) has no value: %w", i, r.Op, r.Path, ErrPatch)
+			}
+			continue
+		}
+		if err := json.Unmarshal(r.Value, &ops[i].Value); err != nil {
+			return nil, fmt.Errorf("operation %d: %w: %w", i, ErrPatch, err)
+		}
 	}
 	return ops, nil
 }

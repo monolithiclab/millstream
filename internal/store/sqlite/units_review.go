@@ -110,8 +110,8 @@ func (w *wtx) autoApprove(d *deliveryRow, run *runRow, r newReview, req store.Pa
 		return "", err
 	}
 	if err := w.event(d.pipeline, d.runID, store.EventReviewDecided, map[string]any{
-		"deliveryId": d.id, "step": d.step, "inbox": req.Spec.Inbox, "decision": store.DecisionApprove,
-		"reviewer": review.ReviewerRule, "timeToDecisionMs": 0,
+		"deliveryId": d.id, "itemId": d.itemID, "step": d.step, "inbox": req.Spec.Inbox,
+		"decision": store.DecisionApprove, "reviewer": review.ReviewerRule, "timeToDecisionMs": 0,
 	}); err != nil {
 		return "", err
 	}
@@ -125,7 +125,7 @@ func (w *wtx) autoApprove(d *deliveryRow, run *runRow, r newReview, req store.Pa
 		return "", err
 	}
 	return state, w.event(d.pipeline, d.runID, store.EventReviewSampled,
-		map[string]any{"deliveryId": d.id, "step": d.step, "inbox": req.Spec.Inbox})
+		map[string]any{"deliveryId": d.id, "itemId": d.itemID, "step": d.step, "inbox": req.Spec.Inbox})
 }
 
 // deadline is the batch instant plus timeout as stored, "" without a timeout.
@@ -157,6 +157,7 @@ func (w *wtx) passItem(d *deliveryRow) (store.Output, payload, error) {
 // reviewRow is a review as the units read it.
 type reviewRow struct {
 	pipeline, deliveryID, runID, step, inbox string
+	itemID                                   string
 	state                                    store.ReviewState
 	version                                  int64
 	spec                                     store.ReviewSpec
@@ -168,10 +169,10 @@ type reviewRow struct {
 func (w *wtx) review(pipelineName, deliveryID string) (*reviewRow, error) {
 	r := &reviewRow{pipeline: pipelineName, deliveryID: deliveryID}
 	var spec, parked, deadline, decided string
-	err := w.queryRow(`SELECT run_id, step, inbox, state, version, spec_json, display, parked_at, deadline, decision,
-		reviewer, decided_at FROM reviews WHERE pipeline = ? AND delivery_id = ?`, pipelineName, deliveryID).
-		Scan(&r.runID, &r.step, &r.inbox, &r.state, &r.version, &spec, &r.display, &parked, &deadline, &r.decision,
-			&r.reviewer, &decided)
+	err := w.queryRow(`SELECT run_id, step, item_id, inbox, state, version, spec_json, display, parked_at, deadline,
+		decision, reviewer, decided_at FROM reviews WHERE pipeline = ? AND delivery_id = ?`, pipelineName, deliveryID).
+		Scan(&r.runID, &r.step, &r.itemID, &r.inbox, &r.state, &r.version, &spec, &r.display, &parked, &deadline,
+			&r.decision, &r.reviewer, &decided)
 	if err != nil {
 		return nil, notFound(err, "review of delivery "+deliveryID)
 	}
@@ -202,7 +203,8 @@ func (w *wtx) decided(r *reviewRow, state store.ReviewState, decision, reviewer,
 		return err
 	}
 	data := map[string]any{
-		"deliveryId": r.deliveryID, "step": r.step, "inbox": r.inbox, "decision": decision, "reviewer": reviewerKind(reviewer),
+		"deliveryId": r.deliveryID, "itemId": r.itemID, "step": r.step, "inbox": r.inbox, "decision": decision,
+		"reviewer":         reviewerKind(reviewer),
 		"timeToDecisionMs": millis(w.now.Sub(r.parkedAt)),
 	}
 	if reason != "" {
@@ -245,6 +247,10 @@ func (s *Store) DecideReview(ctx context.Context, req store.ReviewDecisionReques
 		if err != nil {
 			return err
 		}
+		if again, current, err := w.repeated(r, req, ops); err != nil || again {
+			state = current
+			return err
+		}
 		if err := r.open(req.Version); err != nil {
 			return err
 		}
@@ -282,6 +288,49 @@ func (s *Store) DecideReview(ctx context.Context, req store.ReviewDecisionReques
 		return w.decided(r, store.ReviewDecided, req.Decision, req.Reviewer, req.Reason, req.Text, patch)
 	})
 	return state, err
+}
+
+// repeated reports whether req is the decision review r already holds, sent again by the same reviewer after its
+// answer was lost (same version, decision, reason and edit): it then succeeds again, changing nothing, and state is
+// the delivery's.
+func (w *wtx) repeated(r *reviewRow, req store.ReviewDecisionRequest, ops []review.Op) (bool, store.DeliveryState,
+	error,
+) {
+	if r.state != store.ReviewDecided || r.version != req.Version || r.decision != req.Decision ||
+		r.reviewer != req.Reviewer {
+		return false, "", nil
+	}
+	var reason, stored, item string
+	var state store.DeliveryState
+	err := w.queryRow(`SELECT rv.reason, rv.patch, d.state, i.payload FROM reviews rv
+		JOIN deliveries d ON d.pipeline = rv.pipeline AND d.id = rv.delivery_id
+		JOIN items i ON i.pipeline = rv.pipeline AND i.id = rv.item_id
+		WHERE rv.pipeline = ? AND rv.delivery_id = ?`, r.pipeline, r.deliveryID).Scan(&reason, &stored, &state, &item)
+	if err != nil {
+		return false, "", notFound(err, "review of delivery "+r.deliveryID)
+	}
+	if reason != req.Reason {
+		return false, "", nil
+	}
+	diff := []review.Op{}
+	if len(ops) > 0 {
+		o, err := canonical([]byte(item))
+		if err != nil {
+			return false, "", err
+		}
+		edited, err := review.Apply(o.value, ops)
+		if err != nil {
+			return false, "", nil // not the edit that was applied
+		}
+		if d := review.Diff(o.value, edited); d != nil {
+			diff = d
+		}
+	}
+	body, err := json.Marshal(diff)
+	if err != nil {
+		return false, "", err
+	}
+	return string(body) == stored, state, nil
 }
 
 // open checks that a reviewer seeing version may still decide the review.
@@ -393,14 +442,18 @@ func (s *Store) DecideSample(ctx context.Context, req store.SampleDecisionReques
 	return s.submit(ctx, unitSampleDecision, func(w *wtx) error {
 		var runID, step, inbox, decision, reviewer, decided string
 		var state store.SampleState
-		if err := w.queryRow(`SELECT run_id, step, inbox, state, decision, reviewer, decided_at FROM review_samples
-			WHERE pipeline = ? AND delivery_id = ?`, req.Pipeline, req.DeliveryID).
-			Scan(&runID, &step, &inbox, &state, &decision, &reviewer, &decided); err != nil {
+		var itemID, reason string
+		if err := w.queryRow(`SELECT run_id, step, item_id, inbox, state, decision, reviewer, reason, decided_at
+			FROM review_samples WHERE pipeline = ? AND delivery_id = ?`, req.Pipeline, req.DeliveryID).
+			Scan(&runID, &step, &itemID, &inbox, &state, &decision, &reviewer, &reason, &decided); err != nil {
 			return notFound(err, "review sample of delivery "+req.DeliveryID)
 		}
-		switch state {
-		case store.SampleOpen:
-		case store.SampleDecided:
+		switch {
+		case state == store.SampleOpen:
+		case state == store.SampleDecided && decision == req.Decision && reviewer == req.Reviewer &&
+			reason == req.Reason:
+			return nil // the same decision sent again, its answer lost: it stands
+		case state == store.SampleDecided:
 			return fmt.Errorf("review sample of delivery %s was already decided: %s by %s at %s: %w", req.DeliveryID,
 				decision, reviewer, decided, store.ErrConflict)
 		default:
@@ -412,8 +465,8 @@ func (s *Store) DecideSample(ctx context.Context, req store.SampleDecisionReques
 			req.Pipeline, req.DeliveryID); err != nil {
 			return err
 		}
-		return w.event(req.Pipeline, runID, store.EventSampleDecided,
-			map[string]any{"deliveryId": req.DeliveryID, "step": step, "inbox": inbox, "decision": req.Decision})
+		return w.event(req.Pipeline, runID, store.EventSampleDecided, map[string]any{"deliveryId": req.DeliveryID,
+			"itemId": itemID, "step": step, "inbox": inbox, "decision": req.Decision})
 	})
 }
 
@@ -432,9 +485,19 @@ func (s *Store) ReviewTimeouts(ctx context.Context) ([]store.TimedOutReview, err
 			return err
 		}
 		for _, k := range due {
-			t, err := w.timeOut(k.Pipeline, k.ID)
-			if err != nil {
+			// A review that cannot time out (its item no longer passes, a broken spec) is skipped, its partial work
+			// rolled back, rather than holding back every other review due.
+			var t store.TimedOutReview
+			err, abort := savepoint(w, "review", func(w *wtx) error {
+				var err error
+				t, err = w.timeOut(k.Pipeline, k.ID)
 				return err
+			})
+			if abort != nil {
+				return abort
+			}
+			if err != nil {
+				t = store.TimedOutReview{Pipeline: k.Pipeline, DeliveryID: k.ID, Err: err}
 			}
 			out = append(out, t)
 		}
@@ -444,14 +507,14 @@ func (s *Store) ReviewTimeouts(ctx context.Context) ([]store.TimedOutReview, err
 			return err
 		}
 		for _, k := range samples {
-			var runID, step, inbox string
+			var runID, step, itemID, inbox string
 			if err := w.queryRow(`UPDATE review_samples SET state = ?, decided_at = ? WHERE pipeline = ? AND delivery_id = ?
-				RETURNING run_id, step, inbox`, store.SampleUnreviewed, w.ts(), k.Pipeline, k.ID).
-				Scan(&runID, &step, &inbox); err != nil {
+				RETURNING run_id, step, item_id, inbox`, store.SampleUnreviewed, w.ts(), k.Pipeline, k.ID).
+				Scan(&runID, &step, &itemID, &inbox); err != nil {
 				return fmt.Errorf("expire review sample %s: %w", k.ID, err)
 			}
 			if err := w.event(k.Pipeline, runID, store.EventSampleExpired,
-				map[string]any{"deliveryId": k.ID, "step": step, "inbox": inbox}); err != nil {
+				map[string]any{"deliveryId": k.ID, "itemId": itemID, "step": step, "inbox": inbox}); err != nil {
 				return err
 			}
 			out = append(out, store.TimedOutReview{Pipeline: k.Pipeline, DeliveryID: k.ID, RunID: runID, Step: step,
@@ -535,7 +598,8 @@ func (w *wtx) timeOut(pipelineName, deliveryID string) (store.TimedOutReview, er
 			return t, err
 		}
 		return t, w.event(r.pipeline, r.runID, store.EventReviewEscalated, map[string]any{
-			"deliveryId": r.deliveryID, "step": r.step, "from": r.inbox, "inbox": r.spec.EscalateTo, "deadline": deadline,
+			"deliveryId": r.deliveryID, "itemId": r.itemID, "step": r.step, "from": r.inbox, "inbox": r.spec.EscalateTo,
+			"deadline": deadline,
 		})
 	case pipeline.OnTimeoutApprove:
 		if _, err := w.emit(d, run, []store.Output{out}, []payload{o}, attemptEnd{}); err != nil {
@@ -548,7 +612,11 @@ func (w *wtx) timeOut(pipelineName, deliveryID string) (store.TimedOutReview, er
 		}
 	}
 	t.Action = action
-	return t, w.decided(r, store.ReviewTimedOut, action, review.ReviewerTimeout, store.FilterReasonTimeout, "", nil)
+	reason := "" // an approval needs no reason; a rejection is filtered with reason timeout
+	if action == pipeline.OnTimeoutReject {
+		reason = store.FilterReasonTimeout
+	}
+	return t, w.decided(r, store.ReviewTimedOut, action, review.ReviewerTimeout, reason, "", nil)
 }
 
 // cancelReviews marks the open reviews of a cancelled run cancelled: their deliveries were cancelled with it.

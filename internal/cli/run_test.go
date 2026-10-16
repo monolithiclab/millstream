@@ -2,6 +2,7 @@ package cli
 
 import (
 	"encoding/json"
+	"io"
 	"strings"
 	"testing"
 	"time"
@@ -51,9 +52,13 @@ func Test_runOnce(t *testing.T) {
 func Test_runRejects(t *testing.T) {
 	t.Parallel()
 	pkg, s := sharedPackage(t, "run"), newEmptyState(t)
-	if code, _, errOut := s.run("run", "--slots", "0", pkg); code != 2 ||
-		!strings.Contains(errOut, "--slots and --lease-ttl must be positive") {
+	if code, errOut := s.exec(t.Context(), map[string]string{"USER": "ana"}, io.Discard, "run", "--slots", "0",
+		pkg); code != 2 || !strings.Contains(errOut, "--slots and --lease-ttl must be positive") {
 		t.Fatalf("--slots 0: code %d, stderr %q", code, errOut)
+	}
+	// Serving the API needs someone to record the decisions of requests naming nobody under: it fails at once.
+	if code, _, errOut := s.run("run", pkg); code != 2 || !strings.Contains(errOut, "no user to record review decisions") {
+		t.Fatalf("no user: code %d, stderr %q", code, errOut)
 	}
 	// Until token auth (M4), the API is served on a loopback address only; run --once serves nothing.
 	for _, tt := range []struct{ argv, want []string }{

@@ -1163,11 +1163,16 @@ components:
         next: { type: string }
     ReviewDecision:
       type: object
-      required: [decision]
+      required: [decision, version]
       additionalProperties: false
       properties:
         decision: { type: string, enum: [approve, reject] }
-        version: { type: integer, description: The version the reviewer saw; the current one when absent. }
+        version:
+          type: integer
+          minimum: 1
+          description: >-
+            The version of the review the reviewer saw: a review escalated since is a conflict. The same decision
+            sent again by the same reviewer (a lost response) succeeds again and changes nothing.
         patch: { type: array, items: { type: object }, description: A JSON Patch within the editable pointers. }
         reason: { type: string, description: A reason code; required to reject when the step lists some. }
         text: { type: string }

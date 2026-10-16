@@ -66,6 +66,10 @@ func (c RunPackagesCmd) Run(rt *Runtime) error {
 		if err := api.CheckLoopback(listen); err != nil {
 			return usageError(err.Error())
 		}
+		// The API records the decisions of requests that name nobody under the server's user (spec section 12.1).
+		if identity(rt) == "" {
+			return usageError("run: no user to record review decisions under: set $USER")
+		}
 	} else if c.Listen != "" {
 		return usageError("--listen: run --once does not serve the API")
 	}

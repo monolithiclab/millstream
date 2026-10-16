@@ -135,11 +135,20 @@ func Test_inboxCommands(t *testing.T) {
 	}
 
 	ref := func(k string) deliveryRef { return deliveryRef{Delivery: ids[k]} }
-	if out := call(user, InboxApproveCmd{deliveryRef: ref("a")}); out != ids["a"]+" approved (delivery done)\n" {
+	if out := call(user, InboxApproveCmd{deliveryRef: ref("a"), versionFlag: versionFlag{Version: 1}}); out != ids["a"]+
+		" approved (delivery done)\n" {
 		t.Fatalf("approve: %q", out)
 	}
-	run(0, nil, "inbox", "approve", ids["b"], "--as", "bo", "--set", "/price=150", "--set", "/notes=checked twice",
-		"--reason", "overpriced", "--text", "fixed the price")
+	// Without --version, the review's current version is decided, and the command says so.
+	if out := run(0, nil, "inbox", "approve", ids["b"], "--as", "bo", "--set", "/price=150", "--set",
+		"/notes=checked twice", "--reason", "overpriced", "--text", "fixed the price"); !strings.Contains(out,
+		"Deciding version 1 of the review, its current one") {
+		t.Fatalf("approve without --version: %q", out)
+	}
+	if out := call(user, InboxRejectCmd{deliveryRef: ref("c"), versionFlag: versionFlag{Version: 2},
+		Reason: "overpriced"}); !strings.Contains(out, "at version 1, not 2") {
+		t.Fatalf("reject at another version: %s", out)
+	}
 	out = call(nil, InboxShowCmd{deliveryRef: deliveryRef{Delivery: ids["b"], Pipeline: "deals"}, JSON: true})
 	if !strings.Contains(out, `"reviewer": "bo"`) || !strings.Contains(out, `"path": "/price"`) ||
 		!strings.Contains(out, `"value": "checked twice"`) {

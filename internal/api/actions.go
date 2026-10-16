@@ -257,8 +257,7 @@ func (s *Server) discardDeadLetters(w http.ResponseWriter, r *http.Request) erro
 type ReviewDecision struct {
 	// Decision is approve or reject.
 	Decision string `json:"decision"`
-	// Version is the review's version the reviewer saw: a review escalated or decided since is a conflict. Zero
-	// decides the version the review has now.
+	// Version is the review's version the reviewer saw, required: a review escalated or decided since is a conflict.
 	Version int64 `json:"version"`
 	// Patch is a JSON Patch (RFC 6902) applied to the item before an approval, within the editable pointers.
 	Patch  json.RawMessage `json:"patch"`
@@ -279,12 +278,8 @@ func (s *Server) decideReview(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	if req.Version == 0 {
-		rv, err := s.st.Review(r.Context(), name, delivery)
-		if err != nil {
-			return err
-		}
-		req.Version = rv.Version
+	if req.Version < 1 {
+		return invalidf("version: required, the version of the review you saw")
 	}
 	if _, err := s.st.DecideReview(r.Context(), store.ReviewDecisionRequest{Pipeline: name, DeliveryID: delivery,
 		Version: req.Version, Decision: req.Decision, Patch: req.Patch, Reviewer: reviewer, Reason: req.Reason,

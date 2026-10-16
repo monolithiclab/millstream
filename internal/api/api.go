@@ -67,8 +67,9 @@ type Options struct {
 	Version string
 	// NotificationFailures counts the engine's failed review notifications; nil reports none.
 	NotificationFailures func() int64
-	// Env looks up $USER, the reviewer when a request names none; nil means no environment.
-	Env func(string) (string, bool)
+	// User is who decides when a request names nobody (the server's user until authentication, M4); empty makes a
+	// request name its reviewer.
+	User string
 	// Clock is the clock of relative ranges, run reports and the live streams' heartbeats; nil means SystemClock.
 	Clock Clock
 	// Heartbeat is how often a quiet live stream sends a comment; zero means DefaultHeartbeat.
@@ -147,9 +148,6 @@ var routes = []route{
 func New(opts Options) (*Server, error) {
 	if opts.Store == nil {
 		return nil, errors.New("api: no store")
-	}
-	if opts.Env == nil {
-		opts.Env = func(string) (string, bool) { return "", false }
 	}
 	if opts.Clock == nil {
 		opts.Clock = SystemClock{}
@@ -368,8 +366,8 @@ func (s *Server) user(r *http.Request) (string, error) {
 	if u := strings.TrimSpace(r.Header.Get(UserHeader)); u != "" {
 		return u, nil
 	}
-	if u, ok := s.opts.Env("USER"); ok && u != "" {
-		return u, nil
+	if s.opts.User != "" {
+		return s.opts.User, nil
 	}
-	return "", invalidf("name who decides with the %s header (no $USER)", UserHeader)
+	return "", invalidf("name who decides with the %s header (the server has no user)", UserHeader)
 }

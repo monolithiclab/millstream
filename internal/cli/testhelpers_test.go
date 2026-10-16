@@ -187,6 +187,7 @@ func (s *state) exec(ctx context.Context, env map[string]string, out io.Writer, 
 			rt.Env = func(k string) (string, bool) { v, ok := env[k]; return v, ok }
 			rt.Launchers = testLaunchers()
 			rt.Store = s.st
+			rt.CurrentUser = noAccount
 		})
 	return code, errb.String()
 }
@@ -243,10 +244,13 @@ func (s *state) call(env map[string]string, cmd runner) (stdout, stderr string, 
 	var out, errb bytes.Buffer
 	rt := &Runtime{Ctx: context.Background(), IO: IO{In: strings.NewReader(""), Out: &out, Err: &errb},
 		Version: "dev", Env: func(k string) (string, bool) { v, ok := env[k]; return v, ok }, DB: s.db,
-		Launchers: testLaunchers(), Store: s.st}
+		Launchers: testLaunchers(), Store: s.st, CurrentUser: noAccount}
 	err = cmd.Run(rt)
 	return out.String(), errb.String(), err
 }
+
+// noAccount is a system that names no account: the tests decide who runs a command through $USER alone.
+func noAccount() (string, error) { return "", errors.New("no account") }
 
 // refusal is a case of a table of refusals: cmd fails with an error that holds want, a usage error (exit status 2)
 // when usage.

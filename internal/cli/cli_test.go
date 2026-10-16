@@ -98,3 +98,24 @@ func TestNoKongHooks(t *testing.T) {
 		t.Fatalf("visited %d targets: the walk missed the command tree", seen)
 	}
 }
+
+// Who runs a command is $USER, else the account the system names, else nobody.
+func Test_identity(t *testing.T) {
+	t.Parallel()
+	env := func(m map[string]string) func(string) (string, bool) {
+		return func(k string) (string, bool) { v, ok := m[k]; return v, ok }
+	}
+	account := func() (string, error) { return "bob", nil }
+	for _, tt := range []struct {
+		rt   Runtime
+		want string
+	}{
+		{Runtime{Env: env(map[string]string{"USER": "ana"}), CurrentUser: account}, "ana"},
+		{Runtime{Env: env(map[string]string{"USER": ""}), CurrentUser: account}, "bob"},
+		{Runtime{Env: env(nil), CurrentUser: noAccount}, ""},
+	} {
+		if got := identity(&tt.rt); got != tt.want {
+			t.Errorf("identity = %q, want %q", got, tt.want)
+		}
+	}
+}

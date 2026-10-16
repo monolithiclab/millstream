@@ -200,20 +200,26 @@ func (s *Store) commitBatch(batch []*request, results []error) (err error) {
 // applyUnit runs one unit under a savepoint, rolling back to it when the unit fails, and returns the unit's error.
 // When the savepoint itself cannot be set, rolled back to or released, the transaction's state is unknown: abort is
 // set, and the caller must roll the whole batch back.
-func applyUnit(w *wtx, fn func(*wtx) error) (err, abort error) {
-	if _, err := w.execTx(`SAVEPOINT unit`); err != nil {
+func applyUnit(w *wtx, fn func(*wtx) error) (err, abort error) { return savepoint(w, "unit", fn) }
+
+// savepoint runs fn under the named savepoint, rolling back to it when fn fails, and returns fn's error; abort is
+// set when the savepoint itself fails. A unit uses a nested one to give up part of its work and keep the rest.
+func savepoint(w *wtx, name string, fn func(*wtx) error) (err, abort error) {
+	if _, err := w.execTx(`SAVEPOINT ` + name); err != nil {
 		return nil, fmt.Errorf("savepoint: %w", err)
 	}
+	seq := w.lastSeq
 	if err := fn(w); err != nil {
-		if _, rbErr := w.execTx(`ROLLBACK TO unit`); rbErr != nil {
+		w.lastSeq = seq // the events fn recorded are rolled back
+		if _, rbErr := w.execTx(`ROLLBACK TO ` + name); rbErr != nil {
 			return err, fmt.Errorf("roll back a failed unit (%w): %w", err, rbErr)
 		}
-		if _, rbErr := w.execTx(`RELEASE unit`); rbErr != nil {
+		if _, rbErr := w.execTx(`RELEASE ` + name); rbErr != nil {
 			return err, fmt.Errorf("release a failed unit (%w): %w", err, rbErr)
 		}
 		return err, nil
 	}
-	if _, err := w.execTx(`RELEASE unit`); err != nil {
+	if _, err := w.execTx(`RELEASE ` + name); err != nil {
 		return nil, fmt.Errorf("release savepoint: %w", err)
 	}
 	return nil, nil

@@ -868,8 +868,10 @@ type ReviewSample struct {
 }
 
 // TimedOutReview is a review the Review timeout unit ended or escalated: Action is approve, reject or escalate, and
-// an escalated review's Inbox and Deadline are its new ones. A sample that expired has Action unreviewed.
+// an escalated review's Inbox and Deadline are its new ones. A sample that expired has Action unreviewed. A review
+// that could not time out has Err set and nothing else but its keys: it stays open, tried again at the next tick.
 type TimedOutReview struct {
+	Err        error
 	Pipeline   string
 	DeliveryID string
 	RunID      string

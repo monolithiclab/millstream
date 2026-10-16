@@ -1221,8 +1221,8 @@ export interface components {
     ReviewDecision: {
       /** @enum {string} */
       decision: 'approve' | 'reject';
-      /** @description The version the reviewer saw; the current one when absent. */
-      version?: number;
+      /** @description The version of the review the reviewer saw: a review escalated since is a conflict. The same decision sent again by the same reviewer (a lost response) succeeds again and changes nothing. */
+      version: number;
       /** @description A JSON Patch within the editable pointers. */
       patch?: Record<string, unknown>[];
       /** @description A reason code; required to reject when the step lists some. */

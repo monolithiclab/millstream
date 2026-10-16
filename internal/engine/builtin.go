@@ -257,6 +257,11 @@ func (e *Engine) reviewTimeouts(ctx context.Context) {
 		return
 	}
 	for _, t := range ts {
+		if t.Err != nil {
+			e.log.Error("review timeout failed: the review stays open", "pipeline", t.Pipeline,
+				"deliveryId", t.DeliveryID, "error", t.Err.Error())
+			continue
+		}
 		e.log.Info("review timed out", "pipeline", t.Pipeline, "runId", t.RunID, "step", t.Step,
 			"deliveryId", t.DeliveryID, "applied", t.Action, "inbox", t.Inbox)
 		if t.Action == pipeline.OnTimeoutEscalate {

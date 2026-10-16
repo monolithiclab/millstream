@@ -80,12 +80,13 @@ func TestActions(t *testing.T) {
 	// Review decisions: a stale version is a conflict, a rejection needs a reason code, an approval edits.
 	review := "/api/v1/pipelines/listings/reviews/" + f.reviewDelivery + "/decision"
 	wantError(t, post(review, `{"decision":"approve","version":7}`, nil), 409, codeConflict)
-	wantError(t, post(review, `{"decision":"reject"}`, nil), 400, codeInvalid)
-	wantError(t, post(review, `{"decision":"maybe"}`, nil), 400, codeInvalid)
-	wantError(t, post(review, `{"decision":"reject","patch":[]}`, nil), 400, codeInvalid)
-	wantError(t, post(review, `{"decision":"approve","patch":{"op":"add"}}`, nil), 400, codeInvalid)
-	wantError(t, post(review, `{"decision":"approve","patch":[{"op":"add","path":"/price","value":1}]}`, nil), 400,
-		codeInvalid)
+	wantError(t, post(review, `{"decision":"approve"}`, nil), 400, codeInvalid) // the version seen is required
+	wantError(t, post(review, `{"decision":"reject","version":1}`, nil), 400, codeInvalid)
+	wantError(t, post(review, `{"decision":"maybe","version":1}`, nil), 400, codeInvalid)
+	wantError(t, post(review, `{"decision":"reject","version":1,"patch":[]}`, nil), 400, codeInvalid)
+	wantError(t, post(review, `{"decision":"approve","version":1,"patch":{"op":"add"}}`, nil), 400, codeInvalid)
+	wantError(t, post(review, `{"decision":"approve","version":1,"patch":[{"op":"add","path":"/price","value":1}]}`,
+		nil), 400, codeInvalid)
 	defer func(n int64) { maxBody = n }(maxBody)
 	maxBody = 64
 	wantError(t, post(review, `{"decision":"approve","text":"`+strings.Repeat("x", 64)+`"}`, nil), 413, codeTooLarge)
@@ -96,9 +97,15 @@ func TestActions(t *testing.T) {
 		!strings.Contains(rec.Body.String(), `"state":"decided"`) {
 		t.Fatalf("approve: %d %s", rec.Code, rec.Body.String())
 	}
-	wantError(t, post(review, `{"decision":"approve"}`, nil), 409, codeConflict) // decided already
-	wantError(t, post("/api/v1/pipelines/listings/reviews/nope/decision", `{"decision":"approve"}`, nil), 404,
-		codeNotFound)
+	// Sent again by ana, its answer lost, the same approval succeeds again; another decision is a conflict.
+	again := post(review, `{"decision":"approve","version":1,"patch":[{"op":"replace","path":"/score","value":75}]}`,
+		map[string]string{UserHeader: "ana"})
+	if again.Code != http.StatusOK || again.Body.String() != rec.Body.String() {
+		t.Fatalf("approve again: %d %s", again.Code, again.Body.String())
+	}
+	wantError(t, post(review, `{"decision":"approve","version":1}`, nil), 409, codeConflict) // decided already
+	wantError(t, post("/api/v1/pipelines/listings/reviews/nope/decision", `{"decision":"approve","version":1}`, nil),
+		404, codeNotFound)
 
 	// Sample decisions, decided once.
 	sample := "/api/v1/pipelines/listings/samples/" + f.sampleDelivery + "/decision"
@@ -190,7 +197,7 @@ func TestActionsUnavailable(t *testing.T) {
 		wantError(t, do(t, srv, request{method: http.MethodPost, target: tt.target, body: tt.body}), 503,
 			codeUnavailable)
 	}
-	wantError(t, do(t, srv, request{method: http.MethodPost, body: `{"decision":"approve"}`,
+	wantError(t, do(t, srv, request{method: http.MethodPost, body: `{"decision":"approve","version":1}`,
 		target: "/api/v1/pipelines/listings/reviews/" + f.reviewDelivery + "/decision"}), 400, codeInvalid)
 	wantError(t, do(t, srv, request{method: http.MethodPost, body: `{"decision":"agree"}`,
 		target: "/api/v1/pipelines/listings/samples/" + f.sampleDelivery + "/decision"}), 400, codeInvalid)
@@ -283,7 +290,7 @@ func TestReviewDecisionConcurrent(t *testing.T) {
 	for i, who := range reviewers {
 		wg.Go(func() {
 			recs[i] = do(t, h, request{method: http.MethodPost, target: target + "/decision",
-				body: `{"decision":"approve"}`, header: map[string]string{UserHeader: who}})
+				body: `{"decision":"approve","version":1}`, header: map[string]string{UserHeader: who}})
 		})
 	}
 	wg.Wait()
