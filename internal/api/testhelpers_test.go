@@ -103,7 +103,13 @@ func (c *fakeClock) Advance(d time.Duration) {
 func (c *fakeClock) pending() int {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return len(c.timers)
+	n := 0
+	for _, t := range c.timers {
+		if !t.stopped {
+			n++
+		}
+	}
+	return n
 }
 
 func (t *fakeTimer) C() <-chan time.Time { return t.c }
@@ -187,17 +193,45 @@ func readFixture(t *testing.T) *fixture {
 // newFixture returns a fixture of the test's own: a copy of the shared one's store, closed when the test ends.
 // Cloning costs a tenth of seeding.
 func newFixture(t testing.TB) *fixture {
+	f := cloneFixture()
+	f.t = t
+	t.Cleanup(func() { _ = f.st.Close() })
+	return f
+}
+
+// cloneFixture returns a copy of the shared fixture on a clone of its store, left open.
+func cloneFixture() *fixture {
 	base := sharedFixture()
 	f := *base
-	f.t, f.clock = t, &fakeClock{t: base.clock.Now()}
+	f.clock = &fakeClock{t: base.clock.Now()}
 	st, err := base.st.Clone(sqlite.Options{Now: f.clock.Now, Rand: func() float64 { return 0.5 }})
 	if err != nil {
-		t.Fatal(err)
+		panic(err)
 	}
-	t.Cleanup(func() { _ = st.Close() })
 	f.st = st
 	f.srv = f.server()
 	return &f
+}
+
+// scratchFixture is a clone the tests that change state in ways the others ignore share (their own runs, r1
+// cancelled, its clock moved on): a clone's first requests prepare every statement again, so fewer clones run faster.
+// A test that meets the scratch clone a second time (go test -count) starts a new one.
+func scratchFixture(t testing.TB) *fixture {
+	scratchState.mu.Lock()
+	defer scratchState.mu.Unlock()
+	if scratchState.f == nil || scratchState.used[t.Name()] {
+		scratchState.f, scratchState.used = cloneFixture(), map[string]bool{}
+	}
+	scratchState.used[t.Name()] = true
+	f := *scratchState.f
+	f.t = t
+	return &f
+}
+
+var scratchState struct {
+	mu   sync.Mutex
+	f    *fixture
+	used map[string]bool
 }
 
 // seedFixture builds the shared fixture.

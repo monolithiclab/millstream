@@ -125,12 +125,23 @@ type liveEnv struct {
 	srv  *Server
 }
 
-// newLiveEnv returns a live env over a fixture of the test's own, or over the shared one when the test changes
-// nothing.
-func newLiveEnv(t *testing.T, opts BrokerOptions, shared bool) *liveEnv {
-	f := readFixture(t)
-	if !shared {
+// Fixtures of live envs.
+const (
+	ownFixture = iota // a clone of the test's own
+	readOnly          // the shared fixture: the test changes nothing
+	scratch           // the scratch clone: the test changes only what the others ignore
+)
+
+// newLiveEnv returns a live env over a fixture of the kind given.
+func newLiveEnv(t *testing.T, opts BrokerOptions, kind int) *liveEnv {
+	var f *fixture
+	switch kind {
+	case ownFixture:
 		f = newFixture(t)
+	case readOnly:
+		f = readFixture(t)
+	default:
+		f = scratchFixture(t)
 	}
 	opts.Store = cmpStore(opts.Store, f.st)
 	opts.Clock = f.clock
@@ -230,7 +241,7 @@ func (e *liveEnv) runEvents(t *testing.T, runID string, after int64) []int64 {
 // Review focus 2: a client that reconnects with its last event id after missing events receives exactly the
 // events of its scope it missed, in order, then the live ones, with no duplicate.
 func TestLiveResumption(t *testing.T) {
-	e := newLiveEnv(t, BrokerOptions{}, false)
+	e := newLiveEnv(t, BrokerOptions{}, ownFixture)
 	ctx := context.Background()
 	first := e.open(t, "/api/v1/live/runs/r1?pipeline=listings", nil)
 	first.w.waitFor(t, func(string) bool { return first.w.status() != 0 })
@@ -290,7 +301,7 @@ func TestLiveResumption(t *testing.T) {
 
 // A cursor the broker cannot resume answers one snapshotRequired event, then the stream ends.
 func TestLiveSnapshotRequired(t *testing.T) {
-	e := newLiveEnv(t, BrokerOptions{ResumeLimit: 3}, true)
+	e := newLiveEnv(t, BrokerOptions{ResumeLimit: 3}, readOnly)
 	head := must(e.st.LastEventSeq(e.ctx))
 	for _, cursor := range []string{"1", strconv.FormatInt(head+5, 10), "x"} {
 		s := e.open(t, "/api/v1/live/runs/r1?pipeline=listings&lastEventId="+cursor, nil)
@@ -336,7 +347,7 @@ func TestLiveRetentionGap(t *testing.T) {
 
 // A subscriber that falls behind is dropped: neither the writer nor the broker waits for it.
 func TestLiveSlowClientDropped(t *testing.T) {
-	e := newLiveEnv(t, BrokerOptions{Buffer: 1}, false)
+	e := newLiveEnv(t, BrokerOptions{Buffer: 1}, scratch)
 	slow := must(e.b.Subscribe(e.ctx, Filter{Pipeline: "listings"}, 0, false))
 	fast := must(e.b.Subscribe(e.ctx, Filter{Pipeline: "listings", RunID: "nope"}, 0, false))
 	e.fire("r5") // several events, one buffered
@@ -366,7 +377,7 @@ func TestLiveSlowClientDropped(t *testing.T) {
 
 // The broker stopping ends the streams; one that is not started answers unavailable.
 func TestLiveBrokerRun(t *testing.T) {
-	e := newLiveEnv(t, BrokerOptions{}, false)
+	e := newLiveEnv(t, BrokerOptions{}, scratch)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() { done <- e.b.Run(ctx) }()
@@ -376,6 +387,7 @@ func TestLiveBrokerRun(t *testing.T) {
 	snaps.w.waitFor(t, events(1))
 	// A commit wakes the broker: the event reaches the streams without a pump by hand, the snapshot at once.
 	e.st.OnCommit(e.b.Notify)
+	t.Cleanup(func() { e.st.OnCommit(nil) })
 	must(0, e.st.Cancel(e.ctx, "listings", "r1"))
 	s.w.waitFor(t, func(s string) bool { return strings.Contains(s, "runCancelled") })
 	snaps.w.waitFor(t, events(2))
@@ -389,7 +401,7 @@ func TestLiveBrokerRun(t *testing.T) {
 }
 
 func TestLiveErrors(t *testing.T) {
-	e := newLiveEnv(t, BrokerOptions{}, true)
+	e := newLiveEnv(t, BrokerOptions{}, readOnly)
 	for _, tt := range []struct {
 		target, code string
 		status       int
@@ -414,7 +426,7 @@ func TestLiveErrors(t *testing.T) {
 
 // A quiet stream sends a heartbeat comment every Heartbeat, by the injected clock.
 func TestLiveHeartbeat(t *testing.T) {
-	e := newLiveEnv(t, BrokerOptions{}, false)
+	e := newLiveEnv(t, BrokerOptions{}, scratch)
 	s := e.open(t, "/api/v1/live/pipelines/listings", nil)
 	s.w.waitFor(t, events(1))
 	for i := 1; i <= 2; i++ {
@@ -429,7 +441,7 @@ func TestLiveHeartbeat(t *testing.T) {
 // Snapshots coalesce: the first event after a quiet spell is sent at once, the next ones at most once per
 // SnapshotInterval, whatever the number of events.
 func TestLiveSnapshotCoalescing(t *testing.T) {
-	e := newLiveEnv(t, BrokerOptions{}, false)
+	e := newLiveEnv(t, BrokerOptions{}, ownFixture)
 	sub, first := must2(e.b.SubscribePipeline(e.ctx, "listings"))
 	defer sub.Close()
 	if first.Pipeline != "listings" || len(first.Steps) != 3 {
@@ -503,7 +515,7 @@ func Test_p95(t *testing.T) {
 // The live log tail: a delivery's records reach the ring through the handler, a reconnect within the ring gets
 // what it missed, one beyond it a gap marker first.
 func TestLiveLogs(t *testing.T) {
-	e := newLiveEnv(t, BrokerOptions{}, true)
+	e := newLiveEnv(t, BrokerOptions{}, readOnly)
 	var out bytes.Buffer
 	log := slog.New(e.logs.Handler(slog.NewJSONHandler(&out, nil))).With("node", "embedded-1")
 	log.Info("node started") // no delivery: not relayed
