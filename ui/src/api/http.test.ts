@@ -9,71 +9,113 @@ function setup(response: () => Response = () => Response.json([])) {
 
 type Case = [string, (api: Api) => Promise<unknown>, string, string, unknown?];
 
-const metrics = { metric: 'throughput', groupBy: 'step', from: 'a', to: 'b' } as const;
+const P = '/api/v1/pipelines/p';
 
 const cases: Case[] = [
   ['listPipelines', (a) => a.listPipelines(), 'GET', '/api/v1/pipelines'],
   ['getPipeline', (a) => a.getPipeline('a b'), 'GET', '/api/v1/pipelines/a%20b'],
-  ['listRevisions', (a) => a.listRevisions('p'), 'GET', '/api/v1/pipelines/p/revisions'],
-  ['listRuns', (a) => a.listRuns('p', { limit: 20, cursor: 'c' }), 'GET', '/api/v1/pipelines/p/runs?limit=20&cursor=c'],
-  ['getRun', (a) => a.getRun('r'), 'GET', '/api/v1/runs/r'],
-  ['getRunReport', (a) => a.getRunReport('r'), 'GET', '/api/v1/runs/r/report'],
-  ['listStreams', (a) => a.listStreams('p'), 'GET', '/api/v1/pipelines/p/streams'],
+  ['listRevisions', (a) => a.listRevisions('p'), 'GET', `${P}/revisions`],
+  ['getRevision', (a) => a.getRevision('p', 13), 'GET', `${P}/revisions/13`],
+  ['listStreams', (a) => a.listStreams('p'), 'GET', `${P}/streams`],
+  [
+    'listRuns',
+    (a) => a.listRuns('p', { state: 'running', limit: 20, cursor: 'c' }),
+    'GET',
+    `${P}/runs?state=running&limit=20&cursor=c`,
+  ],
+  ['getRun', (a) => a.getRun('p', 'r'), 'GET', `${P}/runs/r`],
+  ['getRunReport', (a) => a.getRunReport('p', 'r'), 'GET', `${P}/runs/r/report`],
+  [
+    'listRunDeliveries',
+    (a) => a.listRunDeliveries('p', 'r', { step: 's', state: 'dead' }),
+    'GET',
+    `${P}/runs/r/deliveries?step=s&state=dead`,
+  ],
   [
     'listItems',
-    (a) => a.listItems('p', { stream: 's', filter: 'score >= 70' }),
+    (a) => a.listItems('p', { stream: 's', run: 'r', where: 'item.score >= 70' }),
     'GET',
-    '/api/v1/pipelines/p/items?stream=s&filter=score+%3E%3D+70',
+    `${P}/items?stream=s&run=r&where=item.score+%3E%3D+70`,
   ],
-  ['getItem', (a) => a.getItem('it_1'), 'GET', '/api/v1/items/it_1'],
-  ['getLineage', (a) => a.getLineage('it_1'), 'GET', '/api/v1/items/it_1/lineage'],
-  ['listDeliveries', (a) => a.listDeliveries('it_1'), 'GET', '/api/v1/items/it_1/deliveries'],
-  ['listDeadLetters', (a) => a.listDeadLetters('p'), 'GET', '/api/v1/pipelines/p/dead-letters'],
-  ['getMetrics', (a) => a.getMetrics(metrics), 'GET', '/api/v1/metrics?metric=throughput&groupBy=step&from=a&to=b'],
+  ['getItem', (a) => a.getItem('p', 'it_1'), 'GET', `${P}/items/it_1`],
+  ['getLineage', (a) => a.getLineage('p', 'it_1', { depth: 3 }), 'GET', `${P}/items/it_1/lineage?depth=3`],
+  ['listItemDeliveries', (a) => a.listItemDeliveries('p', 'it_1'), 'GET', `${P}/items/it_1/deliveries`],
+  ['getDelivery', (a) => a.getDelivery('p', 'd'), 'GET', `${P}/deliveries/d`],
+  ['listDeadLetters', (a) => a.listDeadLetters('p'), 'GET', `${P}/dead-letters`],
+  ['listDeadLetters state', (a) => a.listDeadLetters('p', { state: 'all' }), 'GET', `${P}/dead-letters?state=all`],
+  ['listLessons', (a) => a.listLessons('p'), 'GET', `${P}/lessons`],
+  ['getReview', (a) => a.getReview('p', 'd'), 'GET', `${P}/reviews/d`],
+  ['getSample', (a) => a.getSample('p', 'd'), 'GET', `${P}/samples/d`],
   ['listInbox', (a) => a.listInbox(), 'GET', '/api/v1/inbox'],
-  ['listInbox inbox', (a) => a.listInbox('analysts'), 'GET', '/api/v1/inbox?inbox=analysts'],
-  ['listSamples', (a) => a.listSamples(), 'GET', '/api/v1/inbox/samples'],
-  ['listInsights', (a) => a.listInsights('p'), 'GET', '/api/v1/insights?pipeline=p'],
-  ['listLessons', (a) => a.listLessons('p'), 'GET', '/api/v1/pipelines/p/lessons'],
+  [
+    'listInbox query',
+    (a) => a.listInbox({ pipeline: 'p', inbox: 'analysts', state: 'open' }),
+    'GET',
+    '/api/v1/inbox?pipeline=p&inbox=analysts&state=open',
+  ],
+  ['listSamples', (a) => a.listSamples({ step: 's' }), 'GET', '/api/v1/inbox/samples?step=s'],
+  [
+    'listInsights',
+    (a) => a.listInsights({ pipeline: 'p', state: 'open' }),
+    'GET',
+    '/api/v1/insights?pipeline=p&state=open',
+  ],
+  [
+    'getMetrics',
+    (a) => a.getMetrics({ name: 'throughput', groupBy: 'step', since: '1h' }),
+    'GET',
+    '/api/v1/metrics?name=throughput&groupBy=step&since=1h',
+  ],
+  ['listMetricNames', (a) => a.listMetricNames({ pipeline: 'p' }), 'GET', '/api/v1/metrics/names?pipeline=p'],
   ['listNodes', (a) => a.listNodes(), 'GET', '/api/v1/nodes'],
-  ['triggerRun', (a) => a.triggerRun('p'), 'POST', '/api/v1/pipelines/p/runs', {}],
-  ['cancelRun', (a) => a.cancelRun('r'), 'POST', '/api/v1/runs/r/cancel', {}],
-  ['pause pipeline', (a) => a.pause({ pipeline: 'p' }), 'POST', '/api/v1/pipelines/p/pause', {}],
-  ['resume step', (a) => a.resume({ pipeline: 'p', step: 's' }), 'POST', '/api/v1/pipelines/p/steps/s/resume', {}],
-  ['rollback', (a) => a.rollback('p', 'r13'), 'POST', '/api/v1/pipelines/p/rollback', { revision: 'r13' }],
-  ['replay', (a) => a.replay('it_1'), 'POST', '/api/v1/items/it_1/replay', {}],
-  ['replay step', (a) => a.replay('it_1', 'score'), 'POST', '/api/v1/items/it_1/replay', { step: 'score' }],
+  ['triggerRun', (a) => a.triggerRun('p'), 'POST', `${P}/runs`, {}],
+  [
+    'triggerRun request',
+    (a) => a.triggerRun('p', { trigger: 't', payload: { a: 1 }, requestId: 'q' }),
+    'POST',
+    `${P}/runs`,
+    { trigger: 't', payload: { a: 1 }, requestId: 'q' },
+  ],
+  ['cancelRun', (a) => a.cancelRun('p', 'r'), 'POST', `${P}/runs/r/cancel`, {}],
+  ['pause pipeline', (a) => a.pause({ pipeline: 'p' }), 'POST', `${P}/pause`, {}],
+  ['resume step', (a) => a.resume({ pipeline: 'p', step: 's' }), 'POST', `${P}/steps/s/resume`, {}],
+  [
+    'replay',
+    (a) => a.replay('p', { step: 'score', since: '7d' }),
+    'POST',
+    `${P}/replay`,
+    { step: 'score', since: '7d' },
+  ],
   [
     'replayDeadLetters',
-    (a) => a.replayDeadLetters('p', { fingerprint: 'f' }),
+    (a) => a.replayDeadLetters('p', { fingerprint: 'f', migrate: true }),
     'POST',
-    '/api/v1/pipelines/p/dead-letters/replay',
-    { fingerprint: 'f' },
+    `${P}/dead-letters/replay`,
+    { fingerprint: 'f', migrate: true },
   ],
   [
     'discardDeadLetters',
-    (a) => a.discardDeadLetters('p', { itemIds: ['i'] }),
+    (a) => a.discardDeadLetters('p', { ids: ['i'] }),
     'POST',
-    '/api/v1/pipelines/p/dead-letters/discard',
-    { itemIds: ['i'] },
+    `${P}/dead-letters/discard`,
+    { ids: ['i'] },
   ],
   [
     'decideReview',
-    (a) => a.decideReview('rv', { decision: 'reject', reason: 'duplicate' }),
+    (a) => a.decideReview('p', 'd', { decision: 'reject', reason: 'duplicate' }),
     'POST',
-    '/api/v1/inbox/rv/decision',
+    `${P}/reviews/d/decision`,
     { decision: 'reject', reason: 'duplicate' },
   ],
   [
     'decideSample',
-    (a) => a.decideSample('sm', { agree: true }),
+    (a) => a.decideSample('p', 'd', { decision: 'agree' }),
     'POST',
-    '/api/v1/inbox/samples/sm/decision',
-    { agree: true },
+    `${P}/samples/d/decision`,
+    { decision: 'agree' },
   ],
-  ['acknowledgeInsight', (a) => a.acknowledgeInsight('in'), 'POST', '/api/v1/insights/in/acknowledge', {}],
-  ['muteInsight', (a) => a.muteInsight('in'), 'POST', '/api/v1/insights/in/mute', {}],
-  ['muteInsight until', (a) => a.muteInsight('in', 'x'), 'POST', '/api/v1/insights/in/mute', { until: 'x' }],
+  ['acknowledgeInsight', (a) => a.acknowledgeInsight('p', 'in'), 'POST', `${P}/insights/in/acknowledge`, {}],
+  ['muteInsight', (a) => a.muteInsight('p', 'in'), 'POST', `${P}/insights/in/mute`, {}],
 ];
 
 describe('HttpApi', () => {
@@ -84,18 +126,20 @@ describe('HttpApi', () => {
     expect(input).toBe(url);
     expect(init?.method).toBe(method);
     expect(init?.body === undefined ? undefined : JSON.parse(init.body as string)).toEqual(body);
+    // Every POST is JSON, even without a body of its own.
+    if (method === 'POST') expect(init?.headers).toMatchObject({ 'Content-Type': 'application/json' });
   });
 
   it('returns the decoded body, and nothing for 204', async () => {
     expect(await setup(() => Response.json([{ name: 'p' }])).api.listPipelines()).toEqual([{ name: 'p' }]);
-    expect(await setup(() => new Response(null, { status: 204 })).api.cancelRun('r')).toBeUndefined();
+    expect(await setup(() => new Response(null, { status: 204 })).api.cancelRun('p', 'r')).toBeUndefined();
   });
 
   it('turns the error body into an ApiError', async () => {
     const { api } = setup(() =>
       Response.json({ error: { code: 'conflict', message: 'already decided' } }, { status: 409 }),
     );
-    await expect(api.decideReview('rv', { decision: 'approve' })).rejects.toEqual(
+    await expect(api.decideReview('p', 'd', { decision: 'approve' })).rejects.toEqual(
       new ApiError(409, 'conflict', 'already decided'),
     );
   });
@@ -117,9 +161,11 @@ describe('HttpApi', () => {
 describe('liveUrls', () => {
   it('names the event streams of spec 12.1', () => {
     expect(liveUrls.pipeline('a/b')).toBe('/api/v1/live/pipelines/a%2Fb');
-    expect(liveUrls.run('r')).toBe('/api/v1/live/runs/r');
-    expect(liveUrls.item('i')).toBe('/api/v1/live/items/i');
+    expect(liveUrls.run('p', 'r')).toBe('/api/v1/live/runs/r?pipeline=p');
+    expect(liveUrls.item('a b', 'i')).toBe('/api/v1/live/items/i?pipeline=a+b');
     expect(liveUrls.logs()).toBe('/api/v1/live/logs');
-    expect(liveUrls.logs({ run: 'r', step: 's' })).toBe('/api/v1/live/logs?run=r&step=s');
+    expect(liveUrls.logs({ pipeline: 'p', run: 'r', step: 's', item: 'i', delivery: 'd' })).toBe(
+      '/api/v1/live/logs?pipeline=p&run=r&step=s&item=i&delivery=d',
+    );
   });
 });

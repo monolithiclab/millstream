@@ -5,7 +5,8 @@ import globals from 'globals';
 import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
-  { ignores: ['node_modules', 'coverage', 'playwright-report', 'test-results'] },
+  // openapi.d.ts is generated (make ui-types).
+  { ignores: ['node_modules', 'coverage', 'playwright-report', 'test-results', 'src/api/openapi.d.ts'] },
   js.configs.recommended,
   ...tseslint.configs.strict,
   ...tseslint.configs.stylistic,

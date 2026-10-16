@@ -1,24 +1,15 @@
-import {
-  ApiError,
-  enc,
-  withQuery,
-  type Api,
-  type Query,
-  type DeadLetterSelection,
-  type ItemQuery,
-  type ListQuery,
-  type Target,
-} from './api';
-import type { MetricsQuery, ReviewDecision, SampleDecision } from './schema';
+import { ApiError, enc, withQuery, type Api, type Query, type Target } from './api';
 
 type Fetch = (input: string, init?: RequestInit) => Promise<Response>;
+
+const pipelinePath = (pipeline: string) => `/pipelines/${enc(pipeline)}`;
+
 function targetPath(target: Target): string {
-  const base = `/pipelines/${enc(target.pipeline)}`;
+  const base = pipelinePath(target.pipeline);
   return target.step === undefined ? base : `${base}/steps/${enc(target.step)}`;
 }
 
-// The API over fetch. Paths follow M3 Task 2's endpoint list; when internal/api/openapi.yaml lands, its contract
-// tests are the reference and any difference is fixed here (and the types in schema.ts are generated).
+// The API over fetch, following internal/api/openapi.yaml. Every POST sends a JSON body, {} when it has none.
 export class HttpApi implements Api {
   constructor(
     private readonly fetch: Fetch = (input, init) => globalThis.fetch(input, init),
@@ -57,43 +48,47 @@ export class HttpApi implements Api {
   }
 
   listPipelines: Api['listPipelines'] = () => this.get('/pipelines');
-  getPipeline: Api['getPipeline'] = (name: string) => this.get(`/pipelines/${enc(name)}`);
-  listRevisions: Api['listRevisions'] = (pipeline: string) => this.get(`/pipelines/${enc(pipeline)}/revisions`);
-  listRuns: Api['listRuns'] = (pipeline: string, query: ListQuery = {}) =>
-    this.get(`/pipelines/${enc(pipeline)}/runs`, { ...query });
-  getRun: Api['getRun'] = (id: string) => this.get(`/runs/${enc(id)}`);
-  getRunReport: Api['getRunReport'] = (id: string) => this.get(`/runs/${enc(id)}/report`);
-  listStreams: Api['listStreams'] = (pipeline: string) => this.get(`/pipelines/${enc(pipeline)}/streams`);
-  listItems: Api['listItems'] = (pipeline: string, query: ItemQuery = {}) =>
-    this.get(`/pipelines/${enc(pipeline)}/items`, { ...query });
-  getItem: Api['getItem'] = (id: string) => this.get(`/items/${enc(id)}`);
-  getLineage: Api['getLineage'] = (id: string) => this.get(`/items/${enc(id)}/lineage`);
-  listDeliveries: Api['listDeliveries'] = (itemId: string) => this.get(`/items/${enc(itemId)}/deliveries`);
-  listDeadLetters: Api['listDeadLetters'] = (pipeline: string) => this.get(`/pipelines/${enc(pipeline)}/dead-letters`);
-  getMetrics: Api['getMetrics'] = (query: MetricsQuery) => this.get('/metrics', { ...query });
-  listInbox: Api['listInbox'] = (inbox?: string) => this.get('/inbox', { inbox });
-  listSamples: Api['listSamples'] = (inbox?: string) => this.get('/inbox/samples', { inbox });
-  listInsights: Api['listInsights'] = (pipeline?: string) => this.get('/insights', { pipeline });
-  listLessons: Api['listLessons'] = (pipeline: string) => this.get(`/pipelines/${enc(pipeline)}/lessons`);
+  getPipeline: Api['getPipeline'] = (p) => this.get(pipelinePath(p));
+  listRevisions: Api['listRevisions'] = (p) => this.get(`${pipelinePath(p)}/revisions`);
+  getRevision: Api['getRevision'] = (p, revision) => this.get(`${pipelinePath(p)}/revisions/${revision}`);
+  listStreams: Api['listStreams'] = (p) => this.get(`${pipelinePath(p)}/streams`);
+  listRuns: Api['listRuns'] = (p, query = {}) => this.get(`${pipelinePath(p)}/runs`, query);
+  getRun: Api['getRun'] = (p, run) => this.get(`${pipelinePath(p)}/runs/${enc(run)}`);
+  getRunReport: Api['getRunReport'] = (p, run) => this.get(`${pipelinePath(p)}/runs/${enc(run)}/report`);
+  listRunDeliveries: Api['listRunDeliveries'] = (p, run, query = {}) =>
+    this.get(`${pipelinePath(p)}/runs/${enc(run)}/deliveries`, query);
+  listItems: Api['listItems'] = (p, query = {}) => this.get(`${pipelinePath(p)}/items`, query);
+  getItem: Api['getItem'] = (p, item) => this.get(`${pipelinePath(p)}/items/${enc(item)}`);
+  getLineage: Api['getLineage'] = (p, item, query = {}) =>
+    this.get(`${pipelinePath(p)}/items/${enc(item)}/lineage`, query);
+  listItemDeliveries: Api['listItemDeliveries'] = (p, item, query = {}) =>
+    this.get(`${pipelinePath(p)}/items/${enc(item)}/deliveries`, query);
+  getDelivery: Api['getDelivery'] = (p, delivery) => this.get(`${pipelinePath(p)}/deliveries/${enc(delivery)}`);
+  listDeadLetters: Api['listDeadLetters'] = (p, query = {}) => this.get(`${pipelinePath(p)}/dead-letters`, query);
+  listLessons: Api['listLessons'] = (p) => this.get(`${pipelinePath(p)}/lessons`);
+  getReview: Api['getReview'] = (p, delivery) => this.get(`${pipelinePath(p)}/reviews/${enc(delivery)}`);
+  getSample: Api['getSample'] = (p, delivery) => this.get(`${pipelinePath(p)}/samples/${enc(delivery)}`);
+  listInbox: Api['listInbox'] = (query = {}) => this.get('/inbox', query);
+  listSamples: Api['listSamples'] = (query = {}) => this.get('/inbox/samples', query);
+  listInsights: Api['listInsights'] = (query = {}) => this.get('/insights', query);
+  getMetrics: Api['getMetrics'] = (query) => this.get('/metrics', query);
+  listMetricNames: Api['listMetricNames'] = (query = {}) => this.get('/metrics/names', query);
   listNodes: Api['listNodes'] = () => this.get('/nodes');
 
-  triggerRun: Api['triggerRun'] = (pipeline: string) => this.post(`/pipelines/${enc(pipeline)}/runs`);
-  cancelRun: Api['cancelRun'] = (id: string) => this.post(`/runs/${enc(id)}/cancel`);
-  pause: Api['pause'] = (target: Target) => this.post(`${targetPath(target)}/pause`);
-  resume: Api['resume'] = (target: Target) => this.post(`${targetPath(target)}/resume`);
-  rollback: Api['rollback'] = (pipeline: string, revision: string) =>
-    this.post(`/pipelines/${enc(pipeline)}/rollback`, { revision });
-  replay: Api['replay'] = (itemId: string, step?: string) =>
-    this.post(`/items/${enc(itemId)}/replay`, step ? { step } : {});
-  replayDeadLetters: Api['replayDeadLetters'] = (pipeline: string, selection: DeadLetterSelection) =>
-    this.post(`/pipelines/${enc(pipeline)}/dead-letters/replay`, selection);
-  discardDeadLetters: Api['discardDeadLetters'] = (pipeline: string, selection: DeadLetterSelection) =>
-    this.post(`/pipelines/${enc(pipeline)}/dead-letters/discard`, selection);
-  decideReview: Api['decideReview'] = (reviewId: string, decision: ReviewDecision) =>
-    this.post(`/inbox/${enc(reviewId)}/decision`, decision);
-  decideSample: Api['decideSample'] = (sampleId: string, decision: SampleDecision) =>
-    this.post(`/inbox/samples/${enc(sampleId)}/decision`, decision);
-  acknowledgeInsight: Api['acknowledgeInsight'] = (id: string) => this.post(`/insights/${enc(id)}/acknowledge`);
-  muteInsight: Api['muteInsight'] = (id: string, until?: string) =>
-    this.post(`/insights/${enc(id)}/mute`, until ? { until } : {});
+  triggerRun: Api['triggerRun'] = (p, request = {}) => this.post(`${pipelinePath(p)}/runs`, request);
+  cancelRun: Api['cancelRun'] = (p, run) => this.post(`${pipelinePath(p)}/runs/${enc(run)}/cancel`);
+  pause: Api['pause'] = (target) => this.post(`${targetPath(target)}/pause`);
+  resume: Api['resume'] = (target) => this.post(`${targetPath(target)}/resume`);
+  replay: Api['replay'] = (p, request) => this.post(`${pipelinePath(p)}/replay`, request);
+  replayDeadLetters: Api['replayDeadLetters'] = (p, selection) =>
+    this.post(`${pipelinePath(p)}/dead-letters/replay`, selection);
+  discardDeadLetters: Api['discardDeadLetters'] = (p, selection) =>
+    this.post(`${pipelinePath(p)}/dead-letters/discard`, selection);
+  decideReview: Api['decideReview'] = (p, delivery, decision) =>
+    this.post(`${pipelinePath(p)}/reviews/${enc(delivery)}/decision`, decision);
+  decideSample: Api['decideSample'] = (p, delivery, decision) =>
+    this.post(`${pipelinePath(p)}/samples/${enc(delivery)}/decision`, decision);
+  acknowledgeInsight: Api['acknowledgeInsight'] = (p, insight) =>
+    this.post(`${pipelinePath(p)}/insights/${enc(insight)}/acknowledge`);
+  muteInsight: Api['muteInsight'] = (p, insight) => this.post(`${pipelinePath(p)}/insights/${enc(insight)}/mute`);
 }

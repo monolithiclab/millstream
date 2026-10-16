@@ -92,16 +92,29 @@ ui: ui-deps ## Build the web UI into internal/ui/dist, embedded by the next go b
 	@find $(UI_DIST) -mindepth 1 ! -name placeholder.html -exec rm -rf {} +
 	@$(UI_DOCKER) $(UI_NODE_IMAGE) npm run build
 
+# The UI's API types, generated from the OpenAPI document and formatted by the repo's prettier into the container's
+# /tmp: ui-types installs them, test-ui fails when the committed copy differs.
+UI_TYPES = src/api/openapi.d.ts
+UI_TYPES_GEN = npx openapi-typescript ../internal/api/openapi.yaml --empty-objects-unknown -o /tmp/openapi.d.ts >/dev/null && \
+	npx prettier --stdin-filepath $(UI_TYPES) </tmp/openapi.d.ts >/tmp/openapi.fmt.d.ts
+
+.PHONY: ui-types
+ui-types: ui-deps ## Generate ui/src/api/openapi.d.ts from internal/api/openapi.yaml (openapi-typescript, node container)
+	@$(UI_DOCKER) $(UI_NODE_IMAGE) sh -c '$(UI_TYPES_GEN) && cp /tmp/openapi.fmt.d.ts $(UI_TYPES)'
+
 .PHONY: test-ui
 test-ui: ui-deps ## Typecheck, lint, format check and Vitest (coverage, i18n checks) for the web UI (node container)
-	@$(UI_DOCKER) $(UI_NODE_IMAGE) sh -c 'npm run typecheck && npm run lint && npm run format:check && npm test'
+	@$(UI_DOCKER) $(UI_NODE_IMAGE) sh -c '$(UI_TYPES_GEN) && { cmp -s /tmp/openapi.fmt.d.ts $(UI_TYPES) || \
+		{ echo "ui/$(UI_TYPES) is stale: run make ui-types" >&2; exit 1; }; } && \
+		npm run typecheck && npm run lint && npm run format:check && npm test'
 
 .PHONY: test-ui-e2e
-# The tests reach the build through internal/ui's handler: uiserve, cross-compiled for the container's Linux.
-test-ui-e2e: ui ## Playwright and axe against the built web UI, both themes and languages (Playwright container)
+# The tests reach the build through the binary: millstream, cross-compiled for the container's Linux with the UI
+# embedded, runs the e2e fixture package and serves the API and the UI.
+test-ui-e2e: ui ## Playwright and axe against millstream run serving the built web UI, both themes and languages (Playwright container)
 	@mkdir -p .build
 	@GOOS=linux GOARCH=$$(docker version --format '{{.Server.Arch}}') CGO_ENABLED=0 \
-		go build -o .build/uiserve ./internal/ui/uiserve
+		go build -o .build/millstream ./cmd/millstream
 	@$(UI_DOCKER) --ipc=host $(UI_PLAYWRIGHT_IMAGE) npx playwright test
 
 .PHONY: ui-shell

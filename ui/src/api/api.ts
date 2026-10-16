@@ -1,34 +1,45 @@
+import type { operations } from './openapi';
 import type {
+  Count,
   DeadLetterGroup,
+  DeadLetterSelection,
   Delivery,
-  InboxEntry,
   Insight,
   Item,
-  Lesson,
+  ItemPage,
   Lineage,
   MetricSeries,
-  MetricsQuery,
-  NodeInfo,
-  Page,
+  Nodes,
   Pipeline,
+  ReplayRequest,
+  Review,
   ReviewDecision,
+  ReviewPage,
   Revision,
   Run,
+  RunPage,
   RunReport,
+  Sample,
   SampleDecision,
+  SamplePage,
+  StepLessons,
   Stream,
+  TriggerRequest,
 } from './schema';
 
-export interface ListQuery {
-  limit?: number;
-  cursor?: string;
-}
+// The query parameters of an operation, as the OpenAPI document declares them.
+type QueryOf<Op extends keyof operations> = NonNullable<operations[Op]['parameters']['query']>;
 
-export interface ItemQuery extends ListQuery {
-  stream?: string;
-  // A CEL expression, evaluated by the server.
-  filter?: string;
-}
+export type RunQuery = QueryOf<'listRuns'>;
+export type ItemQuery = QueryOf<'listItems'>;
+export type LineageQuery = QueryOf<'getLineage'>;
+export type DeliveryQuery = QueryOf<'listItemDeliveries'>;
+export type DeadLetterQuery = QueryOf<'listDeadLetters'>;
+export type MetricsQuery = QueryOf<'getMetrics'>;
+export type MetricNamesQuery = QueryOf<'listMetricNames'>;
+export type InboxQuery = QueryOf<'listInbox'>;
+export type SampleQuery = QueryOf<'listSamples'>;
+export type InsightQuery = QueryOf<'listInsights'>;
 
 // A step or a whole pipeline, for pause and resume.
 export interface Target {
@@ -36,45 +47,45 @@ export interface Target {
   step?: string;
 }
 
-export interface DeadLetterSelection {
-  fingerprint?: string;
-  itemIds?: string[];
-}
-
-// Everything the UI asks of the server: the read endpoints and actions of M3 Task 2. HttpApi implements it over
-// fetch, FakeApi in memory for tests and ?demo.
+// Everything the UI asks of the server, as internal/api/openapi.yaml documents it. Every record but a pipeline is
+// scoped by its pipeline. HttpApi implements it over fetch, FakeApi in memory for tests and ?demo.
 export interface Api {
   listPipelines(): Promise<Pipeline[]>;
-  getPipeline(name: string): Promise<Pipeline>;
+  getPipeline(pipeline: string): Promise<Pipeline>;
   listRevisions(pipeline: string): Promise<Revision[]>;
-  listRuns(pipeline: string, query?: ListQuery): Promise<Page<Run>>;
-  getRun(id: string): Promise<Run>;
-  getRunReport(id: string): Promise<RunReport>;
+  getRevision(pipeline: string, revision: number): Promise<Revision>;
   listStreams(pipeline: string): Promise<Stream[]>;
-  listItems(pipeline: string, query?: ItemQuery): Promise<Page<Item>>;
-  getItem(id: string): Promise<Item>;
-  getLineage(id: string): Promise<Lineage>;
-  listDeliveries(itemId: string): Promise<Delivery[]>;
-  listDeadLetters(pipeline: string): Promise<DeadLetterGroup[]>;
+  listRuns(pipeline: string, query?: RunQuery): Promise<RunPage>;
+  getRun(pipeline: string, run: string): Promise<Run>;
+  getRunReport(pipeline: string, run: string): Promise<RunReport>;
+  listRunDeliveries(pipeline: string, run: string, query?: DeliveryQuery): Promise<Delivery[]>;
+  listItems(pipeline: string, query?: ItemQuery): Promise<ItemPage>;
+  getItem(pipeline: string, item: string): Promise<Item>;
+  getLineage(pipeline: string, item: string, query?: LineageQuery): Promise<Lineage>;
+  listItemDeliveries(pipeline: string, item: string, query?: DeliveryQuery): Promise<Delivery[]>;
+  getDelivery(pipeline: string, delivery: string): Promise<Delivery>;
+  listDeadLetters(pipeline: string, query?: DeadLetterQuery): Promise<DeadLetterGroup[]>;
+  listLessons(pipeline: string): Promise<StepLessons[]>;
+  getReview(pipeline: string, delivery: string): Promise<Review>;
+  getSample(pipeline: string, delivery: string): Promise<Sample>;
+  listInbox(query?: InboxQuery): Promise<ReviewPage>;
+  listSamples(query?: SampleQuery): Promise<SamplePage>;
+  listInsights(query?: InsightQuery): Promise<Insight[]>;
   getMetrics(query: MetricsQuery): Promise<MetricSeries[]>;
-  listInbox(inbox?: string): Promise<InboxEntry[]>;
-  listSamples(inbox?: string): Promise<InboxEntry[]>;
-  listInsights(pipeline?: string): Promise<Insight[]>;
-  listLessons(pipeline: string): Promise<Lesson[]>;
-  listNodes(): Promise<NodeInfo[]>;
+  listMetricNames(query?: MetricNamesQuery): Promise<string[]>;
+  listNodes(): Promise<Nodes>;
 
-  triggerRun(pipeline: string): Promise<Run>;
-  cancelRun(id: string): Promise<void>;
+  triggerRun(pipeline: string, request?: TriggerRequest): Promise<Run>;
+  cancelRun(pipeline: string, run: string): Promise<void>;
   pause(target: Target): Promise<void>;
   resume(target: Target): Promise<void>;
-  rollback(pipeline: string, revision: string): Promise<void>;
-  replay(itemId: string, step?: string): Promise<void>;
-  replayDeadLetters(pipeline: string, selection: DeadLetterSelection): Promise<{ count: number }>;
-  discardDeadLetters(pipeline: string, selection: DeadLetterSelection): Promise<{ count: number }>;
-  decideReview(reviewId: string, decision: ReviewDecision): Promise<void>;
-  decideSample(sampleId: string, decision: SampleDecision): Promise<void>;
-  acknowledgeInsight(id: string): Promise<void>;
-  muteInsight(id: string, until?: string): Promise<void>;
+  replay(pipeline: string, request: ReplayRequest): Promise<Run>;
+  replayDeadLetters(pipeline: string, selection: DeadLetterSelection): Promise<Count>;
+  discardDeadLetters(pipeline: string, selection: DeadLetterSelection): Promise<Count>;
+  decideReview(pipeline: string, delivery: string, decision: ReviewDecision): Promise<Review>;
+  decideSample(pipeline: string, delivery: string, decision: SampleDecision): Promise<Sample>;
+  acknowledgeInsight(pipeline: string, insight: string): Promise<void>;
+  muteInsight(pipeline: string, insight: string): Promise<void>;
 }
 
 // The server's error body is {error: {code, message}}.
@@ -101,10 +112,11 @@ export function withQuery(path: string, query: Query = {}): string {
   return qs === '' ? path : `${path}?${qs}`;
 }
 
-// The server-sent event streams of spec 12.1.
+// The server-sent event streams of spec 12.1. Run and item ids are unique within a pipeline only.
 export const liveUrls = {
   pipeline: (pipeline: string) => `/api/v1/live/pipelines/${enc(pipeline)}`,
-  run: (id: string) => `/api/v1/live/runs/${enc(id)}`,
-  item: (id: string) => `/api/v1/live/items/${enc(id)}`,
-  logs: (scope: { run?: string; step?: string; item?: string } = {}) => withQuery('/api/v1/live/logs', scope),
+  run: (pipeline: string, run: string) => withQuery(`/api/v1/live/runs/${enc(run)}`, { pipeline }),
+  item: (pipeline: string, item: string) => withQuery(`/api/v1/live/items/${enc(item)}`, { pipeline }),
+  logs: (scope: { pipeline?: string; run?: string; step?: string; item?: string; delivery?: string } = {}) =>
+    withQuery('/api/v1/live/logs', scope),
 };

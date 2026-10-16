@@ -1,15 +1,34 @@
 import { ApiError, type Api } from './api';
-import type { InboxEntry, NodeInfo, Pipeline, Run } from './schema';
+import type { Item, Nodes, Pipeline, Review, Run, RunReport, Sample, Step } from './schema';
 
 // Fixture data for tests and ?demo: the generic real estate example of the canvas.
 export interface Fixtures {
   pipelines: Pipeline[];
   runs: Run[];
-  inbox: InboxEntry[];
-  nodes: NodeInfo[];
+  inbox: Review[];
+  samples: Sample[];
+  nodes: Nodes;
 }
 
 const today = '2026-10-15';
+
+function step(name: string, action: string, input: string[], out: string[], extra: Partial<Step> = {}): Step {
+  return { name, action, builtin: false, in: input, out, dlq: '', concurrency: 4, paused: false, ...extra };
+}
+
+const listing: Item = {
+  id: 'it_7f3a9c21',
+  pipeline: 'listings-daily',
+  runId: 'run_0600',
+  stream: 'scored',
+  step: 'score',
+  key: 'paris-19-t3-68',
+  parents: ['it_51c0e8d4'],
+  generation: 1,
+  ts: `${today}T06:12:00Z`,
+  payload: { title: 'T3 · 68 m² · Paris 19e', priceEur: 489000, score: 82 },
+  artifacts: [],
+};
 
 export const demoFixtures: Fixtures = {
   pipelines: [
@@ -17,79 +36,137 @@ export const demoFixtures: Fixtures = {
       name: 'listings-daily',
       description: 'Paris listings → scored, reviewed, PDF',
       state: 'active',
-      revision: 'r14',
-      stepCount: 9,
+      revision: 14,
+      steps: [
+        step('fetch', 'http.fetch', ['trigger'], ['raw']),
+        step('parse', 'listing.parse', ['raw'], ['parsed']),
+        step('dedupe', 'dedupe', ['parsed'], ['unique'], { builtin: true }),
+        step('geocode', 'geo.lookup', ['unique'], ['located']),
+        step('enrich', 'listing.enrich', ['located'], ['enriched']),
+        step('score', 'agent.score', ['enriched'], ['scored'], { concurrency: 2 }),
+        step('analyst-review', 'review', ['scored'], ['approved'], { builtin: true }),
+        step('render', 'pdf.render', ['approved'], ['pdf']),
+        step('publish', 'drive.upload', ['pdf'], []),
+      ],
+      triggers: [{ name: 'daily', kind: 'cron', schedule: '0 6 * * *', stream: 'trigger' }],
+      streams: ['trigger', 'raw', 'parsed', 'unique', 'located', 'enriched', 'scored', 'approved', 'pdf'],
       lastRun: { id: 'run_0600', state: 'running', startedAt: `${today}T06:00:00Z` },
-      itemsToday: 1632,
-      costTodayUsd: 9.84,
       openDeadLetters: 3,
+      openReviews: 1,
     },
     {
       name: 'photo-tagging',
       description: 'Listing photos → room labels',
       state: 'active',
-      revision: 'r2',
-      stepCount: 4,
-      lastRun: { id: 'run_0530', state: 'succeeded', startedAt: `${today}T05:30:00Z`, endedAt: `${today}T05:52:00Z` },
-      itemsToday: 1108,
-      costTodayUsd: 1.92,
+      revision: 2,
+      steps: [
+        step('fetch', 'http.fetch', ['trigger'], ['photos']),
+        step('resize', 'image.resize', ['photos'], ['thumbs']),
+        step('tag', 'agent.tag', ['thumbs'], ['tagged']),
+        step('store', 'drive.upload', ['tagged'], []),
+      ],
+      triggers: [{ name: 'hourly', kind: 'cron', schedule: '30 * * * *', stream: 'trigger' }],
+      streams: ['trigger', 'photos', 'thumbs', 'tagged'],
+      lastRun: {
+        id: 'run_0530',
+        state: 'succeeded',
+        startedAt: `${today}T05:30:00Z`,
+        settledAt: `${today}T05:52:00Z`,
+      },
       openDeadLetters: 0,
+      openReviews: 0,
     },
     {
       name: 'rentals-weekly',
       description: 'Rental index, Mondays',
       state: 'paused',
-      revision: 'r6',
-      stepCount: 5,
-      itemsToday: 0,
-      costTodayUsd: 0,
+      revision: 6,
+      steps: [
+        step('fetch', 'http.fetch', ['trigger'], ['rentals']),
+        step('index', 'rentals.index', ['rentals'], ['index']),
+        step('publish', 'drive.upload', ['index'], []),
+      ],
+      triggers: [{ name: 'by-hand', kind: 'manual', stream: 'trigger' }],
+      streams: ['trigger', 'rentals', 'index'],
       openDeadLetters: 0,
+      openReviews: 0,
     },
   ],
   runs: [
     {
       id: 'run_0600',
       pipeline: 'listings-daily',
-      revision: 'r14',
+      revision: 14,
+      kind: 'trigger',
+      trigger: 'daily',
+      triggerKey: `${today}T06:00:00Z`,
+      triggerSource: 'cron',
+      scheduledAt: `${today}T06:00:00Z`,
+      generation: 0,
       state: 'running',
-      trigger: 'schedule',
       startedAt: `${today}T06:00:00Z`,
-      itemsIn: 1632,
-      itemsOut: 402,
-      deadLetters: 3,
       costUsd: 9.84,
+      vars: { city: 'paris' },
+      varSources: { city: 'pipeline' },
+      items: { raw: 1632, scored: 402 },
+      openDeadLetters: 3,
     },
   ],
   inbox: [
     {
-      id: 'rv_1',
-      itemId: 'it_7f3a9c21',
       pipeline: 'listings-daily',
+      deliveryId: 'dl_4b2e',
+      runId: 'run_0600',
       step: 'analyst-review',
       inbox: 'analysts',
-      title: 'T3 · 68 m² · Paris 19e',
-      createdAt: `${today}T06:14:00Z`,
-      sample: false,
+      state: 'open',
+      version: 1,
+      parkedAt: `${today}T06:14:00Z`,
       editable: ['/score'],
-      reasons: [{ code: 'overpriced', label: 'Overpriced for the area' }],
+      reasons: ['overpriced', 'duplicate'],
+      display: 'T3 · 68 m² · Paris 19e',
+      item: listing,
     },
   ],
-  nodes: [
-    {
-      id: 'mill-01',
-      role: 'engine',
-      state: 'active',
-      version: '0.0.0',
-      labels: {},
-      slots: 8,
-      leases: 2,
-    },
-  ],
+  samples: [],
+  nodes: {
+    engine: { state: 'active', version: '0.0.0' },
+    nodes: [
+      {
+        id: 'mill-01',
+        embedded: true,
+        version: '0.0.0',
+        slots: 8,
+        leases: 2,
+        labels: {},
+        runtimes: ['process'],
+      },
+    ],
+  },
 };
 
 export interface FakeCall {
   method: string;
   args: unknown[];
+}
+
+function report(run: Run): RunReport {
+  return {
+    pipeline: run.pipeline,
+    run: run.id,
+    kind: run.kind,
+    state: run.state,
+    startedAt: run.startedAt,
+    settledAt: run.settledAt ?? null,
+    durationSeconds: 0,
+    costUsd: run.costUsd,
+    items: run.items ?? {},
+    criticalPath: { totalSeconds: 0, steps: null },
+    steps: null,
+    failures: null,
+    comparison: null,
+    eta: null,
+  };
 }
 
 // In-memory Api: reads answer from the fixtures, actions are recorded in calls and resolve.
@@ -107,60 +184,98 @@ export class FakeApi implements Api {
     return Promise.reject(new ApiError(404, 'notFound', `${what} not found`));
   }
 
-  listPipelines: Api['listPipelines'] = () => Promise.resolve(this.fixtures.pipelines);
-  getPipeline: Api['getPipeline'] = (name) => {
-    const found = this.fixtures.pipelines.find((p) => p.name === name);
-    return found ? Promise.resolve(found) : this.notFound(`pipeline ${name}`);
-  };
-  listRevisions: Api['listRevisions'] = () => Promise.resolve([]);
-  listRuns: Api['listRuns'] = (pipeline) => {
-    const items = this.fixtures.runs.filter((r) => r.pipeline === pipeline);
-    return Promise.resolve({ items, total: items.length });
-  };
-  getRun: Api['getRun'] = (id) => {
-    const found = this.fixtures.runs.find((r) => r.id === id);
-    return found ? Promise.resolve(found) : this.notFound(`run ${id}`);
-  };
-  getRunReport: Api['getRunReport'] = async (id) => ({ run: await this.getRun(id), steps: [] });
-  listStreams: Api['listStreams'] = () => Promise.resolve([]);
-  listItems: Api['listItems'] = () => Promise.resolve({ items: [], total: 0 });
-  getItem: Api['getItem'] = (id) => this.notFound(`item ${id}`);
-  getLineage: Api['getLineage'] = (id) => Promise.resolve({ item: id, parents: [], children: [] });
-  listDeliveries: Api['listDeliveries'] = () => Promise.resolve([]);
-  listDeadLetters: Api['listDeadLetters'] = () => Promise.resolve([]);
-  getMetrics: Api['getMetrics'] = () => Promise.resolve([]);
-  listInbox: Api['listInbox'] = () => Promise.resolve(this.fixtures.inbox.filter((e) => !e.sample));
-  listSamples: Api['listSamples'] = () => Promise.resolve(this.fixtures.inbox.filter((e) => e.sample));
-  listInsights: Api['listInsights'] = () => Promise.resolve([]);
-  listLessons: Api['listLessons'] = () => Promise.resolve([]);
-  listNodes: Api['listNodes'] = () => Promise.resolve(this.fixtures.nodes);
+  private found<T>(value: T | undefined, what: string): Promise<T> {
+    return value === undefined ? this.notFound(what) : Promise.resolve(value);
+  }
 
-  triggerRun: Api['triggerRun'] = (pipeline) => {
-    const run: Run = {
+  private run(pipeline: string, id: string): Promise<Run> {
+    return this.found(
+      this.fixtures.runs.find((r) => r.pipeline === pipeline && r.id === id),
+      `run ${pipeline}/${id}`,
+    );
+  }
+
+  private newRun(pipeline: string, kind: Run['kind']): Run {
+    return {
       id: `run_${this.calls.length + 1}`,
       pipeline,
-      revision: 'r1',
+      revision: 1,
+      kind,
+      triggerKey: '',
+      triggerSource: 'manual',
+      generation: 0,
       state: 'running',
-      trigger: 'manual',
       startedAt: new Date(0).toISOString(),
-      itemsIn: 0,
-      itemsOut: 0,
-      deadLetters: 0,
       costUsd: 0,
+      vars: {},
+      varSources: {},
     };
-    return this.record('triggerRun', [pipeline], run);
-  };
+  }
+
+  listPipelines: Api['listPipelines'] = () => Promise.resolve(this.fixtures.pipelines);
+  getPipeline: Api['getPipeline'] = (name) =>
+    this.found(
+      this.fixtures.pipelines.find((p) => p.name === name),
+      `pipeline ${name}`,
+    );
+  listRevisions: Api['listRevisions'] = () => Promise.resolve([]);
+  getRevision: Api['getRevision'] = (p, revision) => this.notFound(`revision ${p}/${revision}`);
+  listStreams: Api['listStreams'] = () => Promise.resolve([]);
+  listRuns: Api['listRuns'] = (pipeline) =>
+    Promise.resolve({ items: this.fixtures.runs.filter((r) => r.pipeline === pipeline) });
+  getRun: Api['getRun'] = (p, id) => this.run(p, id);
+  getRunReport: Api['getRunReport'] = async (p, id) => report(await this.run(p, id));
+  listRunDeliveries: Api['listRunDeliveries'] = () => Promise.resolve([]);
+  listItems: Api['listItems'] = () => Promise.resolve({ items: [] });
+  getItem: Api['getItem'] = (p, id) => this.notFound(`item ${p}/${id}`);
+  getLineage: Api['getLineage'] = (_p, id) => Promise.resolve({ item: id, up: [], down: [], truncated: false });
+  listItemDeliveries: Api['listItemDeliveries'] = () => Promise.resolve([]);
+  getDelivery: Api['getDelivery'] = (p, id) => this.notFound(`delivery ${p}/${id}`);
+  listDeadLetters: Api['listDeadLetters'] = () => Promise.resolve([]);
+  listLessons: Api['listLessons'] = () => Promise.resolve([]);
+  getReview: Api['getReview'] = (p, id) =>
+    this.found(
+      this.fixtures.inbox.find((r) => r.pipeline === p && r.deliveryId === id),
+      `review ${p}/${id}`,
+    );
+  getSample: Api['getSample'] = (p, id) =>
+    this.found(
+      this.fixtures.samples.find((s) => s.pipeline === p && s.deliveryId === id),
+      `sample ${p}/${id}`,
+    );
+  listInbox: Api['listInbox'] = ({ pipeline, inbox, step, state = 'open' } = {}) =>
+    Promise.resolve({
+      items: this.fixtures.inbox.filter(
+        (r) =>
+          r.state === state &&
+          (pipeline === undefined || r.pipeline === pipeline) &&
+          (inbox === undefined || r.inbox === inbox) &&
+          (step === undefined || r.step === step),
+      ),
+    });
+  listSamples: Api['listSamples'] = () => Promise.resolve({ items: this.fixtures.samples });
+  listInsights: Api['listInsights'] = () => Promise.resolve([]);
+  getMetrics: Api['getMetrics'] = () => Promise.resolve([]);
+  listMetricNames: Api['listMetricNames'] = () => Promise.resolve([]);
+  listNodes: Api['listNodes'] = () => Promise.resolve(this.fixtures.nodes);
+
+  triggerRun: Api['triggerRun'] = (...args) => this.record('triggerRun', args, this.newRun(args[0], 'trigger'));
   cancelRun: Api['cancelRun'] = (...args) => this.record('cancelRun', args, undefined);
   pause: Api['pause'] = (...args) => this.record('pause', args, undefined);
   resume: Api['resume'] = (...args) => this.record('resume', args, undefined);
-  rollback: Api['rollback'] = (...args) => this.record('rollback', args, undefined);
-  replay: Api['replay'] = (...args) => this.record('replay', args, undefined);
+  replay: Api['replay'] = (...args) => this.record('replay', args, this.newRun(args[0], 'replay'));
   replayDeadLetters: Api['replayDeadLetters'] = (...args) =>
-    this.record('replayDeadLetters', args, { count: args[1].itemIds?.length ?? 0 });
+    this.record('replayDeadLetters', args, { count: args[1].ids?.length ?? 0 });
   discardDeadLetters: Api['discardDeadLetters'] = (...args) =>
-    this.record('discardDeadLetters', args, { count: args[1].itemIds?.length ?? 0 });
-  decideReview: Api['decideReview'] = (...args) => this.record('decideReview', args, undefined);
-  decideSample: Api['decideSample'] = (...args) => this.record('decideSample', args, undefined);
+    this.record('discardDeadLetters', args, { count: args[1].ids?.length ?? 0 });
+  decideReview: Api['decideReview'] = async (...args) => {
+    const review = await this.getReview(args[0], args[1]);
+    return this.record('decideReview', args, { ...review, ...args[2], state: 'decided' });
+  };
+  decideSample: Api['decideSample'] = async (...args) => {
+    const sample = await this.getSample(args[0], args[1]);
+    return this.record('decideSample', args, { ...sample, ...args[2], state: 'decided' });
+  };
   acknowledgeInsight: Api['acknowledgeInsight'] = (...args) => this.record('acknowledgeInsight', args, undefined);
   muteInsight: Api['muteInsight'] = (...args) => this.record('muteInsight', args, undefined);
 }

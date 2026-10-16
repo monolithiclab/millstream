@@ -76,7 +76,8 @@ below) for the reasoning, and `make help` for every command.
 - `make test-ui`: typecheck, ESLint (typescript-eslint, jsx-a11y, react-hooks), Prettier check, and Vitest with
   coverage in jsdom: fake timers and a `FakeApi`, never a network or a wall-clock wait. `make test-ui-e2e` builds,
   then runs Playwright with axe (WCAG 2.2 AA) on the shell in both themes, both languages, at 375 and 1280 px,
-  reaching the build through `internal/ui/uiserve` (the Go handler, cross-compiled for the container).
+  reaching the build through `millstream run` (cross-compiled for the container with the UI embedded) serving the
+  API and the UI over `ui/e2e/fixture`, a package of builtin steps.
   `make ui-shell` opens a shell in the node container (`npm run dev` serves on port 5173). Both test targets run in
   CI as their own jobs, not in `make ci`.
 - Tokens: `ui/src/styles/tokens.css` holds every colour, font, radius, shadow and motion token of the canvas identity
@@ -89,8 +90,25 @@ below) for the reasoning, and `make help` for every command.
   appears as a quoted literal: keep keys literal, no built-up names), and French typography (no-break space before
   `: ; ! ? »`). Numbers, money, durations and relative times go through `src/i18n/format.ts`.
 - API: `src/api/api.ts` is the `Api` interface, `http.ts` its fetch implementation, `fake.ts` the in-memory one for
-  tests and `?demo`. `src/api/schema.ts` holds the resource types by hand until `internal/api/openapi.yaml` exists;
-  then they become aliases of the types generated from it.
+  tests and `?demo`. `src/api/openapi.d.ts` is generated from `internal/api/openapi.yaml` by `make ui-types` and
+  committed; `src/api/schema.ts` aliases its schemas, so the rest of the UI imports resource types from there.
+
+## HTTP API
+
+- `internal/api` is the HTTP API of spec section 12.1: `routes` in `api.go` lists every operation, `read.go` and
+  `actions.go` the handlers (reads from the store, actions through the store's units or the engine, the same code
+  paths as the CLI), `dto.go` the JSON resources, `broker.go` the live event broker, `logs.go` the live log ring and
+  `sse.go` the streams. `millstream run` serves it with the UI (`internal/cli/serve.go`).
+- `internal/api/openapi.yaml` is the contract, embedded and served at `/api/v1/openapi.yaml`. A change to a route or
+  a resource changes the document and spec section 12.1 in the same commit. The tests enforce it: every route is
+  documented and called by a test, the document has no operation the server lacks, and every response a handler test
+  sees validates against the document's schemas (`internal/schema.CompileDocument`).
+- Handler tests call the server through `httptest.NewRecorder` on the shared fixture, seeded once per process in
+  `TestMain` (`sharedFixture`), or on a clone of it for a test that changes state; live tests drive the broker by
+  hand (`pump`, `flush`) with a fake clock, never a listener or a wall-clock wait. The real listener and SSE client
+  are in `internal/cli`'s e2e tests.
+- After changing the document, regenerate the UI's types: `make ui-types` writes `ui/src/api/openapi.d.ts`
+  (openapi-typescript in the node container), committed; `ui/src/api/schema.ts` aliases them.
 
 ## Agent recordings and the live smoke test
 
