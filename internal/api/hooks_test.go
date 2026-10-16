@@ -45,7 +45,7 @@ func TestWebhooks(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// The apply answers each webhook trigger's token once; a repeat keeps them and answers none.
+	// The apply answers each webhook trigger's token once.
 	var applied ApplyResponse
 	rec := do(t, h, request{method: http.MethodPost, target: "/api/v1/revisions", body: applyBody("hooks", hookSrc)})
 	if err := json.Unmarshal(rec.Body.Bytes(), &applied); err != nil || rec.Code != http.StatusOK {
@@ -60,11 +60,7 @@ func TestWebhooks(t *testing.T) {
 		hook.Token == slow.Token {
 		t.Fatalf("tokens = %+v", applied.Revisions[0].Tokens)
 	}
-	rec = do(t, h, request{method: http.MethodPost, target: "/api/v1/revisions", body: applyBody("again", hookSrc)})
-	if applied = (ApplyResponse{}); json.Unmarshal(rec.Body.Bytes(), &applied) != nil ||
-		len(applied.Revisions[0].Tokens) != 0 {
-		t.Fatalf("apply again: %s", rec.Body.String())
-	}
+	// The graph names each webhook trigger's path and rate; applying again keeps the tokens (the engine's tests).
 	p := get[Pipeline](t, h, "/api/v1/pipelines/hooked")
 	if tr := p.Triggers[1]; tr.Name != "hook" || tr.Path != hook.Path || tr.Rate != "60/min" {
 		t.Fatalf("triggers = %+v", p.Triggers)

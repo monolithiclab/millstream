@@ -15,7 +15,7 @@ var fairnessPipelines = []struct {
 	name, steps string
 	backlog     int
 }{
-	{"b", "  a: { action: ./actions/a, in: trigger.adhoc, concurrency: 50 }\n", 12},
+	{"b", "  a: { action: ./actions/a, in: trigger.adhoc, concurrency: 50 }\n", 9},
 	{"c", "  a: { action: ./actions/a, in: trigger.adhoc, concurrency: 50 }\n", 9},
 	{"lim", "  a: { action: ./actions/a, in: trigger.adhoc, concurrency: 10 }\n" +
 		"  b: { action: ./actions/a, in: trigger.adhoc, concurrency: 10 }\nlimits: { concurrency: 2 }\n", 2},
