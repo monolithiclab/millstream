@@ -19,6 +19,9 @@ earlier designs are in the git history of the spec.
 
 ## Follow-ups
 
+- Repository history: purge `conformance.test`, an 18 MB test binary committed by mistake in f164ceb (M3), from
+  every branch with BFG Repo-Cleaner (`bfg --delete-files conformance.test` on a mirror clone, `git reflog expire` and
+  `git gc`, then force-push the phase branches). Rewriting is fine while there are no tags or releases.
 - Insights: deployment-wide `insights` defaults from the environment file, a CLI to reopen a muted insight, and
   retention of `metric_rollups` and of the events the projectors read (M4).
 - Go SDK: per-output artifacts for `MapKeyed` (today `Context.Artifact` attaches a file to every output of the

@@ -15,3 +15,6 @@ cover.out
 /dist/
 # Compose secrets (deploy/compose/.env.example is the template)
 deploy/compose/.env
+
+# Go test binaries (go test -c)
+*.test
