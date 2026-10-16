@@ -56,6 +56,8 @@ type RunKind string
 const (
 	RunKindTrigger RunKind = "trigger"
 	RunKindReplay  RunKind = "replay"
+	// RunKindImport is a run an imported stream opened for a producer run (spec section 4.12).
+	RunKindImport RunKind = "import"
 )
 
 // TriggerSource says how a trigger fired.
@@ -65,6 +67,8 @@ type TriggerSource string
 const (
 	SourceCron   TriggerSource = "cron"
 	SourceManual TriggerSource = "manual"
+	// SourceImport is an import run's: its trigger is the imported stream, its key the producer run.
+	SourceImport TriggerSource = "import"
 )
 
 // DeadLetterKind is why a dead letter exists (spec section 5.6).
@@ -171,6 +175,11 @@ type PackageRecord struct {
 	Pipeline *pipeline.Pipeline
 	// Message says why the revision was applied (apply --message); it is kept with the revision.
 	Message string
+	// Vars and VarSources are the variables of the runs the pipeline's imported streams open, resolved by whoever
+	// applies the package as a firing would resolve them (spec section 4.12): such a run opens inside a producer's
+	// Done, where no environment is read. Applying the active package again replaces them.
+	Vars       map[string]any
+	VarSources map[string]string
 }
 
 // Revision is an applied revision.
@@ -436,10 +445,14 @@ type DedupeRequest struct {
 	Window  time.Duration
 }
 
-// ReplayStart starts a replay run (spec section 5.7).
+// ReplayStart starts a replay run (spec section 5.7): of a step over items of its pipeline, or, with Stream, of the
+// steps reading an imported stream over the producer's items on it (a back-fill, spec section 4.12).
 type ReplayStart struct {
 	Pipeline string
 	Step     string
+	// Stream, instead of Step, names an imported stream of the pipeline: Items are the producer's items on it, each
+	// copied to the stream (or found there) and delivered to every step reading it.
+	Stream string
 	// RunID is the replay run's id and Key the request id it derives from (ids.ReplayRun).
 	RunID string
 	Key   string
@@ -448,7 +461,8 @@ type ReplayStart struct {
 	// Vars are the run's resolved variables and VarSources where each came from.
 	Vars       map[string]any
 	VarSources map[string]string
-	// Items are the selected input items, each on one of the step's input streams.
+	// Items are the selected input items, each on one of the step's input streams (with Stream, the producer's items
+	// on its stream).
 	Items []string
 }
 
@@ -473,6 +487,8 @@ type Run struct {
 	// SettledAt is zero while the run is not settled.
 	SettledAt time.Time
 	CostUSD   float64
+	// Producer is the producer pipeline of an import run, empty for other runs; its TriggerKey is the producer run.
+	Producer string
 }
 
 // Item is an item envelope with its payload (spec section 5.2).
@@ -490,6 +506,9 @@ type Item struct {
 	TS         time.Time
 	Payload    json.RawMessage
 	Artifacts  []ArtifactRef
+	// ParentPipeline is the pipeline holding the item's parents when it is another one: a copy published on an
+	// imported stream (spec section 4.12). Empty for every other item.
+	ParentPipeline string
 }
 
 // Delivery is a delivery record (spec section 5.3).
@@ -579,6 +598,10 @@ type RunFilter struct {
 	State    RunState
 	// Unsettled keeps the runs not settled yet, whatever their state (running, waitingReview, cancelled while live).
 	Unsettled bool
+	// Producer and ProducerRun keep the import runs opened for that producer run, in any pipeline (ProducerRun only
+	// with Producer).
+	Producer    string
+	ProducerRun string
 	// After keeps the runs that come after this run in that order: the next page. A zero Seq starts at the newest.
 	After RunPosition
 	Limit int
@@ -598,8 +621,11 @@ type ItemFilter struct {
 	RunID    string
 	// IDs keeps the items with these ids.
 	IDs []string
-	// Parents keeps the items that have one of these items among their parents.
-	Parents []string
+	// Parents keeps the items that have one of these items among their parents. The parents are in the item's own
+	// pipeline, unless ParentPipeline names theirs: then their children are found in every pipeline, in
+	// ParentPipeline and as the copies published through imported streams in the others (spec section 4.12).
+	Parents        []string
+	ParentPipeline string
 	// Since keeps the items published at or after it.
 	Since time.Time
 	After int64

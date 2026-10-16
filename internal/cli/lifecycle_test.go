@@ -135,7 +135,7 @@ func Test_commandsThroughTheServer(t *testing.T) {
 	}
 	dirs := []string{fixture(lifecycleV1), fixture(lifecycleV2)}
 	// Through the parser, the server named by the environment: apply, refused, then applied.
-	if _, errOut := run(1, "apply", dirs[0], dirs[1]); !strings.Contains(errOut, "two packages of pipeline extra") {
+	if _, errOut := run(1, "apply", dirs[0], dirs[1]); !strings.Contains(errOut, "pipeline extra is given twice") {
 		t.Fatalf("two packages of one pipeline: %q", errOut)
 	}
 	if out, _ := run(0, "apply", dirs[0], "--message", "first"); !strings.HasPrefix(out, "extra revision 1 ") {

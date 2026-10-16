@@ -59,7 +59,7 @@ func parseRoot(n *yaml.Node) (*Pipeline, error) {
 		optional(f, "description", &p.Description, str),
 		optional(f, "vars", &p.Vars, rawMap),
 		optional(f, "secrets", &p.Secrets, parseSecrets),
-		required(f, "triggers", &p.Triggers, parseTriggers),
+		optional(f, "triggers", &p.Triggers, parseTriggers),
 		optional(f, "streams", &p.Streams, parseStreams),
 		required(f, "steps", &p.Steps, parseSteps),
 		optional(f, "budget", &p.Budget, parseBudget),
@@ -74,6 +74,13 @@ func parseRoot(n *yaml.Node) (*Pipeline, error) {
 	}
 	if placement != nil {
 		p.Placement = *placement
+	}
+	if p.Triggers == nil {
+		// A pipeline that imports a stream has runs without triggers: the import opens them (spec section 4.12).
+		if len(p.Imports()) == 0 {
+			return nil, errAt(f.node, "triggers", "is required unless the pipeline imports a stream")
+		}
+		p.Triggers = map[string]Trigger{}
 	}
 	return p, nil
 }

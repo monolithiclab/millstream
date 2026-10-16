@@ -280,3 +280,19 @@ func TestDoneFirstCommit(t *testing.T) {
 func TestRevisionNumbersSurviveACrash(t *testing.T) {
 	storetest.TestRevisionNumbersSurviveACrash(t, memoryStore)
 }
+
+func TestImportCopiesAndRuns(t *testing.T) {
+	storetest.TestImportCopiesAndRuns(t, memoryStore)
+}
+
+func TestImportPausedConsumerAndCancel(t *testing.T) {
+	storetest.TestImportPausedConsumerAndCancel(t, memoryStore)
+}
+
+func TestImportProducerReplay(t *testing.T) {
+	storetest.TestImportProducerReplay(t, memoryStore)
+}
+
+func TestImportBackfill(t *testing.T) {
+	storetest.TestImportBackfill(t, memoryStore)
+}

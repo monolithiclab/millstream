@@ -10,6 +10,9 @@ import (
 type Origin struct {
 	From   string
 	Schema []byte
+	// Pipeline is the pipeline whose package produced them when it is another one, reached through an imported
+	// stream (CheckInstance); empty for the package's own.
+	Pipeline string
 }
 
 // Origins returns the schemas of what reaches stream in pkg: each producing action's output schema, a trigger's input
@@ -17,12 +20,20 @@ type Origin struct {
 // step's resolved action, nil when it did not resolve; report receives a trigger input schema that cannot be read,
 // located by its key path, when report is not nil. Each origin is listed once, however many paths lead from it, sorted by From.
 func Origins(pkg *Package, action func(step string) *Action, stream string, report func(at string, err error)) []Origin {
+	return originsVia(pkg, action, stream, report, nil)
+}
+
+// originsVia is Origins with imported, when not nil, giving the origins of a stream pkg imports: those its producer
+// publishes on it. Without it an imported stream has none, since its producer is another package.
+func originsVia(pkg *Package, action func(string) *Action, stream string, report func(string, error),
+	imported func(stream string) []Origin,
+) []Origin {
 	producers, _ := pkg.Pipeline.streamIndex()
-	return origins(pkg, producers, action, stream, report, map[string]bool{})
+	return origins(pkg, producers, action, stream, report, imported, map[string]bool{})
 }
 
 func origins(pkg *Package, producers map[string][]string, action func(string) *Action, stream string,
-	report func(string, error), visiting map[string]bool,
+	report func(string, error), imported func(string) []Origin, visiting map[string]bool,
 ) []Origin {
 	if visiting[stream] {
 		return nil
@@ -44,6 +55,12 @@ func origins(pkg *Package, producers map[string][]string, action func(string) *A
 		}
 		return []Origin{{From: "trigger " + trigger, Schema: doc}}
 	}
+	if p.Streams[stream].Import != nil {
+		if imported == nil {
+			return nil
+		}
+		return imported(stream)
+	}
 	var out []Origin
 	for _, w := range producers[stream] {
 		s, a := p.Steps[w], action(w)
@@ -57,9 +74,9 @@ func origins(pkg *Package, producers map[string][]string, action func(string) *A
 			continue
 		}
 		for _, in := range s.In {
-			out = append(out, origins(pkg, producers, action, in, report, visiting)...)
+			out = append(out, origins(pkg, producers, action, in, report, imported, visiting)...)
 		}
 	}
-	slices.SortFunc(out, func(a, b Origin) int { return cmp.Compare(a.From, b.From) })
-	return slices.CompactFunc(out, func(a, b Origin) bool { return a.From == b.From })
+	slices.SortFunc(out, func(a, b Origin) int { return cmp.Or(cmp.Compare(a.Pipeline, b.Pipeline), cmp.Compare(a.From, b.From)) })
+	return slices.CompactFunc(out, func(a, b Origin) bool { return a.Pipeline == b.Pipeline && a.From == b.From })
 }

@@ -27,6 +27,7 @@ type Pipeline struct {
 	Revision        int64       `json:"revision"`
 	Steps           []Step      `json:"steps"`
 	Triggers        []Trigger   `json:"triggers"`
+	Imports         []Import    `json:"imports,omitempty"`
 	Streams         []string    `json:"streams"`
 	LastRun         *RunSummary `json:"lastRun,omitempty"`
 	OpenDeadLetters int         `json:"openDeadLetters"`
@@ -70,7 +71,16 @@ type Graph struct {
 	Description string    `json:"description,omitempty"`
 	Steps       []Step    `json:"steps"`
 	Triggers    []Trigger `json:"triggers"`
+	Imports     []Import  `json:"imports,omitempty"`
 	Streams     []string  `json:"streams"`
+}
+
+// Import is a stream a revision imports from another pipeline (spec section 4.12): its name in the revision, and
+// the producer's pipeline and stream.
+type Import struct {
+	Name     string `json:"name"`
+	Pipeline string `json:"pipeline"`
+	Stream   string `json:"stream"`
 }
 
 // Stream is a stream of the active revision with the steps writing and reading it and its item count.
@@ -108,6 +118,8 @@ type Run struct {
 	VarSources      map[string]string `json:"varSources"`
 	Items           map[string]int64  `json:"items,omitempty"`
 	OpenDeadLetters *int              `json:"openDeadLetters,omitempty"`
+	// Producer is an import run's producer pipeline; its TriggerKey is the producer run (spec section 4.12).
+	Producer string `json:"producer,omitempty"`
 }
 
 // Item is an item envelope with its payload.
@@ -123,17 +135,22 @@ type Item struct {
 	TS         time.Time           `json:"ts"`
 	Payload    json.RawMessage     `json:"payload"`
 	Artifacts  []store.ArtifactRef `json:"artifacts"`
+	// ParentPipeline is the pipeline of the item's parents when it is another one: a copy published on an imported
+	// stream (spec section 4.12).
+	ParentPipeline string `json:"parentPipeline,omitempty"`
 }
 
-// LineageNode is an item of a lineage, without its payload.
+// LineageNode is an item of a lineage, without its payload. Pipeline is the item's: another pipeline's for an
+// item reached through an imported stream.
 type LineageNode struct {
-	ID      string    `json:"id"`
-	RunID   string    `json:"runId"`
-	Stream  string    `json:"stream"`
-	Step    string    `json:"step"`
-	Key     string    `json:"key"`
-	Parents []string  `json:"parents"`
-	TS      time.Time `json:"ts"`
+	ID       string    `json:"id"`
+	Pipeline string    `json:"pipeline"`
+	RunID    string    `json:"runId"`
+	Stream   string    `json:"stream"`
+	Step     string    `json:"step"`
+	Key      string    `json:"key"`
+	Parents  []string  `json:"parents"`
+	TS       time.Time `json:"ts"`
 }
 
 // Lineage is an item's ancestors (up) and descendants (down), nearest first; Truncated says a bound cut it.
@@ -358,7 +375,7 @@ func toRun(r store.Run) Run {
 		ID: r.ID, Pipeline: r.Pipeline, Revision: int64(r.Revision), Kind: string(r.Kind), Trigger: r.Trigger,
 		TriggerKey: r.TriggerKey, TriggerSource: string(r.TriggerSource), ScheduledAt: timePtr(r.ScheduledAt),
 		Generation: r.Generation, State: string(r.State), StartedAt: r.StartedAt, SettledAt: timePtr(r.SettledAt),
-		CostUSD: r.CostUSD, Vars: nonNilMap(r.Vars), VarSources: nonNilMap(r.VarSources),
+		CostUSD: r.CostUSD, Vars: nonNilMap(r.Vars), VarSources: nonNilMap(r.VarSources), Producer: r.Producer,
 	}
 }
 
@@ -384,12 +401,12 @@ func toItem(it store.Item) Item {
 	return Item{
 		ID: it.ID, Pipeline: it.Pipeline, RunID: it.RunID, Stream: it.Stream, Step: it.Step, Key: it.Key,
 		Parents: orEmpty(it.Parents), Generation: it.Generation, TS: it.TS, Payload: payload,
-		Artifacts: orEmpty(it.Artifacts),
+		Artifacts: orEmpty(it.Artifacts), ParentPipeline: it.ParentPipeline,
 	}
 }
 
 func toLineageNode(it store.Item) LineageNode {
-	return LineageNode{ID: it.ID, RunID: it.RunID, Stream: it.Stream, Step: it.Step, Key: it.Key,
+	return LineageNode{ID: it.ID, Pipeline: it.Pipeline, RunID: it.RunID, Stream: it.Stream, Step: it.Step, Key: it.Key,
 		Parents: orEmpty(it.Parents), TS: it.TS}
 }
 
@@ -450,6 +467,11 @@ func graph(p *pipeline.Pipeline, ps *store.PipelineState) Graph {
 		}
 		streams[tr.Stream] = true
 		g.Triggers = append(g.Triggers, tr)
+	}
+	for _, name := range p.Imports() {
+		imp := p.Streams[name].Import
+		g.Imports = append(g.Imports, Import{Name: name, Pipeline: imp.Pipeline, Stream: imp.Stream})
+		streams[name] = true
 	}
 	for _, name := range slices.Sorted(maps.Keys(p.Steps)) {
 		st := p.Steps[name]

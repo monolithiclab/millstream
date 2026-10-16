@@ -94,7 +94,8 @@ func (e *Engine) ApplyPackages(ctx context.Context, pkgs []*pipeline.Package, op
 	return out, findings, nil
 }
 
-// checkApply checks the packages and the active package of every other pipeline, then what spans them.
+// checkApply checks the packages and the active package of every other pipeline, each alone and against each other:
+// the applied ones are the changed pipelines, and the set is the whole deployment (pipeline.InstanceOptions).
 func (e *Engine) checkApply(ctx context.Context, pkgs []*pipeline.Package, opts ApplyOptions) ([]Finding, error) {
 	states, err := e.st.Pipelines(ctx)
 	if err != nil {
@@ -119,15 +120,21 @@ func (e *Engine) checkApply(ctx context.Context, pkgs []*pipeline.Package, opts 
 		}
 		others = append(others, pkg)
 	}
-	var findings []Finding
-	for _, pkg := range slices.Concat(pkgs, others) {
-		for _, d := range pipeline.Check(pkg, e.opts.Resolver, e.opts.Env, e.opts.Check) {
-			findings = append(findings, Finding{Pipeline: pkg.Pipeline.Name, Diagnostic: d})
-		}
+	all, changed := slices.Concat(pkgs, others), make([]string, 0, len(pkgs))
+	for _, pkg := range pkgs {
+		changed = append(changed, pkg.Pipeline.Name)
 	}
-	across := pipeline.CheckInstance(pkgs, others, opts.Force)
-	for _, name := range slices.Sorted(maps.Keys(across)) {
-		for _, d := range across[name] {
+	across := pipeline.CheckInstance(all, e.opts.Resolver,
+		pipeline.InstanceOptions{Changed: changed, Complete: true, Force: opts.Force})
+	var findings []Finding
+	for _, pkg := range all {
+		name := pkg.Pipeline.Name
+		diags := pipeline.Check(pkg, e.opts.Resolver, e.opts.Env, e.opts.Check)
+		if d, ok := across[name]; ok {
+			diags = pipeline.SortDiagnostics(append(diags, d...))
+			delete(across, name) // a pipeline given twice gets them once
+		}
+		for _, d := range diags {
 			findings = append(findings, Finding{Pipeline: name, Diagnostic: d})
 		}
 	}

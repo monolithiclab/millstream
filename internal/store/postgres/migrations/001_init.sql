@@ -29,8 +29,21 @@ CREATE TABLE revisions (
 CREATE TABLE pipelines (
     id              text PRIMARY KEY,
     active_revision bigint NOT NULL REFERENCES revisions (id),
-    state           text NOT NULL -- active | paused | disabled
+    state           text NOT NULL, -- active | paused | disabled
+    vars            text NOT NULL DEFAULT '{}', -- the variables of the runs its imports open, resolved at apply
+    var_sources     text NOT NULL DEFAULT '{}'
 );
+
+-- The streams each pipeline's active revision imports (spec section 4.12): the Done unit copies a producer's new
+-- item on producer_stream to each consumer's stream. ApplyRevision rewrites a consumer's rows.
+CREATE TABLE stream_imports (
+    consumer        text NOT NULL,
+    stream          text NOT NULL, -- the consumer's name for it
+    producer        text NOT NULL,
+    producer_stream text NOT NULL,
+    PRIMARY KEY (consumer, stream)
+);
+CREATE INDEX stream_imports_producer ON stream_imports (producer, producer_stream);
 
 -- cause is empty for a pause a user asked for, else what paused the step (budget.run, budget.day).
 CREATE TABLE steps_state (
@@ -49,9 +62,9 @@ CREATE TABLE runs (
     revision           bigint NOT NULL REFERENCES revisions (id),
     trigger            text NOT NULL,
     trigger_key        text NOT NULL,
-    trigger_source     text NOT NULL, -- cron | manual
+    trigger_source     text NOT NULL, -- cron | manual | import
     scheduled_at       timestamptz,   -- the scheduled time of a cron firing
-    kind               text NOT NULL, -- trigger | replay
+    kind               text NOT NULL, -- trigger | replay | import
     generation         bigint NOT NULL,
     vars               text NOT NULL,
     var_sources        text NOT NULL,
@@ -60,8 +73,11 @@ CREATE TABLE runs (
     settled_at         timestamptz,
     cost_usd           double precision NOT NULL DEFAULT 0,
     budget_reached_usd double precision NOT NULL DEFAULT 0,
+    producer           text NOT NULL DEFAULT '', -- an import run's producer pipeline, its trigger_key the producer run
+    consumers          bigint NOT NULL DEFAULT 0,  -- how many import runs it opened in other pipelines
     PRIMARY KEY (pipeline, id)
 );
+CREATE INDEX runs_producer ON runs (producer, trigger_key) WHERE producer <> '';
 CREATE INDEX runs_cron ON runs (pipeline, trigger, trigger_source, scheduled_at);
 CREATE INDEX runs_started ON runs (started_at, rowid);
 
@@ -94,9 +110,12 @@ CREATE TABLE items (
     payload      text NOT NULL,
     payload_hash text NOT NULL,
     artifacts    text NOT NULL DEFAULT '[]',
+    -- the pipeline holding the item's parents when it is another one: a copy published through an import
+    parent_pipeline text NOT NULL DEFAULT '',
     PRIMARY KEY (pipeline, id),
     FOREIGN KEY (pipeline, run_id) REFERENCES runs (pipeline, id)
 );
+CREATE INDEX items_copies ON items (parent_pipeline) WHERE parent_pipeline <> '';
 CREATE INDEX items_stream ON items (pipeline, stream);
 CREATE INDEX items_run ON items (pipeline, run_id);
 CREATE INDEX items_rowid ON items (rowid);

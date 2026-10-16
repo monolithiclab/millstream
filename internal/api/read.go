@@ -152,7 +152,7 @@ func pageOf[T, U any](rows []T, n int, conv func(T) U, cursor func(T) string) Pa
 func (s *Server) pipeline(ctx context.Context, ps store.PipelineState, p *pipeline.Pipeline) (Pipeline, error) {
 	g := graph(p, &ps)
 	out := Pipeline{Name: ps.Name, Description: g.Description, State: "active", Revision: int64(ps.ActiveRevision),
-		Steps: g.Steps, Triggers: g.Triggers, Streams: g.Streams}
+		Steps: g.Steps, Triggers: g.Triggers, Imports: g.Imports, Streams: g.Streams}
 	switch {
 	case ps.Paused:
 		out.State = "paused"
@@ -521,27 +521,55 @@ func (s *Server) getLineage(w http.ResponseWriter, r *http.Request) error {
 		}
 	}
 	out := Lineage{Item: it.ID, Up: []LineageNode{}, Down: []LineageNode{}}
-	seen := map[string]bool{it.ID: true}
-	// Up: each generation's parents, read together.
-	frontier := it.Parents
+	// Items are named by pipeline and id: a copy published through an imported stream has its parent in the
+	// producer's pipeline, and its children in the consumers' (spec section 4.12).
+	type ref struct{ pipeline, id string }
+	seen := map[ref]bool{{it.Pipeline, it.ID}: true}
+	parentsOf := func(it store.Item) []ref {
+		p := cmp.Or(it.ParentPipeline, it.Pipeline)
+		refs := make([]ref, len(it.Parents))
+		for i, id := range it.Parents {
+			refs[i] = ref{p, id}
+		}
+		return refs
+	}
+	// byPipeline groups refs by pipeline, in the order the pipelines come.
+	byPipeline := func(refs []ref) ([]string, map[string][]string) {
+		groups := map[string][]string{}
+		var order []string
+		for _, r := range refs {
+			if slices.Contains(groups[r.pipeline], r.id) {
+				continue
+			}
+			if _, ok := groups[r.pipeline]; !ok {
+				order = append(order, r.pipeline)
+			}
+			groups[r.pipeline] = append(groups[r.pipeline], r.id)
+		}
+		return order, groups
+	}
+	// Up: each generation's parents, read together per pipeline.
+	frontier := parentsOf(it)
 	for range depth {
-		var next []string
-		ids := slices.DeleteFunc(slices.Clone(frontier), func(id string) bool { return seen[id] })
-		if len(ids) == 0 {
+		order, groups := byPipeline(slices.DeleteFunc(frontier, func(r ref) bool { return seen[r] }))
+		if len(order) == 0 {
 			break
 		}
-		parents, err := s.opts.Store.Items(r.Context(), store.ItemFilter{Pipeline: name, IDs: ids})
-		if err != nil {
-			return err
-		}
-		for _, p := range parents {
-			if len(out.Up) == maxLineageNodes {
-				out.Truncated = true
-				break
+		var next []ref
+		for _, p := range order {
+			parents, err := s.opts.Store.Items(r.Context(), store.ItemFilter{Pipeline: p, IDs: groups[p]})
+			if err != nil {
+				return err
 			}
-			seen[p.ID] = true
-			out.Up = append(out.Up, toLineageNode(p))
-			next = append(next, p.Parents...)
+			for _, item := range parents {
+				if len(out.Up) == maxLineageNodes {
+					out.Truncated = true
+					break
+				}
+				seen[ref{item.Pipeline, item.ID}] = true
+				out.Up = append(out.Up, toLineageNode(item))
+				next = append(next, parentsOf(item)...)
+			}
 		}
 		frontier = next
 		if out.Truncated { // the cap ends the walk, not just this generation
@@ -549,28 +577,36 @@ func (s *Server) getLineage(w http.ResponseWriter, r *http.Request) error {
 		}
 	}
 	if len(frontier) > 0 && !out.Truncated {
-		out.Truncated = slices.ContainsFunc(frontier, func(id string) bool { return !seen[id] })
+		out.Truncated = slices.ContainsFunc(frontier, func(r ref) bool { return !seen[r] })
 	}
-	// Down: each generation's children, read together.
-	level := []string{it.ID}
+	// Down: each generation's children, read together per pipeline: those in the item's pipeline, and the copies in
+	// the pipelines importing its stream.
+	level := []ref{{it.Pipeline, it.ID}}
 	capped := false
 	for d := 0; d < depth && len(level) > 0; d++ {
-		var next []string
-		children, err := s.opts.Store.Items(r.Context(), store.ItemFilter{Pipeline: name, Parents: level})
-		if err != nil {
-			return err
-		}
-		for _, c := range children {
-			if seen[c.ID] {
-				continue
+		var next []ref
+		order, groups := byPipeline(level)
+		for _, p := range order {
+			children, err := s.opts.Store.Items(r.Context(), store.ItemFilter{Parents: groups[p], ParentPipeline: p})
+			if err != nil {
+				return err
 			}
-			if len(out.Down) == maxLineageNodes {
-				out.Truncated, capped = true, true
+			for _, c := range children {
+				cr := ref{c.Pipeline, c.ID}
+				if seen[cr] {
+					continue
+				}
+				if len(out.Down) == maxLineageNodes {
+					out.Truncated, capped = true, true
+					break
+				}
+				seen[cr] = true
+				out.Down = append(out.Down, toLineageNode(c))
+				next = append(next, cr)
+			}
+			if capped {
 				break
 			}
-			seen[c.ID] = true
-			out.Down = append(out.Down, toLineageNode(c))
-			next = append(next, c.ID)
 		}
 		level = next
 		if capped {
@@ -743,7 +779,7 @@ func (s *Server) serveArtifact(w http.ResponseWriter, r *http.Request, pipelineN
 	if s.opts.Artifacts == nil {
 		return fmt.Errorf("artifacts: no artifact store: %w", errUnavailable)
 	}
-	f, err := s.opts.Artifacts.Open(pipelineName, ref.SHA256)
+	f, err := engine.OpenArtifact(r.Context(), s.opts.Store, s.opts.Artifacts, pipelineName, ref)
 	if errors.Is(err, fs.ErrNotExist) {
 		return fmt.Errorf("artifact %s: %w: %w", ref.Name, err, store.ErrNotFound)
 	}

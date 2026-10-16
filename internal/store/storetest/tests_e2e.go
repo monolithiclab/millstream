@@ -6,6 +6,9 @@ package storetest
 const e2eBuild = true
 
 var e2eTests = []Test{
+	{"TestImportReopens", TestImportReopens},
+	{"TestImportRevisionsAndChains", TestImportRevisionsAndChains},
+	{"TestImportFollowsReviews", TestImportFollowsReviews},
 	{"TestDoneCountsArtifactsPerItem", TestDoneCountsArtifactsPerItem},
 	{"TestArtifactsTravelWithItems", TestArtifactsTravelWithItems},
 	{"TestDayBudgetRollsOverByUTCDay", TestDayBudgetRollsOverByUTCDay},

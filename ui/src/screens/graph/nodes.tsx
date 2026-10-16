@@ -2,8 +2,8 @@ import { Handle, Position, type Node, type NodeProps } from '@xyflow/react';
 import type { KeyboardEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { StatusGlyph, useStatusLabel } from '../../common/Status';
-import { useFormat } from '../../common/useFormat';
-import type { Trigger } from '../../api/schema';
+import { useFormat, type Format } from '../../common/useFormat';
+import type { Import, Trigger } from '../../api/schema';
 import type { StepKind, StepModel } from './model';
 
 export type Overlay = 'flow' | 'errors' | 'latency' | 'queues';
@@ -53,7 +53,7 @@ interface StepNodeData extends Record<string, unknown> {
 }
 
 export type StepNodeType = Node<StepNodeData, 'step' | 'filter'>;
-export type TriggerNodeType = Node<{ trigger: Trigger }, 'trigger'>;
+export type TriggerNodeType = Node<{ trigger: Trigger } | { imported: Import }, 'trigger'>;
 
 // The main figure of a step under the chosen overlay, and its unit: the overlay changes words and colours, never the
 // layout (interaction notes).
@@ -294,21 +294,29 @@ export function FilterNode({ data }: NodeProps<StepNodeType>) {
   );
 }
 
-// A trigger: where items enter, not a step (no panel, not in the Tab order).
+// A trigger, or a stream imported from another pipeline labelled with its producer: where items enter, not a step
+// (no panel, not in the Tab order).
 export function TriggerNode({ data }: NodeProps<TriggerNodeType>) {
   const { t } = useTranslation();
-  const { trigger } = data;
-  const detail =
-    trigger.kind === 'cron'
-      ? t('graph.trigger.cron', { schedule: trigger.schedule ?? '' })
-      : trigger.kind === 'webhook'
-        ? t('graph.trigger.webhook')
-        : t('graph.trigger.manual');
+  let name: string, detail: string;
+  if ('imported' in data) {
+    name = data.imported.name;
+    detail = t('graph.trigger.imported', { pipeline: data.imported.pipeline, stream: data.imported.stream });
+  } else {
+    const { trigger } = data;
+    name = trigger.name;
+    detail =
+      trigger.kind === 'cron'
+        ? t('graph.trigger.cron', { schedule: trigger.schedule ?? '' })
+        : trigger.kind === 'webhook'
+          ? t('graph.trigger.webhook')
+          : t('graph.trigger.manual');
+  }
   return (
     <div className="flex min-h-[52px] w-[120px] flex-col justify-center gap-0.5 rounded-1 border border-dashed border-line-strong bg-surface-2 px-2.5">
       <Handle type="source" position={Position.Right} isConnectable={false} style={handleStyle} />
-      <span className="font-mono text-tiny font-bold break-all text-ink">{trigger.name}</span>
-      <span className="text-[11px] leading-4 text-ink-2">{detail}</span>
+      <span className="font-mono text-tiny font-bold break-all text-ink">{name}</span>
+      <span className="text-[11px] leading-4 break-all text-ink-2">{detail}</span>
     </div>
   );
 }

@@ -254,7 +254,7 @@ func TestParseErrors(t *testing.T) {
 		{"duplicate key", "pipeline: p\npipeline: q\n", "pipeline: duplicate key"},
 		{"missing pipeline", "triggers: {}\n", "pipeline: is required"},
 		{"bad pipeline name", "pipeline: Bad_Name\n", "pipeline: \"Bad_Name\" must be lowercase"},
-		{"missing triggers", "pipeline: p\nsteps: {}\n", "triggers: is required"},
+		{"missing triggers", "pipeline: p\nsteps: { s: { action: x, in: a } }\n", "triggers: is required unless the pipeline imports a stream"},
 		{"no triggers", "pipeline: p\ntriggers: {}\nsteps: {}\n", "triggers: must declare at least one trigger"},
 		{"missing steps", "pipeline: p\ntriggers: { go: { manual: {} } }\n", "steps: is required"},
 		{"no steps", "pipeline: p\ntriggers: { go: { manual: {} } }\nsteps: {}\n", "steps: must declare at least one step"},

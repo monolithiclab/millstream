@@ -851,6 +851,7 @@ components:
         revision: { type: integer }
         steps: { type: array, items: { $ref: "#/components/schemas/Step" } }
         triggers: { type: array, items: { $ref: "#/components/schemas/Trigger" } }
+        imports: { type: array, items: { $ref: "#/components/schemas/Import" } }
         streams: { type: array, items: { type: string } }
         lastRun: { $ref: "#/components/schemas/RunSummary" }
         openDeadLetters: { type: integer }
@@ -878,6 +879,15 @@ components:
         kind: { type: string, enum: [cron, manual, webhook] }
         schedule: { type: string }
         stream: { type: string }
+    Import:
+      type: object
+      description: A stream the revision imports from another pipeline (spec section 4.12).
+      required: [name, pipeline, stream]
+      additionalProperties: false
+      properties:
+        name: { type: string, description: The stream's name in the importing revision. }
+        pipeline: { type: string, description: The producer pipeline. }
+        stream: { type: string, description: The producer's stream. }
     Revision:
       type: object
       required: [id, pipeline, packageHash, appliedAt, active]
@@ -898,6 +908,7 @@ components:
         description: { type: string }
         steps: { type: array, items: { $ref: "#/components/schemas/Step" } }
         triggers: { type: array, items: { $ref: "#/components/schemas/Trigger" } }
+        imports: { type: array, items: { $ref: "#/components/schemas/Import" } }
         streams: { type: array, items: { type: string } }
     Stream:
       type: object
@@ -926,10 +937,10 @@ components:
         id: { type: string }
         pipeline: { type: string }
         revision: { type: integer }
-        kind: { type: string, enum: [trigger, replay] }
-        trigger: { type: string }
-        triggerKey: { type: string }
-        triggerSource: { type: string, enum: [cron, manual] }
+        kind: { type: string, enum: [trigger, replay, import] }
+        trigger: { type: string, description: The trigger, or for an import run the imported stream. }
+        triggerKey: { type: string, description: The scheduled time or request id, or for an import run the producer run. }
+        triggerSource: { type: string, enum: [cron, manual, import] }
         scheduledAt: { type: string, format: date-time }
         generation: { type: integer }
         state: { $ref: "#/components/schemas/RunState" }
@@ -943,6 +954,7 @@ components:
           description: Items per stream; on one run only.
           additionalProperties: { type: integer }
         openDeadLetters: { type: integer, description: On one run only. }
+        producer: { type: string, description: An import run's producer pipeline (spec section 4.12); its triggerKey is the producer run. }
     RunPage:
       type: object
       required: [items]
@@ -1060,6 +1072,9 @@ components:
         ts: { type: string, format: date-time }
         payload: {}
         artifacts: { type: array, items: { $ref: "#/components/schemas/ArtifactRef" } }
+        parentPipeline:
+          type: string
+          description: The pipeline of the item's parents when it is another one, for a copy published on an imported stream.
     ItemPage:
       type: object
       required: [items]
@@ -1069,10 +1084,11 @@ components:
         next: { type: string }
     LineageNode:
       type: object
-      required: [id, runId, stream, step, key, parents, ts]
+      required: [id, pipeline, runId, stream, step, key, parents, ts]
       additionalProperties: false
       properties:
         id: { type: string }
+        pipeline: { type: string, description: The item's pipeline, another one for an item reached through an imported stream. }
         runId: { type: string }
         stream: { type: string }
         step: { type: string }

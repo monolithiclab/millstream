@@ -98,21 +98,26 @@ func (w *wtx) leased(ref store.LeaseRef, attempt int) (*deliveryRow, error) {
 // runRow is the part of a run the units read.
 type runRow struct {
 	pipeline, id, trigger string
-	revision              store.RevisionID
-	generation            int64
-	state                 store.RunState
-	startedAt             time.Time
-	settled               bool
-	vars                  map[string]any
+	// producer and producerRun name the producer run of an import run (spec section 4.12), its trigger key; producer
+	// is empty for other runs.
+	producer, producerRun string
+	// consumers counts the import runs the run opened in other pipelines.
+	consumers  int
+	revision   store.RevisionID
+	generation int64
+	state      store.RunState
+	startedAt  time.Time
+	settled    bool
+	vars       map[string]any
 }
 
 func (w *wtx) run(pipelineName, id string) (*runRow, error) {
 	r := &runRow{pipeline: pipelineName, id: id}
 	var vars string
 	var startedAt, settledAt TimeCol
-	err := w.queryRow(`SELECT trigger, revision, generation, state, started_at, settled_at, vars
+	err := w.queryRow(`SELECT trigger, revision, generation, state, started_at, settled_at, vars, producer, trigger_key, consumers
 		FROM runs WHERE pipeline = ? AND id = ?`, pipelineName, id).
-		Scan(&r.trigger, &r.revision, &r.generation, &r.state, &startedAt, &settledAt, &vars)
+		Scan(&r.trigger, &r.revision, &r.generation, &r.state, &startedAt, &settledAt, &vars, &r.producer, &r.producerRun, &r.consumers)
 	if err != nil {
 		return nil, notFound(err, "run "+id)
 	}

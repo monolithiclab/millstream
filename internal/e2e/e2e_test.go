@@ -76,12 +76,14 @@ func TestBuiltinsFixture(t *testing.T) {
 	t.Parallel()
 	snap := cleanBuiltinsRun(t)
 	want := expectedBuiltinCounts()
+	// The importer run with the fixture holds a copy of each crawled listing (spec section 4.12).
+	want["crawled"] = want["listings.crawled"]
 	if got := snap.counts(); !maps.Equal(got, want) {
 		t.Fatalf("counts = %v, want %v", got, want)
 	}
 	filtered := 0
 	for _, d := range snap.Deliveries {
-		if d.State == store.DeliveryFiltered {
+		if d.State == store.DeliveryFiltered && d.Step != "keep" { // keep is the importer's filter
 			if d.Step != "affordable" {
 				t.Errorf("a delivery of %s is filtered", d.Step)
 			}

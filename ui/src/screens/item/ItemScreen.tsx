@@ -149,9 +149,11 @@ export function ItemScreen() {
     return { item, lineage, deliveries, at: Date.now() };
   });
   const ready = data.status === 'ready' ? data.data : null;
-  const ancestors = ready?.lineage.up.slice(0, JOURNEY_DEPTH).map((n) => n.id) ?? [];
-  const upstream = useResource(ready === null ? null : `journey:${pipeline}:${ancestors.join(',')}`, (api) =>
-    Promise.all(ancestors.map((id) => api.listItemDeliveries(pipeline, id))),
+  // An ancestor's deliveries are read in its own pipeline: one reached through an imported stream is another's.
+  const ancestors = ready?.lineage.up.slice(0, JOURNEY_DEPTH) ?? [];
+  const upstream = useResource(
+    ready === null ? null : `journey:${pipeline}:${ancestors.map((n) => `${n.pipeline}/${n.id}`).join(',')}`,
+    (api) => Promise.all(ancestors.map((n) => api.listItemDeliveries(n.pipeline, n.id))),
   );
 
   const refresh = () => {

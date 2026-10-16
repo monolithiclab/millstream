@@ -165,7 +165,7 @@ function GraphCanvas({
     () =>
       new Map<string, string>([
         ...model.steps.map((s) => [s.id, s.name] as const),
-        ...model.triggers.map((tr) => [tr.id, tr.trigger.name] as const),
+        ...model.triggers.map((tr) => [tr.id, tr.name] as const),
       ]),
     [model],
   );
@@ -197,10 +197,13 @@ function GraphCanvas({
       type: 'trigger',
       position: positions.positions.get(tr.id) ?? { x: 0, y: 0 },
       ...sizeOf('trigger'),
-      data: { trigger: tr.trigger },
+      data: 'imported' in tr ? { imported: tr.imported } : { trigger: tr.trigger },
       ariaRole: 'group',
-      ariaLabel: t('graph.triggerLabel', { name: tr.trigger.name }),
-      domAttributes: { 'aria-roledescription': t('graph.triggerRole') },
+      ariaLabel:
+        'imported' in tr
+          ? t('graph.importLabel', { name: tr.name, pipeline: tr.imported.pipeline })
+          : t('graph.triggerLabel', { name: tr.name }),
+      domAttributes: { 'aria-roledescription': 'imported' in tr ? t('graph.importRole') : t('graph.triggerRole') },
     }));
     return [...steps, ...triggers];
   }, [model, positions, overlay, selected, onOpen, onMove, register, onFocus, t]);

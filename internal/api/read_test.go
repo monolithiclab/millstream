@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/monolithiclab/millstream/internal/artifacts"
+	"github.com/monolithiclab/millstream/internal/ids"
 	"github.com/monolithiclab/millstream/internal/store"
 )
 
@@ -658,5 +659,41 @@ func TestEnumFilters(t *testing.T) {
 	}
 	if p := get[Page[Run]](t, f.srv, "/api/v1/pipelines/listings/runs?state=waitingReview"); len(p.Items) == 0 {
 		t.Error("a valid state filtered everything out")
+	}
+}
+
+// Lineage crosses pipelines through imported streams (spec section 4.12): a copy's parent is the producer's item,
+// returned with its pipeline, and the producer's item lists its copies among its children.
+func TestLineageAcrossPipelines(t *testing.T) {
+	f := newFixture(t)
+	deals := must(parsePipeline("pipeline: deals\nstreams:\n  raw: { pipeline: listings, stream: listings.raw }\n" +
+		"steps:\n  notify: { action: ./actions/notify, in: raw }\n"))
+	must(f.st.ApplyRevision(f.ctx, store.PackageRecord{Hash: "deals1", Pipeline: deals}))
+	f.fire("r5")
+	f.done(f.lease("crawl"), out("g", `{"price":600}`))
+	raw := must(f.st.Items(f.ctx, store.ItemFilter{Pipeline: "listings", RunID: "r5", Stream: "listings.raw"}))[0]
+	runID := ids.ImportRun("raw", "r5")
+	copyID := ids.ImportItem("raw", raw.ID)
+
+	up := get[Lineage](t, f.srv, "/api/v1/pipelines/deals/items/"+copyID+"/lineage")
+	if len(up.Up) != 2 || up.Up[0].ID != raw.ID || up.Up[0].Pipeline != "listings" || up.Up[1].Stream != "trigger.adhoc" ||
+		up.Up[1].Pipeline != "listings" || up.Truncated {
+		t.Errorf("copy's lineage = %+v", up)
+	}
+	down := get[Lineage](t, f.srv, "/api/v1/pipelines/listings/items/"+raw.ID+"/lineage?depth=1")
+	if !slices.ContainsFunc(down.Down, func(n LineageNode) bool { return n.ID == copyID && n.Pipeline == "deals" }) {
+		t.Errorf("producer item's children = %+v", down.Down)
+	}
+	if it := get[Item](t, f.srv, "/api/v1/pipelines/deals/items/"+copyID); it.ParentPipeline != "listings" {
+		t.Errorf("copy = %+v", it)
+	}
+	p := get[Pipeline](t, f.srv, "/api/v1/pipelines/deals")
+	if len(p.Imports) != 1 || p.Imports[0] != (Import{Name: "raw", Pipeline: "listings", Stream: "listings.raw"}) ||
+		len(p.Triggers) != 0 {
+		t.Errorf("deals = %+v", p)
+	}
+	r := get[Run](t, f.srv, "/api/v1/pipelines/deals/runs/"+runID)
+	if r.Kind != "import" || r.TriggerSource != "import" || r.Producer != "listings" || r.TriggerKey != "r5" {
+		t.Errorf("import run = %+v", r)
 	}
 }

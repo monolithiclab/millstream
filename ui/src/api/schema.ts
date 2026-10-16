@@ -17,6 +17,7 @@ export type InsightState = Schemas['InsightState'];
 export type Pipeline = Schemas['Pipeline'];
 export type Step = Schemas['Step'];
 export type Trigger = Schemas['Trigger'];
+export type Import = Schemas['Import'];
 export type Revision = Schemas['Revision'];
 export type Graph = Schemas['Graph'];
 export type Stream = Schemas['Stream'];

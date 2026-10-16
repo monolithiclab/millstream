@@ -76,6 +76,17 @@ type StreamImport struct {
 	Stream   string
 }
 
+// Imports returns the names of the streams p imports from other pipelines, sorted.
+func (p *Pipeline) Imports() []string {
+	var names []string
+	for _, name := range slices.Sorted(maps.Keys(p.Streams)) {
+		if p.Streams[name].Import != nil {
+			names = append(names, name)
+		}
+	}
+	return names
+}
+
 // Step is one step definition (spec section 4.3).
 type Step struct {
 	Name   string

@@ -207,10 +207,11 @@ export class FakeApi implements Api {
       `item ${p}/${id}`,
     );
   getLineage: Api['getLineage'] = async (p, id, { depth = 10 } = {}) => {
-    await this.getItem(p, id);
-    const items = this.fixtures.items.filter((i) => i.pipeline === p);
-    const node = ({ id, runId, stream, step, key, parents, ts }: Item): LineageNode => ({
+    const start = await this.getItem(p, id);
+    const items = this.fixtures.items;
+    const node = ({ id, pipeline, runId, stream, step, key, parents, ts }: Item): LineageNode => ({
       id,
+      pipeline,
       runId,
       stream,
       step,
@@ -218,26 +219,29 @@ export class FakeApi implements Api {
       parents,
       ts,
     });
+    // An item is named by pipeline and id: a copy's parents are in the producer's pipeline (spec section 4.12).
+    const ref = (i: Item) => `${i.pipeline}/${i.id}`;
+    const parentsIn = (i: Item) => i.parentPipeline ?? i.pipeline;
     let truncated = false;
     // Breadth first from the item, nearest first, depth levels at most.
     const walk = (next: (from: Item) => Item[]) => {
       const out: LineageNode[] = [];
-      const seen = new Set([id]);
-      let level = items.filter((i) => i.id === id);
+      const seen = new Set([ref(start)]);
+      let level = [start];
       for (let d = 0; level.length > 0; d++) {
-        const following = level.flatMap(next).filter((i) => !seen.has(i.id));
+        const following = level.flatMap(next).filter((i) => !seen.has(ref(i)));
         if (d === depth) {
           truncated ||= following.length > 0;
           break;
         }
-        following.forEach((i) => seen.add(i.id));
+        following.forEach((i) => seen.add(ref(i)));
         out.push(...following.map(node));
         level = following;
       }
       return out;
     };
-    const up = walk((from) => items.filter((i) => from.parents.includes(i.id)));
-    const down = walk((from) => items.filter((i) => i.parents.includes(from.id)));
+    const up = walk((from) => items.filter((i) => i.pipeline === parentsIn(from) && from.parents.includes(i.id)));
+    const down = walk((from) => items.filter((i) => parentsIn(i) === from.pipeline && i.parents.includes(from.id)));
     return { item: id, up, down, truncated };
   };
   listItemDeliveries: Api['listItemDeliveries'] = (p, id, { step, state } = {}) =>

@@ -1,0 +1,8 @@
+pipeline: deals
+streams:
+  approved: { pipeline: listings, stream: listings }
+steps:
+  notify:
+    action: ./actions/fake
+    in: approved
+    config: { mode: echo }

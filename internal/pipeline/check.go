@@ -74,10 +74,16 @@ func Check(pkg *Package, actions ActionResolver, env func(string) (string, bool)
 	c.checkCycles()
 	c.checkCompatibility()
 	c.checkExternalEffects()
-	slices.SortFunc(c.diags, func(a, b Diagnostic) int {
+	return SortDiagnostics(c.diags)
+}
+
+// SortDiagnostics sorts diagnostics by path, then severity, then message, and drops repeats: the order Check and
+// CheckInstance return them in.
+func SortDiagnostics(diags []Diagnostic) []Diagnostic {
+	slices.SortFunc(diags, func(a, b Diagnostic) int {
 		return cmp.Or(cmp.Compare(a.Path, b.Path), cmp.Compare(a.Severity, b.Severity), cmp.Compare(a.Message, b.Message))
 	})
-	return slices.Compact(c.diags)
+	return slices.Compact(diags)
 }
 
 type checker struct {

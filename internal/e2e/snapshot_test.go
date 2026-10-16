@@ -279,6 +279,11 @@ func runOnce(dir string, flags ...string) []string {
 		[]string{dir})
 }
 
+// runBuiltins is runOnce of the builtins fixture with the pipeline importing its stream.
+func runBuiltins(flags ...string) []string {
+	return append(runOnce(fixtureBuiltins, flags...), fixtureImporter)
+}
+
 // reference is an outcome computed once per backend and shared by the tests that compare against it.
 type reference struct {
 	mu   sync.Mutex
@@ -353,7 +358,7 @@ func cleanBuiltinsRun(t *testing.T) snapshot {
 func cleanBuiltinsRunOn(t *testing.T, b backend) snapshot {
 	t.Helper()
 	return cleanBuiltins.compute(t, b, "clean builtins", func(db string) {
-		mustExit(t, 1, db, nil, runOnce(fixtureBuiltins)...)
+		mustExit(t, 1, db, nil, runBuiltins()...)
 	})
 }
 

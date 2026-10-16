@@ -234,8 +234,8 @@ func copyHeader(dst, src http.Header) {
 	}
 }
 
-// ids returns the ids of a stream's state events.
-func ids(evs []sseEvent) []int64 {
+// stateIDs returns the ids of a stream's state events.
+func stateIDs(evs []sseEvent) []int64 {
 	var out []int64
 	for _, ev := range evs {
 		if ev.name == sseState {
@@ -271,7 +271,7 @@ func TestLiveResumption(t *testing.T) {
 	must(e.st.DecideReview(ctx, store.ReviewDecisionRequest{Pipeline: "listings", DeliveryID: e.reviewDelivery,
 		Version: 1, Decision: store.DecisionApprove, Reviewer: "ana"}))
 	e.b.pump(ctx)
-	got := ids(parseSSE(first.w.waitFor(t, events(2))))
+	got := stateIDs(parseSSE(first.w.waitFor(t, events(2))))
 	last := got[0] // the client received the first event only, then lost its connection
 	first.cancel()
 	<-first.done
@@ -291,7 +291,7 @@ func TestLiveResumption(t *testing.T) {
 	missed := e.runEvents(t, "r1", last)
 
 	again := e.open(t, "/api/v1/live/runs/r1?pipeline=listings&lastEventId="+strconv.FormatInt(last, 10), nil)
-	resumed := ids(parseSSE(again.w.waitFor(t, events(len(missed)))))
+	resumed := stateIDs(parseSSE(again.w.waitFor(t, events(len(missed)))))
 	if !slices.Equal(resumed, missed) {
 		t.Fatalf("resumed with %v, want the missed %v", resumed, missed)
 	}
@@ -301,7 +301,7 @@ func TestLiveResumption(t *testing.T) {
 	must(e.st.DiscardDeadLetters(ctx, "listings", []string{open[0].ID}))
 	e.b.pump(ctx)
 	all := e.runEvents(t, "r1", last)
-	resumed = ids(parseSSE(again.w.waitFor(t, events(len(all)))))
+	resumed = stateIDs(parseSSE(again.w.waitFor(t, events(len(all)))))
 	if !slices.Equal(resumed, all) {
 		t.Fatalf("stream %v, want %v", resumed, all)
 	}

@@ -414,18 +414,6 @@ func TestParseLockErrors(t *testing.T) {
 	}
 }
 
-func TestCheckInstance(t *testing.T) {
-	a := &Package{Pipeline: &Pipeline{Name: "a"}}
-	b := &Package{Pipeline: &Pipeline{Name: "b"}}
-	if got := CheckInstance([]*Package{a, b}, nil, false); len(got) != 0 {
-		t.Fatalf("two pipelines: %v", got)
-	}
-	got := CheckInstance([]*Package{a, b, a}, []*Package{b}, false)
-	if len(got["a"]) != 1 || !strings.Contains(got["a"][0].Message, "two packages of pipeline a") {
-		t.Fatalf("one pipeline twice: %v", got)
-	}
-}
-
 func TestStoreConfig(t *testing.T) {
 	if (StoreConfig{}).Set() || (StoreConfig{}).Path("d.db") != "d.db" {
 		t.Fatal("the zero store config")

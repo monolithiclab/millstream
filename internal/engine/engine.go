@@ -255,7 +255,9 @@ func (e *Engine) LeaseTTL() time.Duration { return e.opts.LeaseTTL }
 
 // Apply stores the package as a revision of its pipeline, made active, and keeps the package so its deliveries can
 // run. The bundle stored with the revision is the package's files as a JSON object of base64 contents
-// (EncodeBundle). It does not check the package: ApplyPackages does.
+// (EncodeBundle). It does not check the package: ApplyPackages does. A pipeline that imports streams has its
+// variables resolved now, as a firing would resolve them, for the runs its imports open inside producers' Done units
+// (spec section 4.12); they must resolve, secrets included.
 func (e *Engine) Apply(ctx context.Context, pkg *pipeline.Package) (store.RevisionID, error) {
 	return e.apply(ctx, pkg, "")
 }
@@ -265,8 +267,17 @@ func (e *Engine) apply(ctx context.Context, pkg *pipeline.Package, message strin
 	if err != nil {
 		return 0, fmt.Errorf("apply %s: encode bundle: %w", pkg.Pipeline.Name, err)
 	}
-	id, err := e.st.ApplyRevision(ctx, store.PackageRecord{Hash: pkg.Hash, Bundle: bundle, Pipeline: pkg.Pipeline,
-		Message: message})
+	rec := store.PackageRecord{Hash: pkg.Hash, Bundle: bundle, Pipeline: pkg.Pipeline, Message: message}
+	if len(pkg.Pipeline.Imports()) > 0 {
+		res, err := pipeline.ResolveVarsWith(pkg.Pipeline, e.declaredFlags(pkg.Pipeline), e.opts.Env,
+			e.secrets(pkg.Pipeline.Name))
+		if err != nil {
+			return 0, fmt.Errorf("apply %s: the runs its imported streams open: %w: %w", pkg.Pipeline.Name,
+				ErrFiringConfig, err)
+		}
+		rec.Vars, rec.VarSources = res.Vars, res.Sources
+	}
+	id, err := e.st.ApplyRevision(ctx, rec)
 	if err != nil {
 		return 0, fmt.Errorf("apply %s: %w", pkg.Pipeline.Name, err)
 	}

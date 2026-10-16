@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -88,7 +89,7 @@ func Test_checkCommand(t *testing.T) {
 		}
 		t.Run(tt.fixture, func(t *testing.T) {
 			t.Parallel()
-			run := func() (int, string, string) { return direct(tt.env, CheckCmd{Dir: fixture(tt.fixture)}) }
+			run := func() (int, string, string) { return direct(tt.env, CheckCmd{Dirs: []string{fixture(tt.fixture)}}) }
 			if tt.fixture == "valid" { // through the parser; the others without
 				run = func() (int, string, string) { return runCLIEnv(t, "dev", tt.env, "check", fixture(tt.fixture)) }
 			}
@@ -151,4 +152,21 @@ func matchLines(got, want []string) bool {
 		}
 	}
 	return true
+}
+
+// Several packages are checked against each other too: an import is checked when its producer is among them, and
+// lines carry the pipeline's name.
+func Test_checkSeveralPackages(t *testing.T) {
+	t.Parallel()
+	noSchema := "warning steps.%s.config: action ./actions/fake declares no config schema: config is not checked\n"
+	code, out, errOut := direct(nil, CheckCmd{Dirs: []string{fixture("run"), fixture("imports")}})
+	if code != 0 || out != "listings "+fmt.Sprintf(noSchema, "crawl")+"listings "+fmt.Sprintf(noSchema, "score")+
+		"deals "+fmt.Sprintf(noSchema, "notify") || errOut != "listings: 0 errors, 2 warnings\ndeals: 0 errors, 1 warning\n" {
+		t.Fatalf("code %d\nstdout:\n%s\nstderr:\n%s", code, out, errOut)
+	}
+	code, out, _ = direct(nil, CheckCmd{Dirs: []string{fixture("imports")}})
+	if code != 0 || out != fmt.Sprintf(noSchema, "notify")+"warning streams.approved: pipeline listings is not among "+
+		"the packages checked: the import of its stream listings is not checked\n" {
+		t.Fatalf("one consumer alone: code %d\n%s", code, out)
+	}
 }

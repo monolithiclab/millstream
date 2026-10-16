@@ -67,7 +67,7 @@ func TestApplyPackagesRefusesCheckErrors(t *testing.T) {
 	var ce *CheckError
 	if !errors.As(err, &ce) || !errors.Is(err, store.ErrInvalid) ||
 		!strings.Contains(err.Error(), "secret token is not mapped for pipeline p") ||
-		!strings.Contains(err.Error(), "two packages of pipeline p") {
+		!strings.Contains(err.Error(), "pipeline p is given twice") {
 		t.Fatalf("ApplyPackages = %v", err)
 	}
 	if ps, _ := v.st.Pipelines(v.ctx); len(ps) != 0 {
@@ -125,4 +125,36 @@ func must[T any](v T, err error) T {
 		panic(err)
 	}
 	return v
+}
+
+// ApplyPackages checks the applied packages against every other pipeline's active revision, rebuilt from its bundle
+// by an engine that never applied it (spec section 4.12): a producer revision that drops an imported stream is
+// refused, and lets through under Force with a warning; an import of a pipeline the deployment lacks is refused.
+func TestApplyPackagesChecksImports(t *testing.T) {
+	v := newEnv(t, Options{Env: func(k string) (string, bool) { return "hot", k == "MILLSTREAM_VAR_TAG" }})
+	src, deal := newPackage(t, importSrc, "crawl"), newPackage(t, importDeal, "notify")
+	if _, _, err := v.e.ApplyPackages(v.ctx, []*pipeline.Package{deal, src}, ApplyOptions{}); err != nil {
+		t.Fatalf("applying a producer and its importer together: %v", err)
+	}
+	served, err := New(Options{Store: v.st, PackageDir: t.TempDir(), Env: v.e.opts.Env})
+	if err != nil {
+		t.Fatal(err)
+	}
+	dropped := newPackage(t, strings.Replace(importSrc, "out: listings", "out: pages", 1), "crawl")
+	_, _, err = served.ApplyPackages(v.ctx, []*pipeline.Package{dropped}, ApplyOptions{})
+	if !errors.Is(err, store.ErrInvalid) ||
+		!strings.Contains(err.Error(), "src: error pipeline: pipeline deal imports stream listings as approved") {
+		t.Fatalf("a producer dropping an imported stream: %v", err)
+	}
+	applied, findings, err := served.ApplyPackages(v.ctx, []*pipeline.Package{dropped}, ApplyOptions{Force: true})
+	if err != nil || len(applied) != 1 || !applied[0].Created || len(findings) == 0 ||
+		findings[0].String() != "src: warning pipeline: pipeline deal imports stream listings as approved, and this "+
+			"revision no longer writes it" {
+		t.Fatalf("the same under Force = %+v, %v, %v", applied, findings, err)
+	}
+	orphan := newPackage(t, strings.Replace(importDeal, "pipeline: src", "pipeline: ghost", 1), "notify")
+	if _, _, err := served.ApplyPackages(v.ctx, []*pipeline.Package{orphan}, ApplyOptions{}); err == nil ||
+		!strings.Contains(err.Error(), "pipeline ghost does not exist") {
+		t.Fatalf("an import of a pipeline the deployment lacks: %v", err)
+	}
 }

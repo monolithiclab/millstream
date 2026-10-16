@@ -29,8 +29,8 @@ var phases = []string{"beforeCommit", "afterCommit"}
 // failpointEnv arms a failpoint in a millstream process.
 func failpointEnv(name string) []string { return []string{failpoint.EnvVar + "=" + name} }
 
-// reachedByRun are the units "run --once" on the builtins fixture must reach, so their failpoints must be hit; it
-// runs the projectors (rollup, recordInsights) once its runs settled. The others are reached through their own
+// reachedByRun are the units "run --once" on the builtins fixture and its importer must reach, so their failpoints
+// must be hit; it runs the projectors (rollup, recordInsights) once its runs settled. The others are reached through their own
 // commands (TestCrashInCommands), or, for skipFirings, only by a cron scheduler that missed a firing, which a
 // one-shot run never starts.
 var reachedByRun = []string{"applyRevision", "fire", "lease", "renew", "done", "fail", "expireLeases", "filter",
@@ -39,8 +39,8 @@ var reachedByRun = []string{"applyRevision", "fire", "lease", "renew", "done", "
 // slowCrawl makes the crawl hold its lease for several heartbeats, so the renew unit is reached for sure.
 var slowCrawl = []string{"--var", "crawlDelayMs=1500"}
 
-// TestCrashAtFailpoints runs the builtins fixture with each failpoint of each atomic unit armed, then reruns it
-// without on the same database: whether the process died at the failpoint or never reached it, the rerun must end in
+// TestCrashAtFailpoints runs the builtins fixture, with a pipeline importing one of its streams, with each failpoint
+// of each atomic unit armed, and the one inside the Stream import unit, then reruns them without on the same database: whether the process died at the failpoint or never reached it, the rerun must end in
 // exactly the clean run's state (no item lost, none published twice, every run settled, the same dead letters). It
 // runs on SQLite and on Postgres, each against its own clean run.
 func TestCrashAtFailpoints(t *testing.T) {
@@ -59,31 +59,34 @@ func crashAtFailpoints(t *testing.T, b backend) {
 		mu  sync.Mutex
 		hit = map[string]bool{}
 	)
+	var names []string
+	for _, unit := range sqlstore.Units {
+		for _, phase := range phases {
+			names = append(names, unit+"."+phase)
+		}
+	}
 	t.Run("matrix", func(t *testing.T) {
-		for _, unit := range sqlstore.Units {
-			for _, phase := range phases {
-				name := unit + "." + phase
-				t.Run(name, func(t *testing.T) {
-					t.Parallel()
-					db := b.newDB(t)
-					var flags []string
-					if unit == "renew" {
-						flags = slowCrawl
-					}
-					r := millstream(t, db, failpointEnv(name), runOnce(fixtureBuiltins, flags...)...)
-					switch {
-					case r.code == failpoint.ExitCode:
-					case r.code == 1 && strings.Contains(r.stdout, string(store.RunCompletedWithErrors)):
-					default:
-						t.Fatalf("with %s armed: %s", name, r)
-					}
-					mu.Lock()
-					hit[name] = r.code == failpoint.ExitCode
-					mu.Unlock()
-					mustExit(t, 1, db, nil, runOnce(fixtureBuiltins)...)
-					wantSame(t, readSnapshot(t, db), want)
-				})
-			}
+		for _, name := range append(names, sqlstore.Failpoints...) {
+			t.Run(name, func(t *testing.T) {
+				t.Parallel()
+				db := b.newDB(t)
+				var flags []string
+				if strings.HasPrefix(name, "renew.") {
+					flags = slowCrawl
+				}
+				r := millstream(t, db, failpointEnv(name), runBuiltins(flags...)...)
+				switch {
+				case r.code == failpoint.ExitCode:
+				case r.code == 1 && strings.Contains(r.stdout, string(store.RunCompletedWithErrors)):
+				default:
+					t.Fatalf("with %s armed: %s", name, r)
+				}
+				mu.Lock()
+				hit[name] = r.code == failpoint.ExitCode
+				mu.Unlock()
+				mustExit(t, 1, db, nil, runBuiltins()...)
+				wantSame(t, readSnapshot(t, db), want)
+			})
 		}
 	})
 	var lines []string
@@ -103,6 +106,11 @@ func crashAtFailpoints(t *testing.T, b backend) {
 			if !hit[unit+"."+phase] {
 				t.Errorf("failpoint %s.%s was never hit: the crash suite does not cover it", unit, phase)
 			}
+		}
+	}
+	for _, name := range sqlstore.Failpoints {
+		if !hit[name] {
+			t.Errorf("failpoint %s was never hit: the crash suite does not cover it", name)
 		}
 	}
 }

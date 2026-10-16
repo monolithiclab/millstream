@@ -7,6 +7,7 @@ import { FakeEventSource } from '../../live/fakeEventSource';
 import { LIVE_REFRESH_MS } from '../../live/useCoalescedRefresh';
 import { mockMatchMedia } from '../../test/flow';
 import { renderApp } from '../../test/render';
+import { withImport } from '../../test/imports';
 import { lineageRows } from './ItemParts';
 import { itemTitle, journeyOf } from './ItemScreen';
 import { messagesOf } from './Transcript';
@@ -104,6 +105,27 @@ describe('item detail', () => {
     expect(links[0]).toHaveAttribute('href', '/p/listings-daily/items/it_1a8d4f02');
     expect(lineage).toHaveTextContent('this item · score · scored');
     expect(lineage).toHaveTextContent('2 up:');
+  });
+
+  it('links a parent in another pipeline, reached through an imported stream, with its pipeline', async () => {
+    const api = new FakeApi(withImport());
+    const reads = vi.spyOn(api, 'listItemDeliveries');
+    renderApp({ api, route: '/p/deal-flow/items/it_c0a1e5d9' });
+    const lineage = await screen.findByRole('region', { name: 'Lineage' });
+    const parent = within(lineage).getByRole('link', { name: 'it_7f3a9c21' });
+    expect(parent).toHaveAttribute('href', '/p/listings-daily/items/it_7f3a9c21');
+    expect(parent.parentElement).toHaveTextContent('in listings-daily');
+    // The parent's deliveries are read in its own pipeline.
+    await waitFor(() => expect(reads).toHaveBeenCalledWith('listings-daily', 'it_7f3a9c21'));
+    expect(reads).not.toHaveBeenCalledWith('deal-flow', 'it_7f3a9c21');
+  });
+
+  it('lists a copy in another pipeline among the children, in French', async () => {
+    renderApp({ api: new FakeApi(withImport()), route, language: 'fr' });
+    const lineage = await screen.findByRole('region', { name: 'Lignée' });
+    const copy = within(lineage).getByRole('link', { name: 'it_c0a1e5d9' });
+    expect(copy).toHaveAttribute('href', '/p/deal-flow/items/it_c0a1e5d9');
+    expect(copy.parentElement).toHaveTextContent('dans deal-flow');
   });
 
   it('follows live state events, keeps the raw events, and tails the item’s logs', async () => {
@@ -267,8 +289,8 @@ describe('item helpers', () => {
     const lineage: Lineage = {
       item: 'c',
       up: [
-        { id: 'b', runId: 'r', stream: 's', step: 'one', key: '', parents: ['a'], ts: '' },
-        { id: 'a', runId: 'r', stream: 't', step: 't', key: '', parents: [], ts: '' },
+        { id: 'b', pipeline: 'p', runId: 'r', stream: 's', step: 'one', key: '', parents: ['a'], ts: '' },
+        { id: 'a', pipeline: 'p', runId: 'r', stream: 't', step: 't', key: '', parents: [], ts: '' },
       ],
       down: [],
       truncated: false,
