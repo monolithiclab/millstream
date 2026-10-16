@@ -1,0 +1,153 @@
+package api
+
+import (
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+	"time"
+)
+
+// authServer is a server over the shared fixture's store requiring the token "s3cret", reached as
+// millstream.example behind a proxy.
+func authServer(t *testing.T, public bool) (*Server, *fakeClock) {
+	t.Helper()
+	f := readFixture(t)
+	clock := &fakeClock{t: t0}
+	srv := must(New(Options{Store: f.st, Clock: clock, User: "tester", Auth: &Auth{Token: "s3cret",
+		Hosts: []string{"millstream.example"}, Origins: []string{"https://millstream.example"}, SecureCookie: true,
+		SessionTTL: time.Hour, MetricsPublic: public}}))
+	return srv, clock
+}
+
+// With a token, every request carries it, as a bearer token or the session cookie signing in sets; signing out
+// ends the session; a session expires.
+func TestTokenAuth(t *testing.T) {
+	srv, clock := authServer(t, false)
+	bearer := func(token string) map[string]string { return map[string]string{"Authorization": "Bearer " + token} }
+
+	rec := do(t, srv, request{target: "/api/v1/session"})
+	wantError(t, rec, http.StatusUnauthorized, codeUnauthorized)
+	if rec.Header().Get("WWW-Authenticate") == "" {
+		t.Error("401 without WWW-Authenticate")
+	}
+	wantError(t, do(t, srv, request{target: "/api/v1/session", header: bearer("wrong")}), http.StatusUnauthorized,
+		codeUnauthorized)
+	if rec := do(t, srv, request{target: "/api/v1/session", header: bearer("s3cret")}); rec.Code != http.StatusOK {
+		t.Fatalf("bearer: %d %s", rec.Code, rec.Body)
+	}
+	// The reviewer is auth.user, whatever the request says.
+	rec = do(t, srv, request{target: "/api/v1/session", header: map[string]string{"Authorization": "bearer s3cret",
+		UserHeader: "mallory"}})
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `{"auth":true,"user":"operator"}`) {
+		t.Fatalf("session: %d %s", rec.Code, rec.Body)
+	}
+
+	wantError(t, do(t, srv, request{method: http.MethodPost, target: "/api/v1/session", body: `{"token":"nope"}`}),
+		http.StatusUnauthorized, codeUnauthorized)
+	rec = do(t, srv, request{method: http.MethodPost, target: "/api/v1/session", body: `{"token":"s3cret"}`})
+	cookies := rec.Result().Cookies()
+	if rec.Code != http.StatusOK || len(cookies) != 1 {
+		t.Fatalf("sign in: %d %s %v", rec.Code, rec.Body, cookies)
+	}
+	c := cookies[0]
+	if c.Name != SessionCookie || len(c.Value) < 40 || !c.HttpOnly || !c.Secure || c.SameSite != http.SameSiteStrictMode ||
+		c.Path != "/" || c.MaxAge != 3600 {
+		t.Fatalf("session cookie %+v", c)
+	}
+	session := map[string]string{"Cookie": SessionCookie + "=" + c.Value}
+	if rec := do(t, srv, request{target: "/api/v1/session", header: session}); rec.Code != http.StatusOK {
+		t.Fatalf("cookie: %d %s", rec.Code, rec.Body)
+	}
+	// A wrong bearer token does not fall back to the cookie.
+	both := map[string]string{"Cookie": session["Cookie"], "Authorization": "Bearer wrong"}
+	wantError(t, do(t, srv, request{target: "/api/v1/session", header: both}), http.StatusUnauthorized,
+		codeUnauthorized)
+
+	// A state-changing request on the cookie names its origin: the server's own or ui.baseUrl's.
+	pause := func(header map[string]string) *httptest.ResponseRecorder {
+		return do(t, srv, request{method: http.MethodPost, target: "/api/v1/pipelines/nope/pause", header: header})
+	}
+	with := func(origin string) map[string]string {
+		return map[string]string{"Cookie": session["Cookie"], "Origin": origin}
+	}
+	wantError(t, pause(session), http.StatusForbidden, codeForbidden)
+	wantError(t, pause(with("https://evil.example")), http.StatusForbidden, codeForbidden)
+	wantError(t, pause(with("null")), http.StatusForbidden, codeForbidden)
+	for _, origin := range []string{"http://example.com", "https://millstream.example"} {
+		wantError(t, pause(with(origin)), http.StatusNotFound, codeNotFound) // past the checks
+	}
+	wantError(t, pause(bearer("s3cret")), http.StatusNotFound, codeNotFound) // the CLI names no origin
+
+	// Signing out ends the session and clears the cookie; a session expires.
+	rec = do(t, srv, request{method: http.MethodDelete, target: "/api/v1/session", header: with("http://example.com")})
+	if out := rec.Result().Cookies(); rec.Code != http.StatusNoContent || len(out) != 1 || out[0].MaxAge >= 0 {
+		t.Fatalf("sign out: %d %v", rec.Code, out)
+	}
+	wantError(t, do(t, srv, request{target: "/api/v1/session", header: session}), http.StatusUnauthorized,
+		codeUnauthorized)
+	rec = do(t, srv, request{method: http.MethodPost, target: "/api/v1/session", body: `{"token":"s3cret"}`})
+	session = map[string]string{"Cookie": SessionCookie + "=" + rec.Result().Cookies()[0].Value}
+	clock.Advance(time.Hour)
+	wantError(t, do(t, srv, request{target: "/api/v1/session", header: session}), http.StatusUnauthorized,
+		codeUnauthorized)
+
+	// /metrics takes the token unless it is public.
+	wantError(t, do(t, srv, request{target: MetricsPath}), http.StatusUnauthorized, codeUnauthorized)
+	public, _ := authServer(t, true)
+	rec = httptest.NewRecorder()
+	public.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, MetricsPath, nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("public metrics: %d", rec.Code)
+	}
+
+	// The server answers ui.baseUrl's host beside loopback ones.
+	ui := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("ui")) })
+	h := Handler(srv, ui)
+	for host, want := range map[string]int{"millstream.example": 200, "MILLSTREAM.example:443": 200,
+		"127.0.0.1:7070": 200, "evil.example": 403} {
+		rec := httptest.NewRecorder()
+		r := httptest.NewRequest(http.MethodGet, "/inbox", nil)
+		r.Host = host
+		h.ServeHTTP(rec, r)
+		if rec.Code != want {
+			t.Errorf("host %s: %d, want %d", host, rec.Code, want)
+		}
+	}
+}
+
+// Without a token, there is no session to start, a request decides as it says, and a state-changing request from
+// another origin is still forbidden.
+func TestNoTokenSession(t *testing.T) {
+	f := readFixture(t)
+	if got := get[Session](t, f.srv, "/api/v1/session"); got.Auth || got.User != "tester" {
+		t.Fatalf("session %+v", got)
+	}
+	wantError(t, do(t, f.srv, request{method: http.MethodPost, target: "/api/v1/session", body: `{"token":"x"}`}),
+		http.StatusServiceUnavailable, codeUnavailable)
+	if rec := do(t, f.srv, request{method: http.MethodDelete, target: "/api/v1/session"}); rec.Code != http.StatusNoContent {
+		t.Fatalf("sign out: %d", rec.Code)
+	}
+	wantError(t, do(t, f.srv, request{method: http.MethodPost, target: "/api/v1/pipelines/nope/pause",
+		header: map[string]string{"Origin": "http://localhost:3000"}}), http.StatusForbidden, codeForbidden)
+	if _, err := New(Options{Store: f.st, Auth: &Auth{}}); err == nil {
+		t.Fatal("an empty token: no error")
+	}
+}
+
+// Sessions are bounded: beyond maxSessions, expired ones go first, then the oldest.
+func TestSessionsBounded(t *testing.T) {
+	ss := sessions{byID: map[[32]byte]time.Time{}}
+	first := ss.create(t0, t0.Add(time.Minute))
+	for i := range maxSessions - 1 {
+		ss.create(t0, t0.Add(time.Hour+time.Duration(i)))
+	}
+	ss.create(t0, t0.Add(2*time.Hour))
+	if ss.valid(first, t0) || len(ss.byID) != maxSessions {
+		t.Fatalf("after one more: first valid %v, %d sessions", ss.valid(first, t0), len(ss.byID))
+	}
+	ss.create(t0.Add(90*time.Minute), t0.Add(3*time.Hour)) // every session of the first hour has expired
+	if len(ss.byID) != 2 {
+		t.Fatalf("after expiry: %d sessions", len(ss.byID))
+	}
+}

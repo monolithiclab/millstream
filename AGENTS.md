@@ -93,7 +93,9 @@ below) for the reasoning, and `make help` for every command.
   (status glyphs and badges, loading, empty and error states, confirmation dialog, notices, ids, the segmented toggle,
   the pipeline filter, JSON viewer, log tail, class lists in `styles.ts`, `useResource` for every API read,
   `useLoadMore` for its next pages, `useThrottle`, `arrowKeys` for tab lists and toggles, `useFormat`, `useNow`),
-  `src/api/` the HTTP API client, `src/live/` the server-sent events hub (one reference-counted connection per URL, held
+  `src/api/` the HTTP API client, `src/auth/` the session gate (the sign-in screen whenever the API answers 401, on
+  a server with `auth.token`; every API method goes through its guard) and `useSession` (the shell's Sign out),
+  `src/live/` the server-sent events hub (one reference-counted connection per URL, held
   in the API context and shared by every subscriber) and its hook, `src/i18n/` the catalogues and `Intl` formatting,
   `src/styles/` the tokens, `e2e/` the Playwright tests. The pipeline graph is React Flow laid out by dagre; jsdom gets
   the browser APIs React Flow needs from `src/test/flow.ts`, installed for every test file.
@@ -112,7 +114,10 @@ below) for the reasoning, and `make help` for every command.
   dead-letters (its surface is 0). `e2e/screens.spec.ts` runs axe and the clipping check of `e2e/checks.ts` on every
   built screen, then the flows across screens (graph, item, replayed dead letter; the items list's stream and CEL
   filter; the reject sheet; the density strip; the metrics explorer); `e2e/inbox-flow.spec.ts` decides reviews from the
-  keyboard in French; `e2e/smoke.spec.ts` covers the shell on `?demo`. Then `make test-ui-e2e` runs the M3 reference
+  keyboard in French; `e2e/smoke.spec.ts` covers the shell on `?demo`. Then `make test-ui-e2e` runs
+  `e2e/auth.spec.ts` (`playwright.auth.config.ts`) on a `millstream run` of the fixture with `auth.token`
+  (`e2e/auth/millstream.yaml`): the sign-in screen in both themes, languages and widths, then signing in, a
+  decision recorded under `auth.user`, and signing out. Then it runs the M3 reference
   demo, `e2e/demo.spec.ts` (`playwright.demo.config.ts`; `make test-ui-demo` runs it alone), once in English and light,
   once in French and dark, each on a `millstream run` of its own over the package make assembles in `.build/demo`:
   `e2e/demo-fixture/pipeline.yaml` (the M2 fixture with a `review` step after `score`), the M2 fixture's actions with
@@ -148,6 +153,12 @@ below) for the reasoning, and `make help` for every command.
   a resource changes the document and spec section 12.1 in the same commit. The tests enforce it: every route is
   documented and called by a test, the document has no operation the server lacks, and every response a handler test
   sees validates against the document's schemas (`internal/schema.CompileDocument`).
+- Access (`auth.go`): without `Options.Auth` the API serves loopback clients only; with it (`auth.token`, wired by
+  `internal/cli`'s `apiAuth`) every request carries the token as a bearer token or the UI's session cookie, the Host
+  guard also accepts `ui.baseUrl`'s and `listen`'s hosts, and the reviewer is `auth.user`. Every state-changing
+  request is checked for a foreign `Origin`, with or without the token. `/metrics` (`prometheus.go`) is served
+  beside the API by the same `Server`, outside the OpenAPI document; `metrics.Exposition` renders the store's
+  `MetricTotals` and the engine's own families, and its tests parse the output as the Prometheus text format.
 - Handler tests call the server through `httptest.NewRecorder` on the shared fixture, seeded once per process in
   `TestMain` (`sharedFixture`), or on a clone of it for a test that changes state; live tests drive the broker by
   hand (`pump`, `flush`) with a fake clock, never a listener or a wall-clock wait. The real listener and SSE client
@@ -181,9 +192,8 @@ below) for the reasoning, and `make help` for every command.
   each, checksums and local images in `dist/`, nothing signed or pushed. GoReleaser and syft are pinned in their own
   tools module, `tools/release/go.mod`, so their dependencies never move the linters' in `tools/go.mod`; bump them
   with `go get -tool -modfile=tools/release/go.mod <module>@<version>`.
-- `deploy/compose/millstream.yaml` and the units reference `node --join` (M4 Task 4) before it exists, and the
-  Compose engines' non-loopback `listen`, which `serve` refuses until token auth (Task 7): a task that changes
-  those commands or the environment file's keys updates `deploy/` and `docs/deploy.md` in the same commit.
+- `deploy/compose/millstream.yaml` and the units reference `node --join` (M4 Task 4) before it exists: a task that
+  changes that command or the environment file's keys updates `deploy/` and `docs/deploy.md` in the same commit.
   `TestDeployEnvironmentParses` (`internal/pipeline`) parses the Compose environment file strictly.
 
 ## Where things go

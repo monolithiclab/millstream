@@ -66,8 +66,8 @@ type Runtime struct {
 	CurrentUser func() (string, error)
 }
 
-// identity is who runs the command, the reviewer of its decisions until authentication (M4): $USER, else the
-// account the system names; "" when neither does.
+// identity is who runs the command, the reviewer of its decisions (but of those a token server records under
+// auth.user): $USER, else the account the system names; "" when neither does.
 func identity(rt *Runtime) string {
 	if u, ok := rt.Env("USER"); ok && u != "" {
 		return u

@@ -461,9 +461,11 @@ func (c *contract) validate(t testing.TB, method, path string, rec *httptest.Res
 	status := fmt.Sprint(rec.Code)
 	ct, _, _ := strings.Cut(rec.Header().Get("Content-Type"), ";")
 	op := method + " " + path
-	if path == "" { // the 404 of a path the API does not have, or a 405
+	if path == "" { // the 404 of a path the API does not have, a 405, or a request refused before routing
 		path, method = "/pipelines/{pipeline}", http.MethodGet
-		if rec.Code != http.StatusNotFound && rec.Code != http.StatusMethodNotAllowed {
+		switch rec.Code {
+		case http.StatusNotFound, http.StatusMethodNotAllowed, http.StatusUnauthorized, http.StatusForbidden:
+		default:
 			t.Errorf("unrouted request answered %d", rec.Code)
 		}
 		status = "404"

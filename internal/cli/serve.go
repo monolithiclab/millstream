@@ -2,11 +2,13 @@ package cli
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/monolithiclab/millstream/internal/api"
@@ -32,28 +34,88 @@ type apiServer struct {
 	st     store.Store
 	http   *http.Server
 	broker *api.Broker
+	tls    *tls.Config // nil serves plain HTTP
 	ln     net.Listener
 	url    string
 	log    *slog.Logger
 }
 
 // newAPIServer builds the API server of run and serve over the store and the engine: the broker wakes on the store's
-// commits.
+// commits; sec turns token authentication on and serves HTTPS.
 func newAPIServer(rt *Runtime, env *pipeline.Environment, st store.Store, e *engine.Engine, notes *review.Notifier,
-	logs *api.LogRing, nodes []api.Node, log *slog.Logger,
+	logs *api.LogRing, nodes []api.Node, log *slog.Logger, sec apiSecurity,
 ) (*apiServer, error) {
 	b, err := api.NewBroker(api.BrokerOptions{Store: st, Logger: log})
 	if err != nil {
 		return nil, err
 	}
 	a, err := api.New(api.Options{Store: st, Engine: e, Artifacts: artifactStore(rt, env), Broker: b, Logs: logs,
-		Nodes: nodes, Version: rt.Version, User: identity(rt), Logger: log,
+		Nodes: nodes, Version: rt.Version, User: identity(rt), Auth: sec.auth, Logger: log,
 		NotificationFailures: notes.Failures})
 	if err != nil {
 		return nil, err
 	}
-	return &apiServer{st: st, broker: b, log: log, http: &http.Server{Handler: api.Handler(a, ui.Handler()),
+	return &apiServer{st: st, broker: b, tls: sec.tls, log: log, http: &http.Server{Handler: api.Handler(a, ui.Handler()),
 		ReadHeaderTimeout: 10 * time.Second, ReadTimeout: readTimeout, IdleTimeout: idleTimeout}}, nil
+}
+
+// apiSecurity is what the API server reads from the environment, auth.token and tls: run and serve read it before
+// they open anything, so that a token or a certificate they cannot read fails at once.
+type apiSecurity struct {
+	auth *api.Auth   // nil without auth.token
+	tls  *tls.Config // nil without tls
+}
+
+func newAPISecurity(rt *Runtime, env *pipeline.Environment, listen string) (apiSecurity, error) {
+	auth, err := apiAuth(rt, env, listen)
+	if err != nil {
+		return apiSecurity{}, err
+	}
+	tc, err := apiTLS(env)
+	return apiSecurity{auth: auth, tls: tc}, err
+}
+
+// apiTLS is the API server's TLS configuration from tls, nil without it.
+func apiTLS(env *pipeline.Environment) (*tls.Config, error) {
+	if env.TLS == nil {
+		return nil, nil
+	}
+	cert, err := tls.LoadX509KeyPair(env.TLS.Cert, env.TLS.Key)
+	if err != nil {
+		return nil, fmt.Errorf("tls: %w", err)
+	}
+	return &tls.Config{Certificates: []tls.Certificate{cert}, MinVersion: tls.VersionTLS12}, nil
+}
+
+// apiAuth is the API's token authentication from auth.token, nil without it (spec section 15.2). Besides loopback
+// names, the server answers the listen address's host (unless it is the unspecified address) and ui.baseUrl's, and
+// takes state-changing requests from ui.baseUrl's origin; the session cookie is Secure when the UI is reached over
+// HTTPS: tls, a non-loopback listener (behind a TLS-terminating proxy) or an https ui.baseUrl.
+func apiAuth(rt *Runtime, env *pipeline.Environment, listen string) (*api.Auth, error) {
+	if env.AuthToken == nil {
+		return nil, nil
+	}
+	token, err := env.AuthToken.Value(rt.Env)
+	if err != nil {
+		return nil, fmt.Errorf("auth.token: %w", err)
+	}
+	a := &api.Auth{Token: token, User: env.AuthUser, MetricsPublic: env.MetricsPublic,
+		SecureCookie: env.TLS != nil || api.CheckLoopback(listen) != nil}
+	if host, _, err := net.SplitHostPort(listen); err == nil && host != "" {
+		if ip := net.ParseIP(host); ip == nil || !ip.IsUnspecified() {
+			a.Hosts = append(a.Hosts, host)
+		}
+	}
+	if env.UIBaseURL != "" {
+		u, err := url.Parse(env.UIBaseURL)
+		if err != nil {
+			return nil, fmt.Errorf("ui.baseUrl: %w", err)
+		}
+		a.Hosts = append(a.Hosts, u.Host)
+		a.Origins = append(a.Origins, u.Scheme+"://"+u.Host)
+		a.SecureCookie = a.SecureCookie || u.Scheme == "https"
+	}
+	return a, nil
 }
 
 // listen binds the address and starts the broker at the end of the event log, so a client connecting at once sees
@@ -67,6 +129,9 @@ func (s *apiServer) listen(ctx context.Context, addr string) error {
 		return fmt.Errorf("listen on %s: %w", addr, err)
 	}
 	s.ln, s.url = ln, "http://"+ln.Addr().String()+"/"
+	if s.tls != nil {
+		s.ln, s.url = tls.NewListener(ln, s.tls), "https://"+ln.Addr().String()+"/"
+	}
 	return nil
 }
 

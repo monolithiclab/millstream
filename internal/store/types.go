@@ -655,6 +655,31 @@ type MetricRollup struct {
 	Max    float64
 }
 
+// MetricTotal is one series of the rollups, a pipeline's metric and label set, over every minute the store holds:
+// what the Prometheus exposition shows.
+type MetricTotal struct {
+	Pipeline string
+	Name     string
+	// Labels are the label set, by name; nil when it has none.
+	Labels map[string]string
+	// Count and Sum add up every minute.
+	Count int64
+	Sum   float64
+	// Last is the latest minute, and LastCount and LastSum its count and sum: a gauge shows their mean.
+	Last      time.Time
+	LastCount int64
+	LastSum   float64
+}
+
+// BatchSizes are the sizes of the batches a store's writer committed since it opened (spec section 10.2, writer batch
+// size), as a histogram: Counts[i] is the number of batches of at most Bounds[i] units, cumulative, and the last
+// count, one past the bounds, the number of batches (+Inf); Sum is their units.
+type BatchSizes struct {
+	Bounds []int
+	Counts []int64
+	Sum    int64
+}
+
 // MetricFilter selects rollups; empty fields match everything. Rollups come by pipeline, name, labels and minute.
 type MetricFilter struct {
 	Pipeline string

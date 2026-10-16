@@ -32,6 +32,10 @@ func TestEvalResults(t *testing.T, open Opener) {
 		!got[0].At.Equal(t0.Add(time.Hour)) || got[2].Case != "one" || got[2].Score != 0.5 || !got[2].At.Equal(t0) {
 		t.Fatalf("EvalResults = %+v; want newest first, at the store clock", got)
 	}
+	if all, err := e.s.EvalResults(e.ctx, ""); err != nil || len(all) != 4 || all[0].Score != 0.75 ||
+		all[1].Action != "lab/other" {
+		t.Fatalf("every action's results = %+v, %v", all, err)
+	}
 	for _, bad := range []store.EvalResult{
 		{Action: "lab/score", Case: "one", Score: 1.5},
 		{Action: "lab/score", Case: "one", Score: math.NaN()},

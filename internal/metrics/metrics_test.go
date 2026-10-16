@@ -118,6 +118,9 @@ func TestKindOf(t *testing.T) {
 	if got := ActionName("delivery_latency_seconds_bucket"); got != "action_delivery_latency_seconds_bucket" {
 		t.Errorf("ActionName = %s", got)
 	}
+	if got := ActionName(EvalScore); got != "action_eval_score" {
+		t.Errorf("ActionName(%s) = %s", EvalScore, got)
+	}
 }
 
 // The exposition aggregates the minutes of each series: counters summed, gauges at their latest minute's mean,
@@ -160,6 +163,7 @@ func TestPrometheus(t *testing.T) {
 	if buf.String() != string(want) {
 		t.Errorf("exposition =\n%s\nwant\n%s", buf.String(), want)
 	}
+	parseExposition(t, buf.String())
 	if sanitize("9lives") != "_lives" || sanitize("") != "_" {
 		t.Errorf("sanitize: %q, %q", sanitize("9lives"), sanitize(""))
 	}

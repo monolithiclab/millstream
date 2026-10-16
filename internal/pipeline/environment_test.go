@@ -43,7 +43,9 @@ environment: development
 artifacts: { s3: { bucket: arts, endpoint: "https://s3.example", region: fr-par, prefix: m/,
   accessKeyId: { env: S3_KEY }, secretAccessKey: { file: s3.secret } } }
 listen: 0.0.0.0:7070
-auth: { token: { env: MILLSTREAM_TOKEN } }
+auth: { token: { env: MILLSTREAM_TOKEN }, user: ana }
+tls: { cert: tls/cert.pem, key: tls/key.pem }
+metrics: { public: true }
 node: { embedded: false, token: { file: node.token } }
 secrets:
   property-sourcing: { homesiteToken: { env: HOMESITE_TOKEN }, apiKey: { file: key } }
@@ -68,7 +70,9 @@ improve:
 		ContainerRuntime: RuntimeDocker, Mode: ModeDevelopment, Listen: "0.0.0.0:7070",
 		Artifacts: ArtifactsConfig{S3: &S3Config{Bucket: "arts", Endpoint: "https://s3.example", Region: "fr-par",
 			Prefix: "m/", AccessKeyID: &SecretSource{Env: "S3_KEY"}, SecretAccessKey: &SecretSource{File: "s3.secret"}}},
-		AuthToken: &SecretSource{Env: "MILLSTREAM_TOKEN"}, NodeToken: &SecretSource{File: "node.token"},
+		AuthToken: &SecretSource{Env: "MILLSTREAM_TOKEN"}, AuthUser: "ana",
+		TLS: &TLSConfig{Cert: "tls/cert.pem", Key: "tls/key.pem"}, MetricsPublic: true,
+		NodeToken: &SecretSource{File: "node.token"},
 		Secrets: map[string]map[string]SecretSource{
 			"property-sourcing": {"homesiteToken": {Env: "HOMESITE_TOKEN"}, "apiKey": {File: "key"}}, "other": {},
 		},
@@ -159,6 +163,11 @@ func TestParseEnvironmentErrors(t *testing.T) {
 		"auth empty":        {"auth: {}\n", "auth.token: is required"},
 		"auth inline":       {"auth: { token: s3cret }\n", "auth.token: want { env: NAME }"},
 		"auth key":          {"auth: { oidc: {} }\n", "auth.oidc: unknown key"},
+		"auth user":         {"auth: { token: { env: T }, user: \"\" }\n", "auth.user: must not be empty"},
+		"tls no key":        {"tls: { cert: c.pem }\n", "tls.key: is required"},
+		"tls key":           {"tls: { cert: c, key: k, ca: x }\n", "tls.ca: unknown key"},
+		"metrics public":    {"metrics: { public: maybe }\n", "metrics.public: must be true or false"},
+		"metrics key":       {"metrics: { path: /m }\n", "metrics.path: unknown key"},
 		"node embedded":     {"node: { embedded: maybe }\n", "node.embedded: must be true or false"},
 		"node token":        {"node: { token: { env: \"a b\" } }\n", "node.token.env: want an environment"},
 		"node key":          {"node: { tls: {} }\n", "node.tls: unknown key"},
@@ -312,6 +321,7 @@ func TestLoadEnvironment(t *testing.T) {
 		"store: { postgres: { dsn: { file: secrets/dsn } } }\n": func(e *Environment) string { return e.Store.PostgresDSN.File },
 		"artifacts: { local: { path: arts } }\n":                func(e *Environment) string { return e.Artifacts.LocalPath },
 		"auth: { token: { file: tok } }\n":                      func(e *Environment) string { return e.AuthToken.File },
+		"tls: { cert: c.pem, key: k.pem }\n":                    func(e *Environment) string { return e.TLS.Key },
 		"secrets: { p: { k: { file: k.txt } } }\n":              func(e *Environment) string { return e.Secrets["p"]["k"].File },
 	} {
 		if err := os.WriteFile(rel, []byte(src), 0o600); err != nil {

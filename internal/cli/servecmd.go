@@ -44,17 +44,21 @@ func (c ServeCmd) Run(rt *Runtime) error {
 	if err := checkListen(listen, env); err != nil {
 		return err
 	}
-	if identity(rt) == "" {
-		return usageError("serve: no user to record review decisions under: set $USER")
+	sec, err := newAPISecurity(rt, env, listen)
+	if err != nil {
+		return err
+	}
+	if identity(rt) == "" && env.AuthToken == nil {
+		return usageError("serve: no user to record review decisions under: set $USER, or auth.token and auth.user")
 	}
 	waiting := func() { log.Info("another engine holds the leadership lock: waiting as the standby") }
 	return withStoreMode(rt, engineStore, waiting, func(st store.Store) error {
-		return c.serve(ctx, rt, env, st, log, listen)
+		return c.serve(ctx, rt, env, st, log, listen, sec)
 	})
 }
 
 func (c ServeCmd) serve(ctx context.Context, rt *Runtime, env *pipeline.Environment, st store.Store, log *slog.Logger,
-	listen string,
+	listen string, sec apiSecurity,
 ) error {
 	log.Info("leading the deployment", "listen", listen, "embeddedNode", env.NodeEmbedded,
 		"mode", env.EffectiveMode(pipeline.ModeProduction))
@@ -79,25 +83,19 @@ func (c ServeCmd) serve(ctx context.Context, rt *Runtime, env *pipeline.Environm
 			}
 		}
 	}
-	h := engineHost{listen: listen, embedded: env.NodeEmbedded, slots: c.Slots, leaseTTL: c.LeaseTTL}
+	h := engineHost{listen: listen, sec: sec, embedded: env.NodeEmbedded, slots: c.Slots, leaseTTL: c.LeaseTTL}
 	return h.run(ctx, rt, env, st, e, notes, log, wait)
 }
 
-// checkListen refuses a listen address that is not a loopback one: exposed, the API requires auth.token (spec
-// section 15.2), and until token auth (M4 Task 7) checks it, serve listens on loopback only.
+// checkListen refuses a listen address that is not a loopback one without auth.token: exposed, the API requires the
+// token (spec section 15.2).
 func checkListen(listen string, env *pipeline.Environment) error {
 	if _, _, err := net.SplitHostPort(listen); err != nil {
 		return usageError(fmt.Sprintf("listen %q: want host:port, such as 127.0.0.1:7070", listen))
 	}
-	err := api.CheckLoopback(listen)
-	switch {
-	case err == nil:
-		return nil
-	case env.AuthToken == nil:
+	if api.CheckLoopback(listen) != nil && env.AuthToken == nil {
 		return usageError(fmt.Sprintf("listen %s is not a loopback address: a non-loopback listener requires "+
 			"auth.token (spec section 15.2)", listen))
-	default:
-		return usageError(fmt.Sprintf("listen %s is not a loopback address: the API checks auth.token from M4 Task 7 "+
-			"on; until then serve listens on 127.0.0.1, ::1 or localhost only", listen))
 	}
+	return nil
 }

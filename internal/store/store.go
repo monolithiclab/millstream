@@ -143,6 +143,8 @@ type Store interface {
 	PipelineEvents(ctx context.Context, f EventFilter) ([]Event, error)
 	// MetricRollups returns the rollups f selects.
 	MetricRollups(ctx context.Context, f MetricFilter) ([]MetricRollup, error)
+	// MetricTotals returns every series of the rollups over every minute, by pipeline, name and labels.
+	MetricTotals(ctx context.Context) ([]MetricTotal, error)
 	// Insights returns the insights f selects.
 	Insights(ctx context.Context, f InsightFilter) ([]Insight, error)
 	// Reviews returns the reviews f selects, with their items.
@@ -176,7 +178,7 @@ type Store interface {
 	PipelineState(ctx context.Context, pipeline string) (PipelineState, error)
 	// Pipelines returns every pipeline's state, by name.
 	Pipelines(ctx context.Context) ([]PipelineState, error)
-	// EvalResults returns the recorded scores of an action, newest first.
+	// EvalResults returns the recorded scores of an action, of every action when it is empty, newest first.
 	EvalResults(ctx context.Context, action string) ([]EvalResult, error)
 	// LastFiring returns the latest scheduled time the cron trigger fired a cron run for or skipped, zero when it
 	// never did: where catch-up resumes. Manual firings of the trigger do not count.

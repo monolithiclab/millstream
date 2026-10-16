@@ -49,7 +49,7 @@ type Environment struct {
 	// the local default (review.DefaultBaseURL).
 	UIBaseURL string
 	// UIListen is ui.listen: the address millstream run serves the API and the web UI on; empty means
-	// 127.0.0.1:7070. Until token authentication (M4) it must be a loopback address.
+	// 127.0.0.1:7070. It must be a loopback address: only serve listens elsewhere, with auth.token.
 	UIListen string
 	// Store is the store key: the log store the commands and the engine use (spec section 14).
 	Store StoreConfig
@@ -60,9 +60,17 @@ type Environment struct {
 	Artifacts ArtifactsConfig
 	// Listen is the listen key: the address serve (and run, after ui.listen) serves the API and the UI on.
 	Listen string
-	// AuthToken is auth.token: where the API's bearer token is read from; nil means no token. A non-loopback
-	// listener requires it (spec section 15.2); the token check itself arrives with M4 Task 7.
+	// AuthToken is auth.token: where the API's bearer token is read from; nil means no token, and the API serves
+	// loopback clients only. A non-loopback listener requires it (spec section 15.2).
 	AuthToken *SecretSource
+	// AuthUser is auth.user: who decides the reviews of a token session (single user in the open-source edition);
+	// empty means DefaultAuthUser.
+	AuthUser string
+	// TLS is the tls key: the certificate the engine serves its listener with, instead of plain HTTP behind a
+	// TLS-terminating proxy; nil means plain HTTP.
+	TLS *TLSConfig
+	// MetricsPublic is metrics.public: /metrics answers without the token.
+	MetricsPublic bool
 	// NodeEmbedded is node.embedded: whether serve runs a node inside the engine (default true).
 	NodeEmbedded bool
 	// NodeToken is node.token: where the node token remote nodes join with is read from (M4 Task 4).
@@ -74,6 +82,15 @@ type Environment struct {
 	Retention Retention
 	// Improve is the improve key (spec sections 11.2 and 11.3), kept for the improve pipeline (M5).
 	Improve Improve
+}
+
+// DefaultAuthUser is who decides the reviews of a token session without auth.user.
+const DefaultAuthUser = "operator"
+
+// TLSConfig is the tls key: a PEM certificate chain and its private key, paths relative to the environment file.
+type TLSConfig struct {
+	Cert string
+	Key  string
 }
 
 // Environment modes (spec section 11.2).
@@ -307,6 +324,10 @@ func LoadEnvironment(path string, required bool) (*Environment, error) {
 	abs(&env.AgentBinary)
 	abs(&env.Store.SQLitePath)
 	abs(&env.Artifacts.LocalPath)
+	if env.TLS != nil {
+		abs(&env.TLS.Cert)
+		abs(&env.TLS.Key)
+	}
 	for _, src := range env.sources() {
 		abs(&src.File)
 	}
@@ -348,8 +369,8 @@ func ParseEnvironment(data []byte) (*Environment, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := f.allow("environment", "store", "artifacts", "listen", "auth", "node", "registries", "secrets",
-		"retention", "lessons", "ui", "improve", "prices", "runtime", "agents"); err != nil {
+	if err := f.allow("environment", "store", "artifacts", "listen", "auth", "tls", "metrics", "node", "registries",
+		"secrets", "retention", "lessons", "ui", "improve", "prices", "runtime", "agents"); err != nil {
 		return nil, err
 	}
 	for _, err := range []error{
@@ -358,6 +379,10 @@ func ParseEnvironment(data []byte) (*Environment, error) {
 		readArtifacts(f, env),
 		optional(f, "listen", &env.Listen, hostPort),
 		readAuth(f, env),
+		readTLS(f, env),
+		section(f, "metrics", []string{"public"}, func(mf *fields) []error {
+			return []error{optional(mf, "public", &env.MetricsPublic, boolean)}
+		}),
 		readNode(f, env),
 		optional(f, "registries", &env.Registries, registries),
 		optional(f, "secrets", &env.Secrets, secretsByPipeline),
@@ -664,11 +689,27 @@ func optionalSource(f *fields, key string, dst **SecretSource) error {
 }
 
 func readAuth(f *fields, env *Environment) error {
-	return section(f, "auth", []string{"token"}, func(af *fields) []error {
+	return section(f, "auth", []string{"token", "user"}, func(af *fields) []error {
 		if _, err := af.require("token"); err != nil {
 			return []error{err}
 		}
-		return []error{optionalSource(af, "token", &env.AuthToken)}
+		return []error{optionalSource(af, "token", &env.AuthToken), optional(af, "user", &env.AuthUser, nonEmptyStr)}
+	})
+}
+
+// readTLS reads tls: { cert, key }, both required.
+func readTLS(f *fields, env *Environment) error {
+	return section(f, "tls", []string{"cert", "key"}, func(tf *fields) []error {
+		var t TLSConfig
+		var err error
+		if t.Cert, err = tf.requiredStr("cert"); err != nil {
+			return []error{err}
+		}
+		if t.Key, err = tf.requiredStr("key"); err != nil {
+			return []error{err}
+		}
+		env.TLS = &t
+		return nil
 	})
 }
 

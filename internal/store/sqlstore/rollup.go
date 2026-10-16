@@ -213,11 +213,9 @@ func (s *Store) MetricRollups(ctx context.Context, f store.MetricFilter) ([]stor
 			if err := rows.Scan(&r.Pipeline, &r.Name, &labels, &minute, &r.Count, &r.Sum, &r.Min, &r.Max); err != nil {
 				return r, fmt.Errorf("scan rollup: %w", err)
 			}
-			if err := json.Unmarshal([]byte(labels), &r.Labels); err != nil {
-				return r, fmt.Errorf("rollup %s labels: %w", r.Name, err)
-			}
-			if len(r.Labels) == 0 {
-				r.Labels = nil
+			var err error
+			if r.Labels, err = decodeLabels(r.Name, labels); err != nil {
+				return r, err
 			}
 			r.Minute = minute.Time
 			return r, nil
@@ -226,4 +224,46 @@ func (s *Store) MetricRollups(ctx context.Context, f store.MetricFilter) ([]stor
 		return nil, fmt.Errorf("metric rollups: %w", err)
 	}
 	return out, nil
+}
+
+// MetricTotals returns every series of the rollups over every minute: their sums, and their latest minute's.
+func (s *Store) MetricTotals(ctx context.Context) ([]store.MetricTotal, error) {
+	out, err := scan(ctx, s.read, `SELECT t.pipeline, t.name, t.labels_json, t.c, t.s, r.minute, r.count, r.sum
+		FROM (SELECT pipeline, name, labels_json, CAST(SUM(count) AS bigint) AS c, SUM(sum) AS s,
+			MAX(minute) AS m
+			FROM metric_rollups GROUP BY pipeline, name, labels_json) t
+		JOIN metric_rollups r ON r.pipeline = t.pipeline AND r.name = t.name AND r.labels_json = t.labels_json
+			AND r.minute = t.m
+		ORDER BY t.pipeline, t.name, t.labels_json`, nil,
+		func(rows *sql.Rows) (store.MetricTotal, error) {
+			var m store.MetricTotal
+			var labels string
+			var last TimeCol
+			if err := rows.Scan(&m.Pipeline, &m.Name, &labels, &m.Count, &m.Sum, &last, &m.LastCount,
+				&m.LastSum); err != nil {
+				return m, fmt.Errorf("scan metric total: %w", err)
+			}
+			var err error
+			if m.Labels, err = decodeLabels(m.Name, labels); err != nil {
+				return m, err
+			}
+			m.Last = last.Time
+			return m, nil
+		})
+	if err != nil {
+		return nil, fmt.Errorf("metric totals: %w", err)
+	}
+	return out, nil
+}
+
+// decodeLabels decodes a rollup's labels_json: nil when it has none.
+func decodeLabels(name, raw string) (map[string]string, error) {
+	var labels map[string]string
+	if err := json.Unmarshal([]byte(raw), &labels); err != nil {
+		return nil, fmt.Errorf("rollup %s labels: %w", name, err)
+	}
+	if len(labels) == 0 {
+		return nil, nil
+	}
+	return labels, nil
 }

@@ -60,9 +60,10 @@ func Test_runRejects(t *testing.T) {
 	if code, _, errOut := s.run("run", pkg); code != 2 || !strings.Contains(errOut, "no user to record review decisions") {
 		t.Fatalf("no user: code %d, stderr %q", code, errOut)
 	}
-	// Until token auth (M4), the API is served on a loopback address only; run --once serves nothing.
+	// run serves the API on a loopback address only (serve listens elsewhere with auth.token); run --once serves
+	// nothing.
 	for _, tt := range []struct{ argv, want []string }{
-		{[]string{"run", "--listen", "0.0.0.0:7070", pkg}, []string{"not a loopback address", "M4"}},
+		{[]string{"run", "--listen", "0.0.0.0:7070", pkg}, []string{"not a loopback address", "without auth.token"}},
 		{[]string{"run", "--listen", "7070", pkg}, []string{"want host:port"}},
 		{[]string{"run", "--once", "--listen", "127.0.0.1:7070", pkg}, []string{"run --once does not serve"}},
 	} {

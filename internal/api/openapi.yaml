@@ -6,11 +6,18 @@ info:
     The HTTP API of Millstream (spec section 12.1). Every record but a pipeline is scoped by its pipeline, so
     resources sit under /pipelines/{pipeline}; the inbox, insights and metrics read across pipelines. JSON keys are
     lowerCamelCase; times are RFC 3339; money is US dollars. Errors are {"error": {"code", "message"}}, with code one
-    of notFound, conflict, invalid, unavailable, methodNotAllowed, tooLarge, forbidden, unsupportedMediaType and
-    internal. Lists that grow without bound page by an opaque cursor: pass a page's next as the cursor of the next
-    request. No authentication until M4: the server listens on a loopback address and answers only requests naming a
-    loopback host (forbidden otherwise), every POST carries a JSON content type (unsupportedMediaType otherwise), and
-    a decision is recorded under the X-Millstream-User header, else the server's $USER.
+    of notFound, conflict, invalid, unavailable, methodNotAllowed, tooLarge, unauthorized, forbidden,
+    unsupportedMediaType and internal. Lists that grow without bound page by an opaque cursor: pass a page's next as
+    the cursor of the next request.
+
+    Access. Every POST carries a JSON content type (unsupportedMediaType otherwise), and a request that changes state
+    from another origin (its Origin header) is forbidden. Without auth.token the server listens on a loopback address,
+    answers only requests naming a loopback host (forbidden otherwise), and records a decision under the
+    X-Millstream-User header, else the server's $USER. With auth.token every request carries the token, as
+    "Authorization: Bearer <token>" or the session cookie POST /session sets (unauthorized otherwise, signing in and
+    out aside); the server also answers ui.baseUrl's host and its listen address's; a request authenticated by the
+    cookie that changes state must name its origin; and every decision is recorded under auth.user, whatever the
+    request says.
 
     Live data is served as server-sent events (text/event-stream) under /live. A run's or an item's stream sends
     "state" events whose id is the event's sequence number; a client resumes after its last id with the
@@ -21,6 +28,7 @@ info:
     were lost since the client's cursor. Every stream sends a comment every 15 seconds while quiet.
 servers:
   - url: /api/v1
+security: [{}, { bearer: [] }, { session: [] }]
 paths:
   /openapi.yaml:
     get:
@@ -33,6 +41,43 @@ paths:
           content:
             application/yaml:
               schema: { type: string }
+  /session:
+    get:
+      operationId: getSession
+      summary: Whether the server requires the token, and who the request decides as.
+      responses:
+        default: { $ref: "#/components/responses/Error" }
+        "200":
+          description: The session.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Session" }
+        "401": { $ref: "#/components/responses/Error" }
+    post:
+      operationId: createSession
+      summary: Sign in with the token, for a session cookie (HttpOnly, SameSite=Strict).
+      security: [{}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SessionLogin" }
+      responses:
+        default: { $ref: "#/components/responses/Error" }
+        "200":
+          description: Signed in; the response sets the session cookie.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Session" }
+        "401": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+    delete:
+      operationId: deleteSession
+      summary: Sign out; the response clears the session cookie.
+      security: [{}]
+      responses:
+        default: { $ref: "#/components/responses/Error" }
+        "204": { description: Signed out. }
   /pipelines:
     get:
       operationId: listPipelines
@@ -777,7 +822,7 @@ components:
     user:
       name: X-Millstream-User
       in: header
-      description: Who decides, until authentication (M4); the server's $USER without it.
+      description: Who decides, on a server without auth.token; the server's $USER without it. Ignored with auth.token.
       schema: { type: string }
     livePipeline:
       name: pipeline
@@ -791,6 +836,16 @@ components:
       description: The last event id received, to resume; the same as the Last-Event-ID header.
       schema: { type: string }
     lastEventIdHeader: { name: Last-Event-ID, in: header, schema: { type: string } }
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+      description: The deployment's token (auth.token), on a server that has one.
+    session:
+      type: apiKey
+      in: cookie
+      name: millstream_session
+      description: The session POST /session starts, for the web UI.
   responses:
     Error:
       description: An error.
@@ -825,7 +880,7 @@ components:
           properties:
             code:
               type: string
-              enum: [notFound, conflict, invalid, unavailable, methodNotAllowed, tooLarge, forbidden,
+              enum: [notFound, conflict, invalid, unavailable, methodNotAllowed, tooLarge, unauthorized, forbidden,
                 unsupportedMediaType, internal]
             message: { type: string }
     RunState: { type: string, enum: [running, waitingReview, succeeded, completedWithErrors, cancelled] }
@@ -1378,6 +1433,19 @@ components:
               output: {}
               why: { type: string }
               source: { type: string }
+    Session:
+      type: object
+      required: [auth]
+      additionalProperties: false
+      properties:
+        auth: { type: boolean, description: Whether the server requires the token. }
+        user: { type: string, description: Who the request's decisions are recorded under. }
+    SessionLogin:
+      type: object
+      required: [token]
+      additionalProperties: false
+      properties:
+        token: { type: string }
     Nodes:
       type: object
       required: [engine, nodes]

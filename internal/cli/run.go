@@ -61,14 +61,19 @@ func (c RunPackagesCmd) Run(rt *Runtime) error {
 		return err
 	}
 	listen := ""
+	var sec apiSecurity
 	if !c.Once {
 		listen = cmp.Or(c.Listen, env.UIListen, env.Listen, defaultListen)
 		if err := api.CheckLoopback(listen); err != nil {
 			return usageError(err.Error())
 		}
-		// The API records the decisions of requests that name nobody under the server's user (spec section 12.1).
-		if identity(rt) == "" {
-			return usageError("run: no user to record review decisions under: set $USER")
+		if sec, err = newAPISecurity(rt, env, listen); err != nil {
+			return err
+		}
+		// The API records the decisions of requests that name nobody under the server's user (spec section 12.1),
+		// those of a token session under auth.user.
+		if identity(rt) == "" && env.AuthToken == nil {
+			return usageError("run: no user to record review decisions under: set $USER, or auth.token and auth.user")
 		}
 	} else if c.Listen != "" {
 		return usageError("--listen: run --once does not serve the API")
@@ -114,7 +119,7 @@ func (c RunPackagesCmd) Run(rt *Runtime) error {
 				return nil
 			}
 		}
-		h := engineHost{listen: listen, embedded: true, slots: c.Slots, leaseTTL: c.LeaseTTL}
+		h := engineHost{listen: listen, sec: sec, embedded: true, slots: c.Slots, leaseTTL: c.LeaseTTL}
 		if err := h.run(ctx, rt, env, st, e, notes, log, wait); err != nil {
 			return err
 		}
@@ -129,6 +134,7 @@ func (c RunPackagesCmd) Run(rt *Runtime) error {
 // listen, unless it is empty.
 type engineHost struct {
 	listen   string
+	sec      apiSecurity // the API server's token and TLS
 	embedded bool
 	slots    int
 	leaseTTL time.Duration
@@ -164,7 +170,7 @@ func (h engineHost) run(ctx context.Context, rt *Runtime, env *pipeline.Environm
 	if h.listen == "" {
 		serveDone <- nil
 	} else {
-		srv, err := newAPIServer(rt, env, st, e, notes, logs, nodes, log)
+		srv, err := newAPIServer(rt, env, st, e, notes, logs, nodes, log, h.sec)
 		if err != nil {
 			return err
 		}
