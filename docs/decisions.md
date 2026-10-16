@@ -230,9 +230,10 @@ would mix two styles in every pipeline file. Kubernetes manifests have made came
 **Decision.** A consumer declares an imported stream under `streams`, with a name of its own and the producer's
 pipeline and stream; its steps read that name with `in`. No producer change and no trigger are needed: within an
 instance every stream can be imported. Each producer run opens one run in each importer, which receives copies of the
-items with the producer's item as parent, in the same transaction. Each side keeps its own revision, budget,
-retention and dead letters; `check` and `apply` enforce the producer's schema as the contract and refuse cycles across
-pipelines. Imports stay within one instance.
+items with the producer's item as parent, in the same transaction, and stays open until the producer run settles.
+Each side keeps its own revision, budget, retention and dead letters; the consumer run's variables are resolved when
+the consumer's revision is applied, since the run opens inside the producer's transaction. `check` and `apply`
+enforce the producer's schema as the contract and refuse cycles across pipelines. Imports stay within one instance.
 
 **Evidence.** Customers chain pipelines (sourcing feeds deal flow, deal flow feeds reporting). Declaring the stream
 where it is consumed keeps the producer unaware of its consumers, a local name decouples the consumer from the

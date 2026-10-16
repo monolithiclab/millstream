@@ -130,12 +130,8 @@ func (w *wtx) replay(pipelineName, runID string, ids []string, migrate bool) (in
 			return 0, err
 		}
 	}
-	if count > 0 && run.settled {
-		if _, err := w.exec(`UPDATE runs SET state = ?, settled_at = NULL WHERE pipeline = ? AND id = ?`,
-			store.RunRunning, pipelineName, runID); err != nil {
-			return 0, err
-		}
-		if err := w.event(pipelineName, runID, store.EventRunReopened, map[string]any{"from": run.state}); err != nil {
+	if count > 0 {
+		if err := w.reopen(run, nil); err != nil {
 			return 0, err
 		}
 	}

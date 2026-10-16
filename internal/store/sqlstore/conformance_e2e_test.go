@@ -111,3 +111,15 @@ func TestFailingUnitsRollBackAlone(t *testing.T) {
 func TestRepublishedItemCountsNothing(t *testing.T) {
 	storetest.TestRepublishedItemCountsNothing(t, memoryStore)
 }
+
+func TestImportReopens(t *testing.T) {
+	storetest.TestImportReopens(t, memoryStore)
+}
+
+func TestImportRevisionsAndChains(t *testing.T) {
+	storetest.TestImportRevisionsAndChains(t, memoryStore)
+}
+
+func TestImportFollowsReviews(t *testing.T) {
+	storetest.TestImportFollowsReviews(t, memoryStore)
+}

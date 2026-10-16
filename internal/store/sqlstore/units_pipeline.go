@@ -13,7 +13,8 @@ import (
 )
 
 // ApplyRevision stores the package, makes its revision active and starts the steps the pipeline marks paused
-// paused, unless their pause state was already set.
+// paused, unless their pause state was already set. It records the streams the revision imports and the variables
+// of the runs they open (spec section 4.12), replacing those variables when the package is already active.
 func (s *Store) ApplyRevision(ctx context.Context, pkg store.PackageRecord) (store.RevisionID, error) {
 	if pkg.Pipeline == nil || pkg.Pipeline.Name == "" || pkg.Hash == "" {
 		return 0, fmt.Errorf("apply revision: a pipeline with a name and a package hash: %w", store.ErrInvalid)
@@ -34,7 +35,7 @@ func (s *Store) ApplyRevision(ctx context.Context, pkg store.PackageRecord) (sto
 			JOIN revisions r ON r.id = p.active_revision WHERE p.id = ?`, name).Scan(&id, &activeHash)
 		switch {
 		case err == nil && activeHash == pkg.Hash:
-			return nil
+			return w.setImports(pkg.Pipeline, pkg.Vars, pkg.VarSources)
 		case err != nil && !errors.Is(err, sql.ErrNoRows):
 			return fmt.Errorf("read active revision: %w", err)
 		}
@@ -57,6 +58,9 @@ func (s *Store) ApplyRevision(ctx context.Context, pkg store.PackageRecord) (sto
 		id = store.RevisionID(rev)
 		if _, err := w.exec(`INSERT INTO pipelines (id, active_revision, state) VALUES (?, ?, 'active')
 			ON CONFLICT (id) DO UPDATE SET active_revision = excluded.active_revision`, name, id); err != nil {
+			return err
+		}
+		if err := w.setImports(pkg.Pipeline, pkg.Vars, pkg.VarSources); err != nil {
 			return err
 		}
 		for stepName, step := range pkg.Pipeline.Steps {

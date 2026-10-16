@@ -82,7 +82,7 @@ func closeRows(rows *sql.Rows) error {
 }
 
 const runColumns = `rowid, pipeline, id, revision, trigger, trigger_key, trigger_source, scheduled_at, kind,
-	generation, vars, var_sources, state, started_at, settled_at, cost_usd`
+	generation, vars, var_sources, state, started_at, settled_at, cost_usd, producer`
 
 func scanRun(rows interface{ Scan(...any) error }) (store.Run, error) {
 	var (
@@ -91,7 +91,7 @@ func scanRun(rows interface{ Scan(...any) error }) (store.Run, error) {
 		started, settledAt, scheduledAt TimeCol
 	)
 	if err := rows.Scan(&r.Seq, &r.Pipeline, &r.ID, &r.Revision, &r.Trigger, &r.TriggerKey, &r.TriggerSource, &scheduledAt,
-		&r.Kind, &r.Generation, &vars, &sources, &r.State, &started, &settledAt, &r.CostUSD); err != nil {
+		&r.Kind, &r.Generation, &vars, &sources, &r.State, &started, &settledAt, &r.CostUSD, &r.Producer); err != nil {
 		return r, fmt.Errorf("scan run: %w", err)
 	}
 	v, err := pipeline.DecodeValue(vars)
@@ -111,6 +111,11 @@ func (s *Store) Runs(ctx context.Context, f store.RunFilter) ([]store.Run, error
 	var w where
 	w.eq("pipeline", f.Pipeline)
 	w.eq("state", string(f.State))
+	if f.Producer != "" { // the partial index's condition, so it serves
+		w.conds = append(w.conds, "producer <> ''")
+		w.eq("producer", f.Producer)
+		w.eq("trigger_key", f.ProducerRun)
+	}
 	if f.Unsettled {
 		w.conds = append(w.conds, "settled_at IS NULL")
 	}
@@ -165,13 +170,23 @@ func (s *Store) Items(ctx context.Context, f store.ItemFilter) ([]store.Item, er
 		for _, id := range f.Parents {
 			w.args = append(w.args, id)
 		}
+		if f.ParentPipeline == "" {
+			// Parents of a copy are the producer's items: a same-pipeline lookup must not match them by id.
+			w.conds = append(w.conds, "parent_pipeline = ''")
+		} else {
+			// The children in the parents' pipeline, and the copies in the pipelines importing from it; the second
+			// term repeats the partial index's condition, so the index serves it.
+			w.conds = append(w.conds, "((pipeline = ? AND parent_pipeline = '') OR (parent_pipeline <> '' AND parent_pipeline = ?))")
+			w.args = append(w.args, f.ParentPipeline, f.ParentPipeline)
+		}
 	}
 	w.since("ts", f.Since)
 	if f.After > 0 {
 		w.conds = append(w.conds, "rowid > ?")
 		w.args = append(w.args, f.After)
 	}
-	q := `SELECT rowid, pipeline, id, run_id, stream, step, key, parents, generation, ts, payload, artifacts FROM items` +
+	q := `SELECT rowid, pipeline, id, run_id, stream, step, key, parents, generation, ts, payload, artifacts,
+		parent_pipeline FROM items` +
 		w.String() + ` ORDER BY rowid`
 	if f.Limit > 0 {
 		q += limitParam
@@ -182,7 +197,7 @@ func (s *Store) Items(ctx context.Context, f store.ItemFilter) ([]store.Item, er
 		var parents, body, artifacts string
 		var ts TimeCol
 		if err := rows.Scan(&it.Seq, &it.Pipeline, &it.ID, &it.RunID, &it.Stream, &it.Step, &it.Key, &parents,
-			&it.Generation, &ts, &body, &artifacts); err != nil {
+			&it.Generation, &ts, &body, &artifacts, &it.ParentPipeline); err != nil {
 			return it, fmt.Errorf("scan item: %w", err)
 		}
 		it.Payload = json.RawMessage(body)

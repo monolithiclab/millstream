@@ -172,27 +172,26 @@ func (c RunPackagesCmd) load(rt *Runtime, log *slog.Logger, actions pipeline.Act
 	}
 	var pkgs []*pipeline.Package
 	declared := map[string]bool{}
-	failed := false
 	for _, dir := range dirs {
 		pkg, err := pipeline.Load(dir)
 		if err != nil {
 			return nil, err
 		}
-		diags := pipeline.Check(pkg, actions, rt.Env, opts)
-		for _, d := range diags {
-			level := slog.LevelWarn
-			if d.Severity == pipeline.SeverityError {
-				level = slog.LevelError
-			}
-			log.Log(rt.Ctx, level, "check", "pipeline", pkg.Pipeline.Name, "path", d.Path, "message", d.Message)
-		}
-		if pipeline.HasErrors(diags) {
-			failed = true
-		}
 		for name := range pkg.Pipeline.Vars {
 			declared[name] = true
 		}
 		pkgs = append(pkgs, pkg)
+	}
+	failed := false
+	diags := checkPackages(rt, pkgs, actions, opts)
+	for _, pkg := range pkgs {
+		for _, d := range diags[pkg.Pipeline.Name] {
+			level := slog.LevelWarn
+			if d.Severity == pipeline.SeverityError {
+				level, failed = slog.LevelError, true
+			}
+			log.Log(rt.Ctx, level, "check", "pipeline", pkg.Pipeline.Name, "path", d.Path, "message", d.Message)
+		}
 	}
 	if failed {
 		return nil, errFailed
@@ -243,24 +242,43 @@ func (c RunPackagesCmd) fire(ctx context.Context, e *engine.Engine, pkgs []*pipe
 }
 
 // waitAll waits until the runs fired and every run of the packages' pipelines still unsettled have settled or wait
-// only on reviews, and returns them all: a run decided since the last run --once resumes.
+// only on reviews, and returns them all: a run decided since the last run --once resumes. The runs that imported
+// streams open for them (spec section 4.12) are waited on too, and the runs those open in turn: a producer run
+// settles only once each of them is open, so asking again after it settled finds them all.
 func waitAll(ctx context.Context, e *engine.Engine, st store.Store, pkgs []*pipeline.Package,
 	fired []engine.RunRef,
 ) ([]engine.RunRef, error) {
 	runs := slices.Clone(fired)
-	for _, pkg := range pkgs {
-		open, err := st.Runs(ctx, store.RunFilter{Pipeline: pkg.Pipeline.Name, Unsettled: true})
-		if err != nil {
-			return nil, err
-		}
-		for _, r := range open {
+	add := func(found []store.Run) {
+		for _, r := range found {
 			ref := engine.RunRef{Pipeline: r.Pipeline, ID: r.ID}
 			if !slices.Contains(runs, ref) {
 				runs = append(runs, ref)
 			}
 		}
 	}
-	return runs, e.WaitSettled(ctx, runs)
+	for _, pkg := range pkgs {
+		open, err := st.Runs(ctx, store.RunFilter{Pipeline: pkg.Pipeline.Name, Unsettled: true})
+		if err != nil {
+			return nil, err
+		}
+		add(open)
+	}
+	for waited := 0; waited < len(runs); {
+		if err := e.WaitSettled(ctx, runs); err != nil {
+			return nil, err
+		}
+		n := len(runs)
+		for _, ref := range runs[waited:n] {
+			opened, err := st.Runs(ctx, store.RunFilter{Producer: ref.Pipeline, ProducerRun: ref.ID})
+			if err != nil {
+				return nil, err
+			}
+			add(opened)
+		}
+		waited = n
+	}
+	return runs, nil
 }
 
 // summarize prints each run with its state and item counts per stream, and fails unless every run succeeded.

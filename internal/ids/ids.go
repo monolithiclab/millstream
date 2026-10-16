@@ -71,6 +71,18 @@ func DeadLetter(dlqStream, originDelivery, outputID string, seq int) string {
 	return itemPrefix + digest("dlq", dlqStream, originDelivery, outputID, strconv.Itoa(seq))
 }
 
+// ImportItem is the id of the copy of a producer's item published on a consumer's imported stream (spec section
+// 4.12): hash("import", stream, producer item id), where stream is the consumer's name for the imported stream.
+func ImportItem(stream, producerItemID string) string {
+	return itemPrefix + digest("import", stream, producerItemID)
+}
+
+// ImportRun is the id of the run an imported stream opens in the consumer for one producer run (spec section 4.12):
+// run_import_ and hash("import", stream, producer run id), stream being the consumer's name for it.
+func ImportRun(stream, producerRunID string) string {
+	return runPrefix + "import_" + digest("import", stream, producerRunID)
+}
+
 // CronKey formats a cron firing's scheduled time as the trigger item key and run id component: RFC 3339 truncated
 // to the minute, in UTC, for example 2026-10-14T06:00Z.
 func CronKey(scheduledAt time.Time) string {

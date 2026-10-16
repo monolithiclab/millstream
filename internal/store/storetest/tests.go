@@ -77,4 +77,8 @@ var Tests = append([]Test{
 	{"TestAPIReads", TestAPIReads},
 	{"TestDoneFirstCommit", TestDoneFirstCommit},
 	{"TestRevisionNumbersSurviveACrash", TestRevisionNumbersSurviveACrash},
+	{"TestImportCopiesAndRuns", TestImportCopiesAndRuns},
+	{"TestImportPausedConsumerAndCancel", TestImportPausedConsumerAndCancel},
+	{"TestImportProducerReplay", TestImportProducerReplay},
+	{"TestImportBackfill", TestImportBackfill},
 }, e2eTests...)

@@ -19,9 +19,10 @@ earlier designs are in the git history of the spec.
 
 ## Follow-ups
 
-- Repository history: purge `conformance.test`, an 18 MB test binary committed by mistake in f164ceb (M3), from
-  every branch with BFG Repo-Cleaner (`bfg --delete-files conformance.test` on a mirror clone, `git reflog expire` and
-  `git gc`, then force-push the phase branches). Rewriting is fine while there are no tags or releases.
+- Repository history: purge `conformance.test`, an 18 MB test binary committed by mistake in f164ceb (M3), and
+  `sqlstore.test` (29 MB, 19fe3b5, M4), from every branch with BFG Repo-Cleaner (`bfg --delete-files
+  '{conformance,sqlstore}.test'` on a mirror clone, `git reflog expire` and `git gc`, then force-push the phase
+  branches). Rewriting is fine while there are no tags or releases.
 - Insights: deployment-wide `insights` defaults from the environment file, a CLI to reopen a muted insight, and
   retention of `metric_rollups` and of the events the projectors read (M4).
 - Go SDK: per-output artifacts for `MapKeyed` (today `Context.Artifact` attaches a file to every output of the
@@ -38,6 +39,15 @@ earlier designs are in the git history of the spec.
   action's command: an edit there while a run is open changes what later deliveries of that revision run. Serving
   the revision's files from the engine would close this for both.
 - Transcripts are stored uncompressed until retention (M4) brings compression and `retention.transcripts`.
+- Shared streams (M4 Task 5): a copy's artifact file is copied into the consumer's prefix on first open, from the local
+  artifact directory; the S3 store (Task 4) needs the same copy, server side, and retention (Task 8) must keep the
+  producer's file while a consumer copy that has not been opened references it.
+- Shared streams: `replay --stream` skips the producer items whose payload is `null`, the tombstone retention will
+  write (Task 8 fixes the tombstone's form; the step replay refuses them instead, as spec section 5.7 asks).
+- Shared streams: `millstream test pipeline` needs a trigger to fire, so a package whose only entry is an imported
+  stream cannot be tested on its own yet; a test could name an imported stream and the items to copy onto it.
+- Shared streams: the UI's demo dataset has no importing pipeline (the Vitest tests add one), so `?demo` and the
+  Playwright screens do not show an import entry on the graph or a lineage crossing pipelines.
 - Evals: container actions, a step's lessons applied to a case, and the judge's own cost in the printed cost (M2
   evaluates agent and exec actions, without lessons, and prints only the action's cost).
 - Evals: expose `eval_results` as the metric `eval_score{action,case}` with the Prometheus endpoint (M4).

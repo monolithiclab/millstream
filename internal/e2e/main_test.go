@@ -46,6 +46,9 @@ var (
 	fixtureBuiltins      string
 	fixtureReview        string
 	fixtureReviewTimeout string
+	// fixtureImporter is a pipeline importing the builtins fixture's listings.crawled (spec section 4.12), run with it
+	// so that the crash suite covers a Done that imports.
+	fixtureImporter string
 )
 
 // extraBuilds are the builds of the fixtures behind the e2e build tag, registered by their files' init functions;
@@ -158,6 +161,13 @@ func build(dir string) error {
 	fixtureBuiltins = filepath.Join(dir, "builtins")
 	fixtureReview = filepath.Join(dir, "review")
 	fixtureReviewTimeout = filepath.Join(dir, "review-timeout")
+	fixtureImporter = filepath.Join(dir, "importer")
+	if err := os.MkdirAll(fixtureImporter, 0o750); err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(fixtureImporter, "pipeline.yaml"), []byte(importerPipeline), 0o600); err != nil {
+		return err
+	}
 	for _, d := range []string{fixtureBuiltins, fixtureReview, fixtureReviewTimeout} {
 		if err := os.CopyFS(d, os.DirFS(fixtureV1)); err != nil {
 			return err
@@ -243,6 +253,15 @@ const builtinSteps = `  unique:
     config: { inbox: analysts, autoApprove: "true", sampleRate: 1 }
 
   score:
+`
+
+// importerPipeline imports the builtins fixture's crawled listings and keeps those not in good condition, with a
+// builtin, so it needs no action binary.
+const importerPipeline = `pipeline: m1-importer
+streams:
+  crawled: { pipeline: m1-fixture, stream: listings.crawled }
+steps:
+  keep: { action: filter, in: crawled, config: { expr: "item.condition != 'good'" } }
 `
 
 // reviewStep is the review step insertReview puts between score and rentability: listings scoring 85 or more are

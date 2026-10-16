@@ -36,6 +36,8 @@ type wtx struct {
 	s   *Store
 	// lastSeq is the sequence number of the last event the unit recorded, zero for none.
 	lastSeq int64
+	// chain holds the pipelines an item is being copied through by the Stream import unit (importCopies).
+	chain []string
 }
 
 // submit queues a unit and waits until the batch holding it commits or fails. Once queued, the unit's outcome is

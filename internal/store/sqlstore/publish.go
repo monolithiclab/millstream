@@ -12,14 +12,18 @@ import (
 // newItem is an item to publish.
 type newItem struct {
 	id, stream, step, key string
-	parents               []string
-	payload               payload
-	artifacts             []store.ArtifactRef
+	// parentPipeline is the pipeline of the parents of a copy published through an import, empty otherwise.
+	parentPipeline string
+	parents        []string
+	payload        payload
+	artifacts      []store.ArtifactRef
 }
 
 // publish inserts an item under the first-commit rule (spec section 5.2) and creates the deliveries of every step
 // of rev reading its stream. An existing item with the same payload hash is a no-op; with a different one, the
-// existing item is kept and a nondeterministicOutput event recorded.
+// existing item is kept and a nondeterministicOutput event recorded. A new item on a stream other pipelines import
+// is copied to each of them in the same transaction (the Stream import unit, spec section 4.12); an existing one
+// was copied when it was inserted.
 func (w *wtx) publish(rev *revision, run *runRow, it newItem) error {
 	parents := it.parents
 	if parents == nil {
@@ -39,10 +43,10 @@ func (w *wtx) publish(rev *revision, run *runRow, it newItem) error {
 	}
 	hash := hashPayload(it.payload.raw)
 	n, err := w.affected(`INSERT INTO items
-		(pipeline, id, run_id, stream, step, key, parents, generation, ts, payload, payload_hash, artifacts)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`,
+		(pipeline, id, run_id, stream, step, key, parents, generation, ts, payload, payload_hash, artifacts,
+		parent_pipeline) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`,
 		run.pipeline, it.id, run.id, it.stream, it.step, it.key, string(parentsJSON), run.generation, w.ts(),
-		string(it.payload.raw), hash, string(artifactsJSON))
+		string(it.payload.raw), hash, string(artifactsJSON), it.parentPipeline)
 	if err != nil {
 		return err
 	}
@@ -58,7 +62,13 @@ func (w *wtx) publish(rev *revision, run *runRow, it newItem) error {
 	if err != nil {
 		return err
 	}
-	return w.createDeliveries(rev, run, it.stream, it.id)
+	if err := w.createDeliveries(rev, run, it.stream, it.id); err != nil {
+		return err
+	}
+	if n == 1 {
+		return w.importCopies(run, it)
+	}
+	return nil
 }
 
 // countArtifacts adds one reference to each artifact a newly inserted item carries, creating its entry on the first.
@@ -151,9 +161,10 @@ const notTerminal = "state NOT IN (?, ?, ?, ?)"
 
 var terminalStates = []any{store.DeliveryDone, store.DeliveryFiltered, store.DeliveryDead, store.DeliveryCancelled}
 
-// settle settles a run once every delivery it owns is terminal (spec section 5.4): succeeded without open or
-// discarded dead letters, completedWithErrors with some, and a cancelled run stays cancelled. A run not yet settled is
-// waitingReview while only parked reviews remain, running otherwise.
+// settle settles a run once every delivery it owns is terminal and, for an import run that was not cancelled, its
+// producer run is settled (spec section 5.4): succeeded without open or discarded dead letters, completedWithErrors
+// with some, and a cancelled run stays cancelled. A run not yet settled is waitingReview while only parked reviews
+// remain, running otherwise. Settling a run settles the import runs it was holding open.
 func (w *wtx) settle(pipelineName, runID string) error {
 	run, err := w.run(pipelineName, runID)
 	if err != nil || run.settled {
@@ -171,6 +182,14 @@ func (w *wtx) settle(pipelineName, runID string) error {
 	}
 	state := run.state
 	if state != store.RunCancelled {
+		// An import run stays open while its producer run is: more items may arrive (spec section 4.12).
+		open, onlyReviews, err := w.producerHolds(run)
+		if err != nil {
+			return err
+		}
+		if open {
+			return w.waitingReview(run, onlyReviews)
+		}
 		var errs int
 		if err := w.queryRow(`SELECT COUNT(*) FROM dead_letters WHERE pipeline = ? AND run_id = ? AND state IN (?, ?)`,
 			pipelineName, runID, store.DeadLetterOpen, store.DeadLetterDiscarded).Scan(&errs); err != nil {
@@ -186,13 +205,17 @@ func (w *wtx) settle(pipelineName, runID string) error {
 		state, w.ts(), pipelineName, runID).Scan(&cost); err != nil {
 		return fmt.Errorf("settle run %s: %w", runID, err)
 	}
-	return w.event(pipelineName, runID, store.EventRunSettled, map[string]any{
+	if err := w.event(pipelineName, runID, store.EventRunSettled, map[string]any{
 		"state": state, "durationMs": millis(w.now.Sub(run.startedAt)), "costUsd": cost,
-	})
+	}); err != nil {
+		return err
+	}
+	return w.settleConsumers(run)
 }
 
 // waitingReview moves a live run between running and waitingReview: waitingReview while only parked reviews remain
-// (spec section 5.4). A cancelled run stays cancelled.
+// (spec section 5.4), or, for an import run with nothing of its own left, while its producer run waits only on
+// reviews. A cancelled run stays cancelled.
 func (w *wtx) waitingReview(run *runRow, onlyReviews bool) error {
 	want := store.RunRunning
 	if onlyReviews {
@@ -201,8 +224,11 @@ func (w *wtx) waitingReview(run *runRow, onlyReviews bool) error {
 	if run.state == want || run.state == store.RunCancelled {
 		return nil
 	}
-	_, err := w.exec(`UPDATE runs SET state = ? WHERE pipeline = ? AND id = ?`, want, run.pipeline, run.id)
-	return err
+	if _, err := w.exec(`UPDATE runs SET state = ? WHERE pipeline = ? AND id = ?`, want, run.pipeline, run.id); err != nil {
+		return err
+	}
+	run.state = want
+	return w.settleConsumers(run) // the import runs it holds open, with nothing of their own, follow it
 }
 
 // addCost charges a delivery's attempt its cost, on the delivery, its run and its pipeline's UTC day, and clears

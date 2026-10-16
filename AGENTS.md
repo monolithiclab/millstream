@@ -19,6 +19,10 @@ below) for the reasoning, and `make help` for every command.
 - Thresholds belong in `filter` steps, not in actions, so actions stay reusable (spec section 4.7).
 - At-least-once delivery is deliberate; idempotency comes from deterministic item ids (D9), not from exactly-once
   machinery.
+- A pipeline that imports a stream may declare no trigger, and its import runs take the variables resolved when its
+  revision was applied, not when they open: they open inside the producer's Done unit (spec section 4.12). A copy is
+  made only when the producer's item is newly inserted; earlier items reach a new importer through
+  `replay --stream`.
 
 ## Layout
 
@@ -48,17 +52,18 @@ below) for the reasoning, and `make help` for every command.
   times its fastest, and exits 1 over budget.
 - The working target is 400 ms, which the script warns about: a change that takes the median total above it makes
   room in the same change.
-- What keeps it there: actions run in-process (`exec.FuncLauncher` with `exectest.Serve`, wired through `fakeexec`
-  and `cli.Runtime.Launchers`); stores are `sqlite.Memory`, whose template loads from an embedded image and whose
-  closed connections, emptied, serve the next store with their statements already prepared (`Clone` is slower: it
-  prepares them all again); fixtures (packages, parsed pipelines, applied runs, insight histories) are built once
-  per process, and the files a test only reads are committed under `testdata` (the CLI's shared packages are those
-  directories themselves, never copies); time is a fake clock or an injected timer. No `go build`, no process, no
-  Docker, no sleep or polling, no file database but the one that tests opening a file: a test that needs one, or
-  drives the CLI or the engine end to end, goes behind the `e2e` build tag, in a `*_e2e_test.go` file. The store,
-  engine and insights tests run serially: the transpiled SQLite allocates under one process-wide lock, so parallel
-  tests contend instead of overlapping. A table's subtests that take microseconds do not call `t.Parallel` either:
-  pausing and resuming one costs more than running it.
+- What keeps it there: actions run in-process (`exec.FuncLauncher` with `exectest.Serve`, wired through `fakeexec` and
+  `cli.Runtime.Launchers`); stores are `sqlite.Memory`, whose template loads from an embedded image and whose closed
+  connections, emptied, serve the next store with their statements already prepared (`Clone` is slower: it prepares them
+  all again); fixtures (packages, parsed pipelines, applied runs, insight histories) are built once per process, and the
+  files a test only reads are committed under `testdata` (the CLI's shared packages are those directories themselves,
+  never copies; the store images `internal/store/sqlite/template.db` and `internal/insights/testdata/history.db` are
+  rebuilt with `-update` after a schema change); time is a fake clock or an injected timer. No `go build`, no process,
+  no Docker, no sleep or polling, no file database but the one that tests opening a file: a test that needs one, or
+  drives the CLI or the engine end to end, goes behind the `e2e` build tag, in a `*_e2e_test.go` file. The store, engine
+  and insights tests run serially: the transpiled SQLite allocates under one process-wide lock, so parallel tests
+  contend instead of overlapping. A table's subtests that take microseconds do not call `t.Parallel` either: pausing and
+  resuming one costs more than running it.
 - The store tests are the conformance suite `internal/store/storetest`: exported functions taking an opener, one per
   behaviour, run against SQLite in `internal/store/sqlstore`'s tests (one top-level wrapper each in
   `conformance_test.go`, so test-times and coverage count them where the code lives) and against Postgres in
@@ -70,13 +75,14 @@ below) for the reasoning, and `make help` for every command.
   digest) per test binary on first use, migrates a template database once and copies a new database from it for each
   test; `TestMain` calls `pgtest.Stop`. Without Docker they skip, saying so. Run them alone with
   `go test -tags e2e ./internal/store/postgres/...`.
-- `make test-e2e` (`go test -race -count=1 -tags e2e ./...`, and the SDK module's) runs everything, tagged and
-  untagged, under the race detector, and prints the whole suite's coverage (`make test` checks the default build's
-  against `COVERAGE_MIN`): the `internal/e2e` package (crash matrix on SQLite and Postgres, M1 and M2 scenarios), the
-  end-to-end CLI and engine tests, the real-process twins of the in-process tests (under the tag, `fakeexec` runs the
-  built fake binary), Docker and Postgres tests, and the long property runs. It is slow, is not part of `make ci`,
-  and runs in CI as its own job; run it before closing a milestone and after touching the exec runtime, the node,
-  the CLI's run path, the store's concurrency or the crash recovery.
+- `make test-e2e` (`go test -race -count=1 -tags e2e ./...`, and the SDK module's) runs everything, tagged and untagged,
+  under the race detector, and prints the whole suite's coverage (`make test` checks the default build's against
+  `COVERAGE_MIN`): the `internal/e2e` package (crash matrix on SQLite and Postgres, run with a second pipeline importing
+  the fixture's stream so that it covers a Done that imports, M1 and M2 scenarios), the end-to-end CLI and engine tests,
+  the real-process twins of the in-process tests (under the tag, `fakeexec` runs the built fake binary), Docker and
+  Postgres tests, and the long property runs. It is slow, is not part of `make ci`, and runs in CI as its own job; run
+  it before closing a milestone and after touching the exec runtime, the node, the CLI's run path, the store's
+  concurrency or the crash recovery.
 
 ## Web UI
 
