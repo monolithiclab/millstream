@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"io/fs"
 	"maps"
 	"mime"
@@ -31,12 +30,14 @@ const (
 	maxLimit     = 500
 )
 
-// Lineage bounds: how many generations a lineage walks by default and at most, and how many items each side holds.
+// Lineage bounds: how many generations a lineage walks by default and at most, and how many items each side holds
+// (a variable, for tests).
 const (
-	defaultDepth    = 10
-	maxDepth        = 50
-	maxLineageNodes = 500
+	defaultDepth = 10
+	maxDepth     = 50
 )
+
+var maxLineageNodes = 500
 
 // whereScanBound is the most items one page of a filtered item list reads: a filter that matches little answers a
 // short page with a cursor rather than reading the whole stream.
@@ -54,6 +55,31 @@ func limit(r *http.Request) (int, error) {
 	}
 	return n, nil
 }
+
+// enumParam reads an enumerated query parameter: "" when absent, invalid when it is none of values.
+func enumParam[T ~string](r *http.Request, name string, values ...T) (T, error) {
+	v := T(r.URL.Query().Get(name))
+	if v == "" || slices.Contains(values, v) {
+		return v, nil
+	}
+	want := make([]string, len(values))
+	for i, s := range values {
+		want[i] = string(s)
+	}
+	return "", invalidf("%s %q: want one of %s", name, v, strings.Join(want, ", "))
+}
+
+// The values of the enumerated filters.
+var (
+	runStates = []store.RunState{store.RunRunning, store.RunWaitingReview, store.RunSucceeded,
+		store.RunCompletedWithErrors, store.RunCancelled}
+	deliveryStates = []store.DeliveryState{store.DeliveryPending, store.DeliveryLeased, store.DeliveryDone,
+		store.DeliveryFiltered, store.DeliveryAwaitingReview, store.DeliveryDead, store.DeliveryCancelled}
+	reviewStates  = []store.ReviewState{store.ReviewOpen, store.ReviewDecided, store.ReviewTimedOut, store.ReviewCancelled}
+	sampleStates  = []store.SampleState{store.SampleOpen, store.SampleDecided, store.SampleUnreviewed}
+	insightStates = []store.InsightState{store.InsightOpen, store.InsightAcknowledged, store.InsightResolved,
+		store.InsightMuted}
+)
 
 // Cursors are opaque to clients: the position of the last record of a page, base64url-encoded with a prefix naming
 // the list, so a cursor of one list is refused by another.
@@ -290,7 +316,11 @@ func (s *Server) listRuns(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	f := store.RunFilter{Pipeline: name, State: store.RunState(r.URL.Query().Get("state")), Limit: n + 1,
+	state, err := enumParam(r, "state", runStates...)
+	if err != nil {
+		return err
+	}
+	f := store.RunFilter{Pipeline: name, State: state, Limit: n + 1,
 		After: store.RunPosition{StartedAt: time.Unix(0, cur[0]).UTC(), Seq: cur[1]}}
 	runs, err := s.st.Runs(r.Context(), f)
 	if err != nil {
@@ -342,7 +372,11 @@ func (s *Server) listRunDeliveries(w http.ResponseWriter, r *http.Request) error
 }
 
 func (s *Server) writeDeliveries(w http.ResponseWriter, r *http.Request, f store.DeliveryFilter) error {
-	f.Step, f.State = r.URL.Query().Get("step"), store.DeliveryState(r.URL.Query().Get("state"))
+	state, err := enumParam(r, "state", deliveryStates...)
+	if err != nil {
+		return err
+	}
+	f.Step, f.State = r.URL.Query().Get("step"), state
 	ds, err := s.st.Deliveries(r.Context(), f)
 	if err != nil {
 		return err
@@ -390,10 +424,9 @@ func (f *itemFilter) keep(ctx context.Context, it store.Item) (bool, error) {
 		return false, fmt.Errorf("item %s: %w", it.ID, err)
 	}
 	ok, err = f.where.Eval(v, expr.Envelope{ID: it.ID, Key: it.Key, TS: it.TS, Step: it.Step}, ir.vars, ir.run)
-	if err != nil {
-		return false, invalidf("where on item %s: %s", it.ID, err.Error())
-	}
-	return ok, nil
+	// An expression that fails on one item (a field it lacks, a type it does not have) does not match it, as a
+	// filter step would not pass it: one odd item must not make the whole list unreadable.
+	return ok && err == nil, nil
 }
 
 func (s *Server) listItems(w http.ResponseWriter, r *http.Request) error {
@@ -513,12 +546,16 @@ func (s *Server) getLineage(w http.ResponseWriter, r *http.Request) error {
 			next = append(next, p.Parents...)
 		}
 		frontier = next
+		if out.Truncated { // the cap ends the walk, not just this generation
+			break
+		}
 	}
 	if len(frontier) > 0 && !out.Truncated {
 		out.Truncated = slices.ContainsFunc(frontier, func(id string) bool { return !seen[id] })
 	}
 	// Down: each generation's children, read together.
 	level := []string{it.ID}
+	capped := false
 	for d := 0; d < depth && len(level) > 0; d++ {
 		var next []string
 		children, err := s.st.Items(r.Context(), store.ItemFilter{Pipeline: name, Parents: level})
@@ -530,7 +567,7 @@ func (s *Server) getLineage(w http.ResponseWriter, r *http.Request) error {
 				continue
 			}
 			if len(out.Down) == maxLineageNodes {
-				out.Truncated = true
+				out.Truncated, capped = true, true
 				break
 			}
 			seen[c.ID] = true
@@ -538,6 +575,9 @@ func (s *Server) getLineage(w http.ResponseWriter, r *http.Request) error {
 			next = append(next, c.ID)
 		}
 		level = next
+		if capped {
+			break
+		}
 		if d == depth-1 && len(level) > 0 {
 			out.Truncated = true // there may be more below
 		}
@@ -564,7 +604,7 @@ func (s *Server) getItemArtifact(w http.ResponseWriter, r *http.Request) error {
 	if i < 0 {
 		return fmt.Errorf("artifact %s of item %s: %w", name, it.ID, store.ErrNotFound)
 	}
-	return s.serveArtifact(w, it.Pipeline, it.Artifacts[i])
+	return s.serveArtifact(w, r, it.Pipeline, it.Artifacts[i])
 }
 
 // delivery returns the delivery the request names.
@@ -686,7 +726,7 @@ func (s *Server) getAttemptArtifact(w http.ResponseWriter, r *http.Request) erro
 	}
 	for _, a := range arts {
 		if a.Attempt == attempt && a.Name == r.PathValue("name") {
-			return s.serveArtifact(w, name, a.ArtifactRef)
+			return s.serveArtifact(w, r, name, a.ArtifactRef)
 		}
 	}
 	return fmt.Errorf("artifact %s of attempt %d of delivery %s: %w", r.PathValue("name"), attempt, d.ID,
@@ -700,7 +740,8 @@ var inlineTypes = []string{"application/json", "application/pdf", "image/gif", "
 
 // serveArtifact answers an artifact's content with its media type. Artifacts are what actions wrote: they are
 // served under a sandbox policy, without sniffing, and as an attachment unless their type is a passive one.
-func (s *Server) serveArtifact(w http.ResponseWriter, pipelineName string, ref store.ArtifactRef) error {
+func (s *Server) serveArtifact(w http.ResponseWriter, r *http.Request, pipelineName string, ref store.ArtifactRef,
+) error {
 	if s.opts.Artifacts == nil {
 		return fmt.Errorf("artifacts: no artifact store: %w", errUnavailable)
 	}
@@ -719,14 +760,13 @@ func (s *Server) serveArtifact(w http.ResponseWriter, pipelineName string, ref s
 	}
 	h := w.Header()
 	h.Set("Content-Type", ref.Type)
-	h.Set("Content-Length", strconv.FormatInt(ref.Size, 10))
 	h.Set("Content-Disposition", mime.FormatMediaType(disposition, map[string]string{"filename": ref.Name}))
 	h.Set("Content-Security-Policy", artifactPolicy)
 	h.Set("X-Frame-Options", "SAMEORIGIN")
 	h.Set("Cache-Control", "private, max-age=31536000, immutable") // content-addressed
 	h.Set("ETag", `"`+ref.SHA256+`"`)
-	w.WriteHeader(http.StatusOK)
-	_, _ = io.Copy(w, f) // the status is sent: a client gone mid-body has nothing to be told
+	// Ranges, conditional requests on the ETag, and the length of the bytes on disk.
+	http.ServeContent(w, r, "", time.Time{}, f)
 	return nil
 }
 
@@ -852,9 +892,13 @@ func (s *Server) listInbox(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	state, err := enumParam(r, "state", reviewStates...)
+	if err != nil {
+		return err
+	}
 	q := r.URL.Query()
 	reviews, err := s.st.Reviews(r.Context(), store.ReviewFilter{Pipeline: q.Get("pipeline"), Inbox: q.Get("inbox"),
-		Step: q.Get("step"), State: store.ReviewState(q.Get("state")), After: cur[0], Limit: n + 1})
+		Step: q.Get("step"), State: state, After: cur[0], Limit: n + 1})
 	if err != nil {
 		return err
 	}
@@ -873,9 +917,13 @@ func (s *Server) listSamples(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	state, err := enumParam(r, "state", sampleStates...)
+	if err != nil {
+		return err
+	}
 	q := r.URL.Query()
 	samples, err := s.st.ReviewSamples(r.Context(), store.SampleFilter{Pipeline: q.Get("pipeline"),
-		Inbox: q.Get("inbox"), Step: q.Get("step"), State: store.SampleState(q.Get("state")), After: cur[0], Limit: n + 1})
+		Inbox: q.Get("inbox"), Step: q.Get("step"), State: state, After: cur[0], Limit: n + 1})
 	if err != nil {
 		return err
 	}
@@ -886,9 +934,11 @@ func (s *Server) listSamples(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (s *Server) listInsights(w http.ResponseWriter, r *http.Request) error {
-	q := r.URL.Query()
-	ins, err := s.st.Insights(r.Context(), store.InsightFilter{Pipeline: q.Get("pipeline"),
-		State: store.InsightState(q.Get("state"))})
+	state, err := enumParam(r, "state", insightStates...)
+	if err != nil {
+		return err
+	}
+	ins, err := s.st.Insights(r.Context(), store.InsightFilter{Pipeline: r.URL.Query().Get("pipeline"), State: state})
 	if err != nil {
 		return err
 	}

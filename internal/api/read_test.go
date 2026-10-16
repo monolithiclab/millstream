@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -11,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/monolithiclab/millstream/internal/artifacts"
+	"github.com/monolithiclab/millstream/internal/store"
 )
 
 func TestPipelines(t *testing.T) {
@@ -168,7 +170,6 @@ func TestItems(t *testing.T) {
 		status       int
 	}{
 		{"/api/v1/pipelines/listings/items?where=" + url.QueryEscape("item."), codeInvalid, http.StatusBadRequest},
-		{"/api/v1/pipelines/listings/items?where=" + url.QueryEscape("item.nope == 1"), codeInvalid, http.StatusBadRequest},
 		{"/api/v1/pipelines/listings/items?limit=501", codeInvalid, http.StatusBadRequest},
 		{"/api/v1/pipelines/listings/items?cursor=" + encodeCursor("items", 1, 2), codeInvalid, http.StatusBadRequest},
 		{"/api/v1/pipelines/nope/items", codeNotFound, http.StatusNotFound},
@@ -179,6 +180,25 @@ func TestItems(t *testing.T) {
 	} {
 		wantError(t, do(t, f.srv, request{target: tt.target}), tt.status, tt.code)
 	}
+	// An expression that fails on an item (a field it lacks) does not match it; the list is still read.
+	if p := get[Page[Item]](t, f.srv, "/api/v1/pipelines/listings/items?where="+url.QueryEscape("item.nope == 1")); len(p.Items) != 0 {
+		t.Errorf("a failing where = %+v", p.Items)
+	}
+	if p := get[Page[Item]](t, f.srv, "/api/v1/pipelines/listings/items?stream=listings.raw&where="+
+		url.QueryEscape("item.price > 150")); len(p.Items) == 0 {
+		t.Error("a where matching some items matched none")
+	}
+}
+
+// itemReads counts the item reads of a store.
+type itemReads struct {
+	store.Store
+	n *int
+}
+
+func (s itemReads) Items(ctx context.Context, f store.ItemFilter) ([]store.Item, error) {
+	*s.n++
+	return s.Store.Items(ctx, f)
 }
 
 func TestLineage(t *testing.T) {
@@ -198,6 +218,15 @@ func TestLineage(t *testing.T) {
 	deep := get[Lineage](t, f.srv, "/api/v1/pipelines/listings/items/"+f.trigger.ID+"/lineage?depth=5")
 	if len(deep.Down) != 4 || deep.Truncated { // a, b, the scored a, b's dead letter
 		t.Errorf("trigger lineage = %+v", deep)
+	}
+	// The node cap ends the walk: no generation is read past it.
+	defer func(n int) { maxLineageNodes = n }(maxLineageNodes)
+	maxLineageNodes = 3
+	reads := 0
+	srv := must(New(Options{Store: itemReads{f.st, &reads}}))
+	capped := get[Lineage](t, srv, "/api/v1/pipelines/listings/items/"+f.trigger.ID+"/lineage?depth=5")
+	if len(capped.Down) != 3 || !capped.Truncated || reads != 3 { // the item, then two generations
+		t.Errorf("capped lineage = %+v after %d reads", capped, reads)
 	}
 }
 
@@ -233,6 +262,19 @@ func TestArtifacts(t *testing.T) {
 		h.Get("Content-Type") != "text/plain; charset=utf-8" || !strings.HasPrefix(h.Get("Content-Disposition"), "inline") ||
 		h.Get("Content-Security-Policy") == "" || h.Get("X-Content-Type-Options") != "nosniff" {
 		t.Errorf("transcript: %d %v %q", rec.Code, h, rec.Body.String())
+	}
+	// Ranges and conditional requests: the bytes asked for, or nothing when the client has them already.
+	rec = do(t, f.srv, request{target: transcript, header: map[string]string{"Range": "bytes=2-5"}})
+	if rec.Code != http.StatusPartialContent || rec.Body.String() != `role` || rec.Header().Get("Content-Length") != "4" ||
+		!strings.HasPrefix(rec.Header().Get("Content-Disposition"), "inline") {
+		t.Errorf("range: %d %v %q", rec.Code, rec.Header(), rec.Body.String())
+	}
+	rec = do(t, f.srv, request{target: transcript, header: map[string]string{"If-None-Match": h.Get("ETag")}})
+	if rec.Code != http.StatusNotModified || rec.Body.Len() != 0 {
+		t.Errorf("if-none-match: %d %q", rec.Code, rec.Body.String())
+	}
+	if h.Get("Content-Length") != "16" {
+		t.Errorf("content length = %q", h.Get("Content-Length"))
 	}
 	// What a browser would run is downloaded, never shown.
 	rec = do(t, f.srv, request{target: strings.Replace(transcript, "transcript.jsonl", "page.html", 1)})
@@ -543,5 +585,22 @@ func TestContractCatches(t *testing.T) {
 		if len(r.errs) == 0 {
 			t.Errorf("%d %s %s: no failure reported", tt.status, tt.contentType, tt.body)
 		}
+	}
+}
+
+// An enumerated filter with a value outside its enum is refused, never read as a filter matching nothing.
+func TestEnumFilters(t *testing.T) {
+	f := readFixture(t)
+	for _, target := range []string{"/api/v1/pipelines/listings/runs?state=done",
+		"/api/v1/pipelines/listings/runs/r1/deliveries?state=finished", "/api/v1/inbox?state=closed",
+		"/api/v1/inbox/samples?state=closed", "/api/v1/insights?state=snoozed"} {
+		rec := do(t, f.srv, request{target: target})
+		wantError(t, rec, http.StatusBadRequest, codeInvalid)
+		if !strings.Contains(rec.Body.String(), "want one of") {
+			t.Errorf("%s: %s", target, rec.Body.String())
+		}
+	}
+	if p := get[Page[Run]](t, f.srv, "/api/v1/pipelines/listings/runs?state=waitingReview"); len(p.Items) == 0 {
+		t.Error("a valid state filtered everything out")
 	}
 }

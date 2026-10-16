@@ -1390,6 +1390,15 @@ export interface components {
         'application/octet-stream': string;
       };
     };
+    /** @description The byte range of the artifact the Range header asked for. */
+    ArtifactRange: {
+      headers: {
+        [name: string]: unknown;
+      };
+      content: {
+        'application/octet-stream': string;
+      };
+    };
     /** @description A stream of server-sent events. */
     EventStream: {
       headers: {
@@ -1832,6 +1841,7 @@ export interface operations {
           'application/json': components['schemas']['Delivery'][];
         };
       };
+      400: components['responses']['Error'];
       404: components['responses']['Error'];
       default: components['responses']['Error'];
     };
@@ -1985,6 +1995,7 @@ export interface operations {
           'application/json': components['schemas']['Delivery'][];
         };
       };
+      400: components['responses']['Error'];
       404: components['responses']['Error'];
       default: components['responses']['Error'];
     };
@@ -2003,6 +2014,14 @@ export interface operations {
     requestBody?: never;
     responses: {
       200: components['responses']['Artifact'];
+      206: components['responses']['ArtifactRange'];
+      /** @description Not modified */
+      304: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
       404: components['responses']['Error'];
       503: components['responses']['Error'];
       default: components['responses']['Error'];
@@ -2048,6 +2067,14 @@ export interface operations {
     requestBody?: never;
     responses: {
       200: components['responses']['Artifact'];
+      206: components['responses']['ArtifactRange'];
+      /** @description Not modified */
+      304: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
       400: components['responses']['Error'];
       404: components['responses']['Error'];
       503: components['responses']['Error'];
@@ -2416,6 +2443,7 @@ export interface operations {
           'application/json': components['schemas']['Insight'][];
         };
       };
+      400: components['responses']['Error'];
       default: components['responses']['Error'];
     };
   };

@@ -76,7 +76,7 @@ func (s *Store) Put(pipeline, name string, r io.Reader) (Ref, error) {
 }
 
 // Open opens the content of pipeline's artifact sha. A missing artifact is an error wrapping fs.ErrNotExist.
-func (s *Store) Open(pipeline, sha string) (io.ReadCloser, error) {
+func (s *Store) Open(pipeline, sha string) (io.ReadSeekCloser, error) {
 	dir, err := s.pipelineDir(pipeline)
 	if err != nil {
 		return nil, err

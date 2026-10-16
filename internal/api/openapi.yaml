@@ -232,6 +232,7 @@ paths:
           content:
             application/json:
               schema: { type: array, items: { $ref: "#/components/schemas/Delivery" } }
+        "400": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
   /pipelines/{pipeline}/replay:
     parameters: [{ $ref: "#/components/parameters/pipeline" }]
@@ -326,6 +327,7 @@ paths:
           content:
             application/json:
               schema: { type: array, items: { $ref: "#/components/schemas/Delivery" } }
+        "400": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
   /pipelines/{pipeline}/items/{item}/artifacts/{name}:
     parameters:
@@ -338,6 +340,8 @@ paths:
       responses:
         default: { $ref: "#/components/responses/Error" }
         "200": { $ref: "#/components/responses/Artifact" }
+        "206": { $ref: "#/components/responses/ArtifactRange" }
+        "304": { description: Not modified, the client's copy (If-None-Match on the ETag) is current. }
         "404": { $ref: "#/components/responses/Error" }
         "503": { $ref: "#/components/responses/Error" }
   /pipelines/{pipeline}/deliveries/{delivery}:
@@ -365,6 +369,8 @@ paths:
       responses:
         default: { $ref: "#/components/responses/Error" }
         "200": { $ref: "#/components/responses/Artifact" }
+        "206": { $ref: "#/components/responses/ArtifactRange" }
+        "304": { description: Not modified, the client's copy (If-None-Match on the ETag) is current. }
         "400": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
         "503": { $ref: "#/components/responses/Error" }
@@ -583,6 +589,7 @@ paths:
           content:
             application/json:
               schema: { type: array, items: { $ref: "#/components/schemas/Insight" } }
+        "400": { $ref: "#/components/responses/Error" }
   /metrics:
     get:
       operationId: getMetrics
@@ -736,6 +743,11 @@ components:
           schema: { $ref: "#/components/schemas/Error" }
     Artifact:
       description: The artifact's content, served as its media type under a sandbox policy.
+      content:
+        application/octet-stream:
+          schema: { type: string, format: binary }
+    ArtifactRange:
+      description: The byte range of the artifact the Range header asked for.
       content:
         application/octet-stream:
           schema: { type: string, format: binary }
