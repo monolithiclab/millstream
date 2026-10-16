@@ -1,0 +1,20 @@
+# The image build (Dockerfile) needs only the Go sources, the SDK module and the UI sources: everything else stays
+# out of the context, the history, local stores, builds and node_modules above all.
+*
+!go.mod
+!go.sum
+!LICENSE
+!cmd/
+!internal/
+!sdk/
+!ui/
+**/*_test.go
+**/testdata
+**/.millstream
+ui/node_modules
+ui/coverage
+ui/playwright-report
+ui/test-results
+ui/e2e
+internal/ui/dist/*
+!internal/ui/dist/placeholder.html

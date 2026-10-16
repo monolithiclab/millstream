@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+# Smoke test of the container image (make test-image): the binary prints its version, and `millstream run` over the
+# UI's e2e fixture (builtin steps only) serves the built web UI, not the placeholder, its assets and the API.
+# run listens on the container's loopback only (it refuses anything else until serve), so a container of the node
+# image joins its network namespace to fetch the pages.
+# Usage: scripts/test-image <image> <node image>
+set -euo pipefail
+
+image=$1
+node_image=$2
+root=$(cd "$(dirname "$0")/.." && pwd)
+name=millstream-test-image-$$
+
+cleanup() { docker rm -f "$name" >/dev/null 2>&1 || true; }
+trap cleanup EXIT
+
+version=$(docker run --rm "$image" version)
+[ -n "$version" ] || { echo "test-image: version printed nothing" >&2; exit 1; }
+echo "version: $version"
+
+docker run -d --name "$name" -v "$root/ui/e2e/fixture:/pkg:ro" "$image" run /pkg >/dev/null
+
+# The fetches wait for the listener for up to 30 s: start-up is the only thing they wait on.
+# shellcheck disable=SC2016 # JavaScript template literals, not shell expansions
+check='
+const base = "http://127.0.0.1:7070";
+const deadline = Date.now() + 30000;
+async function get(path) {
+  for (;;) {
+    try {
+      const res = await fetch(base + path);
+      return { status: res.status, type: res.headers.get("content-type") || "", body: await res.text() };
+    } catch (err) {
+      if (Date.now() > deadline) throw new Error(`${path}: ${err.cause?.code || err.message}`);
+      await new Promise((r) => setTimeout(r, 250));
+    }
+  }
+}
+function want(cond, msg) { if (!cond) { console.error(`test-image: ${msg}`); process.exit(1); } }
+const index = await get("/");
+want(index.status === 200 && index.type.startsWith("text/html"), `/ answered ${index.status} ${index.type}`);
+want(!index.body.includes("built without the web UI"), "/ serves the placeholder: the UI is not embedded");
+const asset = index.body.match(/src="(\/assets\/[^"]+\.js)"/);
+want(asset, "/ names no /assets/ script");
+const js = await get(asset[1]);
+want(js.status === 200 && js.body.length > 1000, `${asset[1]} answered ${js.status}, ${js.body.length} bytes`);
+const route = await get("/runs");
+want(route.status === 200 && route.body === index.body, "/runs does not serve the SPA index");
+const api = await get("/api/v1/openapi.yaml");
+want(api.status === 200 && api.body.startsWith("openapi:"), `/api/v1/openapi.yaml answered ${api.status}`);
+const pipelines = await get("/api/v1/pipelines");
+want(pipelines.status === 200 && pipelines.body.includes("listings-daily"), "the fixture pipeline is not applied");
+console.log(`serves the UI (${asset[1]}) and the API`);
+'
+if ! docker run --rm --network "container:$name" "$node_image" node --input-type=module -e "$check"; then
+	echo "test-image: millstream run logs:" >&2
+	docker logs "$name" >&2 || true
+	exit 1
+fi
