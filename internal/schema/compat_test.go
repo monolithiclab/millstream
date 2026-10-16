@@ -273,7 +273,6 @@ func TestCompatible(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
 			assertFindings(t, Compatible([]byte(tt.producer), []byte(tt.consumer)), tt.want)
 		})
 	}
@@ -296,7 +295,6 @@ func TestCompatibleOutsideSubset(t *testing.T) {
 	for kw, fragment := range keywords {
 		for _, side := range []string{"producer", "consumer"} {
 			t.Run(side+" "+kw, func(t *testing.T) {
-				t.Parallel()
 				weird := `{"type": "object", "properties": {"x": {` + fragment + `}, "y": {"type": "string"}}, "required": ["x", "y"]}`
 				plain := `{"type": "object", "properties": {"x": {"type": "string"}, "y": {"type": "integer"}}, "required": ["x", "y"]}`
 				producer, consumer := weird, plain

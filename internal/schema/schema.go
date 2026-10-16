@@ -14,6 +14,8 @@ import (
 	"github.com/santhosh-tekuri/jsonschema/v6"
 	"golang.org/x/text/language"
 	"golang.org/x/text/message"
+
+	"github.com/monolithiclab/millstream/internal/memo"
 )
 
 // docURL is the location the compiled document is registered under; nothing is ever fetched from it.
@@ -25,8 +27,27 @@ type Schema struct {
 }
 
 // Compile compiles a JSON Schema document (draft 2020-12 unless it says otherwise). formats are asserted. Any
-// $ref that is not a same-document fragment (# or #/...) is refused.
+// $ref that is not a same-document fragment (# or #/...) is refused. A document compiles once per process: the same
+// schemas come back (a step's output schemas for each review decision, an action's for each revision loaded), and a
+// compiled schema is safe for concurrent validation, so callers share it.
 func Compile(doc []byte) (*Schema, error) {
+	c := compiled.Get(string(doc), func() compiledSchema {
+		s, err := compile(doc)
+		return compiledSchema{s, err}
+	})
+	return c.s, c.err
+}
+
+// compiled holds Compile's results: revisions' documents, but nothing bounds how many revisions a long-lived process
+// applies.
+var compiled = memo.New[string, compiledSchema](256)
+
+type compiledSchema struct {
+	s   *Schema
+	err error
+}
+
+func compile(doc []byte) (*Schema, error) {
 	v, err := parse(doc)
 	if err != nil {
 		return nil, err

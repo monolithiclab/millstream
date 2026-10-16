@@ -38,7 +38,6 @@ func TestCompileAndValidate(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
 			var v any
 			if err := json.Unmarshal([]byte(tt.doc), &v); err != nil {
 				t.Fatal(err)
@@ -54,6 +53,17 @@ func TestCompileAndValidate(t *testing.T) {
 				t.Fatalf("Validate error = %v, want it to mention %q", err, tt.wantErr)
 			}
 		})
+	}
+}
+
+// A document compiles once: the same schema serves every caller.
+func TestCompileCache(t *testing.T) {
+	t.Parallel()
+	doc := []byte(`{"type": "string", "title": "cached"}`)
+	a, errA := Compile(doc)
+	b, errB := Compile(doc)
+	if errA != nil || errB != nil || a != b {
+		t.Fatalf("schemas %p %p, errors %v %v: want one", a, b, errA, errB)
 	}
 }
 
@@ -75,7 +85,6 @@ func TestCompileRefusesNonLocalRefs(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
 			_, err := Compile([]byte(tt.doc))
 			if err == nil || !strings.Contains(err.Error(), tt.want) {
 				t.Fatalf("Compile error = %v, want it to contain %q", err, tt.want)
@@ -118,7 +127,6 @@ func TestViolations(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
 			got := s.Violations(tt.v)
 			if len(got) != len(tt.want) {
 				t.Fatalf("got %+v, want %v", got, tt.want)
