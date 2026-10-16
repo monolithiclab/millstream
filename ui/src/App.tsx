@@ -8,6 +8,7 @@ import { PreferencesProvider, type Theme } from './preferences';
 import { NotFound } from './screens/NotFound';
 import { Placeholder } from './screens/Placeholder';
 import { DeadLettersScreen } from './screens/deadLetters/DeadLettersScreen';
+import { GraphScreen } from './screens/graph/GraphScreen';
 import { ItemScreen } from './screens/item/ItemScreen';
 import { PipelinesScreen } from './screens/pipelines/PipelinesScreen';
 import { routePattern, screens, type ScreenId } from './routes';
@@ -17,6 +18,7 @@ import { AppShell } from './shell/AppShell';
 const built: Partial<Record<ScreenId, ReactNode>> = {
   pipelines: <PipelinesScreen />,
   deadLetters: <DeadLettersScreen />,
+  graph: <GraphScreen />,
 };
 
 export function AppRoutes() {

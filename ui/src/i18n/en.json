@@ -131,6 +131,121 @@
     "failing": "Failing",
     "slow": "Slow"
   },
+  "graph": {
+    "kind": {
+      "action": "Action",
+      "dedupe": "Dedupe",
+      "review": "Review",
+      "filter": "Filter"
+    },
+    "insightKind": {
+      "slowStep": "slow step",
+      "failureCluster": "failure cluster",
+      "cost": "cost",
+      "reviewPattern": "review pattern",
+      "unschedulable": "unschedulable"
+    },
+    "figure": {
+      "waiting": "no figures yet",
+      "errorRate": "error rate",
+      "p95": "p95 latency",
+      "queued": "waiting",
+      "toReview": "to review",
+      "passRate": "pass rate",
+      "inFlight": "in flight",
+      "noSnapshot": "Live figures appear with the first update."
+    },
+    "badge": {
+      "deadOne": "{{n}} dead",
+      "deadOther": "{{n}} dead",
+      "slow": "Slow",
+      "cluster": "Cluster",
+      "cost": "Cost",
+      "review": "Review",
+      "unschedulable": "No node",
+      "insight": "Insight"
+    },
+    "stepLabel": "{{name}}, {{kind}} step, {{state}}, {{value}} {{label}}",
+    "node": {
+      "pace": "{{n}}/min",
+      "p95": "p95 {{d}}",
+      "errors": "err {{p}}",
+      "slots": "{{n}} slots",
+      "filtered": "{{n}} filtered"
+    },
+    "trigger": {
+      "cron": "cron {{schedule}}",
+      "webhook": "webhook",
+      "manual": "manual"
+    },
+    "panel": {
+      "close": "Close panel",
+      "subtitle": "{{kind}} step · {{action}} · revision {{revision}}",
+      "pauseCause": "Paused by {{cause}}",
+      "resume": "Resume step",
+      "pause": "Pause step",
+      "items": "Open its items",
+      "insight": "Insight · {{kind}}",
+      "seeInsights": "See insights",
+      "toReview": "To review",
+      "inFlight": "In flight",
+      "slots": "of {{n}} slots",
+      "waiting": "Waiting",
+      "pace": "Pace",
+      "perMinute": "{{n}}/min",
+      "p95": "Slowest 5 %",
+      "errors": "Errors",
+      "deadOne": "{{n}} open dead letter",
+      "deadOther": "{{n}} open dead letters",
+      "failures": "Recent failures",
+      "allDeadLetters": "All dead letters",
+      "noFailures": "No open dead letters at this step.",
+      "replay": "Replay",
+      "discard": "Discard",
+      "moreFailures": "{{n}} more in the dead letters."
+    },
+    "stepRole": "step",
+    "triggerRole": "trigger",
+    "triggerLabel": "Trigger {{name}}",
+    "channelLabel": "Stream {{stream}} from {{from}} to {{to}}: {{n}} items, {{queued}} waiting",
+    "channelRole": "channel",
+    "canvas": "Pipeline graph",
+    "zoomOut": "Zoom out",
+    "fit": "Fit",
+    "zoomIn": "Zoom in",
+    "minimap": "Minimap",
+    "table": {
+      "summary": "Steps as a table",
+      "caption": "Steps and their live figures",
+      "step": "Step",
+      "state": "State",
+      "pace": "Pace",
+      "deadLetters": "Dead letters"
+    },
+    "run": {
+      "label": "Run {{time}} so far",
+      "title": "Run {{time}} so far",
+      "deadLetters": "dead letters",
+      "cost": "cost"
+    },
+    "overlay": "Overlay",
+    "overlays": {
+      "flow": "Flow",
+      "errors": "Errors",
+      "latency": "Latency",
+      "queues": "Queues"
+    },
+    "hint": "Channel width: items in the stream · grains: pace into the next step",
+    "error": "The graph could not be loaded.",
+    "empty": {
+      "title": "No steps",
+      "body": "This revision of the pipeline has no steps to draw."
+    },
+    "paused": "{{step}} paused: its deliveries wait until you resume it.",
+    "resumed": "{{step}} resumed.",
+    "pauseFailed": "Couldn’t pause {{step}}: {{message}} Nothing changed.",
+    "resumeFailed": "Couldn’t resume {{step}}: {{message}} Nothing changed."
+  },
   "deadLetters": {
     "migrate": "Move their runs to the active revision {{revision}} first",
     "migrateHint": "They ran on {{revisions}}. Fixing a route usually needs it.",

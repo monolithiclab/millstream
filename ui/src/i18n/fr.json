@@ -131,6 +131,121 @@
     "failing": "En échec",
     "slow": "Lent"
   },
+  "graph": {
+    "kind": {
+      "action": "Action",
+      "dedupe": "Dédoublonnage",
+      "review": "Revue",
+      "filter": "Filtre"
+    },
+    "insightKind": {
+      "slowStep": "étape lente",
+      "failureCluster": "grappe d’échecs",
+      "cost": "coût",
+      "reviewPattern": "tendance de revue",
+      "unschedulable": "non planifiable"
+    },
+    "figure": {
+      "waiting": "pas encore de chiffres",
+      "errorRate": "taux d’erreur",
+      "p95": "latence p95",
+      "queued": "en file",
+      "toReview": "à revoir",
+      "passRate": "taux de passage",
+      "inFlight": "en cours",
+      "noSnapshot": "Les chiffres en direct arrivent avec la première mise à jour."
+    },
+    "badge": {
+      "deadOne": "{{n}} mort",
+      "deadOther": "{{n}} morts",
+      "slow": "Lente",
+      "cluster": "Grappe",
+      "cost": "Coût",
+      "review": "Revue",
+      "unschedulable": "Aucun nœud",
+      "insight": "Analyse"
+    },
+    "stepLabel": "{{name}}, étape {{kind}}, {{state}}, {{value}} {{label}}",
+    "node": {
+      "pace": "{{n}}/min",
+      "p95": "p95 {{d}}",
+      "errors": "err. {{p}}",
+      "slots": "{{n}} places",
+      "filtered": "{{n}} filtrés"
+    },
+    "trigger": {
+      "cron": "cron {{schedule}}",
+      "webhook": "webhook",
+      "manual": "manuel"
+    },
+    "panel": {
+      "close": "Fermer le panneau",
+      "subtitle": "Étape {{kind}} · {{action}} · révision {{revision}}",
+      "pauseCause": "Mise en pause par {{cause}}",
+      "resume": "Reprendre l’étape",
+      "pause": "Mettre en pause",
+      "items": "Ouvrir ses items",
+      "insight": "Analyse · {{kind}}",
+      "seeInsights": "Voir les analyses",
+      "toReview": "À revoir",
+      "inFlight": "En cours",
+      "slots": "sur {{n}} places",
+      "waiting": "En file",
+      "pace": "Débit",
+      "perMinute": "{{n}}/min",
+      "p95": "5 % les plus lents",
+      "errors": "Erreurs",
+      "deadOne": "{{n}} lettre morte ouverte",
+      "deadOther": "{{n}} lettres mortes ouvertes",
+      "failures": "Échecs récents",
+      "allDeadLetters": "Toutes les lettres mortes",
+      "noFailures": "Aucune lettre morte ouverte à cette étape.",
+      "replay": "Rejouer",
+      "discard": "Abandonner",
+      "moreFailures": "{{n}} autres dans les lettres mortes."
+    },
+    "stepRole": "étape",
+    "triggerRole": "déclencheur",
+    "triggerLabel": "Déclencheur {{name}}",
+    "channelLabel": "Flux {{stream}} de {{from}} vers {{to}} : {{n}} items, {{queued}} en file",
+    "channelRole": "canal",
+    "canvas": "Graphe du pipeline",
+    "zoomOut": "Dézoomer",
+    "fit": "Ajuster",
+    "zoomIn": "Zoomer",
+    "minimap": "Mini-carte",
+    "table": {
+      "summary": "Les étapes en tableau",
+      "caption": "Les étapes et leurs chiffres en direct",
+      "step": "Étape",
+      "state": "État",
+      "pace": "Débit",
+      "deadLetters": "Lettres mortes"
+    },
+    "run": {
+      "label": "Exécution de {{time}} jusqu’ici",
+      "title": "Exécution de {{time}} jusqu’ici",
+      "deadLetters": "lettres mortes",
+      "cost": "coût"
+    },
+    "overlay": "Superposition",
+    "overlays": {
+      "flow": "Flux",
+      "errors": "Erreurs",
+      "latency": "Latence",
+      "queues": "Files"
+    },
+    "hint": "Largeur du canal : items du flux · grains : débit vers l’étape suivante",
+    "error": "Le graphe n’a pas pu être chargé.",
+    "empty": {
+      "title": "Aucune étape",
+      "body": "Cette révision du pipeline n’a aucune étape à dessiner."
+    },
+    "paused": "{{step}} en pause : ses livraisons attendent que vous la repreniez.",
+    "resumed": "{{step}} a repris.",
+    "pauseFailed": "Impossible de mettre {{step}} en pause : {{message}} Rien n’a changé.",
+    "resumeFailed": "Impossible de reprendre {{step}} : {{message}} Rien n’a changé."
+  },
   "deadLetters": {
     "migrate": "Passer d’abord leurs exécutions à la révision active {{revision}}",
     "migrateHint": "Elles ont tourné sur {{revisions}}. C’est souvent nécessaire pour corriger une route.",

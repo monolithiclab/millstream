@@ -1,0 +1,39 @@
+/* The pipeline graph: React Flow's structural base, themed with the canvas tokens, and the drifting grains. */
+@import '@xyflow/react/dist/base.css';
+
+.react-flow {
+  --xy-background-pattern-color: var(--ms-line);
+  --xy-minimap-background-color: var(--ms-surface);
+  --xy-minimap-mask-background-color: color-mix(in srgb, var(--ms-bg) 60%, transparent);
+  --xy-minimap-node-background-color: var(--ms-line-strong);
+  /* Focus inside a node never scrolls the pane: the viewport moves only by pan and zoom. */
+  overflow: clip;
+}
+
+.react-flow__minimap {
+  border: 1px solid var(--ms-line);
+  border-radius: var(--ms-radius-1);
+}
+
+/* Grains drift along a channel at 24 px/s: the dash pattern shifts by one period per period / 24 s. */
+@keyframes ms-grain {
+  to {
+    stroke-dashoffset: var(--ms-grain-shift);
+  }
+}
+
+.ms-grains-moving {
+  animation: ms-grain var(--ms-grain-duration) linear infinite;
+}
+
+/* A hidden tab holds the grains where they are. */
+.ms-grains-paused {
+  animation-play-state: paused;
+}
+
+/* Reduced motion: the screen never sets the moving class; this is the belt to those braces. */
+@media (prefers-reduced-motion: reduce) {
+  .ms-grains-moving {
+    animation: none;
+  }
+}
