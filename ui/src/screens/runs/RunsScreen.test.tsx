@@ -155,7 +155,14 @@ describe('RunScreen', () => {
     await user.click(step);
     expect(step).toHaveAttribute('aria-expanded', 'true');
     expect(screen.getByText(/score: deliveries over the run \(11\)/)).toBeInTheDocument();
-    const bars = screen.getAllByRole('button', { name: /deliveries$/ });
+    const bars = screen.getAllByRole('button', { name: /: \d+ deliver(y|ies)$/ });
+    // A bar of one says so in the singular, others in the plural.
+    expect(bars.map((b) => b.getAttribute('aria-label') ?? b.textContent)).toEqual(
+      expect.arrayContaining([
+        expect.stringMatching(/: 1 delivery$/),
+        expect.stringMatching(/: [02-9]\d* deliveries$/),
+      ]),
+    );
     await user.click(bars[0]!);
     expect(bars[0]).toHaveAttribute('aria-pressed', 'true');
     const items = screen.getByRole('list', { name: 'Items in this bar' });

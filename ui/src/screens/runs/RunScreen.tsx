@@ -4,7 +4,14 @@ import { Link, useParams } from 'react-router-dom';
 import { liveUrls, withQuery, type Api } from '../../api/api';
 import { useApi } from '../../api/context';
 import type { Delivery, Pipeline, Run, RunReport } from '../../api/schema';
-import { formatClock, formatDuration, formatMoney, formatNumber, formatPercent } from '../../i18n/format';
+import {
+  formatClock,
+  formatDuration,
+  formatMoney,
+  formatNumber,
+  formatPercent,
+  pluralCategory,
+} from '../../i18n/format';
 import { useCoalescedRefresh } from '../../live/useCoalescedRefresh';
 import { useLiveStream } from '../../live/useLiveStream';
 import { usePreferences } from '../../preferences';
@@ -408,7 +415,7 @@ function Density({
       <p className="m-0 text-tiny text-ink-2">{t('runs.density', { step: row.step, count: row.deliveries.length })}</p>
       <div className="flex h-12 items-end gap-px">
         {bins.map((bin, i) => {
-          const label = t('runs.bin', {
+          const label = t(pluralCategory(bin.length, language) === 'one' ? 'runs.binOne' : 'runs.binOther', {
             from: clock(from + i * width),
             to: clock(from + (i + 1) * width),
             count: bin.length,
@@ -551,7 +558,7 @@ function Report({
               <li key={s.step} className="flex flex-wrap items-baseline gap-x-2.5">
                 <span className="font-mono text-tiny font-bold">{s.step}</span>
                 <span className="text-ink-2">
-                  {t('runs.p95', {
+                  {t(pluralCategory(s.deliveries, language) === 'one' ? 'runs.p95One' : 'runs.p95Other', {
                     p95: formatDuration(s.p95Seconds * 1000, language),
                     count: formatNumber(s.deliveries, language),
                     cost: formatMoney(s.costUsd, language),

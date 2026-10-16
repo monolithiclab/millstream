@@ -71,7 +71,8 @@
     "help": "All shortcuts",
     "close": "Close a panel or dialog and return to where you were",
     "singleKeys": "Single-key shortcuts",
-    "singleKeysHint": "Turn them off if they get in the way of speech input or another tool. ⌘K and Ctrl+K stay on."
+    "singleKeysHint": "Turn them off if they get in the way of speech input or another tool. ⌘K and Ctrl+K stay on.",
+    "esc": "Esc"
   },
   "dialog": {
     "close": "Close"
@@ -147,7 +148,8 @@
       "pace": "{{n}}/min",
       "p95": "p95 {{d}}",
       "errors": "err {{p}}",
-      "slots": "{{n}} slots",
+      "slotsOne": "{{n}} slot",
+      "slotsOther": "{{n}} slots",
       "filtered": "{{n}} filtered"
     },
     "trigger": {
@@ -166,7 +168,8 @@
       "seeInsights": "See insights",
       "toReview": "To review",
       "inFlight": "In flight",
-      "slots": "of {{n}} slots",
+      "slotsOne": "of {{n}} slot",
+      "slotsOther": "of {{n}} slots",
       "waiting": "Waiting",
       "pace": "Pace",
       "perMinute": "{{n}}/min",
@@ -590,7 +593,8 @@
       "drained": "drained {{time}}"
     },
     "density": "{{step}}: deliveries over the run ({{count}}). Pick a bar to list its items.",
-    "bin": "{{from}} to {{to}}: {{count}} deliveries",
+    "binOne": "{{from}} to {{to}}: {{count}} delivery",
+    "binOther": "{{from}} to {{to}}: {{count}} deliveries",
     "binItems": "Items in this bar",
     "delivery": {
       "pending": "pending",
@@ -614,7 +618,8 @@
     "noPath": "No critical path yet.",
     "people": "people",
     "slowest": "Slowest steps",
-    "p95": "p95 {{p95}} · {{count}} deliveries · {{cost}}",
+    "p95One": "p95 {{p95}} · {{count}} delivery · {{cost}}",
+    "p95Other": "p95 {{p95}} · {{count}} deliveries · {{cost}}",
     "failures": "Failures by cluster",
     "noFailures": "No failure in this run.",
     "recovered": "recovered on retry: {{count}}",

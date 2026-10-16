@@ -390,7 +390,7 @@ export function InboxScreen() {
                     className={`${buttons.secondary} hidden h-11 px-4 text-ui md:inline-flex`}
                   >
                     {t('inbox.discard')}
-                    <Kbd>Esc</Kbd>
+                    <Kbd>{t('shortcuts.esc')}</Kbd>
                   </button>
                 )}
                 <span className="hidden flex-1 md:block" />

@@ -13,7 +13,7 @@ export function ShortcutHelp({ onClose }: { onClose: () => void }) {
     [['⌘K', 'Ctrl+K'], t('shortcuts.palette')],
     [['g', '…'], t('shortcuts.goTo')],
     [['?'], t('shortcuts.help')],
-    [['Esc'], t('shortcuts.close')],
+    [[t('shortcuts.esc')], t('shortcuts.close')],
   ];
   return (
     <Dialog labelledBy={titleId} onClose={onClose}>

@@ -38,6 +38,7 @@ function useNote() {
   return (d: Delivery): string => {
     switch (d.state) {
       case 'done':
+        // Counted from two attempts on, so always plural.
         return d.attempt > 1 ? t('item.journey.attempts', { n: f.num(d.attempt) }) : t('item.journey.doneFirst');
       case 'filtered':
         return d.filterReason ? t('item.journey.filteredBy', { reason: d.filterReason }) : t('item.journey.filtered');

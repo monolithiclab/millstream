@@ -266,3 +266,13 @@ describe('demo mode', () => {
     expect(assign).toHaveBeenCalledWith('http://localhost/p/x/graph?step=a');
   });
 });
+
+describe('shortcut help', () => {
+  it('names the Escape key in the reader’s language', async () => {
+    renderApp({ route: '/pipelines', language: 'fr' });
+    fireEvent.keyDown(document.body, { key: '?' });
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByText('Échap')).toBeInTheDocument();
+    expect(within(dialog).queryByText('Esc')).not.toBeInTheDocument();
+  });
+});

@@ -169,7 +169,9 @@ export function StepPanel({
             <Stat
               label={t('graph.panel.inFlight')}
               value={f.num(fig.inFlight)}
-              sub={t('graph.panel.slots', { n: f.num(model.step.concurrency) })}
+              sub={t(f.plural(model.step.concurrency, 'graph.panel.slotsOne', 'graph.panel.slotsOther'), {
+                n: f.num(model.step.concurrency),
+              })}
             />
             <Stat
               label={t('graph.panel.waiting')}

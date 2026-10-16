@@ -225,7 +225,11 @@ export function StepNode({ data }: NodeProps<StepNodeType>) {
                 <span className={fig.errorRate > 0 ? 'text-bad' : ''}>
                   {t('graph.node.errors', { p: f.percent(fig.errorRate) })}
                 </span>
-                <span>{t('graph.node.slots', { n: f.num(model.step.concurrency) })}</span>
+                <span>
+                  {t(f.plural(model.step.concurrency, 'graph.node.slotsOne', 'graph.node.slotsOther'), {
+                    n: f.num(model.step.concurrency),
+                  })}
+                </span>
               </>
             )}
           </span>

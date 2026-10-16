@@ -71,7 +71,8 @@
     "help": "Tous les raccourcis",
     "close": "Fermer un panneau ou une boîte de dialogue et revenir où vous étiez",
     "singleKeys": "Raccourcis à une touche",
-    "singleKeysHint": "Désactivez-les s’ils gênent la saisie vocale ou un autre outil. ⌘K et Ctrl+K restent actifs."
+    "singleKeysHint": "Désactivez-les s’ils gênent la saisie vocale ou un autre outil. ⌘K et Ctrl+K restent actifs.",
+    "esc": "Échap"
   },
   "dialog": {
     "close": "Fermer"
@@ -147,7 +148,8 @@
       "pace": "{{n}}/min",
       "p95": "p95 {{d}}",
       "errors": "err. {{p}}",
-      "slots": "{{n}} places",
+      "slotsOne": "{{n}} place",
+      "slotsOther": "{{n}} places",
       "filtered": "{{n}} filtrés"
     },
     "trigger": {
@@ -166,7 +168,8 @@
       "seeInsights": "Voir les constats",
       "toReview": "À revoir",
       "inFlight": "En cours",
-      "slots": "sur {{n}} places",
+      "slotsOne": "sur {{n}} place",
+      "slotsOther": "sur {{n}} places",
       "waiting": "En file",
       "pace": "Débit",
       "perMinute": "{{n}}/min",
@@ -590,7 +593,8 @@
       "drained": "vidé à {{time}}"
     },
     "density": "{{step}} : livraisons au fil du run ({{count}}). Choisissez une barre pour lister ses items.",
-    "bin": "De {{from}} à {{to}} : {{count}} livraisons",
+    "binOne": "De {{from}} à {{to}} : {{count}} livraison",
+    "binOther": "De {{from}} à {{to}} : {{count}} livraisons",
     "binItems": "Items de cette barre",
     "delivery": {
       "pending": "en attente",
@@ -614,7 +618,8 @@
     "noPath": "Pas encore de chemin critique.",
     "people": "personnes",
     "slowest": "Étapes les plus lentes",
-    "p95": "p95 {{p95}} · {{count}} livraisons · {{cost}}",
+    "p95One": "p95 {{p95}} · {{count}} livraison · {{cost}}",
+    "p95Other": "p95 {{p95}} · {{count}} livraisons · {{cost}}",
     "failures": "Échecs par groupe",
     "noFailures": "Aucun échec dans ce run.",
     "recovered": "rattrapés au nouvel essai : {{count}}",
