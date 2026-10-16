@@ -11,6 +11,7 @@ import { CommandPalette, type Command } from './CommandPalette';
 import { Kbd } from './Kbd';
 import { LiveIndicator } from './LiveIndicator';
 import { PipelineSwitcher } from './PipelineSwitcher';
+import { ShellNoticeProvider } from './ShellNotice';
 import { ShortcutHelp } from './ShortcutHelp';
 import { useDismiss } from './useDismiss';
 import { useShortcuts } from './useShortcuts';
@@ -152,99 +153,101 @@ export function AppShell() {
   const closeMenu = () => setMenu(false);
 
   return (
-    <div className="flex min-h-dvh bg-bg text-ink">
-      <a
-        href="#main"
-        className="fixed top-2 left-2 z-[60] -translate-y-24 rounded-1 bg-accent px-3 py-2 font-bold text-accent-ink focus-visible:translate-y-0"
-      >
-        {t('shell.skipToContent')}
-      </a>
-
-      <nav
-        ref={nav}
-        id="main-nav"
-        aria-label={t('shell.mainNav')}
-        className={`${menu ? 'fixed inset-y-0 left-0 z-40 flex shadow-2' : 'hidden'} w-[228px] flex-none flex-col gap-[22px] overflow-y-auto border-r border-line bg-surface-2 px-3 py-[18px] md:sticky md:top-0 md:flex md:h-dvh md:shadow-none`}
-      >
-        <div className="flex items-center gap-2.5 px-2">
-          <Logo />
-          <span className="font-display text-[26px] leading-[26px] tracking-[-0.01em]">{t('app.name')}</span>
-        </div>
-        <PipelineSwitcher current={pipeline} pipelines={pipelines} />
-        <NavGroup title={t('shell.workspace')} items={workspaceScreens} pipeline={pipeline} onNavigate={closeMenu} />
-        {pipeline !== undefined && (
-          <NavGroup title={t('shell.pipeline')} items={pipelineScreens} pipeline={pipeline} onNavigate={closeMenu} />
-        )}
-        <div className="mt-auto flex flex-col gap-2 border-t border-line px-2.5 pt-3 text-small text-ink-2">
-          <h2 className="sr-only">{t('shell.preferences')}</h2>
-          <label className="flex flex-col gap-1">
-            {t('theme.label')}
-            <select
-              value={prefs.theme}
-              onChange={(e) => prefs.setTheme(e.target.value as Theme)}
-              className={selectClass}
-            >
-              {themes.map((theme) => (
-                <option key={theme} value={theme}>
-                  {t(themeNames[theme])}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="flex flex-col gap-1">
-            {t('language.label')}
-            <select
-              value={prefs.language}
-              onChange={(e) => prefs.setLanguage(e.target.value as Language)}
-              className={selectClass}
-            >
-              {languages.map((language) => (
-                <option key={language} value={language} lang={language}>
-                  {t(languageNames[language])}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-      </nav>
-
-      <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex min-h-14 flex-none flex-wrap items-center gap-x-4 gap-y-2 border-b border-line bg-surface px-3 py-2 md:px-6">
-          <button
-            ref={menuButton}
-            type="button"
-            aria-expanded={menu}
-            aria-controls="main-nav"
-            onClick={() => setMenu(!menu)}
-            className="inline-flex size-11 items-center justify-center rounded-1 md:hidden"
-          >
-            <span className="sr-only">{menu ? t('shell.closeMenu') : t('shell.openMenu')}</span>
-            <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
-              <path d="M3 5H15M3 9H15M3 13H15" stroke="currentColor" strokeWidth="1.6" />
-            </svg>
-          </button>
-          <div className="flex-1" />
-          {pipeline !== undefined && <LiveIndicator state={live} />}
-          <button
-            type="button"
-            onClick={() => setPalette(true)}
-            className="inline-flex min-w-0 items-center gap-2.5 rounded-1 border border-line bg-bg px-2.5 py-1.5 text-left text-small text-ink-2 md:w-[260px]"
-          >
-            <span className="min-w-0 flex-1 truncate">{t('shell.search')}</span>
-            <Kbd>{isMac ? '⌘K' : 'Ctrl+K'}</Kbd>
-          </button>
-        </header>
-        <main
-          id="main"
-          tabIndex={-1}
-          className={`flex-1 px-4 py-6 focus-visible:outline-none md:px-7 ${live.stale ? 'live-stale' : ''}`}
+    <ShellNoticeProvider>
+      <div className="flex min-h-dvh bg-bg text-ink">
+        <a
+          href="#main"
+          className="fixed top-2 left-2 z-[60] -translate-y-24 rounded-1 bg-accent px-3 py-2 font-bold text-accent-ink focus-visible:translate-y-0"
         >
-          <Outlet />
-        </main>
-      </div>
+          {t('shell.skipToContent')}
+        </a>
 
-      {palette && <CommandPalette commands={commands} onClose={() => setPalette(false)} />}
-      {help && <ShortcutHelp onClose={() => setHelp(false)} />}
-    </div>
+        <nav
+          ref={nav}
+          id="main-nav"
+          aria-label={t('shell.mainNav')}
+          className={`${menu ? 'fixed inset-y-0 left-0 z-40 flex shadow-2' : 'hidden'} w-[228px] flex-none flex-col gap-[22px] overflow-y-auto border-r border-line bg-surface-2 px-3 py-[18px] md:sticky md:top-0 md:flex md:h-dvh md:shadow-none`}
+        >
+          <div className="flex items-center gap-2.5 px-2">
+            <Logo />
+            <span className="font-display text-[26px] leading-[26px] tracking-[-0.01em]">{t('app.name')}</span>
+          </div>
+          <PipelineSwitcher current={pipeline} pipelines={pipelines} />
+          <NavGroup title={t('shell.workspace')} items={workspaceScreens} pipeline={pipeline} onNavigate={closeMenu} />
+          {pipeline !== undefined && (
+            <NavGroup title={t('shell.pipeline')} items={pipelineScreens} pipeline={pipeline} onNavigate={closeMenu} />
+          )}
+          <div className="mt-auto flex flex-col gap-2 border-t border-line px-2.5 pt-3 text-small text-ink-2">
+            <h2 className="sr-only">{t('shell.preferences')}</h2>
+            <label className="flex flex-col gap-1">
+              {t('theme.label')}
+              <select
+                value={prefs.theme}
+                onChange={(e) => prefs.setTheme(e.target.value as Theme)}
+                className={selectClass}
+              >
+                {themes.map((theme) => (
+                  <option key={theme} value={theme}>
+                    {t(themeNames[theme])}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1">
+              {t('language.label')}
+              <select
+                value={prefs.language}
+                onChange={(e) => prefs.setLanguage(e.target.value as Language)}
+                className={selectClass}
+              >
+                {languages.map((language) => (
+                  <option key={language} value={language} lang={language}>
+                    {t(languageNames[language])}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+        </nav>
+
+        <div className="flex min-w-0 flex-1 flex-col">
+          <header className="flex min-h-14 flex-none flex-wrap items-center gap-x-4 gap-y-2 border-b border-line bg-surface px-3 py-2 md:px-6">
+            <button
+              ref={menuButton}
+              type="button"
+              aria-expanded={menu}
+              aria-controls="main-nav"
+              onClick={() => setMenu(!menu)}
+              className="inline-flex size-11 items-center justify-center rounded-1 md:hidden"
+            >
+              <span className="sr-only">{menu ? t('shell.closeMenu') : t('shell.openMenu')}</span>
+              <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
+                <path d="M3 5H15M3 9H15M3 13H15" stroke="currentColor" strokeWidth="1.6" />
+              </svg>
+            </button>
+            <div className="flex-1" />
+            {pipeline !== undefined && <LiveIndicator state={live} />}
+            <button
+              type="button"
+              onClick={() => setPalette(true)}
+              className="inline-flex min-w-0 items-center gap-2.5 rounded-1 border border-line bg-bg px-2.5 py-1.5 text-left text-small text-ink-2 md:w-[260px]"
+            >
+              <span className="min-w-0 flex-1 truncate">{t('shell.search')}</span>
+              <Kbd>{isMac ? '⌘K' : 'Ctrl+K'}</Kbd>
+            </button>
+          </header>
+          <main
+            id="main"
+            tabIndex={-1}
+            className={`flex-1 px-4 py-6 focus-visible:outline-none md:px-7 ${live.stale ? 'live-stale' : ''}`}
+          >
+            <Outlet />
+          </main>
+        </div>
+
+        {palette && <CommandPalette commands={commands} onClose={() => setPalette(false)} />}
+        {help && <ShortcutHelp onClose={() => setHelp(false)} />}
+      </div>
+    </ShellNoticeProvider>
   );
 }

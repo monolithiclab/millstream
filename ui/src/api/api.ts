@@ -59,6 +59,12 @@ export function artifactPath({ pipeline, name, ...owner }: ArtifactLocation): st
     : `${base}/deliveries/${enc(owner.delivery)}/attempts/${owner.attempt}/artifacts/${enc(name)}`;
 }
 
+// keepalive lets a request outlive the page (a decision sent as the tab closes); unlike sendBeacon, it keeps the JSON
+// Content-Type the server requires.
+export interface SendOptions {
+  keepalive?: boolean;
+}
+
 // Everything the UI asks of the server, as internal/api/openapi.yaml documents it. Every record but a pipeline is
 // scoped by its pipeline. HttpApi implements it over fetch, FakeApi in memory for tests and ?demo.
 export interface Api {
@@ -97,8 +103,8 @@ export interface Api {
   replay(pipeline: string, request: ReplayRequest): Promise<Run>;
   replayDeadLetters(pipeline: string, selection: DeadLetterSelection): Promise<Count>;
   discardDeadLetters(pipeline: string, selection: DeadLetterSelection): Promise<Count>;
-  decideReview(pipeline: string, delivery: string, decision: ReviewDecision): Promise<Review>;
-  decideSample(pipeline: string, delivery: string, decision: SampleDecision): Promise<Sample>;
+  decideReview(pipeline: string, delivery: string, decision: ReviewDecision, options?: SendOptions): Promise<Review>;
+  decideSample(pipeline: string, delivery: string, decision: SampleDecision, options?: SendOptions): Promise<Sample>;
   acknowledgeInsight(pipeline: string, insight: string): Promise<void>;
   muteInsight(pipeline: string, insight: string): Promise<void>;
 }

@@ -130,6 +130,16 @@ describe('HttpApi', () => {
     if (method === 'POST') expect(init?.headers).toMatchObject({ 'Content-Type': 'application/json' });
   });
 
+  it('sends a decision with keepalive and its JSON Content-Type when asked, so it outlives the page', async () => {
+    const { api, fetch } = setup(() => Response.json({}));
+    await api.decideReview('p', 'd', { decision: 'approve', version: 1 }, { keepalive: true });
+    await api.decideSample('p', 'd', { decision: 'agree' }, { keepalive: true });
+    await api.decideSample('p', 'd', { decision: 'agree' });
+    const inits = fetch.mock.calls.map(([, init]) => init);
+    expect(inits.map((i) => i?.keepalive)).toEqual([true, true, undefined]);
+    expect(inits[0]?.headers).toMatchObject({ 'Content-Type': 'application/json' });
+  });
+
   it('returns the decoded body, and nothing for 204', async () => {
     expect(await setup(() => Response.json([{ name: 'p' }])).api.listPipelines()).toEqual([{ name: 'p' }]);
     expect(await setup(() => new Response(null, { status: 204 })).api.cancelRun('p', 'r')).toBeUndefined();

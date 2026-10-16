@@ -49,7 +49,7 @@ export function InboxScreen() {
   }, [pipelineFilter, inboxFilter]);
   const queue = useInboxQueue(filters);
   const now = useNow();
-  const entries = queue.status === 'ready' ? queue.data.entries : noEntries;
+  const entries = queue.status === 'ready' ? queue.entries : noEntries;
 
   const [chosen, setChosen] = useState<string | null>(null);
   // A review notification links to /inbox/<inbox>/<delivery>; the item screen to /inbox?pipeline=&delivery=.
@@ -132,7 +132,8 @@ export function InboxScreen() {
     setAlert(null);
     setReasonFor(null);
     decide(decision);
-    setAnnouncement(`${outcomeLabel[decision.outcome]} ${t('inbox.left', { count: entries.length - 1 })}`);
+    const left = t('inbox.left', { count: entries.length - 1 });
+    setAnnouncement(`${outcomeLabel[decision.outcome]} ${left}${singleKeys ? ` ${t('inbox.undoHint')}` : ''}`);
   };
 
   const approve = () => {

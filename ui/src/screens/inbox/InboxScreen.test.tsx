@@ -6,6 +6,7 @@ import { FakeApi } from '../../api/fake';
 import type { ReviewPage } from '../../api/schema';
 import { renderApp } from '../../test/render';
 import { UNDO_MS } from './useDecisions';
+import { INBOX_REFRESH_MS } from './useInboxQueue';
 
 const press = (key: string, target: Element = document.body) => fireEvent.keyDown(target, { key });
 const panel = () => screen.getByRole('region', { name: /^(Item under review|Item en revue)$/ });
@@ -54,7 +55,7 @@ describe('InboxScreen', () => {
     press('a');
     expect(title()).toHaveTextContent('T2 · 44 m² · Pantin');
     expect(title()).toHaveFocus();
-    expect(screen.getByText('Approved. 8 left.')).toBeInTheDocument();
+    expect(screen.getByText('Approved. 8 left. Press u to undo.')).toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: /^Undo/ })).toHaveLength(1);
     expect(decisions(api)).toEqual([]);
     await elapse(UNDO_MS - 500);
@@ -103,7 +104,7 @@ describe('InboxScreen', () => {
     await user.type(within(dialog).getByLabelText('Note (optional)'), 'Agency listing');
     press('2', within(dialog).getByRole('button', { name: /overpriced/ }));
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-    expect(screen.getByText('Rejected. 8 left.')).toBeInTheDocument();
+    expect(screen.getByText('Rejected. 8 left. Press u to undo.')).toBeInTheDocument();
     await elapse(UNDO_MS);
     expect(decisions(api)[0]!.args[2]).toEqual({
       decision: 'reject',
@@ -147,7 +148,7 @@ describe('InboxScreen', () => {
     press('Escape', screen.getByLabelText(/notes/));
     expect(title()).toHaveFocus();
     press('a');
-    expect(screen.getByText('Approved with changes. 8 left.')).toBeInTheDocument();
+    expect(screen.getByText('Approved with changes. 8 left. Press u to undo.')).toBeInTheDocument();
     await elapse(UNDO_MS);
     expect(decisions(api)[0]!.args[2]).toEqual({
       decision: 'approve',
@@ -253,7 +254,7 @@ describe('InboxScreen', () => {
     await openInbox({ api, route: '/inbox/analysts/dl_d3f5' });
     expect(title()).toHaveTextContent('T2 · 39 m² · Paris 18e');
     press('a');
-    expect(screen.getByText('Agreed. 8 left.')).toBeInTheDocument();
+    expect(screen.getByText('Agreed. 8 left. Press u to undo.')).toBeInTheDocument();
     await elapse(UNDO_MS);
     expect(decisions(api)[0]).toEqual({
       method: 'decideSample',
@@ -307,6 +308,71 @@ describe('InboxScreen', () => {
     await user.click(screen.getByRole('link', { name: 'Nodes' }));
     await elapse(0);
     expect(decisions(api)).toHaveLength(1);
+  });
+
+  it('sends a held decision exactly once, with keepalive, when the tab closes or is hidden', async () => {
+    const api = new FakeApi();
+    await openInbox({ api });
+    press('a');
+    act(() => {
+      window.dispatchEvent(new Event('pagehide'));
+      window.dispatchEvent(new Event('pagehide'));
+    });
+    vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden');
+    act(() => {
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    await elapse(UNDO_MS * 2);
+    expect(decisions(api)).toEqual([
+      {
+        method: 'decideReview',
+        args: ['listings-daily', 'dl_4b2e', { decision: 'approve', version: 1 }, { keepalive: true }],
+      },
+    ]);
+    // The undo window is over: nothing is held any more.
+    expect(screen.queryByRole('button', { name: /^Undo/ })).not.toBeInTheDocument();
+  });
+
+  it('says in the shell a decision refused after the inbox was left', async () => {
+    const api = new FakeApi();
+    const { user } = await openInbox({ api });
+    press('j');
+    press('j');
+    press('a');
+    await user.click(screen.getByRole('link', { name: 'Nodes' }));
+    await elapse(0);
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Your decision on T4 · 91 m² · Montreuil wasn’t applied after you left the inbox: review of delivery dl_7c1d was already decided by claire at 06:29',
+    );
+    expect(screen.getByRole('heading', { level: 1, name: 'Nodes' })).toBeInTheDocument();
+  });
+
+  it('undoes into the queue of the filters the card belongs to', async () => {
+    const { user } = await openInbox();
+    press('a');
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Pipeline' }), 'photo-tagging');
+    expect(await screen.findByText('Inbox zero')).toBeInTheDocument();
+    press('u');
+    // Not a photo-tagging review: the empty queue stays empty.
+    expect(screen.getByText('Inbox zero')).toBeInTheDocument();
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Pipeline' }), '');
+    await screen.findByRole('region', { name: 'Item under review' });
+    expect(screen.getByRole('button', { name: /T3 · 68 m² · Paris 19e/ })).toBeInTheDocument();
+    expect(screen.getByText('8 to review')).toBeInTheDocument();
+  });
+
+  it('reads the queue again every 15 s, silently, keeping a decided card hidden', async () => {
+    const api = new FakeApi();
+    const listInbox = vi.spyOn(api, 'listInbox');
+    await openInbox({ api });
+    press('a');
+    const reads = listInbox.mock.calls.length;
+    await elapse(INBOX_REFRESH_MS);
+    expect(listInbox.mock.calls.length).toBe(reads + 1);
+    expect(screen.queryByTestId('loading')).not.toBeInTheDocument();
+    // The decision is sent after 10 s; the server no longer lists the card, and it was never shown again.
+    expect(screen.queryByRole('button', { name: /T3 · 68 m² · Paris 19e/ })).not.toBeInTheDocument();
+    expect(screen.getByText('7 to review')).toBeInTheDocument();
   });
 
   it('filters by pipeline and inbox through the URL', async () => {
@@ -378,7 +444,7 @@ describe('InboxScreen', () => {
     expect(screen.getByRole('button', { name: /Approuver avec modifications \(1\)/ })).toBeInTheDocument();
     press('Escape', margin);
     press('a');
-    expect(screen.getByText('Approuvé avec modifications. Reste : 8.')).toBeInTheDocument();
+    expect(screen.getByText('Approuvé avec modifications. Reste : 8. Appuyez sur u pour annuler.')).toBeInTheDocument();
     await elapse(UNDO_MS);
     expect(decisions(api)[0]!.args[2]).toMatchObject({ patch: [{ value: 16.5 }] });
   });
