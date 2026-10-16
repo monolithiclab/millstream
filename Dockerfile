@@ -22,7 +22,7 @@ ARG VERSION=dev
 ENV GOTOOLCHAIN=local CGO_ENABLED=0
 WORKDIR /src
 COPY go.mod go.sum ./
-COPY sdk/go/go.mod sdk/go/go.sum ./sdk/go/
+COPY sdk/go/go.mod ./sdk/go/
 RUN --mount=type=cache,target=/go/pkg/mod go mod download && go mod verify
 COPY . .
 COPY --from=ui /src/internal/ui/dist/ ./internal/ui/dist/
