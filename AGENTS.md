@@ -99,9 +99,10 @@ below) for the reasoning, and `make help` for every command.
   appears as a quoted literal: keep keys literal, no built-up names), and French typography (no-break space before
   `: ; ! ? »`). Numbers, money, durations and relative times go through `src/i18n/format.ts`.
 - API: `src/api/api.ts` is the `Api` interface, `http.ts` its fetch implementation, `fake.ts` the in-memory one for
-  tests and `?demo`, over the one demo dataset of `demo.ts` (every screen's data, linked: an inbox card, a timeline
-  bar or an insight sample opens an item the item screen has). `src/api/openapi.d.ts` is generated from `internal/api/openapi.yaml` by `make ui-types` and
-  committed; `src/api/schema.ts` aliases its schemas, so the rest of the UI imports resource types from there.
+  tests and `?demo`, over the one demo dataset of `demo.ts` (every screen's data, linked: an inbox card, a timeline bar
+  or an insight sample opens an item the item screen has). `src/api/openapi.d.ts` is generated from
+  `internal/api/openapi.yaml` by `make ui-types` and committed; `src/api/schema.ts` aliases its schemas, so the rest of
+  the UI imports resource types from there.
 
 ## HTTP API
 
