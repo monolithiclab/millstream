@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"testing"
@@ -31,6 +32,9 @@ func TestMain(m *testing.M) {
 }
 
 func runTests(m *testing.M) int {
+	// Building the Kong parser, which every command run through Run does, allocates enough for the collector to cost
+	// a fifth of it at the default target: the tests trade memory for time (the parse benchmark: 0.85 ms to 0.7 ms).
+	debug.SetGCPercent(400)
 	dir, err := os.MkdirTemp("", "cli-test-")
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)

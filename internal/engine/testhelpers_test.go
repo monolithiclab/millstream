@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"maps"
 	"os"
+	"runtime/debug"
 	"slices"
 	"sync"
 	"testing"
@@ -20,6 +21,9 @@ import (
 )
 
 func TestMain(m *testing.M) {
+	// The tests allocate heavily (stores, CEL programs, the transpiled SQLite): a higher collector target trades memory
+	// for test time, as in the cli and store tests.
+	debug.SetGCPercent(400)
 	code := m.Run()
 	fakeexec.Cleanup()
 	os.Exit(code)

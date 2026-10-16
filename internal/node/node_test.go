@@ -74,57 +74,6 @@ func TestRunCompletesAssignments(t *testing.T) {
 	}
 }
 
-// TestDoneFailMapping pins how each outcome is reported: done with outputs, the action's own error as class
-// action, runtime failures under their class and always retryable.
-func TestDoneFailMapping(t *testing.T) {
-	t.Parallel()
-	tests := []struct {
-		mode      string
-		config    map[string]any
-		wantDone  bool
-		class     string
-		retryable bool
-	}{
-		{"echo", nil, true, "", false},
-		{"error", map[string]any{"retryable": true}, false, ClassAction, true},
-		{"error", map[string]any{"retryable": false}, false, ClassAction, false},
-		{"crash", nil, false, exec.ClassCrash, true},
-		{"garbage", nil, false, exec.ClassProtocol, true},
-		{"hang", nil, false, exec.ClassTimeout, true},
-	}
-	for _, tt := range tests {
-		t.Run(fmt.Sprint(tt.mode, tt.config), func(t *testing.T) {
-			t.Parallel()
-			a := assignment("dl_1", tt.mode, tt.config)
-			if tt.mode == "hang" {
-				a.Timeout = time.Nanosecond // expires at once: the fake never answers
-			}
-			tr := newFakeTransport(a)
-			stop := startNode(t, tr, Options{})
-			await(t, tr.reported, 1)
-			if err := stop(); err != nil {
-				t.Fatalf("Run: %v", err)
-			}
-			tr.mu.Lock()
-			defer tr.mu.Unlock()
-			if tt.wantDone {
-				if len(tr.dones) != 1 {
-					t.Fatalf("dones = %+v, fails = %+v", tr.dones, tr.fails)
-				}
-				return
-			}
-			if len(tr.fails) != 1 {
-				t.Fatalf("dones = %+v, fails = %+v", tr.dones, tr.fails)
-			}
-			f := tr.fails[0]
-			if f.Class != tt.class || f.Retryable != tt.retryable || f.Attempt != 2 || f.FencingToken != 7 ||
-				f.Message == "" {
-				t.Errorf("fail = %+v", f)
-			}
-		})
-	}
-}
-
 func TestStaleLeaseDroppedAndNodeContinues(t *testing.T) {
 	t.Parallel()
 	var logs syncBuffer

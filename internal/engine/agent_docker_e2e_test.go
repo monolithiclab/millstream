@@ -98,7 +98,27 @@ func TestRealAgentSandbox(t *testing.T) {
 	recordings := filepath.Join(dir, "recordings")
 	environ := map[string]string{"MILLSTREAM_SECRET_KEY": "sk-0123456789",
 		agent.EnvHarnessMode: agent.ModeReplay, agent.EnvHarnessDir: recordings}
-	a, v := agentAssignment(t, Agents{Sandbox: &AgentSandbox{Image: image, Binary: bin}}, environ)
+	// The container mounts the package: it is written to disk here, where the default build's packages live in memory.
+	v := newEnv(t, Options{Env: func(k string) (string, bool) { s, ok := environ[k]; return s, ok },
+		Agents: Agents{Sandbox: &AgentSandbox{Image: image, Binary: bin}}})
+	onDisk := agentPackage(t, nil, "")
+	onDisk.Dir = filepath.Join(dir, "pkg")
+	for name, body := range onDisk.Files {
+		path := filepath.Join(onDisk.Dir, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, body, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	v.apply(onDisk)
+	v.fire("p", "adhoc", "k")
+	as, err := v.e.Pull(v.ctx, "node-a", 1)
+	if err != nil || len(as) != 1 {
+		t.Fatalf("Pull = %v, %v", as, err)
+	}
+	a := as[0]
 	pkg, err := pipeline.Load(a.Spec.Mounts[1].Source)
 	if err != nil {
 		t.Fatal(err)
