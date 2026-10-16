@@ -5,11 +5,11 @@ environment file, `millstream.yaml`, says where (spec section 14). This guide co
 VPS with Docker Compose, and a VPS with systemd.
 
 > **M4 status.** `millstream serve`, `apply`, `rollback` and `disable` and every key of the environment file are in
-> (Task 2 of the [M4 plan](plans/20261016.m4-server.md)). Still to come: the standby's takeover with Task 3 (a
-> second `serve` already waits on the lock, as the standby), `millstream node --join`, node TLS and the S3 artifact
-> store with Task 4, token auth with Task 7 (until then `serve` refuses a non-loopback `listen`, so the Compose
-> engines, which listen on `0.0.0.0` for the published port, do not start yet), retention with Task 8. The laptop
-> target and a systemd engine listening on loopback work today.
+> (Task 2 of the [M4 plan](plans/20261016.m4-server.md)), and the standby takes over (Task 3, see Standby and failover).
+> Still to come: `millstream node --join`, node TLS and the S3 artifact store with Task 4, token auth with Task 7 (until
+> then `serve` refuses a non-loopback `listen`, so the Compose engines, which listen on `0.0.0.0` for the published
+> port, do not start yet), retention with Task 8. The laptop target and a systemd engine listening on loopback work
+> today.
 
 ## The artefacts
 
@@ -109,6 +109,29 @@ A standby is a second host with the same files and the same DSN. A node host ins
 - **Docker access** is opt-in, because the socket is root by another name: `systemctl edit millstream-node` and add
   `SupplementaryGroups=docker` under `[Service]`. The engine unit's embedded node needs the same for container
   actions and sandboxed agents.
+
+## Standby and failover
+
+A second `millstream serve` on the same Postgres database, with the same environment file, is the hot standby
+(spec section 5.9). Both engines run the same command; whichever holds the database's leadership lock is active.
+
+- **While it waits**, the standby logs `waiting as the standby` and serves the UI and the read endpoints of the API
+  from a read-only connection. Every action it answers `503 unavailable`, with the active engine's id and API address
+  in `X-Millstream-Active-Engine` and `X-Millstream-Active-Address`. The Nodes screen and `/api/v1/nodes` show both
+  engines, the active one with its leadership epoch.
+- **Taking over.** When the active engine's process dies, its lock is released at once; when its host or network
+  dies, within `engine.lockCheck` + 2 × `engine.keepalive` (15 seconds with the default 5 s each). The standby then
+  logs `leading the deployment` with the next epoch, rebuilds its state from the store and dispatches, the dead
+  engine's leases being retried once they expire (`--lease-ttl`, 60 s by default). Nothing is applied twice.
+- **Stepping down.** An engine that loses its write connection (a database failover, a network cut, a session ended
+  by an administrator) logs `stepping down`, stops writing at once, abandons its embedded node's deliveries, and
+  stands by again, retrying the database every `engine.lockCheck` while it is unreachable. Only SIGTERM or SIGINT
+  stops it; a stopped standby exits 0.
+- **Tuning.** `engine: { lockCheck: 5s, keepalive: 5s }` in the environment file. Shorter values fail over sooner and
+  ping the database more often. A connection pooler between the engines and Postgres must not be in transaction mode:
+  the lock lives on a session.
+- **Clients.** Point the reverse proxy at both engines and fail over on `503`, or follow the header; the UI reloads
+  its reads through whichever engine answers.
 
 ## Security
 

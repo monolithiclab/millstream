@@ -75,7 +75,23 @@ func DSN(t testing.TB) string {
 	if err != nil {
 		t.Fatalf("create database %s: %v", name, err)
 	}
+	// The data directory is memory: a test's database goes when the test ends, whatever is still connected to it.
+	t.Cleanup(func() {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		_, _ = s.admin.Exec(context.Background(), `DROP DATABASE IF EXISTS `+name+` WITH (FORCE)`)
+	})
 	return s.dsn(name)
+}
+
+// Database returns the name of the database dsn names, for the queries Admin runs about it.
+func Database(t testing.TB, dsn string) string {
+	t.Helper()
+	cfg, err := pgx.ParseConfig(dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return cfg.Database
 }
 
 // Admin runs fn on the server's superuser connection, to the postgres database: for tests that act on the server
@@ -117,8 +133,9 @@ func start() (*server, error) {
 		return nil, errNoDocker
 	}
 	removeOrphans()
+	// The data directory is a tmpfs, so no volume outlives the container, whatever ends it.
 	out, err := dockerOutput("run", "-d", "--rm", "--label", label+"="+strconv.Itoa(os.Getpid()),
-		"-e", "POSTGRES_PASSWORD="+password, "-p", "127.0.0.1::5432", Image,
+		"-e", "POSTGRES_PASSWORD="+password, "-p", "127.0.0.1::5432", "--tmpfs", "/var/lib/postgresql/data", Image,
 		// A test server: durability buys nothing, and costs every commit a flush.
 		"-c", "fsync=off", "-c", "synchronous_commit=off", "-c", "full_page_writes=off", "-c", "max_connections=500")
 	if err != nil {

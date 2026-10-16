@@ -6,8 +6,20 @@
 // session advisory lock on it (pg_advisory_lock(LockKey)), blocking while another engine holds it: a standby blocks
 // in Open. That session is the store's only write connection, so a store without the lock cannot write. When the
 // session fails, the store loses the lock with it: every unit fails with store.ErrWriteLost from then on, and Lost
-// (store/sqlstore) is closed so the engine steps down. The writer checks the session after any batch that fails as a whole, and with
-// a ping every Options.CheckEvery while idle.
+// (store/sqlstore) is closed so the engine steps down. The writer checks the session after any batch that fails as a
+// whole, and with a ping every Options.CheckEvery while idle.
+//
+// Both ends watch the write session (spec section 5.9), with Options.Keepalive as the period k: TCP keepalives
+// every k after k idle, on the engine's socket and, through the session's settings, on the server's; a ping or a
+// statement unanswered for 2k (3k for a whole batch) loses the session on the engine's side; and the server ends a
+// session silent for CheckEvery + 2k (idle_session_timeout), which a healthy engine's pings never let happen, so an
+// engine cut off from the database, even behind a proxy that keeps its TCP connection open, releases the lock
+// within that window. With the defaults (5 s each) an engine whose host or network dies steps down, and its lock is
+// free for the standby, within 15 seconds; an engine whose process dies releases it at once, its socket closed.
+//
+// An engine opening the store names itself (Options.Engine): the write session's application_name carries its id
+// and version, so every engine sees which leads and which wait (Engines), and the engine records its acquisition in
+// the leadership table, under the lock, with the next epoch (Leadership).
 //
 // Reads use a pool (pgxpool) whose sessions are read-only (default_transaction_read_only), so nothing but the
 // writer's session ever writes. Leases, deadlines and timeouts use the database clock, now(): the start of the
@@ -15,6 +27,7 @@
 package postgres
 
 import (
+	"cmp"
 	"context"
 	"database/sql"
 	"embed"
@@ -45,16 +58,45 @@ type Options struct {
 	// Deployment names the deployment whose leadership lock the store takes; empty means "millstream". Two
 	// deployments sharing a database need two names.
 	Deployment string
-	// CheckEvery is how often the idle writer pings its session; zero means 5 seconds.
+	// CheckEvery is how often the idle writer pings its session (engine.lockCheck); zero means DefaultCheckEvery.
 	CheckEvery time.Duration
+	// Keepalive is the period the write session is watched with (engine.keepalive): see the package comment; zero
+	// means DefaultKeepalive.
+	Keepalive time.Duration
+	// Engine names the engine opening the store. With an ID, the write session carries it and Open records the
+	// acquisition in the leadership table; without, the store is a command's (--direct) and records nothing.
+	Engine Engine
 	// Waiting, when set, is called once when Open finds the leadership lock held by another engine, before it waits
 	// for it: the moment a standby starts waiting.
 	Waiting func()
 }
 
+// Defaults for zero Options.
+const (
+	DefaultCheckEvery = 5 * time.Second
+	DefaultKeepalive  = 5 * time.Second
+)
+
+// Engine is an engine of the deployment, as it names itself.
+type Engine struct {
+	ID      string
+	Version string
+	// Address is where the engine serves its API, recorded when it leads; empty when it serves none.
+	Address string
+}
+
+// Leadership is an acquisition of the leadership lock, as the leadership table records it.
+type Leadership struct {
+	Engine Engine
+	// Epoch counts the acquisitions of the deployment's lock by engines: one more at each.
+	Epoch int64
+	Since time.Time
+}
+
 // Store is the Postgres log store. It is safe for concurrent use.
 type Store struct {
 	*sqlstore.Store
+	lead  Leadership // what Open recorded; zero for a store without an engine
 	key   int64
 	write *sql.DB   // the write connection's handle: one session, conn
 	conn  *sql.Conn // the session holding the lock, the writer's
@@ -115,16 +157,16 @@ func Open(ctx context.Context, dsn string, opts Options) (*Store, error) {
 	if opts.ReadConns == 0 {
 		opts.ReadConns = 4
 	}
-	if opts.CheckEvery == 0 {
-		opts.CheckEvery = 5 * time.Second
-	}
+	opts.CheckEvery = cmp.Or(opts.CheckEvery, DefaultCheckEvery)
+	opts.Keepalive = cmp.Or(opts.Keepalive, DefaultKeepalive)
 	if err := s.open(ctx, dsn, opts); err != nil {
 		_ = s.closeDBs()
 		return nil, fmt.Errorf("open postgres store: %w", err)
 	}
 	s.Store = sqlstore.New(sqlstore.Config{Dialect: dialect, Write: s.conn, Read: s.read,
 		Options: sqlstore.Options{Now: opts.Now, Rand: opts.Rand},
-		Check:   s.conn.PingContext, CheckEvery: opts.CheckEvery})
+		Check:   s.conn.PingContext, CheckEvery: opts.CheckEvery,
+		CheckTimeout: 2 * opts.Keepalive, BatchTimeout: 3 * opts.Keepalive})
 	return s, nil
 }
 
@@ -160,7 +202,8 @@ func (s *Store) open(ctx context.Context, dsn string, opts Options) error {
 		return fmt.Errorf("parse the DSN: %w", redact(err, dsn))
 	}
 	secrets := []string{dsn, cfg.Password}
-	cfg.RuntimeParams["application_name"] = "millstream"
+	watchSession(cfg, opts)
+	cfg.RuntimeParams["application_name"] = applicationName(opts.Engine)
 	s.write = stdlib.OpenDB(*cfg)
 	s.write.SetMaxOpenConns(1)
 	s.write.SetMaxIdleConns(1)
@@ -184,6 +227,11 @@ func (s *Store) open(ctx context.Context, dsn string, opts Options) error {
 	if err := sqlstore.Migrate(ctx, s.conn, dialect, migrations); err != nil {
 		return err
 	}
+	if opts.Engine.ID != "" {
+		if err := s.recordLeadership(ctx, opts.Engine); err != nil {
+			return fmt.Errorf("record the leadership: %w", redact(err, secrets...))
+		}
+	}
 	return s.openReads(ctx, dsn, opts, secrets)
 }
 
@@ -195,6 +243,7 @@ func (s *Store) openReads(ctx context.Context, dsn string, opts Options, secrets
 	}
 	pcfg.MaxConns = int32(min(opts.ReadConns, 1<<16)) // #nosec G115 -- bounded above
 	pcfg.ConnConfig.RuntimeParams["application_name"] = "millstream-read"
+	dialer(pcfg.ConnConfig, cmp.Or(opts.Keepalive, DefaultKeepalive))
 	pcfg.ConnConfig.RuntimeParams["default_transaction_read_only"] = "on"
 	if s.pool, err = pgxpool.NewWithConfig(ctx, pcfg); err != nil {
 		return fmt.Errorf("open the read pool: %w", redact(err, secrets...))
@@ -227,6 +276,12 @@ func (s *Store) LockKey() int64 { return s.key }
 func (s *Store) Close() error {
 	if stmts := s.Stop(); stmts == nil {
 		return nil // closed already
+	}
+	if s.LostErr() != nil {
+		// The session is gone, perhaps with the network: there is nothing to flush, and saying goodbye to the
+		// read pool's sessions could wait seconds for a database that no longer answers.
+		go func() { _ = s.closeDBs() }()
+		return nil
 	}
 	return s.closeDBs()
 }

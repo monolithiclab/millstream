@@ -4,7 +4,9 @@
 // fencing token, and the attempt's cost as its cost_usd metrics add up. A lease the engine reports lost cancels its
 // delivery and drops its result; a report the store refuses as stale is dropped too, since another owner holds
 // the delivery. On context cancellation the node drains: it stops pulling and lets in-flight deliveries finish, up
-// to a drain timeout.
+// to a drain timeout. Cancelled with ErrAbandon as the cause, it abandons them instead: its engine stepped down (spec
+// section 5.9), so it cancels them at once and reports nothing; their leases expire, or the next active engine
+// takes them back.
 package node
 
 import (
@@ -35,6 +37,10 @@ const (
 	// reportTimeout bounds each heartbeat, Done and Fail call.
 	reportTimeout = 30 * time.Second
 )
+
+// ErrAbandon, as the cause of Run's context cancellation (context.WithCancelCause), makes the node abandon its
+// deliveries in flight rather than drain them.
+var ErrAbandon = errors.New("abandon deliveries in flight")
 
 // ErrDrainTimeout is returned, wrapped, by Run when in-flight deliveries were abandoned at the drain timeout. Their
 // leases expire and the deliveries are retried elsewhere.
@@ -174,7 +180,25 @@ func (n *Node) Run(ctx context.Context) error {
 			l.pull(ctx)
 		}
 	}
+	if errors.Is(context.Cause(ctx), ErrAbandon) {
+		l.abandon()
+		return nil
+	}
 	return l.drain(heartbeat)
+}
+
+// abandon cancels every delivery in flight and waits for their goroutines, which drop their results.
+func (l *loop) abandon() {
+	if len(l.held) == 0 {
+		return
+	}
+	l.log.Warn("abandoning deliveries in flight", "inFlight", len(l.held))
+	for _, r := range l.held {
+		r.cancel()
+	}
+	for len(l.held) > 0 {
+		delete(l.held, <-l.finished)
+	}
 }
 
 func (l *loop) pull(ctx context.Context) {

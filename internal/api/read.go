@@ -1065,10 +1065,25 @@ func (s *Server) listNodes(w http.ResponseWriter, r *http.Request) error {
 	for _, d := range leased {
 		held[d.LeaseOwner]++
 	}
-	out := Nodes{Engine: EngineInfo{State: "active", Version: s.opts.Version}, Nodes: []Node{}}
+	id := s.opts.Identity
+	self := EngineInfo{State: stateActive, ID: id.ID, Version: s.opts.Version, Since: timePtr(id.Since),
+		Epoch: id.Epoch}
+	if s.opts.Standby {
+		self.State, self.Epoch = stateStandby, 0
+	}
+	out := Nodes{Engine: self, Nodes: []Node{}}
 	if s.opts.NotificationFailures != nil {
 		out.Engine.NotificationsFailed = s.opts.NotificationFailures()
 	}
+	if s.opts.Deployment != nil {
+		if out.Engines, err = s.opts.Deployment.Engines(r.Context()); err != nil {
+			return err
+		}
+	} else {
+		out.Engines = []DeploymentEngine{{ID: self.ID, State: self.State, Version: self.Version, Since: self.Since,
+			Epoch: self.Epoch}}
+	}
+	out.Engines = orEmpty(out.Engines)
 	for _, n := range s.opts.Nodes {
 		n.Leases = held[n.ID]
 		n.Labels, n.Runtimes = nonNilMap(n.Labels), orEmpty(n.Runtimes)

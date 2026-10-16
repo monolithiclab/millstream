@@ -212,3 +212,34 @@ func TestWriteLost(t *testing.T) {
 		t.Fatalf("LostErr = %v; want ErrWriteLost and the check's error", err)
 	}
 }
+
+// hungConn is a write connection the network silently cut: beginning waits until its context ends.
+type hungConn struct{}
+
+func (hungConn) BeginTx(ctx context.Context, _ *sql.TxOptions) (*sql.Tx, error) {
+	<-ctx.Done()
+	return nil, ctx.Err()
+}
+func (hungConn) PrepareContext(ctx context.Context, _ string) (*sql.Stmt, error) {
+	return nil, ctx.Err()
+}
+
+// A batch bounded by BatchTimeout fails once it is over, rather than waiting on the connection for good, and the
+// check that follows is bounded by CheckTimeout: the connection is lost.
+func TestBatchTimeout(t *testing.T) {
+	var checkDeadline bool
+	s := New(Config{Write: hungConn{}, Read: NewReadDB(nil, Dialect{}, nil), Options: Options{Now: func() time.Time { return t0 }},
+		BatchTimeout: time.Millisecond, CheckTimeout: time.Hour,
+		Check: func(ctx context.Context) error {
+			_, checkDeadline = ctx.Deadline()
+			return errReset
+		}})
+	defer s.Stop()
+	if err := s.Exec(context.Background(), `SELECT 1`); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("a batch on a hung connection = %v", err)
+	}
+	<-s.Lost()
+	if !checkDeadline {
+		t.Error("the check had no deadline")
+	}
+}

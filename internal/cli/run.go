@@ -21,6 +21,7 @@ import (
 	"github.com/monolithiclab/millstream/internal/review"
 	"github.com/monolithiclab/millstream/internal/runtime/exec"
 	"github.com/monolithiclab/millstream/internal/store"
+	"github.com/monolithiclab/millstream/internal/store/postgres"
 )
 
 // RunCmd is "millstream run": "run [dir…]" runs packages, "run report" prints a run's report.
@@ -78,7 +79,7 @@ func (c RunPackagesCmd) Run(rt *Runtime) error {
 	if err != nil {
 		return err
 	}
-	return withStoreMode(rt, engineStore, nil, func(st store.Store) error {
+	return withStoreMode(rt, engineStore, postgres.Options{}, func(st store.Store) error {
 		notes := notifier(rt, env, log)
 		e, err := engine.New(engine.Options{
 			Store: st, Logger: log, LeaseTTL: c.LeaseTTL, Env: rt.Env, Secrets: secrets(rt, env), Flags: c.Var,
@@ -114,7 +115,8 @@ func (c RunPackagesCmd) Run(rt *Runtime) error {
 				return nil
 			}
 		}
-		h := engineHost{listen: listen, embedded: true, slots: c.Slots, leaseTTL: c.LeaseTTL}
+		h := engineHost{listen: listen, embedded: true, slots: c.Slots, leaseTTL: c.LeaseTTL,
+			lead: leadership{identity: api.Identity{ID: newEngineID(), Since: time.Now()}}}
 		if err := h.run(ctx, rt, env, st, e, notes, log, wait); err != nil {
 			return err
 		}
@@ -126,16 +128,19 @@ func (c RunPackagesCmd) Run(rt *Runtime) error {
 }
 
 // engineHost is how run and serve host an engine: its embedded node, when it has one, and the API and the UI on
-// listen, unless it is empty.
+// site, or on listen unless it is empty.
 type engineHost struct {
 	listen   string
+	site     *site // serve's, across its terms; nil makes run listen on listen for the engine's lifetime
 	embedded bool
 	slots    int
 	leaseTTL time.Duration
+	lead     leadership // who the engine is on a deployment with a standby; zero for run
 }
 
 // run runs the engine, its embedded node and the API server until ctx ends or wait, called once the engine is
-// ready, returns; nil waits for ctx. It stops them all then, draining the node's deliveries in flight.
+// ready, returns; nil waits for ctx. It stops them all then, draining the node's deliveries in flight, or
+// abandoning them when wait's error wraps node.ErrAbandon: the engine stepped down.
 func (h engineHost) run(ctx context.Context, rt *Runtime, env *pipeline.Environment, st store.Store, e *engine.Engine,
 	notes *review.Notifier, log *slog.Logger, wait func(context.Context) error,
 ) error {
@@ -158,29 +163,42 @@ func (h engineHost) run(ctx context.Context, rt *Runtime, env *pipeline.Environm
 		}
 		nodes = []api.Node{{ID: owner, Embedded: true, Version: rt.Version, Slots: h.slots, Runtimes: sortedKeys(run)}}
 	}
-	runCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
-	engineDone, nodeDone, serveDone := make(chan error, 1), make(chan error, 1), make(chan error, 1)
-	if h.listen == "" {
+	runCtx, cancel := context.WithCancelCause(ctx)
+	defer cancel(nil)
+	engineDone, nodeDone, serveDone, siteDone := make(chan error, 1), make(chan error, 1), make(chan error, 1),
+		make(chan error, 1)
+	site := h.site
+	if site == nil && h.listen != "" {
+		var err error
+		if site, err = listenSite(runCtx, h.listen, func() { announce(rt, site) }); err != nil {
+			return err
+		}
+		go func() { siteDone <- site.serve(runCtx) }()
+	} else {
+		siteDone <- nil
+	}
+	if site == nil {
 		serveDone <- nil
 	} else {
-		srv, err := newAPIServer(rt, env, st, e, notes, logs, nodes, log)
+		srv, err := newAPIServer(rt, env, st, e, notes, logs, nodes, h.lead, log)
 		if err != nil {
-			return err
+			cancel(nil)
+			return errors.Join(err, <-siteDone)
 		}
-		if err := srv.listen(runCtx, h.listen); err != nil {
-			return err
+		if err := srv.start(runCtx); err != nil {
+			cancel(nil)
+			return errors.Join(err, <-siteDone)
 		}
-		fmt.Fprintf(rt.IO.Out, "Millstream is serving the UI and the API on %s\n", srv.url)
-		go func() { serveDone <- srv.serve(runCtx) }()
+		site.set(runCtx, srv.handler)
+		go func() { serveDone <- srv.run(runCtx) }()
 	}
 	go func() { engineDone <- e.Run(runCtx) }()
 	// The node pulls only once the engine has rebuilt its leases in flight from the store.
 	select {
 	case <-e.Ready():
 	case err := <-engineDone:
-		cancel()
-		return errors.Join(err, <-serveDone)
+		cancel(nil)
+		return errors.Join(err, <-serveDone, <-siteDone)
 	}
 	if n != nil {
 		go func() { nodeDone <- n.Run(runCtx) }()
@@ -193,8 +211,13 @@ func (h engineHost) run(ctx context.Context, rt *Runtime, env *pipeline.Environm
 	} else {
 		<-runCtx.Done()
 	}
-	cancel()
-	return errors.Join(waitErr, <-nodeDone, <-engineDone, <-serveDone)
+	cancel(waitErr)
+	return errors.Join(waitErr, <-nodeDone, <-engineDone, <-serveDone, <-siteDone)
+}
+
+// announce says where the site serves, once it does.
+func announce(rt *Runtime, s *site) {
+	fmt.Fprintf(rt.IO.Out, "Millstream is serving the UI and the API on %s\n", s.url)
 }
 
 // load loads and checks each package, logging each diagnostic, and fails on any check error and on a --var no

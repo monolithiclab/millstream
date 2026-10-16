@@ -317,3 +317,16 @@ CREATE TABLE review_samples (
 );
 CREATE INDEX review_samples_open ON review_samples (state, inbox);
 CREATE INDEX review_samples_deadline ON review_samples (state, deadline);
+
+-- The deployment's leadership (spec section 5.9), Postgres's alone: SQLite has no standby. Each engine that takes
+-- the leadership lock writes its row on its write connection, under the lock, before it writes anything else: who
+-- leads, since when, and the epoch, one more at each acquisition. One row per lock key, so two deployments sharing
+-- a database keep theirs apart.
+CREATE TABLE leadership (
+    lock_key  bigint PRIMARY KEY,
+    engine_id text NOT NULL,
+    version   text NOT NULL,
+    address   text NOT NULL, -- where the engine serves its API, for nodes and clients a standby redirects
+    epoch     bigint NOT NULL,
+    since     timestamptz NOT NULL
+);

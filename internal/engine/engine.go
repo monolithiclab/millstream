@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -83,6 +84,19 @@ type Options struct {
 	PackageDir string
 	// Check is what ApplyPackages checks packages with; its Secrets default to Secrets.
 	Check pipeline.CheckOptions
+	// Leadership is who this engine is on a deployment with a standby and the epoch it leads in (spec section
+	// 5.9), what nodes following the active engine across a failover learn it by; zero on SQLite.
+	Leadership Leadership
+	// Takeover makes every step's rate start empty, a full token's interval before its first lease, so that an
+	// engine taking a deployment over (serve) never causes a burst (spec section 5.9).
+	Takeover bool
+}
+
+// Leadership is an engine's identity and the epoch of its leadership: one more at each acquisition of the
+// deployment's lock.
+type Leadership struct {
+	ID    string
+	Epoch int64
 }
 
 // Agents says how the engine runs the agent adapter of agent steps (spec section 7.3): in a container sandbox when
@@ -143,6 +157,7 @@ type Engine struct {
 
 	ready     chan struct{} // closed once Run has rebuilt the leases in flight
 	readyOnce sync.Once
+	leased    atomic.Bool // set at the engine's first lease, which it logs: when a takeover starts dispatching
 
 	projMu       sync.Mutex           // serialises Project
 	lastInsights map[string]time.Time // when each pipeline's insights last ran; under projMu
@@ -199,6 +214,14 @@ func New(opts Options) (*Engine, error) {
 	if opts.Resolver == nil {
 		opts.Resolver = pipeline.Resolver{}
 	}
+	if opts.PackageDir != "" {
+		// Action processes start from their package's directory: a relative path would resolve from theirs.
+		dir, err := filepath.Abs(opts.PackageDir)
+		if err != nil {
+			return nil, fmt.Errorf("engine: package directory: %w", err)
+		}
+		opts.PackageDir = dir
+	}
 	e := &Engine{}
 	if opts.Check.Secrets == nil {
 		opts.Check.Secrets = e.secrets // resolved when called: tests replace Env after New
@@ -223,6 +246,9 @@ func (e *Engine) secrets(pipelineName string) pipeline.SecretLookup {
 	}
 	return pipeline.EnvSecrets(e.opts.Env)(pipelineName)
 }
+
+// Leadership returns Options.Leadership.
+func (e *Engine) Leadership() Leadership { return e.opts.Leadership }
 
 // LeaseTTL is the lease duration the engine leases with; nodes heartbeat well within it.
 func (e *Engine) LeaseTTL() time.Duration { return e.opts.LeaseTTL }

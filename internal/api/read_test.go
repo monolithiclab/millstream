@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -10,6 +11,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/monolithiclab/millstream/internal/artifacts"
 	"github.com/monolithiclab/millstream/internal/store"
@@ -443,6 +445,58 @@ func TestNodes(t *testing.T) {
 		n.Nodes[0].Labels == nil {
 		t.Errorf("nodes = %+v", n)
 	}
+	// Without a deployment (SQLite), the engine is the deployment's only one.
+	if len(n.Engines) != 1 || n.Engines[0] != (DeploymentEngine{ID: "engine-1", State: "active", Version: "v-test"}) {
+		t.Errorf("engines = %+v", n.Engines)
+	}
+}
+
+// fakeDeployment is a deployment of two engines, or one whose engines cannot be read.
+type fakeDeployment struct {
+	engines []DeploymentEngine
+	err     error
+}
+
+func (d fakeDeployment) Engines(context.Context) ([]DeploymentEngine, error) { return d.engines, d.err }
+
+// A standby serves the reads, reports itself and the deployment's engines, and refuses every action, naming the
+// active engine when it knows it.
+func TestStandby(t *testing.T) {
+	f := readFixture(t)
+	since := t0.Add(-time.Hour)
+	active := DeploymentEngine{ID: "mill-01", State: "active", Version: "v-test", Since: &since, Epoch: 3,
+		Address: "10.0.0.1:7070"}
+	standby := DeploymentEngine{ID: "mill-02", State: "standby", Version: "v-test", Since: &t0}
+	srv := func(d Deployment) *Server {
+		return must(New(Options{Store: f.st, Version: "v-test", Standby: true, Deployment: d,
+			Identity: Identity{ID: "mill-02", Since: t0}}))
+	}
+	s := srv(fakeDeployment{engines: []DeploymentEngine{active, standby}})
+	n := get[Nodes](t, s, "/api/v1/nodes")
+	if n.Engine.State != "standby" || n.Engine.ID != "mill-02" || n.Engine.Since == nil || n.Engine.Epoch != 0 ||
+		len(n.Engines) != 2 || n.Engines[0].Address != active.Address || n.Engines[1].ID != "mill-02" {
+		t.Errorf("nodes from the standby = %+v", n)
+	}
+	if runs := get[Page[Run]](t, s, "/api/v1/pipelines/listings/runs"); len(runs.Items) == 0 {
+		t.Error("the standby serves no runs")
+	}
+	rec := do(t, s, request{method: "POST", target: "/api/v1/pipelines/listings/pause", body: "{}"})
+	wantError(t, rec, 503, codeUnavailable)
+	if rec.Header().Get(ActiveEngineHeader) != "mill-01" || rec.Header().Get(ActiveAddressHeader) != active.Address ||
+		!strings.Contains(rec.Body.String(), "mill-01 at 10.0.0.1:7070") {
+		t.Errorf("refusal: %v %s", rec.Header(), rec.Body.String())
+	}
+	// No active engine known (none leads, or the deployment cannot be read): refused without naming one.
+	for _, d := range []Deployment{nil, fakeDeployment{engines: []DeploymentEngine{standby}},
+		fakeDeployment{err: errors.New("down")}} {
+		rec := do(t, srv(d), request{method: "POST", target: "/api/v1/pipelines/listings/pause", body: "{}"})
+		wantError(t, rec, 503, codeUnavailable)
+		if rec.Header().Get(ActiveEngineHeader) != "" {
+			t.Errorf("refusal names %q", rec.Header().Get(ActiveEngineHeader))
+		}
+	}
+	wantError(t, do(t, srv(fakeDeployment{err: errors.New("down")}), request{target: "/api/v1/nodes"}), 500,
+		codeInternal)
 }
 
 func TestOpenAPIServed(t *testing.T) {
@@ -542,6 +596,8 @@ func Test_errorCode(t *testing.T) {
 		code   string
 	}{
 		{errUnavailable, 503, codeUnavailable},
+		{fmt.Errorf("pause: %w", store.ErrReadOnly), 503, codeUnavailable},
+		{fmt.Errorf("pause: %w", store.ErrWriteLost), 503, codeUnavailable},
 		{&http.MaxBytesError{Limit: 1}, 413, codeTooLarge},
 		{json.Unmarshal([]byte("x"), new(int)), 500, codeInternal},
 	} {

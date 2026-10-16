@@ -74,6 +74,17 @@ type Environment struct {
 	Retention Retention
 	// Improve is the improve key (spec sections 11.2 and 11.3), kept for the improve pipeline (M5).
 	Improve Improve
+	// Engine is the engine key: how an engine on Postgres watches its write connection (spec section 5.9).
+	Engine EngineConfig
+}
+
+// EngineConfig is the engine key; a zero duration means the store's default (5 s each).
+type EngineConfig struct {
+	// LockCheck is engine.lockCheck: how often an idle engine checks its write connection, and the lock with it.
+	LockCheck time.Duration
+	// Keepalive is engine.keepalive: the period of the write connection's TCP keepalives, which sets how soon a
+	// dead engine's lock is released and a cut-off engine steps down.
+	Keepalive time.Duration
 }
 
 // Environment modes (spec section 11.2).
@@ -349,7 +360,7 @@ func ParseEnvironment(data []byte) (*Environment, error) {
 		return nil, err
 	}
 	if err := f.allow("environment", "store", "artifacts", "listen", "auth", "node", "registries", "secrets",
-		"retention", "lessons", "ui", "improve", "prices", "runtime", "agents"); err != nil {
+		"retention", "lessons", "ui", "improve", "prices", "runtime", "agents", "engine"); err != nil {
 		return nil, err
 	}
 	for _, err := range []error{
@@ -368,6 +379,7 @@ func ParseEnvironment(data []byte) (*Environment, error) {
 		optional(f, "prices", &env.Prices, prices),
 		readRuntime(f, env),
 		readAgents(f, env),
+		readEngine(f, env),
 	} {
 		if err != nil {
 			return nil, err
@@ -707,6 +719,15 @@ func readRetention(f *fields, env *Environment) error {
 			optional(rf, "events", &env.Retention.Events, duration),
 			optional(rf, "transcripts", &env.Retention.Transcripts, duration),
 			optional(rf, "rollups", &env.Retention.Rollups, duration),
+		}
+	})
+}
+
+func readEngine(f *fields, env *Environment) error {
+	return section(f, "engine", []string{"lockCheck", "keepalive"}, func(ef *fields) []error {
+		return []error{
+			optional(ef, "lockCheck", &env.Engine.LockCheck, duration),
+			optional(ef, "keepalive", &env.Engine.Keepalive, duration),
 		}
 	})
 }

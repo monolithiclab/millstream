@@ -286,18 +286,39 @@ type StepLessons struct {
 	Examples []pipeline.LessonExample `json:"examples"`
 }
 
-// Nodes is the engine and the nodes it serves.
+// Nodes is the engine serving the API, the deployment's engines and the nodes it serves.
 type Nodes struct {
-	Engine EngineInfo `json:"engine"`
-	Nodes  []Node     `json:"nodes"`
+	Engine  EngineInfo         `json:"engine"`
+	Engines []DeploymentEngine `json:"engines"`
+	Nodes   []Node             `json:"nodes"`
 }
 
-// EngineInfo is the engine serving the API: the active one, in M3 the only one.
+// Engine states (spec section 5.9).
+const (
+	stateActive  = "active"
+	stateStandby = "standby"
+)
+
+// EngineInfo is the engine serving the API: the active one, or a standby serving reads.
 type EngineInfo struct {
-	State   string `json:"state"`
-	Version string `json:"version"`
+	State   string     `json:"state"`
+	ID      string     `json:"id"`
+	Version string     `json:"version"`
+	Since   *time.Time `json:"since,omitempty"`
+	Epoch   int64      `json:"epoch,omitempty"`
 	// NotificationsFailed counts the review notifications that failed or were dropped (review_notifications_failed).
 	NotificationsFailed int64 `json:"notificationsFailed"`
+}
+
+// DeploymentEngine is an engine of the deployment: the active one, holding the leadership lock since Since in
+// epoch Epoch and serving its API at Address, or a standby waiting for the lock since Since.
+type DeploymentEngine struct {
+	ID      string     `json:"id"`
+	State   string     `json:"state"`
+	Version string     `json:"version"`
+	Since   *time.Time `json:"since,omitempty"`
+	Epoch   int64      `json:"epoch,omitempty"`
+	Address string     `json:"address,omitempty"`
 }
 
 // Node is a node the engine serves; Leases is how many deliveries it holds now.

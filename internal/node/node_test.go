@@ -1,6 +1,7 @@
 package node
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -387,6 +388,32 @@ func TestDrainTimeoutAbandons(t *testing.T) {
 	defer tr.mu.Unlock()
 	if len(tr.dones)+len(tr.fails) != 0 {
 		t.Errorf("an abandoned delivery was reported")
+	}
+}
+
+// Cancelled with ErrAbandon, the node does not drain: it cancels its deliveries at once and reports none.
+func TestAbandonCancelsWithoutReporting(t *testing.T) {
+	t.Parallel()
+	pool, _ := heldPool(t) // never released: only the cancellation ends the delivery
+	tr := newFakeTransport(assignment("dl_1", "echo", nil))
+	n, err := New(tr, Options{Owner: "node-a", Pool: pool})
+	if err != nil {
+		t.Fatal(err)
+	}
+	clk := newFakeClock(t)
+	n.newTimer = clk.newTimer
+	ctx, cancel := context.WithCancelCause(t.Context())
+	errc := make(chan error, 1)
+	go func() { errc <- n.Run(ctx) }()
+	await(t, tr.pulled, 1)
+	cancel(fmt.Errorf("stepping down: %w", ErrAbandon))
+	if err := <-errc; err != nil {
+		t.Fatalf("Run = %v", err)
+	}
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	if len(tr.dones)+len(tr.fails) != 0 || len(tr.heartbeats) != 0 {
+		t.Errorf("an abandoned delivery was reported or renewed")
 	}
 }
 

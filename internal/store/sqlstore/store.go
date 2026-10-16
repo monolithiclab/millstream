@@ -116,6 +116,12 @@ type Config struct {
 	// touches the connection.
 	Check      func(ctx context.Context) error
 	CheckEvery time.Duration
+	// CheckTimeout bounds one Check; zero means 5 seconds.
+	CheckTimeout time.Duration
+	// BatchTimeout, when set, bounds a batch's transaction: a batch that takes longer fails as a whole, and the
+	// writer checks the connection. On Postgres it is what notices a write connection the network silently cut
+	// while a batch was on it, which TCP alone may take minutes to report (spec section 5.9).
+	BatchTimeout time.Duration
 	// ReadOnly makes every unit fail with store.ErrReadOnly: a store opened for reading only, Write nil.
 	ReadOnly bool
 }

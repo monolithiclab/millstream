@@ -93,6 +93,10 @@ func (e *Engine) lease(ctx context.Context, owner string, maxN int) ([]store.Lea
 	if err != nil {
 		return nil, fmt.Errorf("pull: %w", err)
 	}
+	if len(leases) > 0 && e.leased.CompareAndSwap(false, true) {
+		e.log.Info("first dispatch", "leases", len(leases), "engine", e.opts.Leadership.ID,
+			"epoch", e.opts.Leadership.Epoch)
+	}
 	for _, l := range leases {
 		ref := store.StepRef{Pipeline: l.Pipeline, Step: l.Step}
 		e.inflight[l.Ref().Key()] = flight{
@@ -170,8 +174,9 @@ func (e *Engine) bucket(ref store.StepRef, rate string, now time.Time) *bucket {
 		delete(e.buckets, ref)
 		return nil
 	}
-	if b := e.buckets[ref]; b != nil && b.rate == rate {
-		return b
+	old := e.buckets[ref]
+	if old != nil && old.rate == rate {
+		return old
 	}
 	count, per, err := pipeline.ParseRate(rate)
 	if err != nil {
@@ -180,6 +185,9 @@ func (e *Engine) bucket(ref store.StepRef, rate string, now time.Time) *bucket {
 		return nil
 	}
 	b := newBucket(rate, count, per, now)
+	if old == nil && e.opts.Takeover {
+		b.tokens = 0 // the step's first bucket under this engine: no burst on a takeover
+	}
 	e.buckets[ref] = b
 	return b
 }

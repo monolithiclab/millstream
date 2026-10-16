@@ -45,3 +45,29 @@ func TestBucket(t *testing.T) {
 		t.Fatalf("invalid rate: logs %s", logs.String())
 	}
 }
+
+// An engine taking a deployment over starts each step's rate empty: its first token comes one interval in.
+func TestBucketAfterTakeover(t *testing.T) {
+	e := &Engine{buckets: map[store.StepRef]*bucket{}, opts: Options{Takeover: true}}
+	ref := store.StepRef{Pipeline: "p", Step: "a"}
+	b := e.bucket(ref, "2/min", t0)
+	if got := b.available(t0); got != 0 {
+		t.Fatalf("%d tokens at the takeover, want 0", got)
+	}
+	if got := b.available(t0.Add(30 * time.Second)); got != 1 {
+		t.Fatalf("%d tokens one interval in, want 1", got)
+	}
+	if nb := e.bucket(ref, "1/h", t0); nb.available(t0) != 1 {
+		t.Fatal("a new rate after the takeover did not start full")
+	}
+}
+
+func TestLeadershipReported(t *testing.T) {
+	e, err := New(Options{Store: nil})
+	if err == nil || e != nil {
+		t.Fatal("an engine without a store")
+	}
+	if got := (&Engine{opts: Options{Leadership: Leadership{ID: "a", Epoch: 2}}}).Leadership(); got.ID != "a" || got.Epoch != 2 {
+		t.Fatalf("leadership %+v", got)
+	}
+}

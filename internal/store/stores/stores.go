@@ -27,16 +27,16 @@ import (
 func Open(ctx context.Context, cfg pipeline.StoreConfig, defaultPath string, lookup func(string) (string, bool)) (
 	store.Store, error,
 ) {
-	return OpenLeader(ctx, cfg, defaultPath, lookup, nil)
+	return OpenLeader(ctx, cfg, defaultPath, lookup, postgres.Options{})
 }
 
-// OpenLeader is Open, calling waiting, when it is set, once Postgres's leadership lock is found held by another
-// engine and before waiting for it: serve logs that it stands by.
+// OpenLeader is Open with the options a Postgres store takes the lock under: serve names its engine, the session's
+// watch periods, and the callback that logs it stands by while another engine holds the lock.
 func OpenLeader(ctx context.Context, cfg pipeline.StoreConfig, defaultPath string, lookup func(string) (string, bool),
-	waiting func(),
+	opts postgres.Options,
 ) (store.Store, error) {
 	return open(cfg, defaultPath, lookup, func(dsn string) (store.Store, error) {
-		return postgres.Open(ctx, dsn, postgres.Options{Waiting: waiting})
+		return orNil(postgres.Open(ctx, dsn, opts))
 	})
 }
 
@@ -46,7 +46,7 @@ func OpenReader(ctx context.Context, cfg pipeline.StoreConfig, defaultPath strin
 	store.Store, error,
 ) {
 	return open(cfg, defaultPath, lookup, func(dsn string) (store.Store, error) {
-		return postgres.OpenReadOnly(ctx, dsn, postgres.Options{})
+		return orNil(postgres.OpenReadOnly(ctx, dsn, postgres.Options{}))
 	})
 }
 
@@ -69,5 +69,13 @@ func openSQLite(cfg pipeline.StoreConfig, defaultPath string) (store.Store, erro
 	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
 		return nil, fmt.Errorf("create database directory: %w", err)
 	}
-	return sqlite.Open(path, sqlite.Options{})
+	return orNil(sqlite.Open(path, sqlite.Options{}))
+}
+
+// orNil returns a store that failed to open as a nil interface, never a typed nil a caller would find non-nil.
+func orNil[S store.Store](s S, err error) (store.Store, error) {
+	if err != nil {
+		return nil, err
+	}
+	return s, nil
 }

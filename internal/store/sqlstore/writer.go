@@ -1,6 +1,7 @@
 package sqlstore
 
 import (
+	"cmp"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -112,7 +113,7 @@ func (s *Store) check(failed error) {
 	if s.cfg.Check == nil || s.lost != nil {
 		return
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), checkTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), cmp.Or(s.cfg.CheckTimeout, defaultCheckTimeout))
 	defer cancel()
 	err := s.cfg.Check(ctx)
 	if err == nil {
@@ -125,18 +126,27 @@ func (s *Store) check(failed error) {
 	close(s.lostCh)
 }
 
-// checkTimeout bounds one Config.Check.
-const checkTimeout = 5 * time.Second
+// defaultCheckTimeout bounds one Config.Check without Config.CheckTimeout.
+const defaultCheckTimeout = 5 * time.Second
 
 // prepareUnseen prepares the queries the last batch ran unprepared. It runs between batches: the write connection
 // belongs to the batch transaction while it lasts. A query that cannot be prepared runs unprepared again next time.
 func (s *Store) prepareUnseen() {
+	defer clear(s.unseen)
+	if s.lost != nil || len(s.unseen) == 0 {
+		return
+	}
+	ctx := context.Background()
+	if s.cfg.BatchTimeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, s.cfg.BatchTimeout)
+		defer cancel()
+	}
 	for q := range s.unseen {
-		if st, err := s.cfg.Write.PrepareContext(context.Background(), q); err == nil {
+		if st, err := s.cfg.Write.PrepareContext(ctx, q); err == nil {
 			s.stmts[q] = st
 		}
 	}
-	clear(s.unseen)
 }
 
 // stmt returns query prepared for the batch transaction, or nil when it is not prepared yet: the writer prepares it
@@ -190,6 +200,11 @@ func (s *Store) commit(batch []*request) []error {
 // to every unit without an error of its own.
 func (s *Store) commitBatch(batch []*request, results []error) (err error) {
 	ctx := context.Background() // a caller's cancellation must not abort the others' transaction
+	if s.cfg.BatchTimeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, s.cfg.BatchTimeout)
+		defer cancel()
+	}
 	tx, err := s.cfg.Write.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin: %w", err)

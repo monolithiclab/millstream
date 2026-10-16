@@ -56,6 +56,25 @@ type Engine interface {
 		[]engine.Finding, error)
 }
 
+// Deployment is what the server knows of its deployment's engines (spec section 5.9).
+type Deployment interface {
+	// Engines returns the engines holding or waiting for the deployment's leadership lock, the active one first.
+	Engines(ctx context.Context) ([]DeploymentEngine, error)
+}
+
+// Identity is the engine serving the API: its id, since when it leads or stands by, and the epoch it leads in.
+type Identity struct {
+	ID    string
+	Since time.Time
+	Epoch int64
+}
+
+// Headers a standby answers an action with, naming the active engine when it knows it (spec section 5.9).
+const (
+	ActiveEngineHeader  = "X-Millstream-Active-Engine"
+	ActiveAddressHeader = "X-Millstream-Active-Address"
+)
+
 // Options configure a Server. Store is required.
 type Options struct {
 	Store store.Store
@@ -72,6 +91,14 @@ type Options struct {
 	Nodes []Node
 	// Version is the binary's version, reported for the engine and the embedded node.
 	Version string
+	// Identity is the engine serving the API, reported by /nodes.
+	Identity Identity
+	// Deployment lists the deployment's engines for /nodes; nil lists this one alone.
+	Deployment Deployment
+	// Standby serves a standby engine's API (spec section 5.9): reads only, from a read-only store; every action
+	// answers 503 unavailable, naming the active engine in ActiveEngineHeader and ActiveAddressHeader when
+	// Deployment knows it.
+	Standby bool
 	// NotificationFailures counts the engine's failed review notifications; nil reports none.
 	NotificationFailures func() int64
 	// User is who decides when a request names nobody (the server's user until authentication, M4); empty makes a
@@ -185,6 +212,10 @@ func New(opts Options) (*Server, error) {
 			if r.Method == http.MethodPost && !jsonContent(r) {
 				writeErrorBody(w, http.StatusUnsupportedMediaType, codeUnsupportedMediaType,
 					"a POST carries Content-Type: application/json, an empty object when it has nothing to say")
+				return
+			}
+			if r.Method == http.MethodPost && s.opts.Standby {
+				s.refuseStandby(w, r)
 				return
 			}
 			if err := h(s, w, r); err != nil {
@@ -331,10 +362,29 @@ func errorCode(err error) (int, string) {
 	case errors.Is(err, store.ErrInvalid), errors.Is(err, engine.ErrFiringConfig):
 		return http.StatusBadRequest, codeInvalid
 	case errors.Is(err, errUnavailable), errors.Is(err, store.ErrClosed), errors.Is(err, context.Canceled),
-		errors.Is(err, context.DeadlineExceeded):
+		errors.Is(err, context.DeadlineExceeded), errors.Is(err, store.ErrReadOnly), errors.Is(err, store.ErrWriteLost):
 		return http.StatusServiceUnavailable, codeUnavailable
 	}
 	return http.StatusInternalServerError, codeInternal
+}
+
+// refuseStandby answers an action sent to a standby engine: unavailable, naming the active engine when the
+// deployment has one.
+func (s *Server) refuseStandby(w http.ResponseWriter, r *http.Request) {
+	msg := "this engine is the standby: actions go to the active engine"
+	if s.opts.Deployment != nil {
+		if engines, err := s.opts.Deployment.Engines(r.Context()); err == nil && len(engines) > 0 &&
+			engines[0].State == stateActive {
+			active := engines[0]
+			w.Header().Set(ActiveEngineHeader, active.ID)
+			msg += " " + active.ID
+			if active.Address != "" {
+				w.Header().Set(ActiveAddressHeader, active.Address)
+				msg += " at " + active.Address
+			}
+		}
+	}
+	writeErrorBody(w, http.StatusServiceUnavailable, codeUnavailable, msg)
 }
 
 // writeError answers err. An internal error's message is logged, not sent: it may name the store's internals.

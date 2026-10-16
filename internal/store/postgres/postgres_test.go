@@ -2,8 +2,12 @@ package postgres
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/jackc/pgx/v5"
 )
 
 func TestRebind(t *testing.T) {
@@ -73,3 +77,71 @@ func Test_redact(t *testing.T) {
 type errDSN string
 
 func (e errDSN) Error() string { return string(e) }
+
+// An engine's write session carries its id and version, cut to what Postgres keeps; a command's carries neither.
+func TestApplicationName(t *testing.T) {
+	if got := applicationName(Engine{}); got != "millstream" {
+		t.Errorf("a command's session: %q", got)
+	}
+	name := applicationName(Engine{ID: "mill-01-abc", Version: "v1.2.3"})
+	if e, ok := parseApplicationName(name); !ok || e != (Engine{ID: "mill-01-abc", Version: "v1.2.3"}) {
+		t.Errorf("%q parses as %+v, %v", name, e, ok)
+	}
+	long := applicationName(Engine{ID: "id", Version: strings.Repeat("v", 100)})
+	if len(long) != maxApplicationName {
+		t.Errorf("a long name keeps %d bytes", len(long))
+	}
+	for _, other := range []string{"millstream", "millstream-read", "millstream-engine ", "psql"} {
+		if _, ok := parseApplicationName(other); ok {
+			t.Errorf("%q parses as an engine", other)
+		}
+	}
+}
+
+// The write session's watch settings follow the periods: keepalives every k, the user and transaction timeouts at
+// 3k, silence ended after CheckEvery + 2k, whole seconds at least one, milliseconds within Postgres's range.
+func TestWatchSession(t *testing.T) {
+	cfg, err := pgx.ParseConfig("postgres://u@localhost/db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	watchSession(cfg, Options{CheckEvery: 2 * time.Second, Keepalive: 1500 * time.Millisecond})
+	want := map[string]string{"tcp_keepalives_idle": "2", "tcp_keepalives_interval": "2", "tcp_keepalives_count": "2",
+		"tcp_user_timeout": "4500", "idle_session_timeout": "5000", "idle_in_transaction_session_timeout": "4500"}
+	for k, v := range want {
+		if cfg.RuntimeParams[k] != v {
+			t.Errorf("%s = %q, want %q", k, cfg.RuntimeParams[k], v)
+		}
+	}
+	if cfg.ConnectTimeout != 4500*time.Millisecond || cfg.DialFunc == nil {
+		t.Errorf("connect timeout %s, dialer set %v", cfg.ConnectTimeout, cfg.DialFunc != nil)
+	}
+	if millis(time.Duration(1<<62)) != "2147483647" || millis(0) != "1" {
+		t.Error("millis does not clamp")
+	}
+}
+
+// The engines of the lock's sessions, in order, the holder completed by its own leadership row only; sessions that
+// are not an engine's are left out.
+func TestEngineStatuses(t *testing.T) {
+	t0 := time.Date(2026, 10, 16, 8, 0, 0, 0, time.UTC)
+	waiting := lockSession{name: applicationName(Engine{ID: "b", Version: "v2"}), since: t0.Add(time.Minute)}
+	holder := lockSession{name: applicationName(Engine{ID: "a", Version: "v1"}), granted: true, since: t0}
+	lead := &Leadership{Engine: Engine{ID: "a", Version: "v1-full", Address: "h:1"}, Epoch: 7, Since: t0.Add(-time.Hour)}
+	got := engineStatuses([]lockSession{holder, {name: "millstream", granted: false}, waiting}, lead)
+	want := []EngineStatus{
+		{Engine: lead.Engine, Active: true, Since: lead.Since, Epoch: 7},
+		{Engine: Engine{ID: "b", Version: "v2"}, Since: waiting.since},
+	}
+	if !slices.Equal(got, want) {
+		t.Fatalf("engines %+v, want %+v", got, want)
+	}
+	// Another engine's row (a holder that has not recorded itself yet) is not this holder's.
+	got = engineStatuses([]lockSession{holder}, &Leadership{Engine: Engine{ID: "z"}, Epoch: 9})
+	if len(got) != 1 || got[0].Epoch != 0 || !got[0].Since.Equal(t0) {
+		t.Fatalf("engines with another's row %+v", got)
+	}
+	if got := engineStatuses([]lockSession{{name: "millstream", granted: true}}, nil); len(got) != 0 {
+		t.Fatalf("a command's session listed: %+v", got)
+	}
+}

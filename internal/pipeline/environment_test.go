@@ -49,6 +49,7 @@ secrets:
   property-sourcing: { homesiteToken: { env: HOMESITE_TOKEN }, apiKey: { file: key } }
   other: {}
 retention: { events: 90d, transcripts: 30d, rollups: 400d }
+engine: { lockCheck: 2s, keepalive: 3s }
 improve:
   enabled: true
   harness: api
@@ -73,6 +74,7 @@ improve:
 			"property-sourcing": {"homesiteToken": {Env: "HOMESITE_TOKEN"}, "apiKey": {File: "key"}}, "other": {},
 		},
 		Retention: Retention{Events: 90 * day, Transcripts: 30 * day, Rollups: 400 * day},
+		Engine:    EngineConfig{LockCheck: 2 * time.Second, Keepalive: 3 * time.Second},
 		Improve: Improve{Enabled: true, Harness: "api", MinSeverity: "warning", Publish: PublishApply, BudgetDayUSD: 5,
 			EvidenceSample: 500, EvidenceTTL: 30 * day, BacktestSample: 200, DistillMinDeliveries: 500,
 			DistillLanguage: "go", DistillMinAgreement: 0.98, DistillMinCoverage: 0.6, FilterMaxFalseDrop: 0.01},
@@ -168,6 +170,9 @@ func TestParseEnvironmentErrors(t *testing.T) {
 		"secret source":     {"secrets: { p: { token: { vault: x } } }\n", "secrets.p.token.vault: unknown key"},
 		"retention":         {"retention: { events: forever }\n", "retention.events:"},
 		"retention key":     {"retention: { items: 3d }\n", "retention.items: unknown key"},
+		"engine key":        {"engine: { id: a }\n", "engine.id: unknown key"},
+		"engine zero":       {"engine: { lockCheck: 0s }\n", "engine.lockCheck: duration \"0s\" must be positive"},
+		"engine keepalive":  {"engine: { keepalive: often }\n", "engine.keepalive:"},
 		"improve key":       {"improve: { autoApply: true }\n", "improve.autoApply: unknown key"},
 		"improve harness":   {"improve: { harness: gpt }\n", "improve.harness: must be one of claude-code, api"},
 		"improve publish":   {"improve: { publish: email }\n", "improve.publish: must be one of apply"},

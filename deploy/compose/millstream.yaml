@@ -7,8 +7,11 @@
 environment: production
 
 # Both engines share one Postgres database; the one holding its advisory lock is active, the other waits as the
-# standby (Task 3).
+# standby, serving the UI read-only, and takes over when it fails (Task 3).
 store: { postgres: { dsn: { env: MILLSTREAM_DSN } } }
+# How each engine watches its write connection: a dead engine's lock is free, and a cut-off one steps down, within
+# lockCheck + 2 x keepalive (docs/deploy.md, Standby and failover).
+engine: { lockCheck: 5s, keepalive: 5s }
 
 # Inside the container the API listens on every interface, so compose can publish it; a non-loopback listener is
 # refused without auth.token. Publish it on the host's loopback and put a TLS reverse proxy in front (docs/deploy.md).

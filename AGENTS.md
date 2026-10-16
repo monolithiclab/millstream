@@ -74,12 +74,14 @@ below) for the reasoning, and `make help` for every command.
   behind the units uses the store's `Exec`, `Unit` or `QueryRow`, written with `?` placeholders.
 - Postgres tests (`internal/store/postgres`, `stores`, and the crash suite's Postgres half in `internal/e2e`) run
   under the e2e tag in Docker: `pgtest` starts one container of `pgtest.Image` (the official `postgres:17`, pinned by
-  digest) per test binary on first use, migrates a template database once and copies a new database from it for each
-  test; `TestMain` calls `pgtest.Stop`. Without Docker they skip, saying so. Run them alone with
+  digest) per test binary on first use, its data directory a tmpfs (no volume outlives it), migrates a template
+  database once and copies a new database from it for each test, dropped when the test ends; `TestMain` calls
+  `pgtest.Stop`. Without Docker they skip, saying so. Run them alone with
   `go test -tags e2e ./internal/store/postgres/...`.
 - `make test-e2e` (`go test -race -count=1 -tags e2e ./...`, and the SDK module's) runs everything, tagged and
   untagged, under the race detector, and prints the whole suite's coverage (`make test` checks the default build's
-  against `COVERAGE_MIN`): the `internal/e2e` package (crash matrix on SQLite and Postgres, M1 and M2 scenarios), the
+  against `COVERAGE_MIN`): the `internal/e2e` package (crash matrix on SQLite and Postgres, the failover chaos suite
+  of `failover_test.go`, two `serve` processes on Postgres, M1 and M2 scenarios), the
   end-to-end CLI and engine tests, the real-process twins of the in-process tests (under the tag, `fakeexec` runs the
   built fake binary), Docker and Postgres tests, and the long property runs. It is slow, is not part of `make ci`,
   and runs in CI as its own job; run it before closing a milestone and after touching the exec runtime, the node,
