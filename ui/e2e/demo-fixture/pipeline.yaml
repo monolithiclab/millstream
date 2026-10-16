@@ -1,0 +1,67 @@
+# The M3 reference demo (make test-ui-e2e; make test-ui-demo alone): the M2 fixture's pipeline (examples/m2-fixture)
+# with people in it. A review step sits between the agent scorer and the score threshold, so an analyst approves,
+# edits or rejects every scored listing before it is priced. make assembles the package in .build/demo: this file,
+# the M2 fixture's actions and lessons, its exec actions (crawl, and the M1 fixture's rentability and report)
+# compiled for the Playwright container's Linux. The score agent replays the M2 fixture's recordings, offline, but
+# for the one of L002, which is withheld so that delivery dead-letters as in the M2 crash reference. No cron
+# trigger: only the demo fires a run.
+pipeline: m3-demo
+description: Listings scored by an agent, then reviewed
+
+vars:
+  day: 1
+  minScore: 70
+  minMarginPct: 15
+
+secrets: [scorerKey]
+
+triggers:
+  adhoc: { manual: {} }
+
+steps:
+  crawl:
+    action: ./actions/crawl
+    in: trigger.adhoc
+    out: listings.raw
+    config: { day: '${vars.day}' }
+
+  dedupe:
+    action: dedupe
+    in: listings.raw
+    out: listings.unique
+    config: { key: item.id, window: 30d }
+
+  score:
+    action: ./actions/score
+    in: listings.unique
+    out: listings.scored
+    concurrency: 4
+
+  review:
+    action: review
+    in: listings.scored
+    out: listings.reviewed
+    config:
+      inbox: analysts
+      reasons: [overpriced, poor-condition, duplicate]
+      editable: [/score, /reason]
+      display: "{{.item.id}} · {{.item.city}}, {{.item.surfaceM2}} m²\n{{.item.reason}}"
+
+  keep-good:
+    action: filter
+    in: listings.reviewed
+    out: listings.shortlist
+    config: { expr: 'item.score >= vars.minScore' }
+
+  rentability:
+    action: ./actions/rentability
+    in: listings.shortlist
+    out: listings.priced
+    concurrency: 2
+    config: { strict: false }
+
+  report:
+    action: ./actions/report
+    in: listings.priced
+    out: reports.done
+    config: { minMarginPct: '${vars.minMarginPct}' }

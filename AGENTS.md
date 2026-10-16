@@ -86,7 +86,14 @@ below) for the reasoning, and `make help` for every command.
   fixture's `price-check` dead-letters (its surface is 0). `e2e/screens.spec.ts` runs axe and the clipping check of
   `e2e/checks.ts` on every built screen, then the flows across screens (graph, item, replayed dead letter; the reject
   sheet; the density strip; the metrics explorer); `e2e/inbox-flow.spec.ts` decides reviews from the keyboard in
-  French; `e2e/smoke.spec.ts` covers the shell on `?demo`.
+  French; `e2e/smoke.spec.ts` covers the shell on `?demo`. Then `make test-ui-e2e` runs the M3 reference demo,
+  `e2e/demo.spec.ts` (`playwright.demo.config.ts`; `make test-ui-demo` runs it alone), once in English and light,
+  once in French and dark, each on a `millstream run` of its own over the package make assembles in `.build/demo`:
+  `e2e/demo-fixture/pipeline.yaml` (the M2 fixture with a `review` step after `score`), the M2 fixture's actions with
+  their Go exec actions compiled for the container, and its recordings replayed offline but L002's, withheld so that
+  listing dead-letters; `e2e/demo-fixture/millstream.yaml` lets the agent run unsandboxed. It fires the run from the
+  Runs screen, watches the graph, reads a transcript, decides the reviews from the keyboard, checks the run settles
+  and the cost per approved item, replays the dead letter and opens the metrics, with axe on every state.
   `make ui-shell` opens a shell in the node container (`npm run dev` serves on port 5173). Both test targets run in
   CI as their own jobs, not in `make ci`.
 - Tokens: `ui/src/styles/tokens.css` holds every colour, font, radius, shadow and motion token of the canvas identity

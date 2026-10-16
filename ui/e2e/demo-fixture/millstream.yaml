@@ -1,0 +1,4 @@
+# The demo server's environment file: the score agent runs unsandboxed (there is no container runtime inside the
+# Playwright container), and the fake model is priced as in the M2 end-to-end suite, so runs and items show a cost.
+agents: { allowUnsandboxed: true }
+prices: { fake-scorer-1: { inPerMtok: 3, outPerMtok: 15 } }

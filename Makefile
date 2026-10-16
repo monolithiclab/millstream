@@ -108,14 +108,46 @@ test-ui: ui-deps ## Typecheck, lint, format check and Vitest (coverage, i18n che
 		{ echo "ui/$(UI_TYPES) is stale: run make ui-types" >&2; exit 1; }; } && \
 		npm run typecheck && npm run lint && npm run format:check && npm test'
 
-.PHONY: test-ui-e2e
-# The tests reach the build through the binary: millstream, cross-compiled for the container's Linux with the UI
-# embedded, runs the e2e fixture package and serves the API and the UI.
-test-ui-e2e: ui ## Playwright and axe against millstream run serving the built web UI, both themes and languages (Playwright container)
+# The Playwright tests reach the build through the binary: millstream, cross-compiled for the container's Linux with
+# the UI embedded, serves the API and the UI over a package.
+UI_E2E_GOENV = GOOS=linux GOARCH=$$(docker version --format '{{.Server.Arch}}') CGO_ENABLED=0
+UI_E2E_PLATFORM = linux-$$(docker version --format '{{.Server.Arch}}')
+UI_PLAYWRIGHT = $(UI_DOCKER) --ipc=host $(UI_PLAYWRIGHT_IMAGE) npx playwright test
+
+.PHONY: ui-e2e-bin
+ui-e2e-bin: ui
 	@mkdir -p .build
-	@GOOS=linux GOARCH=$$(docker version --format '{{.Server.Arch}}') CGO_ENABLED=0 \
-		go build -o .build/millstream ./cmd/millstream
-	@$(UI_DOCKER) --ipc=host $(UI_PLAYWRIGHT_IMAGE) npx playwright test
+	@$(UI_E2E_GOENV) go build -o .build/millstream ./cmd/millstream
+
+# The M3 reference demo's package, assembled in .build/demo from ui/e2e/demo-fixture/pipeline.yaml and the M2
+# fixture's actions and lessons, its exec actions compiled for the container; .build/demo-recordings holds the M2
+# fixture's recordings but L002's under the committed lessons, so that listing dead-letters (as crashRecordings does
+# for the M2 crash reference, internal/e2e/m2_build_test.go).
+DEMO = .build/demo
+DEMO_ACTIONS = crawl:./examples/m2-fixture/actions/crawl rentability:./examples/m1-fixture/actions/rentability \
+	report:./examples/m1-fixture/actions/report
+
+.PHONY: ui-demo-package
+ui-demo-package:
+	@rm -rf $(DEMO) $(DEMO)-recordings && mkdir -p $(DEMO) $(DEMO)-recordings
+	@cp -R examples/m2-fixture/actions examples/m2-fixture/lessons ui/e2e/demo-fixture/pipeline.yaml $(DEMO)/
+	@for a in $(DEMO_ACTIONS); do name=$${a%%:*}; \
+		$(UI_E2E_GOENV) go build -o $(DEMO)/actions/$$name/bin/$(UI_E2E_PLATFORM)/$$name $${a#*:} || exit 1; done
+	@cp examples/m2-fixture/recordings/*.json $(DEMO)-recordings/
+	@withheld=$$(grep -l 'Listing L002:' $(DEMO)-recordings/*.json | xargs grep -l 'by 10 points'); \
+		[ $$(echo "$$withheld" | wc -w) -eq 1 ] || { echo "want one recording of L002, got: $$withheld" >&2; exit 1; }; \
+		rm $$withheld
+
+# test-ui-e2e runs both suites: every screen over ui/e2e/fixture (playwright.config.ts), then the reference demo
+# (playwright.demo.config.ts); test-ui-demo runs the demo alone.
+.PHONY: test-ui-e2e
+test-ui-e2e: ui-e2e-bin ui-demo-package ## Playwright and axe: every screen in both themes, languages and widths, then the M3 reference demo (Playwright container)
+	@$(UI_PLAYWRIGHT)
+	@$(UI_PLAYWRIGHT) --config playwright.demo.config.ts
+
+.PHONY: test-ui-demo
+test-ui-demo: ui-e2e-bin ui-demo-package ## The M3 reference demo alone, in English and French, axe on every state (Playwright container)
+	@$(UI_PLAYWRIGHT) --config playwright.demo.config.ts
 
 .PHONY: ui-shell
 ui-shell: ui-deps ## Open a shell in the node container, ui/ mounted, Vite's port 5173 published
