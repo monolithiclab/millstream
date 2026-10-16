@@ -11,6 +11,7 @@ import (
 
 	"github.com/monolithiclab/millstream/internal/api"
 	"github.com/monolithiclab/millstream/internal/engine"
+	"github.com/monolithiclab/millstream/internal/review"
 	"github.com/monolithiclab/millstream/internal/store/sqlite"
 	"github.com/monolithiclab/millstream/internal/ui"
 )
@@ -29,15 +30,15 @@ type apiServer struct {
 }
 
 // server builds run's API server over the store and the engine: the broker wakes on the store's commits.
-func (c RunPackagesCmd) server(rt *Runtime, st *sqlite.Store, e *engine.Engine, logs *api.LogRing, embedded api.Node,
-	log *slog.Logger,
+func (c RunPackagesCmd) server(rt *Runtime, st *sqlite.Store, e *engine.Engine, notes *review.Notifier,
+	logs *api.LogRing, embedded api.Node, log *slog.Logger,
 ) (*apiServer, error) {
 	b, err := api.NewBroker(api.BrokerOptions{Store: st, Logger: log})
 	if err != nil {
 		return nil, err
 	}
 	a, err := api.New(api.Options{Store: st, Engine: e, Artifacts: artifactStore(rt), Broker: b, Logs: logs,
-		Nodes: []api.Node{embedded}, Version: rt.Version, Env: rt.Env, Logger: log})
+		Nodes: []api.Node{embedded}, Version: rt.Version, Env: rt.Env, Logger: log, NotificationFailures: notes.Failures})
 	if err != nil {
 		return nil, err
 	}

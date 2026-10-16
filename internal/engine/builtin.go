@@ -118,39 +118,31 @@ func (e *Engine) park(ctx context.Context, l store.Lease, b *builtin, item any, 
 	req := store.ParkRequest{LeaseRef: ref, Attempt: l.Attempt, Spec: b.spec, AutoApprove: auto,
 		Sample:  auto && review.Sampled(l.Item.ID, b.review.SampleRate),
 		Display: b.review.Render(item, l.Item.Key, l.Item.ID, l.Step)}
-	var state store.DeliveryState
+	var res store.ParkResult
 	err := e.complete(ref, func() (store.DeliveryState, error) {
 		var err error
-		state, err = e.st.Park(ctx, req)
-		return state, err
+		res, err = e.st.Park(ctx, req)
+		return res.State, err
 	})
-	if err == nil && state == store.DeliveryAwaitingReview {
-		e.notify(b.spec.Notify, review.Notification{Pipeline: l.Pipeline, Step: l.Step, Inbox: b.spec.Inbox,
-			DeliveryID: l.DeliveryID, ItemKey: l.Item.Key, Display: req.Display,
-			Deadline: deadline(b.spec.Timeout, e.opts.Now())})
+	if err == nil && res.State == store.DeliveryAwaitingReview {
+		e.notify(b.spec.Notify, b.spec.NotifySecret, review.Notification{Pipeline: l.Pipeline, Step: l.Step,
+			Inbox: b.spec.Inbox, DeliveryID: l.DeliveryID, ItemKey: l.Item.Key, Display: req.Display,
+			Deadline: res.Deadline})
 	}
 	return err
 }
 
-// deadline estimates a parked review's deadline for its notification by the engine's clock; the store keeps the
-// exact one, from its batch instant.
-func deadline(timeout time.Duration, now time.Time) time.Time {
-	if timeout <= 0 {
-		return time.Time{}
-	}
-	return now.Add(timeout)
-}
-
-// notify posts a notification to a review step's webhook in the background, when it has one.
-func (e *Engine) notify(webhook string, n review.Notification) {
-	if webhook == "" || e.opts.Notifier == nil {
+// notify posts a notification to a review step's webhook in the background, when it has one: the URL itself, or
+// the value of the secret holding it, read now (spec section 4.5).
+func (e *Engine) notify(webhook, secret string, n review.Notification) {
+	if (webhook == "" && secret == "") || e.opts.Notifier == nil {
 		return
 	}
-	n.URL = webhook
-	e.mu.Lock()
-	ctx := e.notifyCtx
-	e.mu.Unlock()
-	e.opts.Notifier.Notify(ctx, n)
+	if secret != "" {
+		webhook = pipeline.SecretValues([]string{secret}, e.opts.Env)[secret]
+	}
+	n.URL, n.Secret = webhook, secret
+	e.opts.Notifier.Notify(n)
 }
 
 // complete applies a builtin's store unit to a delivery in flight, counting it out of flight like Done.
@@ -250,7 +242,7 @@ func compileBuiltin(step pipeline.Step) *builtin {
 		}
 		b.review = r
 		b.spec = store.ReviewSpec{Inbox: r.Inbox, Timeout: r.Timeout, OnTimeout: r.OnTimeout, EscalateTo: r.EscalateTo,
-			Editable: r.Editable, Reasons: r.Reasons, Notify: r.Notify}
+			Editable: r.Editable, Reasons: r.Reasons, Notify: r.Notify, NotifySecret: r.NotifySecret}
 	}
 	return b
 }
@@ -268,7 +260,7 @@ func (e *Engine) reviewTimeouts(ctx context.Context) {
 		e.log.Info("review timed out", "pipeline", t.Pipeline, "runId", t.RunID, "step", t.Step,
 			"deliveryId", t.DeliveryID, "applied", t.Action, "inbox", t.Inbox)
 		if t.Action == pipeline.OnTimeoutEscalate {
-			e.notify(t.Notify, review.Notification{Pipeline: t.Pipeline, Step: t.Step, Inbox: t.Inbox,
+			e.notify(t.Notify, t.NotifySecret, review.Notification{Pipeline: t.Pipeline, Step: t.Step, Inbox: t.Inbox,
 				DeliveryID: t.DeliveryID, ItemKey: t.ItemKey, Display: t.Display, Escalated: true, Deadline: t.Deadline})
 		}
 	}

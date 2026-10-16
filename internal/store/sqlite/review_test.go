@@ -42,10 +42,10 @@ func (e *env) parkAll(specFor func(key string) store.ReviewSpec, keys ...string)
 	ids := map[string]string{}
 	for range keys {
 		l := e.leaseGate("gate")
-		state, err := e.s.Park(e.ctx, store.ParkRequest{LeaseRef: l.Ref(), Attempt: l.Attempt, Spec: specFor(l.Item.Key),
+		res, err := e.s.Park(e.ctx, store.ParkRequest{LeaseRef: l.Ref(), Attempt: l.Attempt, Spec: specFor(l.Item.Key),
 			Display: "listing " + l.Item.Key})
-		if err != nil || state != store.DeliveryAwaitingReview {
-			e.t.Fatalf("Park %s = %s, %v", l.Item.Key, state, err)
+		if err != nil || res.State != store.DeliveryAwaitingReview {
+			e.t.Fatalf("Park %s = %+v, %v", l.Item.Key, res, err)
 		}
 		ids[l.Item.Key] = l.DeliveryID
 	}
@@ -268,10 +268,10 @@ func TestAutoApproveAndSamples(t *testing.T) {
 	spec := store.ReviewSpec{Inbox: "analysts", Timeout: time.Hour}
 	for _, sample := range []bool{true, true, false} {
 		l := e.leaseGate("gate")
-		state, err := e.s.Park(e.ctx, store.ParkRequest{LeaseRef: l.Ref(), Attempt: l.Attempt, Spec: spec,
+		res, err := e.s.Park(e.ctx, store.ParkRequest{LeaseRef: l.Ref(), Attempt: l.Attempt, Spec: spec,
 			AutoApprove: true, Sample: sample})
-		if err != nil || state != store.DeliveryDone {
-			t.Fatalf("auto-approve = %s, %v", state, err)
+		if err != nil || res.State != store.DeliveryDone || !res.Deadline.IsZero() {
+			t.Fatalf("auto-approve = %+v, %v", res, err)
 		}
 	}
 	e.drain()

@@ -392,9 +392,12 @@ func (c *checker) checkConfigSchema(a *Action, cfg map[string]any, skipped []str
 // checkBuiltinConfig checks a builtin's config keys and compiles its item expressions.
 func (c *checker) checkBuiltinConfig(builtin string, cfg map[string]any, at string) {
 	if builtin == BuiltinReview { // ParseReview checks every key, unknown ones included
-		_, errs := ParseReview("", cfg)
+		r, errs := ParseReview("", cfg)
 		for _, e := range errs {
 			c.errorf(joinPath(at, e.Key), "%s", e.Message)
+		}
+		if name := r.NotifySecret; name != "" && !slices.Contains(c.p.Secrets, name) {
+			c.errorf(joinPath(at, "notify"), "secret %s is not declared under secrets", name)
 		}
 		return
 	}

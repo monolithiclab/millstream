@@ -396,7 +396,8 @@ func TestMetrics(t *testing.T) {
 func TestNodes(t *testing.T) {
 	f := readFixture(t)
 	n := get[Nodes](t, f.srv, "/api/v1/nodes")
-	if n.Engine.State != "active" || n.Engine.Version != "v-test" || len(n.Nodes) != 1 || n.Nodes[0].Leases != 0 ||
+	if n.Engine.State != "active" || n.Engine.Version != "v-test" || n.Engine.NotificationsFailed != 2 ||
+		len(n.Nodes) != 1 || n.Nodes[0].Leases != 0 ||
 		n.Nodes[0].Labels == nil {
 		t.Errorf("nodes = %+v", n)
 	}

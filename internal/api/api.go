@@ -65,6 +65,8 @@ type Options struct {
 	Nodes []Node
 	// Version is the binary's version, reported for the engine and the embedded node.
 	Version string
+	// NotificationFailures counts the engine's failed review notifications; nil reports none.
+	NotificationFailures func() int64
 	// Env looks up $USER, the reviewer when a request names none; nil means no environment.
 	Env func(string) (string, bool)
 	// Clock is the clock of relative ranges, run reports and the live streams' heartbeats; nil means SystemClock.

@@ -1297,6 +1297,8 @@ export interface components {
         /** @enum {string} */
         state: 'active' | 'standby';
         version: string;
+        /** @description Review notifications that failed after their retries or were dropped since the engine started. */
+        notificationsFailed: number;
       };
       nodes: components['schemas']['Node'][];
     };

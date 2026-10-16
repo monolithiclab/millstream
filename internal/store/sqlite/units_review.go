@@ -18,24 +18,25 @@ import (
 
 // Park is the Park unit: see store.Store. A parked delivery holds no lease and no slot: only its review row and its
 // deadline remain, and its run is waitingReview once nothing else is live.
-func (s *Store) Park(ctx context.Context, req store.ParkRequest) (store.DeliveryState, error) {
+func (s *Store) Park(ctx context.Context, req store.ParkRequest) (store.ParkResult, error) {
 	if req.Spec.Inbox == "" {
-		return "", fmt.Errorf("park: no inbox: %w", store.ErrInvalid)
+		return store.ParkResult{}, fmt.Errorf("park: no inbox: %w", store.ErrInvalid)
 	}
 	spec, err := json.Marshal(req.Spec)
 	if err != nil {
-		return "", fmt.Errorf("park: encode the review spec: %w", err)
+		return store.ParkResult{}, fmt.Errorf("park: encode the review spec: %w", err)
 	}
-	var state store.DeliveryState
+	var res store.ParkResult
 	err = s.submit(ctx, unitPark, func(w *wtx) error {
+		res = store.ParkResult{}
 		d, run, cancelled, err := w.leasedLive(req.LeaseRef, req.Attempt)
 		if err != nil || cancelled {
-			state = store.DeliveryCancelled
+			res.State = store.DeliveryCancelled
 			return err
 		}
 		r := newReview{d: d, inbox: req.Spec.Inbox, spec: string(spec), display: req.Display}
 		if req.AutoApprove {
-			state, err = w.autoApprove(d, run, r, req)
+			res.State, err = w.autoApprove(d, run, r, req)
 			return err
 		}
 		data, err := w.endAttempt(d, false, attemptEnd{})
@@ -55,14 +56,17 @@ func (s *Store) Park(ctx context.Context, req store.ParkRequest) (store.Delivery
 		data["inbox"] = req.Spec.Inbox
 		if deadline != "" {
 			data["deadline"] = deadline
+			if res.Deadline, err = parseTime(deadline); err != nil {
+				return err
+			}
 		}
 		if err := w.event(d.pipeline, d.runID, store.EventReviewParked, data); err != nil {
 			return err
 		}
-		state = store.DeliveryAwaitingReview
+		res.State = store.DeliveryAwaitingReview
 		return w.settle(d.pipeline, d.runID)
 	})
-	return state, err
+	return res, err
 }
 
 // newReview is a review row to write when a delivery parks or is auto-approved.
@@ -513,7 +517,8 @@ func (w *wtx) timeOut(pipelineName, deliveryID string) (store.TimedOutReview, er
 		return store.TimedOutReview{}, err
 	}
 	t := store.TimedOutReview{Pipeline: r.pipeline, DeliveryID: r.deliveryID, RunID: r.runID, Step: r.step,
-		Revision: run.revision, Inbox: r.inbox, ItemKey: out.Key, Display: r.display, Notify: r.spec.Notify}
+		Revision: run.revision, Inbox: r.inbox, ItemKey: out.Key, Display: r.display, Notify: r.spec.Notify,
+		NotifySecret: r.spec.NotifySecret}
 	action := r.spec.OnTimeout
 	if action == pipeline.OnTimeoutEscalate && r.inbox == r.spec.EscalateTo {
 		action = pipeline.OnTimeoutReject // escalated once already

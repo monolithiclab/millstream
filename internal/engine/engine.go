@@ -130,10 +130,6 @@ type Engine struct {
 	// moments a run may settle.
 	changed chan struct{}
 
-	// notifyCtx bounds the review notifications in the background: Run's context once it runs, so they stop when the
-	// engine does rather than when the pull that parked their item ends. Guarded by mu.
-	notifyCtx context.Context
-
 	crons map[[2]string]*cronState // cron triggers by pipeline and name; the scheduler's goroutine only
 
 	ready     chan struct{} // closed once Run has rebuilt the leases in flight
@@ -198,7 +194,7 @@ func New(opts Options) (*Engine, error) {
 		packages: map[string]*pipeline.Package{}, revs: map[store.RevisionID]*revision{},
 		actions:  map[actionKey]*resolvedAction{},
 		lessonsC: map[actionKey]lessonsEntry{}, inflight: map[store.DeliveryKey]flight{}, buckets: map[store.StepRef]*bucket{},
-		builtins: map[builtinKey]*builtin{}, maxDue: maxDue, notifyCtx: context.Background(),
+		builtins: map[builtinKey]*builtin{}, maxDue: maxDue,
 		crons: map[[2]string]*cronState{}, ready: make(chan struct{}), lastInsights: map[string]time.Time{},
 		parser: cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor),
 	}, nil
@@ -230,23 +226,21 @@ func (e *Engine) Apply(ctx context.Context, pkg *pipeline.Package) (store.Revisi
 // ctx is cancelled. It returns nil then, once the
 // projectors stopped. Nodes start pulling once Ready is closed, so the rebuild never races their leases.
 func (e *Engine) Run(ctx context.Context) error {
+	// The review notifications outlive ctx: queued and in-flight ones get a grace period once the engine stops.
+	if e.opts.Notifier != nil {
+		defer e.opts.Notifier.Shutdown(review.ShutdownGrace)
+	}
 	if err := e.resync(ctx); err != nil {
 		if ctx.Err() != nil {
 			return nil
 		}
 		return err
 	}
-	e.mu.Lock()
-	e.notifyCtx = ctx
-	e.mu.Unlock()
 	// Reviews overdue while no engine ran time out before anything waits on their runs.
 	e.reviewTimeouts(ctx)
 	e.readyOnce.Do(func() { close(e.ready) })
 	var wg sync.WaitGroup
 	defer wg.Wait()
-	if e.opts.Notifier != nil {
-		defer e.opts.Notifier.Wait()
-	}
 	wg.Go(func() { e.projectLoop(ctx) })
 	tick := time.NewTicker(e.opts.TickInterval)
 	defer tick.Stop()

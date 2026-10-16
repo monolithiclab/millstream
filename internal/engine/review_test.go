@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"context"
 	"io"
 	"net/http"
 	"slices"
@@ -13,13 +14,21 @@ import (
 	"github.com/monolithiclab/millstream/internal/store"
 )
 
-// webhook records the notifications posted to it, in process.
+// webhook records the notifications posted to it, in process. With hold set, a post first waits for it to close.
 type webhook struct {
 	mu     sync.Mutex
 	bodies []string
+	hold   chan struct{}
 }
 
 func (w *webhook) RoundTrip(r *http.Request) (*http.Response, error) {
+	if w.hold != nil {
+		select {
+		case <-w.hold:
+		case <-r.Context().Done():
+			return nil, r.Context().Err()
+		}
+	}
 	b, err := io.ReadAll(r.Body)
 	if err != nil {
 		return nil, err
@@ -96,6 +105,7 @@ func TestReviewStepInTheEngine(t *testing.T) {
 	if len(posts) != 2 || !strings.HasPrefix(posts[0], "https://hooks.example/x ") ||
 		!strings.Contains(posts[0], `Review needed in inbox analysts: p/gate, item a. `+
 			`https://ms.example/inbox/analysts/`+parked[0].DeliveryID) ||
+		!strings.Contains(posts[0], "Decide before 2026-10-15T07:00:00Z.") ||
 		!strings.Contains(posts[1], "Review escalated in inbox leads") {
 		t.Fatalf("notifications:\n%s", strings.Join(posts, "\n"))
 	}
@@ -107,5 +117,40 @@ func TestReviewStepInTheEngine(t *testing.T) {
 	if logs := v.logs.String(); !strings.Contains(logs, `"applied":"escalate"`) ||
 		!strings.Contains(logs, `"applied":"reject"`) {
 		t.Fatalf("timeouts not logged:\n%s", logs)
+	}
+}
+
+// The engine stopping right after a review parked (run --once settling on it) still delivers its notification: the
+// notifier outlives Run's context and Run waits for it, within its grace.
+func TestNotificationOutlivesTheEngine(t *testing.T) {
+	hook := &webhook{hold: make(chan struct{})}
+	notifier := &review.Notifier{BaseURL: "https://ms.example", Client: &http.Client{Transport: hook}}
+	v := newEnv(t, Options{Notifier: notifier})
+	v.apply(newPackage(t, manualPipeline("p", `  src: { action: ./actions/a, in: trigger.adhoc, out: raw }
+  gate: { action: review, in: raw, config: { inbox: analysts, notify: { secret: hook } } }
+`), "a"))
+	v.e.opts.Env = func(name string) (string, bool) {
+		return "https://hooks.example/from-secret", name == "MILLSTREAM_SECRET_HOOK"
+	}
+	id := v.fire("p", "adhoc", "r1")
+	v.emit(output("a", `{"n":1}`))
+	ctx, cancel := context.WithCancel(v.ctx)
+	done := make(chan error, 1)
+	go func() { done <- v.e.Run(ctx) }()
+	<-v.e.Ready()
+	if got := v.pull(1); len(got) != 0 {
+		t.Fatalf("pull = %v", got)
+	}
+	if r := v.run("p", id); r.State != store.RunWaitingReview {
+		t.Fatalf("run = %s", r.State)
+	}
+	cancel()
+	close(hook.hold) // the post goes out only once the engine was told to stop
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	if posts := hook.posts(); len(posts) != 1 || !strings.HasPrefix(posts[0], "https://hooks.example/from-secret ") ||
+		notifier.Failures() != 0 {
+		t.Fatalf("failures %d, posts %v", notifier.Failures(), posts)
 	}
 }

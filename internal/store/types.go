@@ -767,11 +767,20 @@ type ReviewSpec struct {
 	EscalateTo string   `json:"escalateTo,omitempty"`
 	Editable   []string `json:"editable"`
 	Reasons    []string `json:"reasons"`
-	// Notify is the step's webhook, told when the review is escalated as when it parked.
-	Notify string `json:"notify,omitempty"`
+	// Notify is the step's webhook, told when the review is escalated as when it parked; NotifySecret, set
+	// instead, names the pipeline secret holding it, resolved when a notification is sent and never stored.
+	Notify       string `json:"notify,omitempty"`
+	NotifySecret string `json:"notifySecret,omitempty"`
 	// Schemas are the output schemas of what reaches the step: an edited payload must satisfy one of them. Empty
 	// when no producer declares one.
 	Schemas []json.RawMessage `json:"schemas"`
+}
+
+// ParkResult is what the Park unit did: the delivery's state, and the deadline a parked review got (zero without a
+// timeout, or when the delivery did not park).
+type ParkResult struct {
+	State    DeliveryState
+	Deadline time.Time
 }
 
 // ParkRequest applies the Park unit to a leased delivery of a review step: it parks in Spec.Inbox, or, when
@@ -871,8 +880,9 @@ type TimedOutReview struct {
 	Deadline   time.Time
 	ItemKey    string
 	Display    string
-	// Notify is the step's webhook, empty for none.
-	Notify string
+	// Notify is the step's webhook, or NotifySecret the secret holding it; both empty for none.
+	Notify       string
+	NotifySecret string
 }
 
 // ReviewFilter selects reviews; empty fields match everything, but State defaults to open. Reviews come in Seq order,

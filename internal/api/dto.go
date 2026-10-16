@@ -295,6 +295,8 @@ type Nodes struct {
 type EngineInfo struct {
 	State   string `json:"state"`
 	Version string `json:"version"`
+	// NotificationsFailed counts the review notifications that failed or were dropped (review_notifications_failed).
+	NotificationsFailed int64 `json:"notificationsFailed"`
 }
 
 // Node is a node the engine serves; Leases is how many deliveries it holds now.

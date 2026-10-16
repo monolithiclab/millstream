@@ -37,8 +37,10 @@ type Review struct {
 	EscalateTo string
 	// Editable are the JSON pointers a reviewer may change before approving.
 	Editable []string
-	// Notify is the webhook URL told of every item parked, empty for none.
-	Notify string
+	// Notify is the webhook URL told of every item parked, empty for none; NotifySecret, set instead, names the
+	// pipeline secret holding it, so the URL stays out of the pipeline file.
+	Notify       string
+	NotifySecret string
 	// Display renders an item for the reviewer; nil without a display template.
 	Display *template.Template
 	// Reasons are the reason codes offered; a rejection then needs one.
@@ -130,13 +132,7 @@ func ParseReview(step string, cfg map[string]any) (*Review, []ReviewError) {
 		}
 		r.Editable = append(r.Editable, s)
 	})
-	if s, ok := str("notify"); ok {
-		if !httpURL(s) {
-			fail("notify", "must be an http or https URL")
-		} else {
-			r.Notify = s
-		}
-	}
+	r.parseNotify(cfg, fail)
 	if s, ok := str("display"); ok {
 		t, err := template.New("display").Option("missingkey=zero").Parse(s)
 		if err != nil {
@@ -172,6 +168,27 @@ func ParseReview(step string, cfg map[string]any) (*Review, []ReviewError) {
 		}
 	}
 	return r, errs
+}
+
+// parseNotify reads notify: an http or https URL, or the mapping { secret: <name> }.
+func (r *Review) parseNotify(cfg map[string]any, fail func(key, format string, args ...any)) {
+	v, set := cfg["notify"]
+	if !set {
+		return
+	}
+	switch t := v.(type) {
+	case string:
+		if httpURL(t) {
+			r.Notify = t
+			return
+		}
+	case map[string]any:
+		if name, ok := t["secret"].(string); ok && len(t) == 1 && name != "" {
+			r.NotifySecret = name
+			return
+		}
+	}
+	fail("notify", "must be an http or https URL or { secret: <name> }")
 }
 
 // parseOnTimeout reads onTimeout: reject, approve, or a mapping { escalate: <inbox> }.

@@ -1018,6 +1018,9 @@ func (s *Server) listNodes(w http.ResponseWriter, r *http.Request) error {
 		held[d.LeaseOwner]++
 	}
 	out := Nodes{Engine: EngineInfo{State: "active", Version: s.opts.Version}, Nodes: []Node{}}
+	if s.opts.NotificationFailures != nil {
+		out.Engine.NotificationsFailed = s.opts.NotificationFailures()
+	}
 	for _, n := range s.opts.Nodes {
 		n.Leases = held[n.ID]
 		n.Labels, n.Runtimes = nonNilMap(n.Labels), orEmpty(n.Runtimes)

@@ -75,9 +75,10 @@ func (c RunPackagesCmd) Run(rt *Runtime) error {
 		return err
 	}
 	return withStore(rt, func(st *sqlite.Store) error {
+		notes := notifier(rt, env, log)
 		e, err := engine.New(engine.Options{
 			Store: st, Logger: log, LeaseTTL: c.LeaseTTL, Env: rt.Env, Flags: c.Var, NoCron: c.Once,
-			Artifacts: artifactStore(rt), Resolver: actions, Agents: agents(rt, env), Notifier: notifier(rt, env, log),
+			Artifacts: artifactStore(rt), Resolver: actions, Agents: agents(rt, env), Notifier: notes,
 		})
 		if err != nil {
 			return err
@@ -113,7 +114,7 @@ func (c RunPackagesCmd) Run(rt *Runtime) error {
 		if listen == "" {
 			serveDone <- nil
 		} else {
-			srv, err := c.server(rt, st, e, logs, api.Node{ID: owner, Embedded: true, Version: rt.Version,
+			srv, err := c.server(rt, st, e, notes, logs, api.Node{ID: owner, Embedded: true, Version: rt.Version,
 				Slots: c.Slots, Runtimes: sortedKeys(run)}, log)
 			if err != nil {
 				return err

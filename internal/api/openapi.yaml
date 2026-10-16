@@ -1256,11 +1256,14 @@ components:
       properties:
         engine:
           type: object
-          required: [state, version]
+          required: [state, version, notificationsFailed]
           additionalProperties: false
           properties:
             state: { type: string, enum: [active, standby] }
             version: { type: string }
+            notificationsFailed:
+              type: integer
+              description: Review notifications that failed after their retries or were dropped since the engine started.
         nodes: { type: array, items: { $ref: "#/components/schemas/Node" } }
     Node:
       type: object

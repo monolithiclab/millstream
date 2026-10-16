@@ -61,8 +61,9 @@ type Store interface {
 	// Park is the Park unit (spec section 5.11): a leased delivery of a review step parks awaitingReview in its
 	// inbox, with a deadline when the step has a timeout, holding no lease or slot; or, auto-approved, it passes
 	// unchanged as by Done, recorded as approved by rule, and becomes a review sample when req.Sample is set. It
-	// returns awaitingReview, done (or what Done ends in) or cancelled.
-	Park(ctx context.Context, req ParkRequest) (DeliveryState, error)
+	// returns the delivery's state, awaitingReview, done (or what Done ends in) or cancelled, and a parked review's
+	// deadline as stored.
+	Park(ctx context.Context, req ParkRequest) (ParkResult, error)
 	// DecideReview is the Review decision unit: an open review at the version named is approved, its payload edited
 	// and validated and passed on as by Done, or rejected, its delivery filtered with the reason. A review decided,
 	// escalated or parked again since is ErrConflict, and one that timed out says when and what onTimeout applied;
