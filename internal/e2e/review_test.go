@@ -234,9 +234,8 @@ func TestReviewCrash(t *testing.T) {
 				args := append([]string{"inbox", "sample", samples[0].DeliveryID, "agree"}, reviewer...)
 				mustExit(t, failpoint.ExitCode, db, failpointEnv(name), args...)
 				record(name, failpoint.ExitCode)
-				res := millstream(t, db, nil, args...)
-				if phase == "beforeCommit" && res.code != 0 ||
-					phase == "afterCommit" && !strings.Contains(res.stderr, "already decided: agree by tester") {
+				// Before the commit nothing was decided; after it, the same decision sent again stands: both succeed.
+				if res := millstream(t, db, nil, args...); res.code != 0 {
 					t.Fatalf("deciding the sample again after a crash %s: %s", phase, res)
 				}
 				if left := inbox(t, db, "samples", "list", "--json"); len(left) != len(samples)-1 {
