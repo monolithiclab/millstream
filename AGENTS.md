@@ -40,15 +40,19 @@ below) for the reasoning, and `make help` for every command.
   top-level test over 20 ms, and no package's wall time (`-p 1`, `t.Parallel` in effect) more than 100 ms above its
   test binary's floor (the same binary running no test: process start, initialisation, `TestMain`). It prints the
   slowest tests and exits 1 over budget. Compilation and binary start are not counted.
+- The working target is 350 ms, the median of three `make test-times` runs, so that new work has room under the
+  budget: a change that takes the median above 400 ms makes room in the same change.
 - What keeps it there: actions run in-process (`exec.FuncLauncher` with `exectest.Serve`, wired through `fakeexec`
   and `cli.Runtime.Launchers`); stores are `sqlite.Memory`, whose template loads from an embedded image and whose
   closed connections, emptied, serve the next store with their statements already prepared (`Clone` is slower: it
   prepares them all again); fixtures (packages, parsed pipelines, applied runs, insight histories) are built once
-  per process; time is a fake clock or an injected timer. No `go build`, no process, no Docker, no sleep or
-  polling, no file database but the one that tests opening a file: a test that needs one, or drives the CLI or the
-  engine end to end, goes behind the `e2e` build tag, in a `*_e2e_test.go` file. The store and insights tests run
-  serially: the transpiled SQLite allocates under one process-wide lock, so parallel tests contend instead of
-  overlapping.
+  per process, and the files a test only reads are committed under `testdata` (the CLI's shared packages are those
+  directories themselves, never copies); time is a fake clock or an injected timer. No `go build`, no process, no
+  Docker, no sleep or polling, no file database but the one that tests opening a file: a test that needs one, or
+  drives the CLI or the engine end to end, goes behind the `e2e` build tag, in a `*_e2e_test.go` file. The store,
+  engine and insights tests run serially: the transpiled SQLite allocates under one process-wide lock, so parallel
+  tests contend instead of overlapping. A table's subtests that take microseconds do not call `t.Parallel` either:
+  pausing and resuming one costs more than running it.
 - `make test-e2e` (`go test -race -count=1 -tags e2e ./...`, and the SDK module's) runs everything, tagged and
   untagged, under the race detector, and prints the whole suite's coverage (`make test` checks the default build's
   against `COVERAGE_MIN`): the `internal/e2e` package (crash matrix, M1 and M2 scenarios), the end-to-end CLI and
