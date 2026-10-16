@@ -31,6 +31,7 @@ chosen, pending a trademark search ([naming note](docs/research/20261014.naming.
 | [Platform design](docs/specs/20261014.platform-design.md) | The full specification: concepts, pipeline file, execution model, actions, agents, UI, deployment, milestones |
 | [Decisions](docs/decisions.md) | Key architecture decisions and their reasoning |
 | [Action protocol](docs/protocol.md) | How the engine and an action process talk, for writing actions without an SDK |
+| [Deployment](docs/deploy.md) | The container image, Docker Compose, systemd units, backups and upgrades |
 | [UI design brief](docs/design/20261015.ui-brief.md) | The web UI's look and feel brief, for the design work |
 | [Roadmap](ROADMAP.md) | Parked ideas and follow-ups |
 

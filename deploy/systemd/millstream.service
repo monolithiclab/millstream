@@ -1,0 +1,63 @@
+# The Millstream engine (spec section 14, VPS target): `millstream serve` from the environment file.
+# Install: docs/deploy.md, "systemd". The binary goes in /usr/local/bin, the environment file in
+# /etc/millstream/millstream.yaml, its secrets in /etc/millstream/millstream.env (root-owned, mode 0600).
+# M4 status: `serve` arrives with Task 2 of the M4 plan; the unit is shipped ahead of it.
+# A second host running the same unit against the same Postgres is the standby (Task 3).
+
+[Unit]
+Description=Millstream engine
+Documentation=https://github.com/monolithiclab/millstream/blob/main/docs/deploy.md
+Wants=network-online.target
+After=network-online.target postgresql.service
+
+[Service]
+Type=exec
+ExecStart=/usr/local/bin/millstream serve --env-file /etc/millstream/millstream.yaml
+# MILLSTREAM_DSN, MILLSTREAM_TOKEN, MILLSTREAM_NODE_TOKEN and each pipeline's secrets, read by systemd as root
+# before it drops to the service user, so the file stays unreadable to that user.
+EnvironmentFile=/etc/millstream/millstream.env
+Environment=USER=millstream
+# SIGTERM drains in-flight deliveries; leave it the lease time to finish before SIGKILL.
+TimeoutStopSec=90s
+Restart=on-failure
+RestartSec=5s
+
+# A transient user per start, no login, no home: the only writable path is the state directory,
+# /var/lib/millstream (the local artifact directory and, without Postgres, the SQLite store).
+DynamicUser=yes
+StateDirectory=millstream
+StateDirectoryMode=0700
+WorkingDirectory=/var/lib/millstream
+UMask=0077
+
+# Hardening. The embedded node (node.embedded, the default) runs exec actions as children of this process, under
+# these same restrictions. Container actions and sandboxed agents need the Docker socket, opt-in as for the node
+# unit (SupplementaryGroups=docker, see millstream-node.service), or run on a millstream-node host instead.
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectProc=invisible
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+# MemoryDenyWriteExecute is left off: exec actions on a JIT runtime (Node.js, Python's) run under the embedded node,
+# and W^X would kill them.
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

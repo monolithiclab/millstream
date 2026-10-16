@@ -16,7 +16,7 @@ docs: ## Check Markdown links and 120-column prose
 
 .PHONY: lint-shell
 lint-shell:
-	@shellcheck scripts/check-docs scripts/test-times
+	@shellcheck scripts/check-docs scripts/test-times scripts/test-image scripts/test-deploy
 
 # No store query binds a bare LIMIT parameter, which has SQLite compile the statement again at every run: the
 # queries use limitParam (internal/store/sqlstore/read.go).
@@ -160,3 +160,29 @@ test-ui-demo: ui-e2e-bin ui-demo-package ## The M3 reference demo alone, in Engl
 .PHONY: ui-shell
 ui-shell: ui-deps ## Open a shell in the node container, ui/ mounted, Vite's port 5173 published
 	@$(UI_DOCKER) -it -p 5173:5173 $(UI_NODE_IMAGE) bash
+
+# The container image (Dockerfile): the UI built in the pinned node image, the binary with it embedded, distroless
+# static at runtime. One image is the engine and the node alike. test-image smoke-tests it, test-deploy checks
+# deploy/ (Compose and systemd); neither is in make ci, both run in CI's image job.
+IMAGE = millstream:dev
+
+.PHONY: image
+image: ## Build the container image millstream:dev from source (UI and binary built inside, distroless runtime)
+	@docker build --build-arg VERSION=$(VERSION) --build-arg REVISION=$$(git rev-parse HEAD) -t $(IMAGE) .
+
+.PHONY: test-image
+test-image: image ## Smoke-test the image: version, and millstream run serving the built UI over the e2e fixture
+	@scripts/test-image $(IMAGE) $(UI_NODE_IMAGE)
+
+.PHONY: test-deploy
+test-deploy: ## Check deploy/: docker compose config, and systemd-analyze verify of the units in a container
+	@scripts/test-deploy
+
+# GoReleaser and syft are pinned in their own tools module (tools/release/go.mod), so their dependencies never move
+# the linters'. syft is built onto the PATH GoReleaser runs it from. No signing and no publishing in a snapshot.
+RELEASE_TOOLS = .build/release-tools
+
+.PHONY: release-snapshot
+release-snapshot: ## Build a GoReleaser snapshot into dist/: archives, SBOMs, checksums, local images; publishes nothing
+	@go build -modfile=tools/release/go.mod -o $(RELEASE_TOOLS)/ github.com/goreleaser/goreleaser/v2 github.com/anchore/syft/cmd/syft
+	@PATH=$(CURDIR)/$(RELEASE_TOOLS):$$PATH goreleaser release --snapshot --clean --skip=sign

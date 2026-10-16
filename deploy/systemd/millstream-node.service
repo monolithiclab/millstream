@@ -1,0 +1,64 @@
+# A Millstream node on a host of its own (spec sections 14 and 15.7): `millstream node --join`, with the node token
+# over TLS. Install: docs/deploy.md, "systemd". MILLSTREAM_JOIN (the engine's URL) and MILLSTREAM_NODE_TOKEN go in
+# /etc/millstream/node.env (root-owned, mode 0600).
+# M4 status: `millstream node` arrives with Task 4 of the M4 plan; the unit is shipped ahead of it.
+#
+# Exec actions: --allow-exec lets this node run them, as children with the unit's privileges; they are trusted
+# code (spec section 15.3). Remove the flag on a node that should run container actions only.
+#
+# Container actions need the Docker socket, which is root on the host by another name, so access is opt-in:
+#   systemctl edit millstream-node
+#   [Service]
+#   SupplementaryGroups=docker
+# The socket is reached over AF_UNIX, which RestrictAddressFamilies already allows.
+
+[Unit]
+Description=Millstream node
+Documentation=https://github.com/monolithiclab/millstream/blob/main/docs/deploy.md
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=exec
+ExecStart=/usr/local/bin/millstream node --join ${MILLSTREAM_JOIN} --allow-exec
+EnvironmentFile=/etc/millstream/node.env
+# SIGTERM drains: the node finishes or releases its leases, then exits.
+TimeoutStopSec=90s
+Restart=on-failure
+RestartSec=5s
+
+# The package cache lives in the state directory, the only writable path but /tmp.
+DynamicUser=yes
+StateDirectory=millstream-node
+StateDirectoryMode=0700
+WorkingDirectory=/var/lib/millstream-node
+UMask=0077
+
+# Hardening, as the engine's: exec actions spawn processes (fork and exec are in @system-service), and JIT runtimes
+# (Node.js, Python's) need writable executable memory, hence no MemoryDenyWriteExecute. Agents and container actions
+# get their isolation from Docker (spec section 7.3), not from namespaces this unit creates.
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

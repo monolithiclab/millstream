@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+# Checks the deployment files (make test-deploy):
+#   - deploy/compose: `docker compose config` accepts compose.yaml with the template's values (.env.example), and
+#     refuses it when the secrets are missing;
+#   - deploy/systemd: `systemd-analyze verify` passes on both units without a word of output, and their offline
+#     `systemd-analyze security` exposure stays at most SECURITY_MAX (systemd 257 rates them 1.5 and 1.7). systemd
+#     runs in Red Hat's ubi-init image, which ships it, pinned by digest; a stub stands in for the binary.
+# Usage: scripts/test-deploy
+set -euo pipefail
+
+# registry.access.redhat.com/ubi10/ubi-init:10.2 (systemd 257)
+SYSTEMD_IMAGE=registry.access.redhat.com/ubi10/ubi-init@sha256:8a43d7a3358300d8d0e0ed3e5bc4d599bd6ffbfab883bab3c72db556665a9fa5
+: "${SECURITY_MAX:=2.0}"
+
+root=$(cd "$(dirname "$0")/.." && pwd)
+compose=$root/deploy/compose
+
+docker compose -f "$compose/compose.yaml" --env-file "$compose/.env.example" config --quiet
+if docker compose -f "$compose/compose.yaml" --env-file /dev/null config --quiet 2>/dev/null; then
+	echo "test-deploy: compose.yaml accepted missing secrets" >&2
+	exit 1
+fi
+echo "compose: config valid, refuses missing secrets"
+
+docker run --rm -v "$root/deploy/systemd:/units:ro" -e SECURITY_MAX="$SECURITY_MAX" "$SYSTEMD_IMAGE" sh -euc '
+	printf "#!/bin/sh\n" >/usr/local/bin/millstream && chmod +x /usr/local/bin/millstream
+	cp /units/*.service /etc/systemd/system/
+	units="/etc/systemd/system/millstream.service /etc/systemd/system/millstream-node.service"
+	out=$(systemd-analyze verify $units 2>&1) || { echo "$out" >&2; exit 1; }
+	[ -z "$out" ] || { echo "systemd-analyze verify warned:" >&2; echo "$out" >&2; exit 1; }
+	for u in $units; do
+		level=$(systemd-analyze security --offline=true "$u" 2>&1 | sed -n "s/.*Overall exposure level for [^:]*: \([0-9.]*\).*/\1/p")
+		[ -n "$level" ] || { echo "no exposure level for $u" >&2; exit 1; }
+		awk -v l="$level" -v m="$SECURITY_MAX" "BEGIN { exit !(l + 0 <= m + 0) }" ||
+			{ echo "$u: exposure $level above $SECURITY_MAX" >&2; exit 1; }
+		echo "systemd: $(basename "$u") verified, exposure $level"
+	done
+'
