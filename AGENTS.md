@@ -26,6 +26,7 @@ below) for the reasoning, and `make help` for every command.
 - `internal/`: `cli`, `pipeline`, `ids`, `expr`, `schema`, `protocol`, `store`, `failpoint`, `engine`, `node`,
   `redact` and the other packages named in the M1 plan's file structure.
 - `sdk/go/`: the Go action SDK, its own module.
+- `ui/`: the web UI, built and tested only in containers (see Web UI).
 - `examples/`: fixture and example pipeline packages.
 - `make ci` is the gate: lint (golangci-lint over the e2e-tagged build, which holds every file, govulncheck, tidy,
   pins, shellcheck), the default test suite without `-race`, and the docs check, for the main module and the SDK
@@ -55,6 +56,37 @@ below) for the reasoning, and `make help` for every command.
   binary), Docker tests, and the long property runs. It is slow, is not part of `make ci`, and runs in CI as its own
   job; run it before closing a milestone and after touching the exec runtime, the node, the CLI's run path, the
   store's concurrency or the crash recovery.
+
+## Web UI
+
+- `ui/`: the React 18 + TypeScript (strict) + Vite + Tailwind CSS single-page app of spec section 12.2. `src/shell/`
+  is the app shell (navigation, pipeline switcher, command palette, shortcut help, live mark), `src/routes.ts` the
+  screens and their URLs, `src/api/` the HTTP API client, `src/live/` the server-sent events hook, `src/i18n/` the
+  catalogues and `Intl` formatting, `src/styles/` the tokens, `e2e/` the Playwright tests.
+- No host toolchain (D35): npm, Vite, Vitest and Playwright run only in containers, from images pinned by digest in
+  `ui/images.mk`. Never install Node on the host. `node_modules` and the npm cache live in the named volumes
+  `millstream-ui-node-modules` and `millstream-ui-npm-cache`; containers run as the host uid.
+- `make ui` builds into `internal/ui/dist/`, which `internal/ui` embeds (`//go:embed all:dist`) and serves as an SPA
+  (index.html for client routes, immutable caching for `assets/`). The build is not committed; the committed
+  `internal/ui/dist/placeholder.html` is served until it exists, so `go build` never needs npm.
+- `make test-ui`: typecheck, ESLint (typescript-eslint, jsx-a11y, react-hooks), Prettier check, and Vitest with
+  coverage in jsdom: fake timers and a `FakeApi`, never a network or a wall-clock wait. `make test-ui-e2e` builds,
+  then runs Playwright with axe (WCAG 2.2 AA) on the shell in both themes, both languages, at 375 and 1280 px,
+  reaching the build through `internal/ui/uiserve` (the Go handler, cross-compiled for the container).
+  `make ui-shell` opens a shell in the node container (`npm run dev` serves on port 5173). Both test targets run in
+  CI as their own jobs, not in `make ci`.
+- Tokens: `ui/src/styles/tokens.css` holds every colour, font, radius, shadow and motion token of the canvas identity
+  board as `--ms-*` custom properties, colours as `light-dark(light, dark)`. The theme follows
+  `prefers-color-scheme` unless `<html data-theme="light|dark">` overrides it. `src/styles/index.css` maps the tokens
+  into Tailwind and clears Tailwind's own palette, so only token utilities exist (`bg-surface`, `text-ink-2`).
+  `tokens.test.ts` checks the WCAG contrast of every text (4.5:1) and UI (3:1) pair from the file itself.
+- i18n: react-i18next with `src/i18n/en.json` and `fr.json`; `t()` accepts only keys of the English catalogue.
+  `i18n.test.ts` fails on a key missing in either language, a key no source file uses (a key is used when it
+  appears as a quoted literal: keep keys literal, no built-up names), and French typography (no-break space before
+  `: ; ! ? »`). Numbers, money, durations and relative times go through `src/i18n/format.ts`.
+- API: `src/api/api.ts` is the `Api` interface, `http.ts` its fetch implementation, `fake.ts` the in-memory one for
+  tests and `?demo`. `src/api/schema.ts` holds the resource types by hand until `internal/api/openapi.yaml` exists;
+  then they become aliases of the types generated from it.
 
 ## Agent recordings and the live smoke test
 

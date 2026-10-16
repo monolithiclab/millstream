@@ -1,0 +1,84 @@
+/*
+ * Millstream design tokens, from the canvas identity board (docs/design/canvas/Main.dc.html, design system 0.2).
+ * Each colour is light-dark(<light>, <dark>): the theme is the color-scheme, which follows prefers-color-scheme
+ * unless <html data-theme="light|dark"> overrides it. src/styles/tokens.test.ts checks the contrast of every text
+ * and UI pair from these values, so a colour changes here and nowhere else.
+ */
+:root {
+  color-scheme: light dark;
+
+  /* Ground, surfaces and seams */
+  --ms-bg: light-dark(#f7f4ee, #14120f);
+  --ms-surface: light-dark(#ffffff, #1c1915);
+  --ms-surface-2: light-dark(#f3efe8, #23201b);
+  --ms-sunken: light-dark(#f0ece4, #23201b);
+  --ms-line: light-dark(#e6e0d5, #2f2a23);
+  --ms-line-strong: light-dark(#cec6b8, #453f35);
+  --ms-control-line: light-dark(#d6cec0, #453f35);
+
+  /* Ink */
+  --ms-ink: light-dark(#1f1c18, #efeae2);
+  --ms-ink-2: light-dark(#4f4a42, #bfb7aa);
+  --ms-ink-3: light-dark(#6c665c, #9b9386);
+
+  /* Accent: millrace teal means flowing, live, primary */
+  --ms-accent: light-dark(#0e6b66, #52c4b6);
+  --ms-accent-ink: light-dark(#ffffff, #0b1f1d);
+  --ms-accent-soft: light-dark(#e2eeea, #173230);
+
+  /* Status: always with a shape and a word */
+  --ms-ok: light-dark(#2f6e3b, #7fc68a);
+  --ms-ok-soft: light-dark(#e6efe2, #1b2a1d);
+  --ms-warn: light-dark(#8a5a0c, #e5b056);
+  --ms-warn-soft: light-dark(#f7ecd5, #33280f);
+  --ms-bad: light-dark(#a8322a, #ef8b79);
+  --ms-bad-soft: light-dark(#f8e4df, #3d1c17);
+  --ms-human: light-dark(#6a4a9c, #bca4f2);
+  --ms-human-soft: light-dark(#efe8f6, #2a2140);
+  --ms-mute: light-dark(#6c665c, #9b9386);
+  --ms-mute-soft: light-dark(#eeeae2, #27231e);
+
+  /* Graph channels and logs */
+  --ms-channel: light-dark(#e6f0ec, #18292a);
+  --ms-channel-bank: light-dark(#d2e2dc, #24393a);
+  --ms-hatch: light-dark(#d9d1c3, #4d463b);
+  --ms-log-bg: light-dark(#24211d, #0f0d0b);
+  --ms-log-ink: light-dark(#efeae2, #e6eae8);
+
+  /* Type: shared by both themes */
+  --ms-font-display: 'Instrument Serif', 'Iowan Old Style', Georgia, serif;
+  --ms-font: 'Atkinson Hyperlegible Next', system-ui, sans-serif;
+  --ms-mono: 'Atkinson Hyperlegible Mono', ui-monospace, Menlo, monospace;
+
+  /* Shape, space, motion */
+  --ms-radius-pill: 999px;
+  --ms-radius-1: 10px;
+  --ms-radius-2: 14px;
+  --ms-radius-3: 20px;
+  --ms-space: 4px;
+  --ms-dur-1: 160ms;
+  --ms-dur-2: 240ms;
+  --ms-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  /* The focus ring (2 px accent outside a 2 px ground gap) is the :focus-visible outline in index.css. */
+
+  /* Depth: shadow-2 differs only in colour; shadow-1's dark offsets differ too, so it is overridden below. */
+  --ms-shadow-1: 0 1px 2px rgb(64 48 24 / 0.05), 0 6px 20px rgb(64 48 24 / 0.06);
+  --ms-shadow-2:
+    0 2px 6px light-dark(rgb(64 48 24 / 0.08), rgb(0 0 0 / 0.5)),
+    0 24px 48px light-dark(rgb(64 48 24 / 0.14), rgb(0 0 0 / 0.55));
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --ms-shadow-1: 0 1px 2px rgb(0 0 0 / 0.35), 0 8px 24px rgb(0 0 0 / 0.35);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --ms-shadow-1: 0 1px 2px rgb(0 0 0 / 0.35), 0 8px 24px rgb(0 0 0 / 0.35);
+  }
+}

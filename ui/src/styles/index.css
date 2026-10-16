@@ -1,0 +1,120 @@
+@import 'tailwindcss';
+@import './fonts.css';
+@import './tokens.css';
+
+/*
+ * Tailwind sees only the design tokens: the default palette, fonts, radii and shadows are cleared, so a utility such
+ * as bg-surface or text-ink-2 always resolves to a --ms-* custom property and follows the theme.
+ */
+@theme inline {
+  --color-*: initial;
+  --color-bg: var(--ms-bg);
+  --color-surface: var(--ms-surface);
+  --color-surface-2: var(--ms-surface-2);
+  --color-sunken: var(--ms-sunken);
+  --color-line: var(--ms-line);
+  --color-line-strong: var(--ms-line-strong);
+  --color-control-line: var(--ms-control-line);
+  --color-ink: var(--ms-ink);
+  --color-ink-2: var(--ms-ink-2);
+  --color-ink-3: var(--ms-ink-3);
+  --color-accent: var(--ms-accent);
+  --color-accent-ink: var(--ms-accent-ink);
+  --color-accent-soft: var(--ms-accent-soft);
+  --color-ok: var(--ms-ok);
+  --color-ok-soft: var(--ms-ok-soft);
+  --color-warn: var(--ms-warn);
+  --color-warn-soft: var(--ms-warn-soft);
+  --color-bad: var(--ms-bad);
+  --color-bad-soft: var(--ms-bad-soft);
+  --color-human: var(--ms-human);
+  --color-human-soft: var(--ms-human-soft);
+  --color-mute: var(--ms-mute);
+  --color-mute-soft: var(--ms-mute-soft);
+  --color-channel: var(--ms-channel);
+  --color-channel-bank: var(--ms-channel-bank);
+  --color-hatch: var(--ms-hatch);
+  --color-log-bg: var(--ms-log-bg);
+  --color-log-ink: var(--ms-log-ink);
+  --color-transparent: transparent;
+  --color-current: currentColor;
+
+  --font-*: initial;
+  --font-display: var(--ms-font-display);
+  --font-sans: var(--ms-font);
+  --font-mono: var(--ms-mono);
+
+  --text-*: initial;
+  --text-display: 56px;
+  --text-display--line-height: 60px;
+  --text-title: 34px;
+  --text-title--line-height: 40px;
+  --text-figure: 28px;
+  --text-figure--line-height: 32px;
+  --text-heading: 16px;
+  --text-heading--line-height: 24px;
+  --text-heading--font-weight: 700;
+  --text-body: 15px;
+  --text-body--line-height: 24px;
+  --text-ui: 14px;
+  --text-ui--line-height: 20px;
+  --text-small: 13px;
+  --text-small--line-height: 20px;
+  --text-tiny: 12px;
+  --text-tiny--line-height: 16px;
+
+  --spacing: var(--ms-space);
+
+  --radius-*: initial;
+  --radius-pill: var(--ms-radius-pill);
+  --radius-1: var(--ms-radius-1);
+  --radius-2: var(--ms-radius-2);
+  --radius-3: var(--ms-radius-3);
+
+  --shadow-*: initial;
+  --shadow-1: var(--ms-shadow-1);
+  --shadow-2: var(--ms-shadow-2);
+
+  --ease-ms: var(--ms-ease);
+  --default-transition-duration: var(--ms-dur-1);
+  --default-transition-timing-function: var(--ms-ease);
+}
+
+@layer base {
+  html {
+    background: var(--ms-bg);
+    color: var(--ms-ink);
+    font-family: var(--ms-font);
+    font-size: 14px;
+    line-height: 20px;
+    font-variant-numeric: tabular-nums;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Focus ring: 2 px accent outside a 2 px ground gap, both themes, never removed. */
+  :focus-visible {
+    outline: 2px solid var(--ms-accent);
+    outline-offset: 2px;
+  }
+
+  a {
+    color: var(--ms-accent);
+  }
+}
+
+/* Reduced motion: pebbles rest, panels cut, figures swap without tween. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Interaction notes: after 5 s without the live stream, live figures keep their last value, dimmed to 60 %. */
+.live-stale [data-live] {
+  opacity: 0.6;
+}

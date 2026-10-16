@@ -66,3 +66,44 @@ export GOFLAGS ?= -gcflags=modernc.org/...=-d=checkptr=0
 .PHONY: recordings
 recordings: ## Rewrite the agent harness recordings: internal/agent/testdata and the M2 fixture's
 	@go test ./internal/agent ./examples/m2-fixture -run TestRecordings -count=1 -update
+
+# The web UI (ui/) builds and tests only in containers (D35): ui/images.mk pins the images by digest. node_modules
+# and the npm cache live in named Docker volumes, so repeated runs skip the install; containers run as the host uid.
+include ui/images.mk
+
+UI_MODULES_VOLUME = millstream-ui-node-modules
+UI_CACHE_VOLUME = millstream-ui-npm-cache
+UI_DIST = internal/ui/dist
+UI_DOCKER = docker run --rm --user $$(id -u):$$(id -g) -e HOME=/tmp -e CI -e npm_config_cache=/npm-cache \
+	-e npm_config_update_notifier=false -v $(CURDIR):/work -v $(UI_MODULES_VOLUME):/work/ui/node_modules \
+	-v $(UI_CACHE_VOLUME):/npm-cache -w /work/ui
+
+# New volumes are created root-owned: hand them to the host uid once. npm ci runs only when package-lock.json
+# differs from the one the volume was installed from.
+.PHONY: ui-deps
+ui-deps:
+	@docker volume inspect $(UI_MODULES_VOLUME) $(UI_CACHE_VOLUME) >/dev/null 2>&1 || \
+		docker run --rm -v $(UI_MODULES_VOLUME):/m -v $(UI_CACHE_VOLUME):/c $(UI_NODE_IMAGE) chown $$(id -u):$$(id -g) /m /c
+	@$(UI_DOCKER) $(UI_NODE_IMAGE) sh -c 'cmp -s package-lock.json node_modules/.installed-lock 2>/dev/null || \
+		{ npm ci --no-audit --no-fund && cp package-lock.json node_modules/.installed-lock; }'
+
+.PHONY: ui
+ui: ui-deps ## Build the web UI into internal/ui/dist, embedded by the next go build (node container)
+	@find $(UI_DIST) -mindepth 1 ! -name placeholder.html -exec rm -rf {} +
+	@$(UI_DOCKER) $(UI_NODE_IMAGE) npm run build
+
+.PHONY: test-ui
+test-ui: ui-deps ## Typecheck, lint, format check and Vitest (coverage, i18n checks) for the web UI (node container)
+	@$(UI_DOCKER) $(UI_NODE_IMAGE) sh -c 'npm run typecheck && npm run lint && npm run format:check && npm test'
+
+.PHONY: test-ui-e2e
+# The tests reach the build through internal/ui's handler: uiserve, cross-compiled for the container's Linux.
+test-ui-e2e: ui ## Playwright and axe against the built web UI, both themes and languages (Playwright container)
+	@mkdir -p .build
+	@GOOS=linux GOARCH=$$(docker version --format '{{.Server.Arch}}') CGO_ENABLED=0 \
+		go build -o .build/uiserve ./internal/ui/uiserve
+	@$(UI_DOCKER) --ipc=host $(UI_PLAYWRIGHT_IMAGE) npx playwright test
+
+.PHONY: ui-shell
+ui-shell: ui-deps ## Open a shell in the node container, ui/ mounted, Vite's port 5173 published
+	@$(UI_DOCKER) -it -p 5173:5173 $(UI_NODE_IMAGE) bash
