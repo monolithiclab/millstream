@@ -260,6 +260,43 @@ describe('item detail', () => {
     expect(screen.getByRole('region', { name: 'Lignée' })).toHaveTextContent('cet item · score · scored');
   });
 
+  it('shows an expired item’s state and notice in place of its payload and artifacts, its lineage marked', async () => {
+    renderApp({ route: '/p/listings-daily/items/it_3b7e2c90' });
+    expect(await screen.findByRole('heading', { level: 1, name: 'homesite-2198034' })).toBeInTheDocument();
+    expect(screen.getAllByText('Expired')).toHaveLength(1);
+    const payload = screen.getByRole('region', { name: 'Payload' });
+    expect(payload).toHaveTextContent(
+      'This item’s payload expired under its stream’s retention. Its envelope and lineage are kept.',
+    );
+    expect(within(payload).queryByRole('button', { name: 'Copy JSON' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Artifacts' })).not.toBeInTheDocument();
+    const lineage = screen.getByRole('region', { name: 'Lineage' });
+    const child = within(lineage).getByRole('link', { name: 'it_8c4d1f6e' });
+    expect(child.parentElement).toHaveTextContent('Erased');
+  });
+
+  it('names an erased item by its id and says what the purge took', async () => {
+    renderApp({ route: '/p/listings-daily/items/it_8c4d1f6e' });
+    expect(await screen.findByRole('heading', { level: 1, name: 'it_8c4d1f6e' })).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Payload' })).toHaveTextContent(
+      'This item was erased by a purge. Its envelope and lineage are kept; its payload, key and artifacts are gone.',
+    );
+    expect(screen.queryByRole('region', { name: 'Artifacts' })).not.toBeInTheDocument();
+    const lineage = screen.getByRole('region', { name: 'Lineage' });
+    expect(within(lineage).getByRole('link', { name: 'it_3b7e2c90' }).parentElement).toHaveTextContent('Expired');
+  });
+
+  it('says an erased item’s notice in the payload tab at 375 px, in French', async () => {
+    mockMatchMedia(() => false);
+    const { user } = renderApp({ route: '/p/listings-daily/items/it_8c4d1f6e', language: 'fr' });
+    const journey = await screen.findByRole('region', { name: 'Parcours' });
+    expect(screen.getByText('Effacé')).toBeInTheDocument();
+    await user.click(within(journey).getByRole('tab', { name: 'Données' }));
+    expect(screen.getByRole('region', { name: 'Données' })).toHaveTextContent(
+      /Cet item a été effacé par une purge\. Son enveloppe et sa lignée sont conservées\s; ses données, sa clé/,
+    );
+  });
+
   it('shows an error with Retry for an item that does not exist', async () => {
     const api = new FakeApi();
     const { user } = renderApp({ api, route: '/p/listings-daily/items/nope' });

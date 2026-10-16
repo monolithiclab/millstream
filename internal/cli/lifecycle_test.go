@@ -171,6 +171,8 @@ func Test_commandsThroughTheServer(t *testing.T) {
 		{ReplayCmd{Pipeline: "extra", From: "dlq", RunID: "run_r1_adhoc"}, "0 dead letters replayed\n", false},
 		{replay, "run_replay_rp\n", false},
 		{replay, "run_replay_rp (already started)\n", false},
+		{PurgeCmd{Key: "nobody", RequestID: "pg"}, "purge_pg done: 0 items erased\n", false},
+		{PurgeCmd{Key: "nobody", RequestID: "pg"}, "purge_pg done: 0 items erased (already started)\n", false},
 		{TriggerCmd{Pipeline: "extra", Trigger: "adhoc", Payload: "{}", Var: map[string]string{"x": "1"}}, "--var", true},
 		{InboxApproveCmd{deliveryRef: deliveryRef{Delivery: "d1"}, reviewerFlag: reviewerFlag{As: "ana"}}, "--pipeline", true},
 		{InboxSampleCmd{deliveryRef: deliveryRef{Delivery: "d1"}, Decision: "agree", reviewerFlag: reviewerFlag{As: "ana"}},

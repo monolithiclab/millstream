@@ -6,8 +6,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"maps"
 	"math/rand/v2"
 	"os"
@@ -20,6 +22,7 @@ import (
 	"time"
 
 	"github.com/monolithiclab/millstream/internal/failpoint"
+	"github.com/monolithiclab/millstream/internal/ids"
 	"github.com/monolithiclab/millstream/internal/store"
 	"github.com/monolithiclab/millstream/internal/store/sqlstore"
 )
@@ -30,11 +33,11 @@ var phases = []string{"beforeCommit", "afterCommit"}
 func failpointEnv(name string) []string { return []string{failpoint.EnvVar + "=" + name} }
 
 // reachedByRun are the units "run --once" on the builtins fixture and its importer must reach, so their failpoints
-// must be hit; it runs the projectors (rollup, recordInsights) once its runs settled. The others are reached through their own
+// must be hit; it runs the projectors (rollup, recordInsights) and a retention pass (retain) once its runs settled. The others are reached through their own
 // commands (TestCrashInCommands), or, for skipFirings, only by a cron scheduler that missed a firing, which a
 // one-shot run never starts.
 var reachedByRun = []string{"applyRevision", "fire", "lease", "renew", "done", "fail", "expireLeases", "filter",
-	"dedupe", "park", "rollup", "recordInsights"}
+	"dedupe", "park", "rollup", "recordInsights", "retain"}
 
 // slowCrawl makes the crawl hold its lease for several heartbeats, so the renew unit is reached for sure.
 var slowCrawl = []string{"--var", "crawlDelayMs=1500"}
@@ -195,8 +198,8 @@ func crashInCommands(t *testing.T, b backend) {
 			want := cleanRunOn(t, b)
 			db := b.newDB(t)
 			mustExit(t, 1, db, nil, runOnce(fixtureV1)...)
-			ids := slices.Collect(maps.Keys(want.DeadLetters))
-			discard := append([]string{"dlq", "discard", "--pipeline", pipelineName}, ids...)
+			letters := slices.Collect(maps.Keys(want.DeadLetters))
+			discard := append([]string{"dlq", "discard", "--pipeline", pipelineName}, letters...)
 			mustExit(t, failpoint.ExitCode, db, failpointEnv("discard."+phase), discard...)
 			if r := millstream(t, db, nil, discard...); phase == "beforeCommit" && r.code != 0 ||
 				phase == "afterCommit" && (r.code != 1 || !strings.Contains(r.stderr, "not found")) {
@@ -271,6 +274,33 @@ func crashInCommands(t *testing.T, b backend) {
 			mustExit(t, 1, db, nil, runOnce(fixtureV1)...)
 			wantSame(t, readSnapshot(t, db), want)
 		})
+
+		// A purge crashed at each boundary of each of its units (and of the artifact sweep's) resumes when asked again
+		// under the same request id, and ends where a purge without a crash does: the listing's lineage erased, its
+		// report's file deleted, the rest untouched.
+		for _, unit := range []string{"startPurge", "erasePurge", "finishPurge", "deleteArtifacts"} {
+			t.Run(unit+"."+phase, func(t *testing.T) {
+				t.Parallel()
+				want := purgedRunOn(t, b)
+				key, report := reportedListing(t, cleanRunOn(t, b))
+				db := b.newDB(t)
+				mustExit(t, 1, db, nil, runOnce(fixtureV1)...)
+				mustExit(t, failpoint.ExitCode, db, failpointEnv(unit+"."+phase), purgeArgs(key)...)
+				mustExit(t, 0, db, nil, purgeArgs(key)...)
+				wantSame(t, readSnapshot(t, db), want)
+				st := openStore(t, db)
+				defer func() { _ = st.Close() }()
+				if p, err := st.Purge(t.Context(), ids.Purge(crashRequest)); err != nil || p.State != store.PurgeDone {
+					t.Fatalf("purge after the crash = %+v, %v", p, err)
+				}
+				if !isPostgres(db) {
+					file := filepath.Join(filepath.Dir(db), "artifacts", pipelineName, report)
+					if _, err := os.Stat(file); !errors.Is(err, fs.ErrNotExist) {
+						t.Fatalf("the purged report's file is still there: %v", err)
+					}
+				}
+			})
+		}
 
 		t.Run("rollback."+phase, func(t *testing.T) {
 			t.Parallel()
@@ -413,4 +443,45 @@ func TestBackendsAgree(t *testing.T) {
 	t.Parallel()
 	wantSame(t, cleanBuiltinsRunOn(t, postgresBackend), cleanBuiltinsRunOn(t, sqliteBackend))
 	wantSame(t, cleanRunOn(t, postgresBackend), cleanRunOn(t, sqliteBackend))
+}
+
+// purged is clean followed by a purge of a listing whose lineage reaches its report artifact, without a crash.
+var purged reference
+
+// purgedRunOn returns the purged reference on b.
+func purgedRunOn(t *testing.T, b backend) snapshot {
+	t.Helper()
+	key, _ := reportedListing(t, cleanRunOn(t, b))
+	return purged.compute(t, b, "purged", func(db string) {
+		mustExit(t, 1, db, nil, runOnce(fixtureV1)...)
+		mustExit(t, 0, db, nil, purgeArgs(key)...)
+	})
+}
+
+// purgeArgs purges the items with key, under the crash request id.
+func purgeArgs(key string) []string {
+	return []string{"purge", "--key", key, "--pipeline", pipelineName, "--request-id", crashRequest}
+}
+
+// reportedListing returns the key of a crawled listing whose lineage reaches a report carrying an artifact, and
+// that artifact's hash.
+func reportedListing(t *testing.T, s snapshot) (key, sha string) {
+	t.Helper()
+	for _, id := range slices.Sorted(maps.Keys(s.Items)) {
+		var refs []store.ArtifactRef
+		if err := json.Unmarshal([]byte(s.Items[id].Artifacts), &refs); err != nil || len(refs) == 0 {
+			continue
+		}
+		for it := s.Items[id]; ; {
+			parents := strings.Split(it.Parents, ",") // as readSnapshot joins them
+			if len(parents) != 1 || parents[0] == "" {
+				t.Fatalf("item parents %q: want one", it.Parents)
+			}
+			if it = s.Items[parents[0]]; it.Stream == "listings.raw" {
+				return it.Key, refs[0].SHA256
+			}
+		}
+	}
+	t.Fatal("no report carries an artifact")
+	return "", ""
 }

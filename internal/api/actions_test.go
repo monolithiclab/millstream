@@ -180,6 +180,26 @@ func TestActions(t *testing.T) {
 			t.Errorf("transcript of attempt %d: %d %q", n, rec.Code, rec.Body.String())
 		}
 	}
+
+	// Purge b: run to its end, read back, the same request id finding it; the item shows its tombstone.
+	rec = post("/api/v1/purges", `{"key":"b","pipeline":"listings","requestId":"pg1"}`, nil)
+	var pg Purge
+	if err := json.Unmarshal(rec.Body.Bytes(), &pg); err != nil || rec.Code != http.StatusCreated || pg.ID != "purge_pg1" ||
+		pg.State != "done" || pg.Items == 0 || pg.Erased != pg.Items || pg.FinishedAt == nil {
+		t.Fatalf("purge: %d %s", rec.Code, rec.Body.String())
+	}
+	if again := post("/api/v1/purges", `{"key":"b","requestId":"pg1"}`, nil); again.Code != http.StatusOK {
+		t.Errorf("purge again: %d", again.Code)
+	}
+	if got := get[Purge](t, h, "/api/v1/purges/purge_pg1"); got.Erased != pg.Items {
+		t.Errorf("purge read back = %+v", got)
+	}
+	if it := get[Item](t, h, "/api/v1/pipelines/listings/items/"+f.dead.ID); it.Tombstone != "erased" ||
+		string(it.Payload) != "null" || it.Key != "" {
+		t.Errorf("erased item = %+v", it)
+	}
+	wantError(t, do(t, h, request{target: "/api/v1/purges/purge_nope"}), 404, codeNotFound)
+	wantError(t, post("/api/v1/purges", `{"key":"b","item":"x"}`, nil), 400, codeInvalid)
 }
 
 // Without an engine, the actions that need one are unavailable; without $USER, a decision names its reviewer.
@@ -192,6 +212,7 @@ func TestActionsUnavailable(t *testing.T) {
 	for _, tt := range []struct{ target, body string }{
 		{"/api/v1/pipelines/listings/runs", `{"trigger":"adhoc"}`},
 		{"/api/v1/pipelines/listings/replay", `{"step":"score"}`},
+		{"/api/v1/purges", `{"key":"b"}`},
 	} {
 		wantError(t, do(t, srv, request{method: http.MethodPost, target: tt.target, body: tt.body}), 503,
 			codeUnavailable)

@@ -23,6 +23,12 @@ below) for the reasoning, and `make help` for every command.
   revision was applied, not when they open: they open inside the producer's Done unit (spec section 4.12). A copy is
   made only when the producer's item is newly inserted; earlier items reach a new importer through
   `replay --stream`.
+- An item whose payload is gone keeps its row: `items.tombstone` says why (`expired` by retention, `erased` by a
+  purge), its payload is `null` and its artifacts `[]` (spec section 9.3). Test the tombstone, never a `null`
+  payload, which an action may publish. Retention skips what unfinished work needs; a purge fences its lineage in one
+  unit before it erases anything, and a leased delivery of a fenced item is cancelled when it reports
+  (`sqlstore.discards`). The engine's retention job (`internal/engine/retention.go`) drives both, with the artifact
+  sweep and the pruning of the package cache and the engine's caches.
 
 ## Layout
 

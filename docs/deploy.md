@@ -5,10 +5,11 @@ environment file, `millstream.yaml`, says where (spec section 14). This guide co
 VPS with Docker Compose, and a VPS with systemd.
 
 > **M4 status.** `millstream serve`, `apply`, `rollback` and `disable`, every key of the environment file, the
-> standby's takeover, token auth and `/metrics` are in (Tasks 2, 3 and 7 of the [M4 plan](plans/20261016.m4-server.md);
-> see Standby and failover). Still to come: `millstream node --join`, node TLS and the S3 artifact store with Task 4,
-> retention with Task 8. The laptop target, a systemd engine and the Compose engines (on `0.0.0.0` inside their
-> containers, with the token) work today; the Compose nodes wait for Task 4.
+> standby's takeover, token auth, `/metrics`, retention and `millstream purge` are in (Tasks 2, 3, 7 and 8 of the
+> [M4 plan](plans/20261016.m4-server.md); see Standby and failover, and Retention and purge). Still to come:
+> `millstream node --join`, node TLS and the S3 artifact store with Task 4. The laptop target, a systemd engine and
+> the Compose engines (on `0.0.0.0` inside their containers, with the token) work today; the Compose nodes wait for
+> Task 4.
 
 ## The artefacts
 
@@ -161,6 +162,41 @@ A second `millstream serve` on the same Postgres database, with the same environ
 - **Secrets** live in `.env` or `/etc/millstream/*.env`, mode 0600, never in `millstream.yaml`, an image or Git.
 - **Supply chain.** Base images are pinned by digest (`make lint-pins` checks every `FROM`), the release build runs
   `go mod verify`, each archive has an SBOM, and checksums and images are signed with cosign (spec section 15.5).
+
+## Retention and purge
+
+Nothing expires unless told to (spec section 9.3). Set a stream's retention in its pipeline
+(`streams: { listings.raw: { retention: 90d } }`, and on an imported stream's declaration for its copies), and the
+deployment's in `millstream.yaml`:
+
+```yaml
+retention: { events: 90d, transcripts: 30d, rollups: 400d, every: 1h }
+```
+
+The active engine's retention job runs every `every` (an hour by default; the standby runs none): expired payloads
+become tombstones (the UI shows the item as expired, its lineage intact), old events (once the metric rollup has read
+them), transcripts and rollups are deleted in batches of 500, the artifact files nothing references any more are
+deleted (a file stored again within the last day waits for the next pass), and the package cache (`packages/` beside
+the artifacts) loses the revisions no pipeline runs any more. An item that unfinished work needs (a delivery in
+flight or waiting, a parked review, an open dead letter, an open review sample) keeps its payload until that work is
+resolved: replay or discard dead letters to let retention take them. The engine logs what each pass removed
+(`retention` lines).
+
+Erase a person's data (a GDPR request) by the key their items carry, or by an item:
+
+```sh
+millstream purge --key 'https://www.example.com/listing/123' --request-id gdpr-2026-17
+millstream purge --item it_7f3a… --pipeline property-sourcing
+```
+
+Through `MILLSTREAM_SERVER` the served engine runs it; on SQLite it runs from the command's process (on Postgres
+with `--direct` only while no engine runs). The purge fences the items, their descendants and their copies in
+importing pipelines (no new work on them from then on), erases payloads, keys, transcripts and the artifact files
+nothing else references, and prints how many items it erased. It survives a crash: the engine finishes an unfinished
+purge when it starts and at every retention pass, and repeating the command with the same `--request-id` finds it.
+`GET /api/v1/purges/purge_<request id>` shows its progress. The purge records neither the key nor the item: keep the
+request id with the erasure request instead. A purge does not reach backups taken before it, nor the logs the host
+keeps (spec section 15.6): expire those on the same schedule.
 
 ## Backups
 

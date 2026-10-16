@@ -126,7 +126,9 @@
     "acknowledged": "Acknowledged",
     "resolved": "Resolved",
     "muted": "Muted",
-    "sample": "Sample"
+    "sample": "Sample",
+    "expired": "Expired",
+    "erased": "Erased"
   },
   "graph": {
     "kind": {
@@ -360,6 +362,10 @@
     "payload": {
       "title": "Payload",
       "meta": "in {{stream}} · {{size}}"
+    },
+    "tombstone": {
+      "expired": "This item’s payload expired under its stream’s retention. Its envelope and lineage are kept.",
+      "erased": "This item was erased by a purge. Its envelope and lineage are kept; its payload, key and artifacts are gone."
     },
     "journey": {
       "label": "Journey",

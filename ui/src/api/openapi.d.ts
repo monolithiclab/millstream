@@ -813,6 +813,48 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/purges': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Erase the items with a key, or one item, their descendants and their copies in other pipelines (spec section 9.3).
+     * @description The purge fences the lineage, then runs to its end before the answer: payloads, keys, transcripts and the
+     *     artifacts no surviving item references are deleted. A purge interrupted (a crash, a request cancelled) is
+     *     resumed by the engine. requestId names it: repeating it finds the purge it started. The key or item named is
+     *     not kept.
+     */
+    post: operations['createPurge'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/purges/{purge}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        purge: string;
+      };
+      cookie?: never;
+    };
+    /** A purge and its progress. */
+    get: operations['getPurge'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/nodes': {
     parameters: {
       query?: never;
@@ -1154,7 +1196,13 @@ export interface components {
       artifacts: components['schemas']['ArtifactRef'][];
       /** @description The pipeline of the item's parents when it is another one, for a copy published on an imported stream. */
       parentPipeline?: string;
+      tombstone?: components['schemas']['Tombstone'];
     };
+    /**
+     * @description Why the item no longer holds its payload (spec section 9.3); absent while it does. Its payload is then null and it has no artifacts; an erased item has no key either.
+     * @enum {string}
+     */
+    Tombstone: 'expired' | 'erased';
     ItemPage: {
       items: components['schemas']['Item'][];
       next?: string;
@@ -1170,6 +1218,7 @@ export interface components {
       parents: string[];
       /** Format: date-time */
       ts: string;
+      tombstone?: components['schemas']['Tombstone'];
     };
     Lineage: {
       item: string;
@@ -1295,6 +1344,33 @@ export interface components {
       payload?: unknown;
       /** @description Firing the same request id again returns the same run. */
       requestId?: string;
+    };
+    /** @description Exactly one of key and item. */
+    PurgeRequest: {
+      /** @description Every item with this key. */
+      key?: string;
+      /** @description The item with this id. */
+      item?: string;
+      /** @description Only in this pipeline; every pipeline by default. Its copies in importing pipelines are followed all the same. */
+      pipeline?: string;
+      requestId?: string;
+    };
+    Purge: {
+      id: string;
+      /** @enum {string} */
+      scope: 'key' | 'item';
+      /** @description The pipeline the request named. */
+      pipeline?: string;
+      /** @enum {string} */
+      state: 'erasing' | 'sweeping' | 'done';
+      /** @description The items fenced */
+      items: number;
+      erased: number;
+      pipelines: string[];
+      /** Format: date-time */
+      requestedAt: string;
+      /** Format: date-time */
+      finishedAt?: string;
     };
     /** @description Exactly one of step (a replay run of the step over past items) and stream (a back-fill of an imported stream from the producer's retained items). */
     ReplayRequest: {
@@ -2821,6 +2897,67 @@ export interface operations {
         };
       };
       400: components['responses']['Error'];
+      default: components['responses']['Error'];
+    };
+  };
+  createPurge: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['PurgeRequest'];
+      };
+    };
+    responses: {
+      /** @description The purge the request id had already started. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Purge'];
+        };
+      };
+      /** @description The purge, started by this request. */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Purge'];
+        };
+      };
+      400: components['responses']['Error'];
+      415: components['responses']['Error'];
+      503: components['responses']['Error'];
+      default: components['responses']['Error'];
+    };
+  };
+  getPurge: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        purge: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The purge. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Purge'];
+        };
+      };
+      404: components['responses']['Error'];
       default: components['responses']['Error'];
     };
   };

@@ -13,6 +13,7 @@ export const SH = {
   pause: 'M3.8 2.5V9.5M8.2 2.5V9.5',
   x: 'M4.2 4.2L7.8 7.8M7.8 4.2L4.2 7.8',
   replay: 'M2.3 6a3.7 3.7 0 1 0 1.1-2.6M2.2 1.6V4.3H4.9',
+  hands: 'M6 3.6V6L7.7 7.1',
 };
 
 type Tone = 'accent' | 'ok' | 'warn' | 'bad' | 'human' | 'mute';
@@ -73,6 +74,9 @@ export const statuses = {
   resolved: { tone: 'ok', d: SH.check },
   muted: { tone: 'mute', d: SH.circle, mark: SH.slash },
   sample: { tone: 'human', d: SH.diamond },
+  // An item's tombstone (spec section 9.3): a clock for retention, a struck square for a purge.
+  expired: { tone: 'mute', d: SH.circle, mark: SH.hands },
+  erased: { tone: 'mute', d: SH.square, mark: SH.slash },
 } satisfies Record<string, Glyph>;
 
 export type StatusKey = keyof typeof statuses;
@@ -106,6 +110,8 @@ const labels: Record<StatusKey, `status.${StatusKey}`> = {
   resolved: 'status.resolved',
   muted: 'status.muted',
   sample: 'status.sample',
+  expired: 'status.expired',
+  erased: 'status.erased',
 };
 
 export function isStatus(value: string): value is StatusKey {

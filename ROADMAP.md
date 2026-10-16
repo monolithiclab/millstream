@@ -23,35 +23,29 @@ earlier designs are in the git history of the spec.
   `sqlstore.test` (29 MB, 19fe3b5, M4), from every branch with BFG Repo-Cleaner (`bfg --delete-files
   '{conformance,sqlstore}.test'` on a mirror clone, `git reflog expire` and `git gc`, then force-push the phase
   branches). Rewriting is fine while there are no tags or releases.
-- Insights: deployment-wide `insights` defaults from the environment file, a CLI to reopen a muted insight, and
-  retention of `metric_rollups` and of the events the projectors read (M4).
+- Insights: deployment-wide `insights` defaults from the environment file, and a CLI to reopen a muted insight.
 - Go SDK: per-output artifacts for `MapKeyed` (today `Context.Artifact` attaches a file to every output of the
   delivery).
 - Registry actions: listing a remote registry's tags to resolve ranges, and pulling the pinned digest on a node that
   lacks it (M2 resolves against local images only).
 - Container actions: enforcing the manifest's network destinations (M2 grants the default network to any declared
   list).
-- Artifact files orphaned by a retry whose item already existed (first commit wins) are only reclaimed by a sweep
-  of unreferenced hashes, which arrives with retention (M4).
 - Agent harnesses: the `api` harness's tool loop over declared tools, and MCP servers for both harnesses (M2
   resolves either as unavailable).
 - The agent adapter reads its action (manifest, prompt, schemas) from the package directory on disk, like an exec
   action's command: an edit there while a run is open changes what later deliveries of that revision run. Serving
   the revision's files from the engine would close this for both.
-- Transcripts are stored uncompressed until retention (M4) brings compression and `retention.transcripts`.
-- Shared streams (M4 Task 5): a copy's artifact file is copied into the consumer's prefix on first open, from the local
-  artifact directory; the S3 store (Task 4) needs the same copy, server side, and retention (Task 8) must keep the
-  producer's file while a consumer copy that has not been opened references it.
-- Shared streams: `replay --stream` skips the producer items whose payload is `null`, the tombstone retention will
-  write (Task 8 fixes the tombstone's form; the step replay refuses them instead, as spec section 5.7 asks).
+- Shared streams (M4 Task 5): a copy's artifact file is copied into the consumer's prefix on first open, and by the
+  artifact sweep before the producer's file goes, from the local artifact directory; the S3 store (Task 4) needs the
+  same copy, server side, and must implement `artifacts.Files` (list, modification time, copy, remove) for the sweep.
+  An S3 object's modification time cannot be touched in place: storing existing content again must copy it onto
+  itself, or the sweep's grace must come from elsewhere.
 - Shared streams: `millstream test pipeline` needs a trigger to fire, so a package whose only entry is an imported
   stream cannot be tested on its own yet; a test could name an imported stream and the items to copy onto it.
 - Shared streams: the UI's demo dataset has no importing pipeline (the Vitest tests add one), so `?demo` and the
   Playwright screens do not show an import entry on the graph or a lineage crossing pipelines.
 - Evals: container actions, a step's lessons applied to a case, and the judge's own cost in the printed cost (M2
   evaluates agent and exec actions, without lessons, and prints only the action's cost).
-- Engine memory before the M4 server: bound the revision cache and the per-revision maps (resolved actions, lessons,
-  packages) a long-running engine accumulates, evicting revisions with no open run.
 - Agent sandbox image: pin `agents.image` by digest in `millstream.lock`, as container actions' images are.
 - The unsandboxed `claude-code` harness reads the user's own `~/.claude` settings (hooks, permissions, MCP
   servers); isolate it with `--setting-sources` (or an empty `CLAUDE_CONFIG_DIR`) so a run does not depend on them.
@@ -72,12 +66,12 @@ earlier designs are in the git history of the spec.
 - Apply (M4 Task 2): each package of one apply is its own unit, so a store failure part-way leaves the earlier ones
   applied; one unit for the whole apply would make it atomic. Apply re-checks every other pipeline's active package,
   so a pipeline broken by a change of the deployment (a secret unmapped) blocks every apply until it is fixed or
-  applied again; `--force` does not bypass check errors. The package cache (`packages/` beside the artifact store) is
-  never pruned (Task 8's bounded caches).
+  applied again; `--force` does not bypass check errors.
 - CLI through `--server`: `trigger` and `replay --step` refuse `--var` (the API takes no variables), the inbox
   decisions and insight states need `--pipeline`, and `eval` records scores only from its own process (no API).
-- HTTP API: an item's descendants are found by scanning its pipeline's items' parents (`json_each`); an index of
-  parent to child (or reading the deliveries of the item) before volumes grow.
+- HTTP API and purge: an item's descendants are found by scanning its pipeline's items' parents (`json_each`), the
+  lineage view and a purge's fence alike; an index of parent to child (or reading the deliveries of the item) before
+  volumes grow.
 - HTTP API reads to tighten before volumes grow: count queries instead of reading open dead letters and reviews to
   count them (pipelines list), a delivery's attempts filtered in SQL (a `delivery_id` column on events) and decoded
   by one reader shared with `insights`, an index on `deliveries (pipeline, finished_at)` for the live step stats,
@@ -101,8 +95,7 @@ earlier designs are in the git history of the spec.
   the node token on every request itself. Until then the prefix answers `notFound` on every engine.
 - Live events: the broker wakes on this process's commits and polls every 15 seconds for other processes' writes on
   the same SQLite file; Postgres (M4) can wake it with `LISTEN`/`NOTIFY` instead. The live log tail relays the
-  embedded node only; remote nodes stream their lines with M4's node endpoint. Event retention (M4) is what makes a
-  cursor too old besides the 10,000-event resume limit.
+  embedded node only; remote nodes stream their lines with M4's node endpoint.
 - Failover (M4 Task 3): the leadership row records the engine's bound `listen` address, which a standby names to
   clients; a deployment whose engines listen on `0.0.0.0` behind a proxy needs an advertised address key (with
   remote nodes, Task 4). `run` on Postgres takes the lock but has no standby loop: it exits when its store is lost.
@@ -113,6 +106,11 @@ earlier designs are in the git history of the spec.
 - Postgres out of resources (SQLSTATE class 53: disk full, out of memory, too many connections) reaches API clients
   as `internal error`, the cause only in the engine's log (how `apply --server` failed on a full Docker disk); mapping
   class 53 to `unavailable` with a generic reason would point an operator at the database.
+- Retention and purge (M4 Task 8): retention covers payloads, artifacts, events, transcripts and rollups; the tables
+  that grow more slowly (`dedupe_keys` past their window, `skipped_firings`, `eval_results`, resolved `insights`,
+  done `purges` and their `purge_items`) are kept for ever. A purge sweeps its files without the periodic sweep's
+  grace: a delivery in flight storing the very same content in the same pipeline at that moment could lose the file
+  it references. Evidence bundles (M5) must be found and erased by a purge too (spec section 11.2).
 - Crash suite on Postgres: the failpoint matrices (run and commands) run on both stores; the seeded random kill
   points, the M2 agent path and the review fixtures still run on SQLite only.
 

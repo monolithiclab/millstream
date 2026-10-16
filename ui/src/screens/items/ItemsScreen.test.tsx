@@ -125,6 +125,26 @@ describe('items list', () => {
     expect(screen.getByText('1 item shown')).toBeInTheDocument();
   });
 
+  it('marks an expired or erased item in its row, named by its key or id', async () => {
+    const api = new FakeApi();
+    api.listItems = () =>
+      Promise.resolve({
+        items: [
+          { ...item('it_a', { title: 'A' }), payload: null, key: 'k-a', tombstone: 'expired' },
+          { ...item('it_b'), payload: null, key: '', tombstone: 'erased' },
+          item('it_c', { title: 'C' }),
+        ],
+      });
+    renderApp({ route, api });
+    await waitFor(() => expect(listed()).toHaveLength(3));
+    const [expired, erased, kept] = listed();
+    expect(within(expired!).getByText('k-a')).toBeInTheDocument();
+    expect(within(expired!).getByText('Expired')).toBeInTheDocument();
+    expect(within(erased!).getByText('Erased')).toBeInTheDocument();
+    expect(erased).toHaveTextContent('it_b');
+    expect(kept).not.toHaveTextContent(/Expired|Erased/);
+  });
+
   it('says why the list is empty, filtered or not', async () => {
     const api = new FakeApi();
     api.listItems = () => Promise.resolve({ items: [] });

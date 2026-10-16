@@ -66,6 +66,7 @@ type Engine interface {
 	PackageFromFiles(files map[string][]byte) (*pipeline.Package, error)
 	ApplyPackages(ctx context.Context, pkgs []*pipeline.Package, opts engine.ApplyOptions) ([]engine.Applied,
 		[]engine.Finding, error)
+	Purge(ctx context.Context, req engine.PurgeRequest) (store.Purge, bool, error)
 }
 
 // Deployment is what the server knows of its deployment's engines (spec section 5.9).
@@ -199,6 +200,8 @@ var routes = []route{
 	{http.MethodGet, "/insights", (*Server).listInsights},
 	{http.MethodGet, "/metrics", (*Server).getMetrics},
 	{http.MethodGet, "/metrics/names", (*Server).listMetricNames},
+	{http.MethodPost, "/purges", (*Server).createPurge},
+	{http.MethodGet, "/purges/{purge}", (*Server).getPurge},
 	{http.MethodGet, "/nodes", (*Server).listNodes},
 	{http.MethodGet, "/live/pipelines/{pipeline}", (*Server).livePipeline},
 	{http.MethodGet, "/live/runs/{run}", (*Server).liveRun},
