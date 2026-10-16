@@ -1,5 +1,7 @@
 # The package make test-ui-e2e runs: millstream run serves the API and the UI over it. Builtin steps only, so the
-# Playwright container needs no action runtime.
+# Playwright container needs no action runtime. The e2e setup (e2e/global.setup.ts) fires the manual trigger: each
+# listing parks in two inboxes, analysts (looked at by the axe tests) and triage (decided by the keyboard flow); a
+# listing with keep: false is filtered, so its run settles.
 pipeline: listings-daily
 description: Listings shortlisted and reviewed
 triggers:
@@ -9,9 +11,22 @@ steps:
     action: filter
     in: trigger.adhoc
     out: listings.shortlist
-    config: { expr: 'true' }
+    config: { expr: '!has(item.keep) || item.keep' }
   analyst-review:
     action: review
     in: listings.shortlist
     out: listings.reviewed
-    config: { inbox: analysts, reasons: [overpriced, stale] }
+    config:
+      inbox: analysts
+      reasons: [overpriced, stale]
+      editable: [/marginPct, /notes]
+      display: "{{.item.title}}\n{{.item.where}}"
+  triage:
+    action: review
+    in: listings.shortlist
+    out: listings.triaged
+    config:
+      inbox: triage
+      reasons: [overpriced, stale, duplicate]
+      editable: [/marginPct]
+      display: '{{.item.title}}'

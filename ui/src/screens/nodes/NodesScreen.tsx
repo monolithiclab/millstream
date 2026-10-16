@@ -70,7 +70,9 @@ export function NodesScreen() {
             {list.length === 0 ? (
               <EmptyState title={t('nodes.none')}>{t('nodes.noneBody')}</EmptyState>
             ) : (
-              <div className={`${card} overflow-x-auto`}>
+              // A region that scrolls sideways on a phone takes focus, so the keyboard can scroll it.
+              // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex
+              <div role="region" aria-label={t('nodes.table')} tabIndex={0} className={`${card} overflow-x-auto`}>
                 <table className="w-full min-w-[760px] border-collapse text-small">
                   <caption className="sr-only">{t('nodes.table')}</caption>
                   <thead>

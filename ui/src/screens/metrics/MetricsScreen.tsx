@@ -378,7 +378,7 @@ function Explorer({
     <>
       <section aria-label={t('metrics.chart')} className={`${card} flex flex-col gap-2 px-[18px] pt-4 pb-3`}>
         <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-          <h2 className={`${cardTitle} font-mono text-[20px]`}>{view.metric}</h2>
+          <h2 className={`${cardTitle} font-mono text-[20px] break-all`}>{view.metric}</h2>
           <span className="text-tiny text-ink-3">
             {t('metrics.subtitle', { stat: statLabel, range: rangeLabel, shown: visible.length, total: all.length })}
           </span>
@@ -386,7 +386,8 @@ function Explorer({
         <ChartPanel times={rolled.times} visible={visible} marks={marks} format={format} label={description} />
       </section>
 
-      <section aria-label={t('metrics.series')} className={`${card} overflow-x-auto`}>
+      {/* eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- it scrolls sideways on a phone, so it takes focus */}
+      <section aria-label={t('metrics.series')} tabIndex={0} className={`${card} overflow-x-auto`}>
         <table className="w-full min-w-[560px] border-collapse text-small">
           <thead>
             <tr className="bg-surface-2 text-left text-tiny text-ink-3">
@@ -438,7 +439,8 @@ function Explorer({
 
       <details className={`${card} px-4 py-3 text-small`}>
         <summary className="cursor-pointer font-bold text-ink-2">{t('metrics.asTable')}</summary>
-        <div className="mt-2 max-h-[420px] overflow-auto">
+        {/* eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- it scrolls, so it takes focus */}
+        <div role="region" aria-label={t('metrics.asTable')} tabIndex={0} className="mt-2 max-h-[420px] overflow-auto">
           <table className="w-full border-collapse text-tiny">
             <caption className="sr-only">{description}</caption>
             <thead>
