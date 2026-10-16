@@ -21,7 +21,7 @@ describe('FakeApi', () => {
     expect((await api.listNodes()).nodes).toHaveLength(1);
     await expect(api.getLineage('p', 'it_1')).rejects.toBeInstanceOf(ApiError);
     expect(await api.listRunDeliveries('listings-daily', 'run_0600', { step: 'score', state: 'dead' })).toHaveLength(2);
-    expect((await api.listRevisions('listings-daily')).map((r) => r.id)).toEqual([14, 13]);
+    expect((await api.listRevisions('listings-daily')).map((r) => r.id)).toEqual([14, 13, 12]);
     expect((await api.listInsights({ pipeline: 'listings-daily', state: 'open' })).map((i) => i.kind)).toEqual([
       'slowStep',
       'failureCluster',
@@ -197,5 +197,47 @@ describe('FakeApi', () => {
     expect((await api.getPipeline('listings-daily')).state).toBe('paused');
     await api.resume({ pipeline: 'nope' });
     expect(demoFixtures.deadLetters.filter((d) => d.state === 'open')).toHaveLength(3);
+  });
+
+  it('disables a pipeline until it is resumed, refusing a pause or a manual run meanwhile', async () => {
+    const api = new FakeApi();
+    await api.disable('listings-daily');
+    await api.disable('nope');
+    expect((await api.getPipeline('listings-daily')).state).toBe('disabled');
+    await expect(api.pause({ pipeline: 'listings-daily' })).rejects.toMatchObject({
+      status: 409,
+      code: 'conflict',
+      message: 'pipeline listings-daily is disabled: resume it first',
+    });
+    await expect(api.triggerRun('listings-daily')).rejects.toMatchObject({ status: 409 });
+    await api.pause({ pipeline: 'listings-daily', step: 'score' });
+    await api.resume({ pipeline: 'listings-daily' });
+    expect((await api.getPipeline('listings-daily')).state).toBe('active');
+    expect(api.calls.map((c) => c.method)).toEqual(['disable', 'disable', 'pause', 'triggerRun', 'pause', 'resume']);
+    expect(demoFixtures.pipelines[0]!.state).toBe('active');
+  });
+
+  it('rolls back to the revision before the active one, or the one named, without a new revision', async () => {
+    const api = new FakeApi();
+    expect(await api.rollback('listings-daily')).toMatchObject({ id: 13, active: true });
+    expect((await api.getPipeline('listings-daily')).revision).toBe(13);
+    expect((await api.listRevisions('listings-daily')).map((r) => [r.id, r.active])).toEqual([
+      [14, false],
+      [13, true],
+      [12, false],
+    ]);
+    expect(await api.rollback('listings-daily', { revision: 14 })).toMatchObject({ id: 14, active: true });
+    await expect(api.rollback('listings-daily', { revision: 14 })).rejects.toMatchObject({
+      status: 409,
+      message: 'revision r14 is already active',
+    });
+    await expect(api.rollback('listings-daily', { revision: 9 })).rejects.toMatchObject({ status: 404 });
+    await expect(api.rollback('nope')).rejects.toMatchObject({ status: 404 });
+    await expect(api.rollback('photo-tagging')).rejects.toMatchObject({
+      status: 409,
+      message: 'pipeline photo-tagging has no revision before r2',
+    });
+    expect(api.calls.filter((c) => c.method === 'rollback')).toHaveLength(6);
+    expect(demoFixtures.revisions[0]!.active).toBe(true);
   });
 });

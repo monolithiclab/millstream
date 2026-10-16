@@ -6,13 +6,14 @@ import { buttons } from './styles';
 // A confirmation per the interaction notes: the body states the consequence, the button repeats the verb and the
 // count ("Replay 2 items"). A destructive dialog opens on Cancel, any other on its primary action. The confirm button
 // stays busy until onConfirm settles, and says so to screen readers; the caller closes the dialog and reports the
-// outcome.
+// outcome. confirmDisabled holds the confirm button back (nothing to confirm yet); the dialog then opens on Cancel.
 export function ConfirmDialog({
   title,
   children,
   confirmLabel,
   cancelLabel,
   destructive = false,
+  confirmDisabled = false,
   onConfirm,
   onCancel,
 }: {
@@ -22,6 +23,7 @@ export function ConfirmDialog({
   // When "Cancel" would be ambiguous (cancelling a run): what keeping things as they are means.
   cancelLabel?: string;
   destructive?: boolean;
+  confirmDisabled?: boolean;
   onConfirm: () => Promise<unknown>;
   onCancel: () => void;
 }) {
@@ -50,9 +52,9 @@ export function ConfirmDialog({
             type="button"
             className={destructive ? buttons.danger : buttons.primary}
             onClick={confirm}
-            disabled={busy}
+            disabled={busy || confirmDisabled}
             aria-busy={busy}
-            {...(destructive ? {} : { 'data-autofocus': true })}
+            {...(destructive || confirmDisabled ? {} : { 'data-autofocus': true })}
           >
             {confirmLabel}
           </button>

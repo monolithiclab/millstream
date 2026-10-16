@@ -751,8 +751,23 @@ const demoReports: Record<string, Partial<RunReport>> = {
 };
 
 const demoRevisions: Revision[] = [
-  { id: 14, pipeline: PIPELINE, packageHash: 'sha256:9f2c41d07a', appliedAt: '2026-10-13T06:40:00Z', active: true },
+  {
+    id: 14,
+    pipeline: PIPELINE,
+    packageHash: 'sha256:9f2c41d07a',
+    appliedAt: '2026-10-13T06:40:00Z',
+    message: 'score: stricter output schema',
+    active: true,
+  },
   { id: 13, pipeline: PIPELINE, packageHash: 'sha256:51c0e8d4b3', appliedAt: '2026-10-02T09:12:00Z', active: false },
+  {
+    id: 12,
+    pipeline: PIPELINE,
+    packageHash: 'sha256:c7e19a05f2',
+    appliedAt: '2026-09-18T14:05:00Z',
+    message: 'geocode: switch to the BAN API',
+    active: false,
+  },
 ];
 
 // Dead letters: the two listings score died on, a fetch timeout, and yesterday's, settled.

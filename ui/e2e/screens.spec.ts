@@ -40,6 +40,19 @@ const screens: ScreenCase[] = [
     name: 'pipelines',
     path: async () => '/pipelines',
     ready: (page) => expect(page.getByRole('table')).toBeVisible(),
+    open: async (page) => {
+      await page.getByRole('button', { name: /^(Roll back|Restaurer une révision de) listings-daily$/ }).click();
+      await expect(page.getByRole('dialog')).toBeVisible();
+    },
+  },
+  {
+    name: 'pipelines disable',
+    path: async () => '/pipelines',
+    ready: (page) => expect(page.getByRole('table')).toBeVisible(),
+    open: async (page) => {
+      await page.getByRole('button', { name: /^(Disable|Désactiver) listings-daily$/ }).click();
+      await expect(page.getByRole('dialog')).toBeVisible();
+    },
   },
   {
     name: 'graph',

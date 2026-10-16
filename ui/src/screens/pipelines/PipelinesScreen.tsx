@@ -13,16 +13,21 @@ import { StatusBadge, StatusText, isStatus } from '../../common/Status';
 import { useFormat } from '../../common/useFormat';
 import { pipelinePath, runPath } from '../../routes';
 import { ScreenPage } from '../ScreenPage';
+import { RollbackDialog } from './RollbackDialog';
 
 // Pipelines (canvas "Pipelines"): each pipeline's state, active revision, last run and open dead letters, each a door
-// to the screen behind it, with Pause or Resume after a confirmation that says what happens. Items and cost today
-// are left out: the API has no such figures yet.
+// to the screen behind it, with Pause or Resume, Disable and Roll back, each after a confirmation that says what
+// happens. Pipelines change through their packages: nothing here applies one. Items and cost today are left out: the
+// API has no such figures yet.
 export function PipelinesScreen() {
   const { t } = useTranslation();
   const f = useFormat();
   const api = useApi();
   const { notice, setNotice, dismiss } = useNotice();
-  const [confirm, setConfirm] = useState<Pipeline | null>(null);
+  const [confirm, setConfirm] = useState<{ action: 'lifecycle' | 'disable' | 'rollback'; pipeline: Pipeline } | null>(
+    null,
+  );
+  const close = () => setConfirm(null);
   const list = useResource('pipelines:list', (a) => a.listPipelines());
 
   const lifecycle = ({ name, state }: Pipeline) => {
@@ -35,6 +40,36 @@ export function PipelinesScreen() {
       failed: (message) =>
         pausing ? t('pipelines.pauseFailed', { name, message }) : t('pipelines.resumeFailed', { name, message }),
       settled: list.refresh,
+    });
+  };
+
+  const disable = ({ name }: Pipeline) =>
+    runAction(setNotice, {
+      call: async () => {
+        await api.disable(name);
+        return t('pipelines.disabled', { name });
+      },
+      failed: (message) => t('pipelines.disableFailed', { name, message }),
+      settled: list.refresh,
+    });
+
+  const rollback = ({ name }: Pipeline, revision: number) =>
+    runAction(setNotice, {
+      call: async () => {
+        const active = await api.rollback(name, { revision });
+        return t('pipelines.rolledBack', { name, revision: active.id });
+      },
+      failed: (message) => t('pipelines.rollbackFailed', { name, message }),
+      settled: list.refresh,
+    });
+
+  // The revisions could not be read, so the rollback dialog never opened: say so, with Retry reopening it.
+  const revisionsFailed = (pipeline: Pipeline, message: string) => {
+    setConfirm(null);
+    setNotice({
+      kind: 'error',
+      message: t('pipelines.revisionsFailed', { name: pipeline.name, message }),
+      retry: () => setConfirm({ action: 'rollback', pipeline }),
     });
   };
 
@@ -100,10 +135,10 @@ export function PipelinesScreen() {
             </thead>
             <tbody>
               {pipelines.map((p) => {
-                const paused = p.state === 'paused';
+                const active = p.state === 'active';
                 const run = p.lastRun;
                 return (
-                  <tr key={p.name} className={`border-t border-line ${paused ? 'text-ink-2' : 'text-ink'}`}>
+                  <tr key={p.name} className={`border-t border-line ${active ? 'text-ink' : 'text-ink-2'}`}>
                     <td className="px-4 py-3.5">
                       <Link
                         to={pipelinePath(p.name)}
@@ -114,7 +149,7 @@ export function PipelinesScreen() {
                       {p.description !== undefined && <div className="text-tiny text-ink-3">{p.description}</div>}
                     </td>
                     <td className="px-2 py-3.5">
-                      <StatusBadge status={paused ? 'paused' : 'active'} />
+                      <StatusBadge status={p.state} />
                       <div className="mt-1 text-tiny text-ink-3">
                         {t(f.plural(p.steps.length, 'pipelines.stepsOne', 'pipelines.stepsOther'), {
                           n: f.num(p.steps.length),
@@ -149,19 +184,39 @@ export function PipelinesScreen() {
                         {f.num(p.openDeadLetters)}
                       </Link>
                     </td>
-                    <td className="px-4 py-3.5 text-right">
-                      <button
-                        type="button"
-                        className={buttons.smallSecondary}
-                        aria-label={
-                          paused
-                            ? t('pipelines.resumeName', { name: p.name })
-                            : t('pipelines.pauseName', { name: p.name })
-                        }
-                        onClick={() => setConfirm(p)}
-                      >
-                        {paused ? t('pipelines.resume') : t('pipelines.pause')}
-                      </button>
+                    <td className="px-4 py-3.5">
+                      <div className="flex flex-wrap justify-end gap-1.5">
+                        <button
+                          type="button"
+                          className={buttons.smallSecondary}
+                          aria-label={
+                            active
+                              ? t('pipelines.pauseName', { name: p.name })
+                              : t('pipelines.resumeName', { name: p.name })
+                          }
+                          onClick={() => setConfirm({ action: 'lifecycle', pipeline: p })}
+                        >
+                          {active ? t('pipelines.pause') : t('pipelines.resume')}
+                        </button>
+                        {p.state !== 'disabled' && (
+                          <button
+                            type="button"
+                            className={buttons.smallSecondary}
+                            aria-label={t('pipelines.disableName', { name: p.name })}
+                            onClick={() => setConfirm({ action: 'disable', pipeline: p })}
+                          >
+                            {t('pipelines.disable')}
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          className={buttons.smallSecondary}
+                          aria-label={t('pipelines.rollbackName', { name: p.name })}
+                          onClick={() => setConfirm({ action: 'rollback', pipeline: p })}
+                        >
+                          {t('pipelines.rollback')}
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 );
@@ -171,36 +226,74 @@ export function PipelinesScreen() {
         </ScrollRegion>
       )}
 
-      {confirm !== null && (
+      {confirm?.action === 'lifecycle' && (
+        <LifecycleDialog
+          pipeline={confirm.pipeline}
+          onConfirm={() => lifecycle(confirm.pipeline).finally(close)}
+          onCancel={close}
+        />
+      )}
+      {confirm?.action === 'disable' && (
         <ConfirmDialog
-          title={
-            confirm.state === 'active'
-              ? t('pipelines.pauseTitle', { name: confirm.name })
-              : t('pipelines.resumeTitle', { name: confirm.name })
-          }
-          confirmLabel={
-            confirm.state === 'active'
-              ? t('pipelines.pauseConfirm', { name: confirm.name })
-              : t('pipelines.resumeConfirm', { name: confirm.name })
-          }
-          onConfirm={() => lifecycle(confirm).finally(() => setConfirm(null))}
-          onCancel={() => setConfirm(null)}
+          title={t('pipelines.disableTitle', { name: confirm.pipeline.name })}
+          confirmLabel={t('pipelines.disableConfirm', { name: confirm.pipeline.name })}
+          destructive
+          onConfirm={() => disable(confirm.pipeline).finally(close)}
+          onCancel={close}
         >
-          {confirm.state === 'active' ? (
-            <Consequences>
-              <li>{t('pipelines.pauseWait')}</li>
-              <li>{t('pipelines.pauseRunning')}</li>
-              <li>{t('pipelines.pauseTriggers')}</li>
-            </Consequences>
-          ) : (
-            <Consequences>
-              <li>{t('pipelines.resumeStart')}</li>
-              <li>{t('pipelines.resumeBudget')}</li>
-            </Consequences>
-          )}
+          <Consequences>
+            <li>{t('pipelines.disableTriggers')}</li>
+            <li>{t('pipelines.disableWait')}</li>
+            <li>{t('pipelines.disableRunning')}</li>
+            <li>{t('pipelines.disableUndo')}</li>
+          </Consequences>
         </ConfirmDialog>
+      )}
+      {confirm?.action === 'rollback' && (
+        <RollbackDialog
+          pipeline={confirm.pipeline}
+          onConfirm={(revision) => rollback(confirm.pipeline, revision).finally(close)}
+          onCancel={close}
+          onError={(message) => revisionsFailed(confirm.pipeline, message)}
+        />
       )}
       <NoticeRegion notice={notice} onDismiss={dismiss} />
     </ScreenPage>
+  );
+}
+
+// Pause an active pipeline, or resume a paused or disabled one (resume enables it too).
+function LifecycleDialog({
+  pipeline: { name, state },
+  onConfirm,
+  onCancel,
+}: {
+  pipeline: Pipeline;
+  onConfirm: () => Promise<unknown>;
+  onCancel: () => void;
+}) {
+  const { t } = useTranslation();
+  const pausing = state === 'active';
+  return (
+    <ConfirmDialog
+      title={pausing ? t('pipelines.pauseTitle', { name }) : t('pipelines.resumeTitle', { name })}
+      confirmLabel={pausing ? t('pipelines.pauseConfirm', { name }) : t('pipelines.resumeConfirm', { name })}
+      onConfirm={onConfirm}
+      onCancel={onCancel}
+    >
+      {pausing ? (
+        <Consequences>
+          <li>{t('pipelines.pauseWait')}</li>
+          <li>{t('pipelines.pauseRunning')}</li>
+          <li>{t('pipelines.pauseTriggers')}</li>
+        </Consequences>
+      ) : (
+        <Consequences>
+          {state === 'disabled' && <li>{t('pipelines.resumeTriggers')}</li>}
+          <li>{t('pipelines.resumeStart')}</li>
+          <li>{t('pipelines.resumeBudget')}</li>
+        </Consequences>
+      )}
+    </ConfirmDialog>
   );
 }

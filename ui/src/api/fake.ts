@@ -330,15 +330,61 @@ export class FakeApi implements Api {
   private setPaused({ pipeline, step }: { pipeline: string; step?: string }, paused: boolean) {
     const p = this.pipeline(pipeline);
     if (!p) return;
+    // Resuming a pipeline enables it too; pausing a disabled one is refused before this.
     if (step === undefined) p.state = paused ? 'paused' : 'active';
     for (const s of p.steps) if (step === undefined || s.name === step) s.paused = paused;
   }
 
-  triggerRun: Api['triggerRun'] = (...args) => this.record('triggerRun', args, this.newRun(args[0], 'trigger'));
+  // A refused action is recorded too, then rejects as the server would.
+  private refuse(method: string, args: unknown[], status: number, code: string, message: string): Promise<never> {
+    this.calls.push({ method, args });
+    return Promise.reject(new ApiError(status, code, message));
+  }
+
+  private disabled(pipeline: string): boolean {
+    return this.pipeline(pipeline)?.state === 'disabled';
+  }
+
+  // A disabled pipeline's triggers do not fire.
+  triggerRun: Api['triggerRun'] = (...args) =>
+    this.disabled(args[0])
+      ? this.refuse('triggerRun', args, 409, 'conflict', `pipeline ${args[0]} is disabled: resume it first`)
+      : this.record('triggerRun', args, this.newRun(args[0], 'trigger'));
   cancelRun: Api['cancelRun'] = (...args) => this.record('cancelRun', args, undefined);
   pause: Api['pause'] = (...args) => {
+    if (args[0].step === undefined && this.disabled(args[0].pipeline)) {
+      return this.refuse('pause', args, 409, 'conflict', `pipeline ${args[0].pipeline} is disabled: resume it first`);
+    }
     this.setPaused(args[0], true);
     return this.record('pause', args, undefined);
+  };
+  disable: Api['disable'] = (...args) => {
+    const p = this.pipeline(args[0]);
+    if (p) p.state = 'disabled';
+    return this.record('disable', args, undefined);
+  };
+  // Reactivates a revision: the one named, or the newest older than the active one. No new revision is created.
+  rollback: Api['rollback'] = (...args) => {
+    const [pipeline, { revision = 0 } = {}] = args;
+    const p = this.pipeline(pipeline);
+    if (!p) return this.refuse('rollback', args, 404, 'notFound', `pipeline ${pipeline} not found`);
+    const revisions = this.fixtures.revisions.filter((r) => r.pipeline === pipeline);
+    const active = revisions.find((r) => r.active);
+    const target =
+      revision === 0
+        ? revisions.filter((r) => active === undefined || r.id < active.id).sort((a, b) => b.id - a.id)[0]
+        : revisions.find((r) => r.id === revision);
+    if (target === undefined) {
+      return revision === 0
+        ? this.refuse('rollback', args, 409, 'conflict', `pipeline ${pipeline} has no revision before r${p.revision}`)
+        : this.refuse('rollback', args, 404, 'notFound', `revision ${pipeline}/${revision} not found`);
+    }
+    if (target.active) {
+      return this.refuse('rollback', args, 409, 'conflict', `revision r${target.id} is already active`);
+    }
+    for (const r of revisions) r.active = r === target;
+    p.revision = target.id;
+    return this.record('rollback', args, { ...target });
   };
   resume: Api['resume'] = (...args) => {
     this.setPaused(args[0], false);

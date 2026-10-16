@@ -41,6 +41,7 @@ export type DeadLetterSelection = Schemas['DeadLetterSelection'];
 export type Count = Schemas['Count'];
 
 export type TriggerRequest = Schemas['TriggerRequest'];
+export type RollbackRequest = Schemas['RollbackRequest'];
 export type ReplayRequest = Schemas['ReplayRequest'];
 
 export type MetricSeries = Schemas['MetricSeries'];

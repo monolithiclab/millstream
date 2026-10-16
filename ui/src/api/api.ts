@@ -16,6 +16,7 @@ import type {
   ReviewDecision,
   ReviewPage,
   Revision,
+  RollbackRequest,
   Run,
   RunPage,
   RunReport,
@@ -100,6 +101,10 @@ export interface Api {
   cancelRun(pipeline: string, run: string): Promise<void>;
   pause(target: Target): Promise<void>;
   resume(target: Target): Promise<void>;
+  // Stops a pipeline's triggers and holds its deliveries until resume; pausing it meanwhile is a conflict.
+  disable(pipeline: string): Promise<void>;
+  // Reactivates an earlier revision (the one before the active one by default) and returns it.
+  rollback(pipeline: string, request?: RollbackRequest): Promise<Revision>;
   replay(pipeline: string, request: ReplayRequest): Promise<Run>;
   replayDeadLetters(pipeline: string, selection: DeadLetterSelection): Promise<Count>;
   discardDeadLetters(pipeline: string, selection: DeadLetterSelection): Promise<Count>;

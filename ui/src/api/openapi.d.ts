@@ -68,7 +68,7 @@ export interface paths {
     };
     get?: never;
     put?: never;
-    /** Pause the pipeline; its deliveries stay pending. */
+    /** Pause the pipeline; its deliveries stay pending. A disabled pipeline is resumed first (conflict). */
     post: operations['pausePipeline'];
     delete?: never;
     options?: never;
@@ -87,8 +87,63 @@ export interface paths {
     };
     get?: never;
     put?: never;
-    /** Resume the pipeline, lifting the pauses a budget made too. */
+    /** Resume a paused or disabled pipeline, lifting the pauses a budget made too. */
     post: operations['resumePipeline'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/pipelines/{pipeline}/disable': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        pipeline: components['parameters']['pipeline'];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Disable the pipeline; its triggers stop firing and its deliveries wait until it is resumed. */
+    post: operations['disablePipeline'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/pipelines/{pipeline}/rollback': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        pipeline: components['parameters']['pipeline'];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Reactivate an earlier revision, the one before the active one by default. Runs already started finish on their own revision. */
+    post: operations['rollbackPipeline'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/revisions': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Apply packages as new revisions (millstream apply). Each package is checked, and so is every other pipeline of the deployment; a check error refuses them all (invalid). The body may be up to 64 MiB. */
+    post: operations['applyPackages'];
     delete?: never;
     options?: never;
     head?: never;
@@ -884,7 +939,7 @@ export interface components {
       name: string;
       description?: string;
       /** @enum {string} */
-      state: 'active' | 'paused';
+      state: 'active' | 'paused' | 'disabled';
       revision: number;
       steps: components['schemas']['Step'][];
       triggers: components['schemas']['Trigger'][];
@@ -918,6 +973,8 @@ export interface components {
       packageHash: string;
       /** Format: date-time */
       appliedAt: string;
+      /** @description Why it was applied (apply --message). */
+      message?: string;
       active: boolean;
       graph?: components['schemas']['Graph'];
     };
@@ -1160,6 +1217,37 @@ export interface components {
     };
     Count: {
       count: number;
+    };
+    RollbackRequest: {
+      /** @description The revision to reactivate; 0 or absent: the one before the active one. */
+      revision?: number;
+    };
+    ApplyRequest: {
+      packages: {
+        /** @description The package's files by slash-separated path, each base64. */
+        files: {
+          [key: string]: string;
+        };
+      }[];
+      /** @description Let through breaking an importer's contract. */
+      force?: boolean;
+      /** @description Why */
+      message?: string;
+    };
+    ApplyResponse: {
+      revisions: {
+        pipeline: string;
+        revision: number;
+        packageHash: string;
+        /** @description False when the package was the active one already. */
+        created: boolean;
+      }[];
+      warnings: {
+        pipeline: string;
+        severity: string;
+        path: string;
+        message: string;
+      }[];
     };
     TriggerRequest: {
       /** @description The pipeline's first manual trigger by default. */
@@ -1523,6 +1611,7 @@ export interface operations {
         content?: never;
       };
       404: components['responses']['Error'];
+      409: components['responses']['Error'];
       415: components['responses']['Error'];
       default: components['responses']['Error'];
     };
@@ -1547,6 +1636,89 @@ export interface operations {
       };
       404: components['responses']['Error'];
       415: components['responses']['Error'];
+      default: components['responses']['Error'];
+    };
+  };
+  disablePipeline: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        pipeline: components['parameters']['pipeline'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Disabled (or disabled already). */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      404: components['responses']['Error'];
+      415: components['responses']['Error'];
+      default: components['responses']['Error'];
+    };
+  };
+  rollbackPipeline: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        pipeline: components['parameters']['pipeline'];
+      };
+      cookie?: never;
+    };
+    requestBody?: {
+      content: {
+        'application/json': components['schemas']['RollbackRequest'];
+      };
+    };
+    responses: {
+      /** @description The revision now active. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Revision'];
+        };
+      };
+      400: components['responses']['Error'];
+      404: components['responses']['Error'];
+      409: components['responses']['Error'];
+      415: components['responses']['Error'];
+      default: components['responses']['Error'];
+    };
+  };
+  applyPackages: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ApplyRequest'];
+      };
+    };
+    responses: {
+      /** @description The revision of each package, and the check's warnings. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApplyResponse'];
+        };
+      };
+      400: components['responses']['Error'];
+      413: components['responses']['Error'];
+      415: components['responses']['Error'];
+      503: components['responses']['Error'];
       default: components['responses']['Error'];
     };
   };
@@ -1737,6 +1909,7 @@ export interface operations {
       };
       400: components['responses']['Error'];
       404: components['responses']['Error'];
+      409: components['responses']['Error'];
       415: components['responses']['Error'];
       503: components['responses']['Error'];
       default: components['responses']['Error'];

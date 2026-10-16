@@ -79,6 +79,9 @@ const cases: Case[] = [
   ['cancelRun', (a) => a.cancelRun('p', 'r'), 'POST', `${P}/runs/r/cancel`, {}],
   ['pause pipeline', (a) => a.pause({ pipeline: 'p' }), 'POST', `${P}/pause`, {}],
   ['resume step', (a) => a.resume({ pipeline: 'p', step: 's' }), 'POST', `${P}/steps/s/resume`, {}],
+  ['disable', (a) => a.disable('p'), 'POST', `${P}/disable`, {}],
+  ['rollback', (a) => a.rollback('p'), 'POST', `${P}/rollback`, {}],
+  ['rollback revision', (a) => a.rollback('p', { revision: 12 }), 'POST', `${P}/rollback`, { revision: 12 }],
   [
     'replay',
     (a) => a.replay('p', { step: 'score', since: '7d' }),

@@ -2,7 +2,7 @@ import { Handle, Position, type Node, type NodeProps } from '@xyflow/react';
 import type { KeyboardEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { StatusGlyph, useStatusLabel } from '../../common/Status';
-import { useFormat, type Format } from '../../common/useFormat';
+import { useFormat } from '../../common/useFormat';
 import type { Trigger } from '../../api/schema';
 import type { StepKind, StepModel } from './model';
 
@@ -93,7 +93,9 @@ function queueDots(queued: number): number {
   return queued <= 0 ? 0 : Math.min(10, Math.ceil(Math.log2(queued + 1)));
 }
 
-function badgeOf(model: StepModel, t: ReturnType<typeof useTranslation>['t'], f: Format) {
+function useBadge(model: StepModel) {
+  const { t } = useTranslation();
+  const f = useFormat();
   if (model.openDeadLetters > 0) {
     const n = f.num(model.openDeadLetters);
     return {
@@ -183,7 +185,7 @@ export function StepNode({ data }: NodeProps<StepNodeType>) {
         : paused
           ? 'border-[1.5px] border-dashed border-line-strong'
           : 'border border-control-line shadow-1';
-  const badge = badgeOf(model, t, f);
+  const badge = useBadge(model);
   const dots = queueDots(fig?.queued ?? 0);
   return (
     <div className="relative">
