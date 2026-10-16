@@ -1,5 +1,14 @@
 import dagre from '@dagrejs/dagre';
-import type { DeadLetterGroup, Insight, Pipeline, PipelineSnapshot, Step, Stream, Trigger } from '../../api/schema';
+import type {
+  DeadLetterGroup,
+  Import,
+  Insight,
+  Pipeline,
+  PipelineSnapshot,
+  Step,
+  Stream,
+  Trigger,
+} from '../../api/schema';
 
 export type StepKind = 'action' | 'filter' | 'review' | 'dedupe';
 export type StepState = 'active' | 'paused' | 'failing' | 'slow' | 'awaitingReview';
@@ -21,10 +30,8 @@ export interface StepModel {
   filtered?: number | undefined;
 }
 
-export interface TriggerModel {
-  id: string;
-  trigger: Trigger;
-}
+// Where items enter: a trigger, or a stream imported from another pipeline (spec section 4.12).
+export type TriggerModel = { id: string; name: string } & ({ trigger: Trigger } | { imported: Import });
 
 export interface ChannelModel {
   id: string;
@@ -47,6 +54,7 @@ export interface GraphModel {
 
 export const stepId = (name: string) => `step:${name}`;
 const triggerId = (name: string) => `trigger:${name}`;
+const importId = (name: string) => `import:${name}`;
 
 function kindOf(step: Step): StepKind {
   if (!step.builtin) return 'action';
@@ -57,8 +65,8 @@ function kindOf(step: Step): StepKind {
 
 const severityRank: Record<Insight['severity'], number> = { error: 3, warning: 2, info: 1 };
 
-// The graph of a pipeline with its live figures: steps and triggers as nodes, one channel per stream link from a
-// producer to a consumer. Dead-letter streams and streams nobody reads draw nothing.
+// The graph of a pipeline with its live figures: steps, triggers and imported streams as nodes, one channel per
+// stream link from a producer to a consumer. Dead-letter streams and streams nobody reads draw nothing.
 export function buildModel({
   pipeline,
   streams,
@@ -109,10 +117,14 @@ export function buildModel({
     return model;
   });
 
-  const triggers = pipeline.triggers.map((trigger) => ({ id: triggerId(trigger.name), trigger }));
+  const triggers: TriggerModel[] = [
+    ...pipeline.triggers.map((trigger) => ({ id: triggerId(trigger.name), name: trigger.name, trigger })),
+    ...(pipeline.imports ?? []).map((imported) => ({ id: importId(imported.name), name: imported.name, imported })),
+  ];
   const producers = new Map<string, string[]>();
   const produce = (stream: string, id: string) => producers.set(stream, [...(producers.get(stream) ?? []), id]);
   for (const t of pipeline.triggers) produce(t.stream, triggerId(t.name));
+  for (const i of pipeline.imports ?? []) produce(i.name, importId(i.name));
   for (const s of pipeline.steps) for (const out of s.out) produce(out, stepId(s.name));
 
   const channels: ChannelModel[] = [];

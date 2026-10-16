@@ -7,6 +7,7 @@ import type { PipelineSnapshot } from '../../api/schema';
 import { FakeEventSource } from '../../live/fakeEventSource';
 import { mockMatchMedia } from '../../test/flow';
 import { renderApp } from '../../test/render';
+import { withImport } from '../../test/imports';
 import { LIVE_REFRESH_MS } from '../../live/useCoalescedRefresh';
 import { PAINT_MS } from './GraphScreen';
 
@@ -358,6 +359,19 @@ describe('pipeline graph', () => {
     });
     renderApp({ api: empty, route: '/p/listings-daily/graph' });
     expect(await screen.findByText('No steps')).toBeInTheDocument();
+  });
+
+  it('draws an imported stream as an entry labelled with its producer, in both languages', async () => {
+    const { unmount } = renderApp({ api: new FakeApi(withImport()), route: '/p/deal-flow/graph' });
+    await step('notify');
+    const entry = screen.getByRole('group', { name: 'Stream approved imported from listings-daily' });
+    expect(entry).toHaveTextContent('from listings-daily · scored');
+    unmount();
+    renderApp({ api: new FakeApi(withImport()), route: '/p/deal-flow/graph', language: 'fr' });
+    await step('notify');
+    expect(screen.getByRole('group', { name: 'Flux approved importé de listings-daily' })).toHaveTextContent(
+      'de listings-daily · scored',
+    );
   });
 
   it('speaks French', async () => {

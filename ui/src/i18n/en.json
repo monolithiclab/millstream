@@ -155,7 +155,8 @@
     "trigger": {
       "cron": "cron {{schedule}}",
       "webhook": "webhook",
-      "manual": "manual"
+      "manual": "manual",
+      "imported": "from {{pipeline}} · {{stream}}"
     },
     "panel": {
       "close": "Close panel",
@@ -186,7 +187,9 @@
     },
     "stepRole": "step",
     "triggerRole": "trigger",
+    "importRole": "imported stream",
     "triggerLabel": "Trigger {{name}}",
+    "importLabel": "Stream {{name}} imported from {{pipeline}}",
     "channelLabel": "Stream {{stream}} from {{from}} to {{to}}: {{n}} items, {{queued}} waiting",
     "channelRole": "channel",
     "canvas": "Pipeline graph",
@@ -382,7 +385,8 @@
       "self": "this item · {{step}} · {{stream}}",
       "upLevel": "{{n}} up:",
       "downLevel": "{{n}} down:",
-      "truncated": "The lineage goes further than shown."
+      "truncated": "The lineage goes further than shown.",
+      "inPipeline": "in {{pipeline}}"
     },
     "artifacts": {
       "title": "Artifacts",
@@ -553,7 +557,9 @@
     "run": "Run",
     "list": "Runs, newest first",
     "replay": "replay",
+    "importFrom": "from {{pipeline}}",
     "replayRun": "Replay",
+    "importRun": "Imported {{stream}} from {{pipeline}}",
     "trigger": "Trigger {{trigger}}",
     "revision": "revision r{{revision}}",
     "items": "items: {{count}}",

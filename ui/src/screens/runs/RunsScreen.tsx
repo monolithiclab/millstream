@@ -132,6 +132,12 @@ export function RunsScreen() {
                           {run.kind === 'replay' && (
                             <span className="font-normal text-ink-3"> · {t('runs.replay')}</span>
                           )}
+                          {run.kind === 'import' && (
+                            <span className="font-normal text-ink-3">
+                              {' · '}
+                              {t('runs.importFrom', { pipeline: run.producer ?? '' })}
+                            </span>
+                          )}
                         </strong>
                         <span>
                           <StatusBadge status={run.state} />

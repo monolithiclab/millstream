@@ -79,12 +79,15 @@ export function LineageTree({ pipeline, item, lineage }: { pipeline: string; ite
                     ? t('item.lineage.upLevel', { n: f.num(-level) })
                     : t('item.lineage.downLevel', { n: f.num(level) })}
                 </span>
-                <Link to={itemPath(pipeline, node.id)} className="font-mono text-ink-2" title={node.id}>
+                <Link to={itemPath(node.pipeline, node.id)} className="font-mono text-ink-2" title={node.id}>
                   {shortId(node.id)}
                 </Link>
                 <span className="text-ink-3">
                   {node.step} · {node.stream}
                 </span>
+                {node.pipeline !== pipeline && (
+                  <span className="text-ink-2">{t('item.lineage.inPipeline', { pipeline: node.pipeline })}</span>
+                )}
               </>
             )}
           </li>

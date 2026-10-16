@@ -155,7 +155,8 @@
     "trigger": {
       "cron": "cron {{schedule}}",
       "webhook": "webhook",
-      "manual": "manuel"
+      "manual": "manuel",
+      "imported": "de {{pipeline}} · {{stream}}"
     },
     "panel": {
       "close": "Fermer le panneau",
@@ -186,7 +187,9 @@
     },
     "stepRole": "étape",
     "triggerRole": "déclencheur",
+    "importRole": "flux importé",
     "triggerLabel": "Déclencheur {{name}}",
+    "importLabel": "Flux {{name}} importé de {{pipeline}}",
     "channelLabel": "Flux {{stream}} de {{from}} vers {{to}} : {{n}} items, {{queued}} en file",
     "channelRole": "canal",
     "canvas": "Graphe du pipeline",
@@ -382,7 +385,8 @@
       "self": "cet item · {{step}} · {{stream}}",
       "upLevel": "{{n}} en amont :",
       "downLevel": "{{n}} en aval :",
-      "truncated": "La lignée va plus loin que ce qui est affiché."
+      "truncated": "La lignée va plus loin que ce qui est affiché.",
+      "inPipeline": "dans {{pipeline}}"
     },
     "artifacts": {
       "title": "Artefacts",
@@ -553,7 +557,9 @@
     "run": "Run",
     "list": "Runs, du plus récent au plus ancien",
     "replay": "rejeu",
+    "importFrom": "de {{pipeline}}",
     "replayRun": "Rejeu",
+    "importRun": "Import de {{stream}} depuis {{pipeline}}",
     "trigger": "Déclencheur {{trigger}}",
     "revision": "révision r{{revision}}",
     "items": "items : {{count}}",

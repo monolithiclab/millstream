@@ -269,6 +269,27 @@ describe('RunScreen', () => {
     expect(screen.getByText(/No ETA yet/)).toBeInTheDocument();
   });
 
+  it('names an import run by its stream and producer, in both languages', async () => {
+    const run = {
+      ...demoFixtures.runs[0]!,
+      id: 'run_import_1',
+      kind: 'import' as const,
+      trigger: 'approved',
+      triggerSource: 'import' as const,
+      producer: 'sourcing',
+      triggerKey: 'run_0600',
+    };
+    const api = () => new FakeApi({ ...demoFixtures, runs: [run] });
+    const { unmount } = await openRun('/p/listings-daily/runs/run_import_1', api());
+    expect(screen.getByText(/Imported approved from sourcing · revision r14/)).toBeInTheDocument();
+    unmount();
+    const list = renderApp({ route: '/p/listings-daily/runs', api: api() });
+    expect(await screen.findByText('· from sourcing', { exact: false })).toBeInTheDocument();
+    list.unmount();
+    await openRun('/p/listings-daily/runs/run_import_1', api(), 'fr');
+    expect(screen.getByText(/Import de approved depuis sourcing · révision r14/)).toBeInTheDocument();
+  });
+
   it('shows an unknown run as an error with retry', async () => {
     renderApp({ route: '/p/listings-daily/runs/nope' });
     expect(await screen.findByRole('alert')).toHaveTextContent('run listings-daily/nope not found');

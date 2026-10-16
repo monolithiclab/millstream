@@ -19,7 +19,7 @@ import { QueryView } from '../../common/States';
 import { buttons, card, cardTitle } from '../../common/styles';
 import { useNow } from '../../common/useNow';
 import { useResource, type Query, type Resource } from '../../common/useResource';
-import { settledStates, useRunName } from './runParts';
+import { settledStates, useRunName, useRunOrigin } from './runParts';
 import { buildTimeline, density, position, ticks, type SegmentKind, type StepRow, type Timeline } from './timeline';
 
 // What a live event changes; the pipeline and the neighbouring runs are read once.
@@ -111,6 +111,7 @@ export function RunScreen() {
 
 function RunHeader({ data, onChanged }: { data: RunData; onChanged: () => void }) {
   const { t } = useTranslation();
+  const origin = useRunOrigin();
   const { language } = usePreferences();
   const name = useRunName();
   const { run, deliveries, neighbours } = data;
@@ -130,7 +131,7 @@ function RunHeader({ data, onChanged }: { data: RunData; onChanged: () => void }
     <>
       <StatusBadge status={run.state} />
       <p className="m-0 text-small text-ink-2">
-        {run.kind === 'replay' ? t('runs.replayRun') : t('runs.trigger', { trigger: run.trigger ?? run.triggerSource })}
+        {origin(run)}
         {' · '}
         {t('runs.revision', { revision: run.revision })}
         {' · '}

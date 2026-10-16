@@ -888,6 +888,7 @@ export interface components {
       revision: number;
       steps: components['schemas']['Step'][];
       triggers: components['schemas']['Trigger'][];
+      imports?: components['schemas']['Import'][];
       streams: string[];
       lastRun?: components['schemas']['RunSummary'];
       openDeadLetters: number;
@@ -912,6 +913,15 @@ export interface components {
       schedule?: string;
       stream: string;
     };
+    /** @description A stream the revision imports from another pipeline (spec section 4.12). */
+    Import: {
+      /** @description The stream's name in the importing revision. */
+      name: string;
+      /** @description The producer pipeline. */
+      pipeline: string;
+      /** @description The producer's stream. */
+      stream: string;
+    };
     Revision: {
       id: number;
       pipeline: string;
@@ -925,6 +935,7 @@ export interface components {
       description?: string;
       steps: components['schemas']['Step'][];
       triggers: components['schemas']['Trigger'][];
+      imports?: components['schemas']['Import'][];
       streams: string[];
     };
     Stream: {
@@ -946,11 +957,13 @@ export interface components {
       pipeline: string;
       revision: number;
       /** @enum {string} */
-      kind: 'trigger' | 'replay';
+      kind: 'trigger' | 'replay' | 'import';
+      /** @description The trigger */
       trigger?: string;
+      /** @description The scheduled time or request id */
       triggerKey: string;
       /** @enum {string} */
-      triggerSource: 'cron' | 'manual';
+      triggerSource: 'cron' | 'manual' | 'import';
       /** Format: date-time */
       scheduledAt?: string;
       generation: number;
@@ -970,6 +983,8 @@ export interface components {
       };
       /** @description On one run only. */
       openDeadLetters?: number;
+      /** @description An import run's producer pipeline (spec section 4.12); its triggerKey is the producer run. */
+      producer?: string;
     };
     RunPage: {
       items: components['schemas']['Run'][];
@@ -1060,6 +1075,8 @@ export interface components {
       ts: string;
       payload: unknown;
       artifacts: components['schemas']['ArtifactRef'][];
+      /** @description The pipeline of the item's parents when it is another one, for a copy published on an imported stream. */
+      parentPipeline?: string;
     };
     ItemPage: {
       items: components['schemas']['Item'][];
@@ -1067,6 +1084,8 @@ export interface components {
     };
     LineageNode: {
       id: string;
+      /** @description The item's pipeline */
+      pipeline: string;
       runId: string;
       stream: string;
       step: string;
