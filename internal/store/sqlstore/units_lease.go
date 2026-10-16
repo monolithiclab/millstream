@@ -358,7 +358,8 @@ func (s *Store) ExpireLeases(ctx context.Context) ([]store.LeaseRef, error) {
 	return expired, nil
 }
 
-// expire ends the expired lease of d as a failed attempt, or cancels d when its run is cancelled. Its budget
+// expire ends the expired lease of d as a failed attempt, or cancels d when its run is cancelled or a purge fenced its
+// item. Its budget
 // reservation is charged in full: the owner may have spent it without reporting (spec section 5.9).
 func (w *wtx) expire(d *deliveryRow) error {
 	run, err := w.run(d.pipeline, d.runID)
@@ -371,7 +372,7 @@ func (w *wtx) expire(d *deliveryRow) error {
 	}); err != nil {
 		return err
 	}
-	if run.state == store.RunCancelled {
+	if discards(d, run) {
 		_, err := w.cancelDelivery(d, d.reserved, nil)
 		return err
 	}

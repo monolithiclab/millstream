@@ -86,8 +86,14 @@ steps:
 
 var t0 = time.Date(2026, 10, 15, 6, 0, 0, 0, time.UTC)
 
-// tombstoneHash is the payload hash of an item whose payload has expired (spec section 9.3).
-const tombstoneHash = "tombstone"
+// expire tombstones an item by hand, as retention does (spec section 9.3): TestRetain* cover the unit itself.
+func (e *env) expire(pipelineName, id string) {
+	e.t.Helper()
+	if err := e.s.Exec(e.ctx, `UPDATE items SET payload = 'null', payload_hash = '', artifacts = '[]',
+		tombstone = 'expired' WHERE pipeline = ? AND id = ?`, pipelineName, id); err != nil {
+		e.t.Fatal(err)
+	}
+}
 
 // fakeClock is a settable clock.
 type fakeClock struct {

@@ -25,6 +25,9 @@ func TestUnitsSurfaceStoreErrors(t *testing.T, open Opener) {
 			held := e.leaseStep("crawl")
 			dls := e.deadLetters("r1")
 			e.apply(fixtureFixed)
+			if _, _, err := e.s.StartPurge(e.ctx, store.PurgeRequest{ID: "p_b", Key: "b"}); err != nil {
+				t.Fatal(err)
+			}
 			setTable(t, e, table, table+"_off")
 			errCount := 0
 			count := func(err error) {
@@ -55,6 +58,18 @@ func TestUnitsSurfaceStoreErrors(t *testing.T, open Opener) {
 			e.clock.Advance(time.Hour)
 			_, err = e.s.ExpireLeases(ctx)
 			count(err)
+			_, err = e.s.Retain(ctx, store.RetentionRequest{Events: time.Minute, Transcripts: time.Minute,
+				Rollups: time.Minute, Streams: []store.StreamRetention{{Pipeline: "listings", Stream: "listings.raw",
+					Age: time.Minute}}})
+			count(err)
+			_, _, err = e.s.StartPurge(ctx, store.PurgeRequest{ID: "p_a", Key: "a"})
+			count(err)
+			_, err = e.s.ErasePurge(ctx, "p_b")
+			count(err)
+			_, err = e.s.FinishPurge(ctx, "p_b")
+			count(err)
+			_, err = e.s.DeleteArtifacts(ctx, []store.ArtifactKey{{Pipeline: "listings", SHA256: shaA}})
+			count(err)
 			for _, read := range []func() error{
 				func() error { _, err := e.s.Runs(ctx, store.RunFilter{}); return err },
 				func() error { _, err := e.s.Run(ctx, "listings", "r1"); return err },
@@ -68,6 +83,8 @@ func TestUnitsSurfaceStoreErrors(t *testing.T, open Opener) {
 				func() error { _, err := e.s.Pipelines(ctx); return err },
 				func() error { _, err := e.s.LastFiring(ctx, "listings", "daily"); return err },
 				func() error { _, err := e.s.OpenRevisions(ctx); return err },
+				func() error { _, err := e.s.Purge(ctx, "p_b"); return err },
+				func() error { _, err := e.s.Purges(ctx); return err },
 			} {
 				count(read())
 			}

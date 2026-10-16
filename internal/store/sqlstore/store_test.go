@@ -100,8 +100,8 @@ func TestUnitsAreNamed(t *testing.T) {
 		}
 		seen[u] = true
 	}
-	if len(Units) != 25 {
-		t.Fatalf("%d units, want 25", len(Units))
+	if len(Units) != 30 {
+		t.Fatalf("%d units, want 30", len(Units))
 	}
 }
 

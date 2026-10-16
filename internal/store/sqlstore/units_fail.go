@@ -37,7 +37,7 @@ func (s *Store) Fail(ctx context.Context, f store.FailRequest) (store.DeliverySt
 		if f.Unreported {
 			cost = max(cost, d.reserved) // unreported spend is charged in full (spec section 5.9)
 		}
-		if run.state == store.RunCancelled {
+		if discards(d, run) {
 			state, err = w.cancelDelivery(d, cost, f.Metrics)
 			return err
 		}

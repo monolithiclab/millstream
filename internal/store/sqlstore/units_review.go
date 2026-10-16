@@ -629,7 +629,7 @@ func (w *wtx) cancelReviews(pipelineName, runID string) error {
 // reviewColumns are the columns scanReview reads, from reviews r joined with items i.
 const reviewColumns = `r.rowid, r.pipeline, r.delivery_id, r.run_id, r.step, r.state, r.version, r.spec_json, r.display,
 	r.parked_at, r.deadline, r.decision, r.reviewer, r.reason, r.reason_text, r.patch, r.decided_at, r.inbox,
-	i.id, i.run_id, i.stream, i.step, i.key, i.parents, i.generation, i.ts, i.payload, i.artifacts`
+	i.id, i.run_id, i.stream, i.step, i.key, i.parents, i.generation, i.ts, i.payload, i.artifacts, i.tombstone`
 
 func scanReview(rows interface{ Scan(...any) error }) (store.Review, error) {
 	var (
@@ -641,7 +641,7 @@ func scanReview(rows interface{ Scan(...any) error }) (store.Review, error) {
 	if err := rows.Scan(&r.Seq, &r.Pipeline, &r.DeliveryID, &r.RunID, &r.Step, &r.State, &r.Version, &spec, &r.Display,
 		&parked, &deadline, &r.Decision, &r.Reviewer, &r.Reason, &r.Text, &patch, &decided, &inbox,
 		&r.Item.ID, &r.Item.RunID, &r.Item.Stream, &r.Item.Step, &r.Item.Key, &parents, &r.Item.Generation, &ts, &body,
-		&artifacts); err != nil {
+		&artifacts, &r.Item.Tombstone); err != nil {
 		return r, fmt.Errorf("scan review: %w", err)
 	}
 	if err := json.Unmarshal([]byte(spec), &r.Spec); err != nil {
@@ -719,7 +719,7 @@ func pageQuery(base, pipelineName, inbox, step, state string, after int64, limit
 // sampleColumns are the columns scanSample reads, from review_samples r joined with items i.
 const sampleColumns = `r.rowid, r.pipeline, r.delivery_id, r.run_id, r.step, r.inbox, r.state, r.display, r.created_at,
 	r.deadline, r.decision, r.reviewer, r.reason, r.decided_at,
-	i.id, i.run_id, i.stream, i.step, i.key, i.parents, i.generation, i.ts, i.payload, i.artifacts`
+	i.id, i.run_id, i.stream, i.step, i.key, i.parents, i.generation, i.ts, i.payload, i.artifacts, i.tombstone`
 
 func scanSample(rows interface{ Scan(...any) error }) (store.ReviewSample, error) {
 	var (
@@ -730,7 +730,7 @@ func scanSample(rows interface{ Scan(...any) error }) (store.ReviewSample, error
 	if err := rows.Scan(&r.Seq, &r.Pipeline, &r.DeliveryID, &r.RunID, &r.Step, &r.Inbox, &r.State, &r.Display, &created,
 		&deadline, &r.Decision, &r.Reviewer, &r.Reason, &decided,
 		&r.Item.ID, &r.Item.RunID, &r.Item.Stream, &r.Item.Step, &r.Item.Key, &parents, &r.Item.Generation, &ts, &body,
-		&artifacts); err != nil {
+		&artifacts, &r.Item.Tombstone); err != nil {
 		return r, fmt.Errorf("scan review sample: %w", err)
 	}
 	r.Item.Pipeline, r.Item.Payload = r.Pipeline, json.RawMessage(body)

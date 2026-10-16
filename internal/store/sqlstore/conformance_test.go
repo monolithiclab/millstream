@@ -300,3 +300,19 @@ func TestImportBackfill(t *testing.T) {
 func TestImportFollowsRollback(t *testing.T) {
 	storetest.TestImportFollowsRollback(t, memoryStore)
 }
+
+func TestRetainKeepsWhatUnfinishedWorkNeeds(t *testing.T) {
+	storetest.TestRetainKeepsWhatUnfinishedWorkNeeds(t, memoryStore)
+}
+
+func TestRetainEventsTranscriptsRollups(t *testing.T) {
+	storetest.TestRetainEventsTranscriptsRollups(t, memoryStore)
+}
+
+func TestPurgeAcrossImports(t *testing.T) {
+	storetest.TestPurgeAcrossImports(t, memoryStore)
+}
+
+func TestPurgeResumesAfterCrash(t *testing.T) {
+	storetest.TestPurgeResumesAfterCrash(t, memoryStore)
+}

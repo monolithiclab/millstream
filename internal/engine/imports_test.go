@@ -87,8 +87,8 @@ func TestImports(t *testing.T) {
 	if err != nil || len(items) != 2 {
 		t.Fatalf("listings = %v, %v", items, err)
 	}
-	if err := v.st.Exec(v.ctx, `UPDATE items SET payload = 'null', payload_hash = 'tombstone' WHERE pipeline = 'src'
-		AND id = ?`, items[1].ID); err != nil {
+	if err := v.st.Exec(v.ctx, `UPDATE items SET payload = 'null', payload_hash = '', artifacts = '[]',
+		tombstone = 'expired' WHERE pipeline = 'src' AND id = ?`, items[1].ID); err != nil {
 		t.Fatal(err)
 	}
 	id, created, err := v.e.Replay(v.ctx, ReplayRequest{Pipeline: "deal", Stream: "approved", RequestID: "bf",

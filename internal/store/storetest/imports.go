@@ -372,10 +372,7 @@ func TestImportBackfill(t *testing.T, open Opener) {
 	wantState(t, "back-fill run", e.runIn("deal", "bf").State, store.RunSucceeded)
 
 	trigger := e.itemsIn("src", "r1", "trigger.go")[0].ID
-	if err := e.s.Exec(e.ctx, `UPDATE items SET payload = 'null', payload_hash = ? WHERE pipeline = 'src' AND id = ?`,
-		tombstoneHash, pids[1]); err != nil {
-		t.Fatal(err)
-	}
+	e.expire("src", pids[1])
 	for _, tc := range []struct {
 		name   string
 		req    store.ReplayStart

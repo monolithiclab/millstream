@@ -154,6 +154,10 @@ func fillItem(it *store.Item, parents string, ts TimeCol, artifacts string) erro
 		return fmt.Errorf("item %s artifacts: %w", it.ID, err)
 	}
 	it.TS = ts.Time
+	if it.Tombstone != "" {
+		// A purge fences an item before it erases it: what it still holds is no longer served (spec section 9.3).
+		it.Payload, it.Artifacts = json.RawMessage("null"), []store.ArtifactRef{}
+	}
 	return nil
 }
 
@@ -186,7 +190,7 @@ func (s *Store) Items(ctx context.Context, f store.ItemFilter) ([]store.Item, er
 		w.args = append(w.args, f.After)
 	}
 	q := `SELECT rowid, pipeline, id, run_id, stream, step, key, parents, generation, ts, payload, artifacts,
-		parent_pipeline FROM items` +
+		parent_pipeline, tombstone FROM items` +
 		w.String() + ` ORDER BY rowid`
 	if f.Limit > 0 {
 		q += limitParam
@@ -197,7 +201,7 @@ func (s *Store) Items(ctx context.Context, f store.ItemFilter) ([]store.Item, er
 		var parents, body, artifacts string
 		var ts TimeCol
 		if err := rows.Scan(&it.Seq, &it.Pipeline, &it.ID, &it.RunID, &it.Stream, &it.Step, &it.Key, &parents,
-			&it.Generation, &ts, &body, &artifacts, &it.ParentPipeline); err != nil {
+			&it.Generation, &ts, &body, &artifacts, &it.ParentPipeline, &it.Tombstone); err != nil {
 			return it, fmt.Errorf("scan item: %w", err)
 		}
 		it.Payload = json.RawMessage(body)

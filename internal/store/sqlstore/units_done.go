@@ -13,8 +13,8 @@ import (
 const unroutedError = "no route matched the output"
 
 // Done is the Done unit (spec section 5.11): fencing check, key rule, routing, first-commit publication,
-// consumer deliveries, done, settlement. A delivery of a cancelled run is cancelled with its cost instead, and
-// its outputs are discarded.
+// consumer deliveries, done, settlement. A delivery of a cancelled run, or of an item a purge fenced, is cancelled
+// with its cost instead, and its outputs are discarded.
 func (s *Store) Done(ctx context.Context, d store.DoneRequest) (store.DeliveryState, error) {
 	outputs := make([]payload, len(d.Outputs))
 	for i, o := range d.Outputs {
@@ -55,7 +55,7 @@ func (w *wtx) done(req store.DoneRequest, outputs []payload) (store.DeliveryStat
 	if err != nil {
 		return "", err
 	}
-	if run.state == store.RunCancelled {
+	if discards(d, run) {
 		return w.cancelDelivery(d, req.CostUSD, req.Metrics)
 	}
 	return w.emit(d, run, req.Outputs, outputs, attemptEnd{cost: req.CostUSD, metrics: req.Metrics})

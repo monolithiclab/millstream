@@ -6,6 +6,8 @@ package storetest
 const e2eBuild = true
 
 var e2eTests = []Test{
+	{"TestRetainKeepsSampledItems", TestRetainKeepsSampledItems},
+	{"TestPurgeErasesReviewsAndDeadLetters", TestPurgeErasesReviewsAndDeadLetters},
 	{"TestImportReopens", TestImportReopens},
 	{"TestImportRevisionsAndChains", TestImportRevisionsAndChains},
 	{"TestImportFollowsReviews", TestImportFollowsReviews},
