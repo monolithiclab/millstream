@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { lazy, Suspense, type ReactNode } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
 import type { Api } from './api/api';
 import { ApiProvider } from './api/context';
@@ -10,6 +10,10 @@ import { NotFound } from './screens/NotFound';
 import { Placeholder } from './screens/Placeholder';
 import { RunScreen } from './screens/runs/RunScreen';
 import { RunsScreen } from './screens/runs/RunsScreen';
+import { Loading } from './screens/parts/States';
+
+// uPlot and its stylesheet load with the metrics screen, not with every screen.
+const MetricsScreen = lazy(() => import('./screens/metrics/MetricsScreen').then((m) => ({ default: m.MetricsScreen })));
 import { routePattern, screens, type Screen, type ScreenId } from './routes';
 import { AppShell } from './shell/AppShell';
 
@@ -17,6 +21,11 @@ import { AppShell } from './shell/AppShell';
 const built: Partial<Record<ScreenId, () => ReactNode>> = {
   inbox: () => <InboxScreen />,
   runs: () => <RunsScreen />,
+  metrics: () => (
+    <Suspense fallback={<Loading />}>
+      <MetricsScreen />
+    </Suspense>
+  ),
 };
 
 const elementFor = (screen: Screen) => built[screen.id]?.() ?? <Placeholder screen={screen} />;

@@ -250,5 +250,53 @@
       "items": "Items",
       "failed": "Essais échoués"
     }
+  },
+  "metrics": {
+    "copy": "Copier le lien",
+    "copied": "Lien copié",
+    "metric": "Métrique",
+    "noMetric": "Aucune métrique",
+    "pipeline": "Pipeline",
+    "groupBy": "Grouper par",
+    "group": {
+      "none": "Rien",
+      "step": "Étape",
+      "label": "Libellé"
+    },
+    "labelName": "Libellé de regroupement",
+    "rangeLabel": "Période",
+    "range": {
+      "1h": "1 h",
+      "24h": "24 h",
+      "7d": "7 jours",
+      "30d": "30 jours",
+      "custom": "Personnalisée"
+    },
+    "from": "Du",
+    "to": "Au",
+    "statLabel": "Statistique",
+    "stat": {
+      "sum": "Somme",
+      "mean": "Moyenne",
+      "max": "Max",
+      "count": "Nombre"
+    },
+    "marks": "Marquer les révisions",
+    "marksNeedPipeline": "Marquer les révisions (choisissez un pipeline)",
+    "applied": "r{{revision}} appliquée",
+    "empty": "Aucune métrique pour l’instant",
+    "emptyBody": "Les métriques apparaissent dès qu’un run a livré des items. Déclenchez un run, puis revenez.",
+    "noData": "Aucune donnée sur cette période",
+    "noDataBody": "Rien n’a été mesuré sur {{range}}. Essayez une période plus longue ou une autre métrique.",
+    "chart": "Graphique",
+    "chartLabel": "{{metric}}, {{stat}} sur {{range}} : {{shown}} séries affichées sur {{total}}. Les valeurs figurent dans le tableau des séries et dans le tableau de données ci-dessous.",
+    "subtitle": "{{stat}} · {{range}} · {{shown}} séries affichées sur {{total}}",
+    "series": "Séries",
+    "seriesName": "Série",
+    "last": "Dernière",
+    "median": "Médiane",
+    "max": "Max",
+    "asTable": "Afficher les données en tableau",
+    "time": "Heure"
   }
 }

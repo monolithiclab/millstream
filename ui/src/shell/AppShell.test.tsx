@@ -223,8 +223,8 @@ describe('app shell', () => {
 
   it('focuses the heading after navigating', async () => {
     const { user } = renderApp();
-    await user.click(nav().getByRole('link', { name: 'Metrics' }));
-    expect(screen.getByRole('heading', { level: 1, name: 'Metrics' })).toHaveFocus();
+    await user.click(nav().getByRole('link', { name: 'Nodes' }));
+    expect(screen.getByRole('heading', { level: 1, name: 'Nodes' })).toHaveFocus();
   });
 
   it('serves unknown addresses a not-found page', async () => {

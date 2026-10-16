@@ -11,7 +11,6 @@ import {
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { withQuery } from '../../api/api';
-import { useApiQuery } from '../../api/context';
 import type { ReviewDecision } from '../../api/schema';
 import { formatDuration, formatNumber } from '../../i18n/format';
 import { usePreferences } from '../../preferences';
@@ -19,6 +18,7 @@ import { Kbd } from '../../shell/Kbd';
 import { screenKeyAllowed } from '../../shell/useShortcuts';
 import { useLatest } from '../../useLatest';
 import { ScreenPage } from '../ScreenPage';
+import { PipelineSelect } from '../parts/PipelineSelect';
 import { EmptyState, ErrorState, Loading } from '../parts/States';
 import { StatusGlyph } from '../parts/Status';
 import { useNow } from '../parts/useNow';
@@ -47,7 +47,6 @@ export function InboxScreen() {
   }, [pipelineFilter, inboxFilter]);
   const queue = useInboxQueue(filters);
   const now = useNow();
-  const pipelines = useApiQuery('pipelines', (api) => api.listPipelines());
   const entries = useMemo(() => (queue.state.status === 'ready' ? queue.state.data.entries : []), [queue.state]);
 
   const [chosen, setChosen] = useState<string | null>(null);
@@ -234,18 +233,7 @@ export function InboxScreen() {
       <div className="flex flex-wrap gap-2">
         <label className="flex items-center gap-1.5 text-tiny text-ink-2">
           <span className="sr-only">{t('inbox.pipelineFilter')}</span>
-          <select
-            value={pipelineFilter ?? ''}
-            onChange={(e) => setFilter('pipeline', e.target.value)}
-            className={fieldClass}
-          >
-            <option value="">{t('switcher.allPipelines')}</option>
-            {(pipelines.status === 'ready' ? pipelines.data : []).map((p) => (
-              <option key={p.name} value={p.name}>
-                {p.name}
-              </option>
-            ))}
-          </select>
+          <PipelineSelect value={pipelineFilter ?? ''} onChange={(p) => setFilter('pipeline', p)} />
         </label>
         <label className="flex items-center gap-1.5 text-tiny text-ink-2">
           <span className="sr-only">{t('inbox.inboxFilter')}</span>

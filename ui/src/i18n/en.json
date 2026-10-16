@@ -250,5 +250,53 @@
       "items": "Items",
       "failed": "Failed attempts"
     }
+  },
+  "metrics": {
+    "copy": "Copy link",
+    "copied": "Link copied",
+    "metric": "Metric",
+    "noMetric": "No metric yet",
+    "pipeline": "Pipeline",
+    "groupBy": "Group by",
+    "group": {
+      "none": "Nothing",
+      "step": "Step",
+      "label": "Label"
+    },
+    "labelName": "Label to group by",
+    "rangeLabel": "Range",
+    "range": {
+      "1h": "1 h",
+      "24h": "24 h",
+      "7d": "7 days",
+      "30d": "30 days",
+      "custom": "Custom"
+    },
+    "from": "From",
+    "to": "To",
+    "statLabel": "Statistic",
+    "stat": {
+      "sum": "Sum",
+      "mean": "Mean",
+      "max": "Max",
+      "count": "Count"
+    },
+    "marks": "Mark revisions",
+    "marksNeedPipeline": "Mark revisions (pick a pipeline)",
+    "applied": "r{{revision}} applied",
+    "empty": "No metrics yet",
+    "emptyBody": "Metrics appear once a run has delivered items. Trigger a run, then come back.",
+    "noData": "No data in this range",
+    "noDataBody": "Nothing was measured over {{range}}. Try a longer range or another metric.",
+    "chart": "Chart",
+    "chartLabel": "{{metric}}, {{stat}} over {{range}}: {{shown}} of {{total}} series shown. The values are in the series table and in the data table below.",
+    "subtitle": "{{stat}} · {{range}} · {{shown}} of {{total}} series shown",
+    "series": "Series",
+    "seriesName": "Series",
+    "last": "Last",
+    "median": "Median",
+    "max": "Max",
+    "asTable": "Show the data as a table",
+    "time": "Time"
   }
 }
