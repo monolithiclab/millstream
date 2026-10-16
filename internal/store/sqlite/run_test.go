@@ -38,8 +38,9 @@ func TestCancelWhileLeased(t *testing.T) {
 }
 
 func TestCancelFailAndExpiry(t *testing.T) {
+	base := newEnv(t, fixture)
 	t.Run("fail after cancel", func(t *testing.T) {
-		e := newEnv(t, fixture)
+		e := base.on(t)
 		e.fire("r1")
 		l := e.lease(1)[0]
 		if err := e.s.Cancel(e.ctx, "listings", "r1"); err != nil {
@@ -49,20 +50,20 @@ func TestCancelFailAndExpiry(t *testing.T) {
 		wantState(t, "run", e.run("r1").State, store.RunCancelled)
 	})
 	t.Run("lease expires after cancel", func(t *testing.T) {
-		e := newEnv(t, fixture)
-		e.fire("r1")
+		e := base.on(t)
+		e.fire("r2")
 		e.lease(1)
-		if err := e.s.Cancel(e.ctx, "listings", "r1"); err != nil {
+		if err := e.s.Cancel(e.ctx, "listings", "r2"); err != nil {
 			t.Fatal(err)
 		}
 		e.clock.Advance(2 * time.Minute)
 		if refs, err := e.s.ExpireLeases(e.ctx); len(refs) != 1 || err != nil {
 			t.Fatalf("ExpireLeases = %v, %v", refs, err)
 		}
-		if d := e.deliveries("r1")[0]; d.State != store.DeliveryCancelled {
+		if d := e.deliveries("r2")[0]; d.State != store.DeliveryCancelled {
 			t.Fatalf("delivery = %s, want cancelled", d.State)
 		}
-		if r := e.run("r1"); r.SettledAt.IsZero() {
+		if r := e.run("r2"); r.SettledAt.IsZero() {
 			t.Fatal("run not settled")
 		}
 	})

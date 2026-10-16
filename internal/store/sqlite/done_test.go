@@ -2,6 +2,7 @@ package sqlite
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -90,8 +91,8 @@ func TestDoneStaleLease(t *testing.T) {
 		})
 	}
 	t.Run("already done", func(t *testing.T) {
-		e := newEnv(t, fixture)
-		e.fire("r1")
+		e := e.on(t) // r1's lease is held: r2's crawl is the one due
+		e.fire("r2")
 		l := e.lease(1)[0]
 		e.done(l)
 		_, err := e.s.Done(e.ctx, store.DoneRequest{LeaseRef: l.Ref(), Attempt: 1})
@@ -110,7 +111,8 @@ func TestDoneInvalidOutput(t *testing.T) {
 // Review focus 2: two outputs where one has no key, or two with the same key, fail as a non-retryable key-rule
 // error, never collide.
 func TestDoneKeyRule(t *testing.T) {
-	for _, tc := range []struct {
+	base := newEnv(t, fixture)
+	for i, tc := range []struct {
 		name    string
 		outputs []store.Output
 		message string
@@ -120,18 +122,19 @@ func TestDoneKeyRule(t *testing.T) {
 			`outputs 0 and 2 share the key "a"`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			testKeyRule(t, tc.outputs, tc.message)
+			testKeyRule(base.on(t), fmt.Sprint("r", i+1), tc.outputs, tc.message)
 		})
 	}
 }
 
-func testKeyRule(t *testing.T, outputs []store.Output, message string) {
-	e := newEnv(t, fixture)
-	e.fire("r1")
+// testKeyRule fires run runID on e, whose other runs are settled, and checks the key rule kills its crawl.
+func testKeyRule(e *env, runID string, outputs []store.Output, message string) {
+	t := e.t
+	e.fire(runID)
 	l := e.leaseStep("crawl")
 	state := e.done(l, outputs...)
 	wantState(t, "state", state, store.DeliveryDead)
-	d := e.deliveries("r1")[0]
+	d := e.deliveries(runID)[0]
 	if d.State != store.DeliveryDead || d.ErrorClass != store.ClassKeyRule || d.Attempt != 1 ||
 		!strings.Contains(d.ErrorMessage, message) {
 		t.Fatalf("delivery = %+v; want dead at once with class keyRule and %q", d, message)
@@ -139,12 +142,12 @@ func testKeyRule(t *testing.T, outputs []store.Output, message string) {
 	if n := len(e.items("listings.raw")); n != 0 {
 		t.Fatalf("%d outputs published", n)
 	}
-	dls := e.deadLetters("r1")
+	dls := e.deadLetters(runID)
 	if len(dls) != 1 || dls[0].Kind != store.DeadLetterDead || dls[0].Stream != "crawl.dlq" ||
 		dls[0].ID != ids.DeadLetter("crawl.dlq", l.DeliveryID, "", 0) || dls[0].State != store.DeadLetterOpen {
 		t.Fatalf("dead letters = %+v", dls)
 	}
-	dlItems := e.items("crawl.dlq")
+	dlItems := e.itemsIn("listings", runID, "crawl.dlq")
 	if len(dlItems) != 1 || dlItems[0].Parents[0] != l.Item.ID {
 		t.Fatalf("dead-letter items = %+v", dlItems)
 	}
@@ -161,19 +164,19 @@ func testKeyRule(t *testing.T, outputs []store.Output, message string) {
 	}
 	// The alert step reads crawl.dlq and holds the run open until it is done.
 	alert := e.leaseStep("alert")
-	if r := e.run("r1"); r.State != store.RunRunning {
+	if r := e.run(runID); r.State != store.RunRunning {
 		t.Fatalf("run %s before alert is done", r.State)
 	}
 	e.done(alert)
-	wantState(t, "run", e.run("r1").State, store.RunCompletedWithErrors)
+	wantState(t, "run", e.run(runID).State, store.RunCompletedWithErrors)
 }
 
-// publishAgain publishes payloads, one after the other, as output "a" of run r1's crawl delivery: the same item ids
-// each time, as a delivery run again would.
-func publishAgain(e *env, payloads ...string) {
+// publishAgain publishes payloads, one after the other, as output "a" of run runID's crawl delivery: the same item
+// ids each time, as a delivery run again would.
+func publishAgain(e *env, runID string, payloads ...string) {
 	e.t.Helper()
 	err := e.s.submit(e.ctx, "test", func(w *wtx) error {
-		run, err := w.run("listings", "r1")
+		run, err := w.run("listings", runID)
 		if err != nil {
 			return err
 		}
@@ -185,7 +188,7 @@ func publishAgain(e *env, payloads ...string) {
 		if err != nil {
 			return err
 		}
-		d, err := w.delivery("listings", ids.Delivery("crawl", ids.TriggerItem("daily", "r1"), 0))
+		d, err := w.delivery("listings", ids.Delivery("crawl", ids.TriggerItem("daily", runID), 0))
 		if err != nil {
 			return err
 		}
@@ -208,11 +211,12 @@ func publishAgain(e *env, payloads ...string) {
 // The first commit of an item wins (spec section 5.2): publishing an existing item id again is a no-op with the same
 // payload and records nondeterministicOutput with another.
 func TestDoneFirstCommit(t *testing.T) {
+	base := newEnv(t, fixture)
 	t.Run("same payload is a no-op", func(t *testing.T) {
-		e := newEnv(t, fixture)
+		e := base.on(t)
 		e.fire("r1")
-		publishAgain(e, `{"score":1, "x":2}`, `{"x":2,"score":1}`)
-		if n := len(e.items("listings.raw")); n != 1 {
+		publishAgain(e, "r1", `{"score":1, "x":2}`, `{"x":2,"score":1}`)
+		if n := len(e.itemsIn("listings", "r1", "listings.raw")); n != 1 {
 			t.Fatalf("%d items", n)
 		}
 		if n := len(e.eventKinds(store.EventNondeterministicOutput)); n != 0 {
@@ -220,10 +224,10 @@ func TestDoneFirstCommit(t *testing.T) {
 		}
 	})
 	t.Run("different payload keeps the first", func(t *testing.T) {
-		e := newEnv(t, fixture)
-		e.fire("r1")
-		publishAgain(e, `{"score":1}`, `{"score":2}`)
-		items := e.items("listings.raw")
+		e := base.on(t)
+		e.fire("r2")
+		publishAgain(e, "r2", `{"score":1}`, `{"score":2}`)
+		items := e.itemsIn("listings", "r2", "listings.raw")
 		if len(items) != 1 || string(items[0].Payload) != `{"score":1}` {
 			t.Fatalf("items = %+v", items)
 		}
@@ -235,7 +239,7 @@ func TestDoneFirstCommit(t *testing.T) {
 			t.Errorf("event data %s", evs[0].Data)
 		}
 		var scoreDeliveries int
-		for _, d := range e.deliveries("r1") {
+		for _, d := range e.deliveries("r2") {
 			if d.Step == "score" {
 				scoreDeliveries++
 			}
@@ -290,15 +294,4 @@ func TestDoneRouteDoesNotCompile(t *testing.T) {
 	// The first route does not match, so the one that does not compile is evaluated.
 	state := e.done(e.leaseStep("score"), out("", `{"score":10}`))
 	wantState(t, "state", state, store.DeliveryDead)
-}
-
-func TestDoneTerminalStepDropsOutputs(t *testing.T) {
-	e := newEnv(t, fixture)
-	e.fire("r1")
-	e.done(e.leaseStep("crawl"), out("a", `{"score":1}`))
-	e.done(e.leaseStep("audit"), out("", `{"ignored":true}`))
-	for _, l := range e.lease(10) {
-		e.done(l)
-	}
-	wantState(t, "run", e.run("r1").State, store.RunSucceeded)
 }

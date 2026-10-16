@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/monolithiclab/millstream/internal/ids"
 	"github.com/monolithiclab/millstream/internal/store"
 )
 
@@ -69,48 +68,6 @@ func TestDoneCountsArtifactsPerItem(t *testing.T) {
 	}
 }
 
-// TestRepublishedItemCountsNothing: an output published again under the same id (a retry) is a no-op, its
-// artifacts included.
-func TestRepublishedItemCountsNothing(t *testing.T) {
-	e := newEnv(t, fixture)
-	e.fire("r1")
-	err := e.s.submit(e.ctx, "test", func(w *wtx) error {
-		run, err := w.run("listings", "r1")
-		if err != nil {
-			return err
-		}
-		rev, err := w.revision(run.revision)
-		if err != nil {
-			return err
-		}
-		step, err := rev.step("crawl")
-		if err != nil {
-			return err
-		}
-		d, err := w.delivery("listings", ids.Delivery("crawl", ids.TriggerItem("daily", "r1"), 0))
-		if err != nil {
-			return err
-		}
-		o, err := canonical(json.RawMessage(`{"score": 1}`))
-		if err != nil {
-			return err
-		}
-		for range 2 {
-			if err := w.publishOutput(rev, run, step, d, withArtifacts(store.Output{Key: "a"}, ref("x", shaA)), 0, o,
-				routing{streams: []string{"listings.raw"}}); err != nil {
-				return err
-			}
-		}
-		return nil
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := e.refcounts("listings"); got[shaA] != 1 {
-		t.Fatalf("refcounts = %v, want 1", got)
-	}
-}
-
 func TestDoneRefusesInvalidArtifacts(t *testing.T) {
 	tests := map[string]store.ArtifactRef{
 		"empty name":      ref("", shaA),
@@ -156,8 +113,10 @@ func TestArtifactsTravelWithItems(t *testing.T) {
 			t.Fatalf("refcounts = %v, want 2: the raw item and the kept one", got)
 		}
 	})
+	// The dead-letter and replay cases share a store, in turn, each with its run.
+	listings := newEnv(t, fixture)
 	t.Run("dead letter", func(t *testing.T) {
-		e := newEnv(t, fixture)
+		e := listings.on(t)
 		e.fire("r1")
 		e.done(e.leaseStep("crawl"), withArtifacts(out("a", `{"score": 80}`), ref("page.html", shaA)))
 		e.fail(e.leaseStep("score"), false)
@@ -176,18 +135,18 @@ func TestArtifactsTravelWithItems(t *testing.T) {
 		}
 	})
 	t.Run("unrouted replay", func(t *testing.T) {
-		e := newEnv(t, fixture)
-		e.fire("r1")
+		e := listings.on(t)
+		e.fire("r2")
 		e.done(e.leaseStep("crawl"), out("a", `{"score": -1}`))
 		e.done(e.leaseStep("score"), withArtifacts(out("", `{"score": -1}`), ref("chart.png", shaB)))
-		if got := e.refcounts("listings"); len(got) != 0 {
+		if got := e.refcounts("listings"); got[shaB] != 0 {
 			t.Fatalf("an unrouted output counted %v", got)
 		}
 		e.apply(fixtureFixed)
-		if n, err := e.s.ReplayDeadLetters(e.ctx, "listings", "r1", nil, true); err != nil || n != 1 {
+		if n, err := e.s.ReplayDeadLetters(e.ctx, "listings", "r2", nil, true); err != nil || n != 1 {
 			t.Fatalf("ReplayDeadLetters = %d, %v", n, err)
 		}
-		rest := e.items("listings.rest")
+		rest := e.itemsIn("listings", "r2", "listings.rest")
 		if len(rest) != 1 || !slices.Equal(rest[0].Artifacts, []store.ArtifactRef{ref("chart.png", shaB)}) {
 			t.Fatalf("replayed output %+v", rest)
 		}

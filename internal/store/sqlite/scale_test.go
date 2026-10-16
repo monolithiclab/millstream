@@ -18,3 +18,9 @@ const concurrentDones = 4
 // a table expires every prepared statement and keeps the database out of the Memory pool, so each table costs a
 // cold store.
 var offlineTables = []string{"events"}
+
+// fullScale says the e2e build runs every case of the tests that scale theirs down.
+const fullScale = false
+
+// concurrentLeases is how many Lease calls TestRunBudgetConcurrentLeases races for three reservations.
+const concurrentLeases = 4

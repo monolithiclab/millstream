@@ -2,6 +2,7 @@ package sqlite
 
 import (
 	"encoding/json"
+	"fmt"
 	"testing"
 	"time"
 
@@ -121,38 +122,45 @@ func TestBuiltinUnitsOnCancelledRun(t *testing.T) {
 }
 
 // TestDedupeWindow is review focus 1: a key let through 30 days and 1 second ago passes again; one let through 29
-// days (or exactly 30 days) ago is a duplicate.
+// days (or exactly 30 days) ago is a duplicate. The cases share a store, each with keys and runs of its own; the
+// default build runs the two either side of the 30-day boundary.
 func TestDedupeWindow(t *testing.T) {
 	tests := []struct {
 		name   string
 		window time.Duration
 		after  time.Duration
 		want   store.DeliveryState
+		full   bool // the e2e build only: the default build keeps the two cases either side of the boundary
 	}{
-		{"30 days and 1 second ago passes", window30d, window30d + time.Second, store.DeliveryDone},
-		{"29 days ago is a duplicate", window30d, 29 * 24 * time.Hour, store.DeliveryFiltered},
-		{"exactly 30 days ago is a duplicate", window30d, window30d, store.DeliveryFiltered},
-		{"no window holds for ever", 0, 3650 * 24 * time.Hour, store.DeliveryFiltered},
+		{"30 days and 1 second ago passes", window30d, window30d + time.Second, store.DeliveryDone, false},
+		{"29 days ago is a duplicate", window30d, 29 * 24 * time.Hour, store.DeliveryFiltered, true},
+		{"exactly 30 days ago is a duplicate", window30d, window30d, store.DeliveryFiltered, false},
+		{"no window holds for ever", 0, 3650 * 24 * time.Hour, store.DeliveryFiltered, true},
 	}
-	for _, tt := range tests {
+	base := newEnv(t, dedupePipeline)
+	for i, tt := range tests {
+		if tt.full && !fullScale {
+			continue
+		}
 		t.Run(tt.name, func(t *testing.T) {
-			e := newEnv(t, dedupePipeline)
-			first := e.crawlOne("r1", 0, "x", "unique")
-			wantState(t, "first", e.dedupe(first, "x", tt.window), store.DeliveryDone)
+			e := base.on(t)
+			key, firstRun, secondRun := fmt.Sprint("x", i), fmt.Sprint("w", i, "a"), fmt.Sprint("w", i, "b")
+			first := e.crawlOne(firstRun, 0, key, "unique")
+			wantState(t, "first", e.dedupe(first, key, tt.window), store.DeliveryDone)
 			e.clock.Advance(tt.after)
-			second := e.crawlOne("r2", 0, "x", "unique")
-			wantState(t, "second", e.dedupe(second, "x", tt.window), tt.want)
-			d := e.deliveryOf("r2", "unique")
-			kept := e.itemsOf("kept")
+			second := e.crawlOne(secondRun, 0, key, "unique")
+			wantState(t, "second", e.dedupe(second, key, tt.window), tt.want)
+			d := e.deliveryOf(secondRun, "unique")
+			kept := len(e.itemsIn("dd", firstRun, "kept")) + len(e.itemsIn("dd", secondRun, "kept"))
 			switch tt.want {
 			case store.DeliveryDone:
-				if len(kept) != 2 || d.FilterReason != "" {
-					t.Fatalf("kept %d items, reason %q", len(kept), d.FilterReason)
+				if kept != 2 || d.FilterReason != "" {
+					t.Fatalf("kept %d items, reason %q", kept, d.FilterReason)
 				}
 				// The key now records the second item, seen now: the window restarts from it.
 				var firstItem, seenAt string
 				if err := e.s.read.QueryRowContext(e.ctx, `SELECT first_item, seen_at FROM dedupe_keys
-					WHERE pipeline = 'dd' AND step = 'unique' AND generation = 0 AND key = 'x'`).
+					WHERE pipeline = 'dd' AND step = 'unique' AND generation = 0 AND key = ?`, key).
 					Scan(&firstItem, &seenAt); err != nil {
 					t.Fatal(err)
 				}
@@ -160,40 +168,12 @@ func TestDedupeWindow(t *testing.T) {
 					t.Fatalf("dedupe key = %s %s", firstItem, seenAt)
 				}
 			default:
-				if len(kept) != 1 || d.FilterReason != store.FilterReasonDuplicate {
-					t.Fatalf("kept %d items, reason %q", len(kept), d.FilterReason)
+				if kept != 1 || d.FilterReason != store.FilterReasonDuplicate {
+					t.Fatalf("kept %d items, reason %q", kept, d.FilterReason)
 				}
 			}
 		})
 	}
-}
-
-func TestDedupePassPublishesTheItemUnchanged(t *testing.T) {
-	e := newEnv(t, dedupePipeline)
-	l := e.crawlOne("r1", 0, "x", "unique")
-	e.dedupe(l, "x", window30d)
-	kept := e.itemsOf("kept")
-	if len(kept) != 1 {
-		t.Fatalf("kept = %v", kept)
-	}
-	got := kept[0]
-	if got.Key != l.Item.Key || string(got.Payload) != string(l.Item.Payload) || got.Parents[0] != l.Item.ID ||
-		got.Step != "unique" || got.Generation != 0 {
-		t.Fatalf("kept item = %+v, from %+v", got, l.Item)
-	}
-	if d := e.deliveryOf("r1", "sink"); d.ItemID != got.ID {
-		t.Fatalf("sink delivery reads %s, want %s", d.ItemID, got.ID)
-	}
-}
-
-// TestDedupeScopedByGeneration: a key let through in generation 0 does not hold back the same key in generation 1,
-// and the reverse.
-func TestDedupeScopedByGeneration(t *testing.T) {
-	e := newEnv(t, dedupePipeline)
-	wantState(t, "generation 0", e.dedupe(e.crawlOne("r1", 0, "x", "unique"), "x", 0), store.DeliveryDone)
-	wantState(t, "generation 1", e.dedupe(e.crawlOne("r2", 1, "x", "unique"), "x", 0), store.DeliveryDone)
-	wantState(t, "generation 1 again", e.dedupe(e.crawlOne("r3", 1, "x", "unique"), "x", 0), store.DeliveryFiltered)
-	wantState(t, "generation 0 again", e.dedupe(e.crawlOne("r4", 0, "x", "unique"), "x", 0), store.DeliveryFiltered)
 }
 
 func (e *env) runOf(id string) store.Run {

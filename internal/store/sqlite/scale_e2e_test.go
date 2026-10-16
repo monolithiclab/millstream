@@ -12,3 +12,7 @@ const concurrentDones = 16
 
 var offlineTables = []string{"events", "deliveries", "items", "dead_letters", "runs", "revisions", "pipelines",
 	"steps_state", "packages"}
+
+const fullScale = true
+
+const concurrentLeases = 8

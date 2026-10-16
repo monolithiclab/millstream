@@ -332,3 +332,20 @@ func wantState[S comparable](t *testing.T, what string, got, want S) {
 
 // otherPipeline is the fixture under another pipeline name.
 var otherPipeline = strings.Replace(fixture, "pipeline: listings", "pipeline: other", 1)
+
+// itemsIn returns the items of one run on stream.
+func (e *env) itemsIn(pipelineName, runID, stream string) []store.Item {
+	e.t.Helper()
+	items, err := e.s.Items(e.ctx, store.ItemFilter{Pipeline: pipelineName, RunID: runID, Stream: stream})
+	if err != nil {
+		e.t.Fatalf("Items: %v", err)
+	}
+	return items
+}
+
+// on returns e for the subtest t: subtests that run in turn share a store, each with runs of its own.
+func (e *env) on(t *testing.T) *env {
+	c := *e
+	c.t = t
+	return &c
+}

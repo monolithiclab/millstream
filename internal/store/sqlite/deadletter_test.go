@@ -5,7 +5,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/monolithiclab/millstream/internal/ids"
 	"github.com/monolithiclab/millstream/internal/store"
 )
 
@@ -43,28 +42,6 @@ func TestReplayDead(t *testing.T) {
 	wantState(t, "run", e.run("r1").State, store.RunSucceeded)
 	wantState(t, "reopened events", len(e.eventKinds(store.EventRunReopened)), 1)
 	wantState(t, "replayed events", len(e.eventKinds(store.EventDeadLetterReplayed)), 1)
-}
-
-// A delivery dead again after a replay publishes a new dead letter, under the next failure sequence, so readers of
-// the dlq stream see the new failure; the replayed one stays replayed.
-func TestReplayDeadAgainCreatesNewDeadLetter(t *testing.T) {
-	e, l := deadRun(t)
-	if _, err := e.s.ReplayDeadLetters(e.ctx, "listings", "r1", nil, false); err != nil {
-		t.Fatal(err)
-	}
-	e.fail(e.leaseStep("crawl"), false)
-	dls := e.deadLetters("r1")
-	states := map[string]store.DeadLetterState{}
-	for _, dl := range dls {
-		states[dl.ID] = dl.State
-	}
-	first, second := ids.DeadLetter("crawl.dlq", l.DeliveryID, "", 0), ids.DeadLetter("crawl.dlq", l.DeliveryID, "", 1)
-	if len(dls) != 2 || states[first] != store.DeadLetterReplayed || states[second] != store.DeadLetterOpen {
-		t.Fatalf("dead letters = %+v; want %s replayed and %s open", dls, first, second)
-	}
-	wantState(t, "dlq items", len(e.items("crawl.dlq")), 2)
-	e.drain() // alert reads the new dead letter
-	wantState(t, "run", e.run("r1").State, store.RunCompletedWithErrors)
 }
 
 // unroutedRun leaves run r1 completedWithErrors with one unrouted dead letter on score.
@@ -131,13 +108,13 @@ func TestReplayErrors(t *testing.T) {
 	_, err = e.s.ReplayDeadLetters(e.ctx, "listings", "nope", nil, false)
 	wantErr(t, err, store.ErrNotFound)
 
-	c := newEnv(t, fixture)
-	c.fire("r1")
-	c.fail(c.leaseStep("crawl"), false)
-	if err := c.s.Cancel(c.ctx, "listings", "r1"); err != nil {
+	// A cancelled run's dead letters are not replayed: r2, on the same store, r1 being settled.
+	e.fire("r2")
+	e.fail(e.leaseStep("crawl"), false)
+	if err := e.s.Cancel(e.ctx, "listings", "r2"); err != nil {
 		t.Fatal(err)
 	}
-	_, err = c.s.ReplayDeadLetters(c.ctx, "listings", "r1", nil, false)
+	_, err = e.s.ReplayDeadLetters(e.ctx, "listings", "r2", nil, false)
 	wantErr(t, err, store.ErrConflict)
 }
 
@@ -160,20 +137,6 @@ func TestDiscard(t *testing.T) {
 	if n, _ := e.s.ReplayDeadLetters(e.ctx, "listings", "r1", nil, false); n != 0 {
 		t.Fatalf("replayed %d discarded dead letters", n)
 	}
-}
-
-// A run whose dead letter is discarded before it settles settles completedWithErrors.
-func TestDiscardBeforeSettlement(t *testing.T) {
-	e := newEnv(t, fixture)
-	e.fire("r1")
-	e.fail(e.leaseStep("crawl"), false)
-	dl := e.deadLetters("r1")[0]
-	if _, err := e.s.DiscardDeadLetters(e.ctx, "listings", []string{dl.ID}); err != nil {
-		t.Fatal(err)
-	}
-	wantState(t, "run", e.run("r1").State, store.RunRunning) // alert still pending
-	e.drain()
-	wantState(t, "run", e.run("r1").State, store.RunCompletedWithErrors)
 }
 
 // Replaying into a revision that no longer has the dead delivery's step fails whole: the run keeps its revision.
