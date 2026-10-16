@@ -12,7 +12,7 @@ import (
 
 // The suite against the in-process fake action (exec.FuncLauncher, an exec.Starter): a conformant mode passes every
 // check, and each violation fails the check that owns it, skipping those that need it. The real-process twin, through
-// millstream test action --conformance, is in the cli package's e2e tests.
+// millstream test action --conformance, is in the cli package's e2e tests, with the other violations.
 func TestRunInProcess(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
@@ -28,9 +28,6 @@ func TestRunInProcess(t *testing.T) {
 			CheckFraming: Fail + " malformed line", CheckItemAnswer: Fail + " protocol violation",
 			CheckIdleSilence: Skip + " needs item-answer", CheckShutdown: Pass,
 		}},
-		{"wrongId", map[string]string{CheckItemAnswer: Fail + ` wrote emit for delivery "dl_other"`}},
-		{"emitAfterDone", map[string]string{CheckIdleSilence: Fail + " wrote emit between deliveries"}},
-		{"crash", map[string]string{CheckItemAnswer: Fail + " exited (exit status 3) before done or error"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.mode, func(t *testing.T) {
