@@ -1,0 +1,17 @@
+# The package make test-ui-e2e runs: millstream run serves the API and the UI over it. Builtin steps only, so the
+# Playwright container needs no action runtime.
+pipeline: listings-daily
+description: Listings shortlisted and reviewed
+triggers:
+  adhoc: { manual: {} }
+steps:
+  shortlist:
+    action: filter
+    in: trigger.adhoc
+    out: listings.shortlist
+    config: { expr: 'true' }
+  analyst-review:
+    action: review
+    in: listings.shortlist
+    out: listings.reviewed
+    config: { inbox: analysts, reasons: [overpriced, stale] }
