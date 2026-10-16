@@ -40,7 +40,6 @@ earlier designs are in the git history of the spec.
 - Transcripts are stored uncompressed until retention (M4) brings compression and `retention.transcripts`.
 - Evals: container actions, a step's lessons applied to a case, and the judge's own cost in the printed cost (M2
   evaluates agent and exec actions, without lessons, and prints only the action's cost).
-- Evals: expose `eval_results` as the metric `eval_score{action,case}` with the Prometheus endpoint (M4).
 - Engine memory before the M4 server: bound the revision cache and the per-revision maps (resolved actions, lessons,
   packages) a long-running engine accumulates, evicting revisions with no open run.
 - Agent sandbox image: pin `agents.image` by digest in `millstream.lock`, as container actions' images are.
@@ -50,13 +49,12 @@ earlier designs are in the git history of the spec.
   eight emptied in-memory databases, with their prepared statements, alive for the life of the process, and empties
   each table row by row on close. A long-running process opening Memory stores, or one with large ones, would need
   it bounded by size or turned off.
-- Review notifications: expose the `review_notifications_failed` counter with the Prometheus endpoint (M4; M3 logs
-  each failure and reports the count on `/api/v1/nodes`), and sign webhook bodies so a receiver can tell them from
-  forgeries.
-- Review: inbox access control (RBAC, commercial layer) and authenticated reviewers (M4; M3 takes `--as`/`$USER`);
-  escalation chains longer than one inbox (M3 rejects an escalated review that times out again); edit diffs element
-  by element for arrays (M3 replaces a changed array whole); attributing the cost per approved item to the steps on
-  the item's lineage (M3 divides a step's cost by every approval of the pipeline's review steps).
+- Review notifications: sign webhook bodies so a receiver can tell them from forgeries.
+- Review: inbox access control (RBAC, commercial layer) and reviewers named per person (the open-source edition is
+  single-user: with `auth.token` every decision is `auth.user`'s); escalation chains longer than one inbox (M3 rejects
+  an escalated review that times out again); edit diffs element by element for arrays (M3 replaces a changed array
+  whole); attributing the cost per approved item to the steps on the item's lineage (M3 divides a step's cost by every
+  approval of the pipeline's review steps).
 - Container mounts: `--mount` refuses a path holding a comma, and never creates a missing source; quote such paths
   if Docker and Podman both accept a quoted CSV field.
 - HTTP API: node drain or revoke arrive with the M4 commands they share a unit with (Task 4); a pipeline's items and
@@ -79,10 +77,14 @@ earlier designs are in the git history of the spec.
   agent mark, no cost per step); a dead letter carries neither its attempt count nor its original item's id (the
   screen links the dead-letter item, whose parent is the original); dead letters have no CEL filter; the step panel
   has no queue list (oldest waiting items) or throughput sparkline; every channel animates, not only those in view.
-- Web UI: the inbox reads its queue again every 15 seconds because the API has no inbox stream (a
-  `/live/inbox` of review events would make it live); the manual trigger's request id comes from
-  `crypto.randomUUID()`, which browsers offer only in a secure context, so non-loopback serving (M4) needs HTTPS or a
-  fallback; the item list's filtered pages read on only when asked (no automatic scan to the next match).
+- Web UI: the inbox reads its queue again every 15 seconds because the API has no inbox stream (a `/live/inbox` of
+  review events would make it live); the item list's filtered pages read on only when asked (no automatic scan to the
+  next match).
+- Token auth (M4 Task 7): sign-in attempts are not rate limited (the token is long and random, and compared in
+  constant time; a lockout or backoff per client would slow a guessing attack further); sessions live in the
+  engine's memory, so a restart or a failover to the standby signs the UI out (shared sessions in the store would
+  survive it); `/metrics` reads every rollup series on each scrape, aggregated in SQL (an incremental total would
+  serve a store holding many months of rollups more cheaply).
 - Live events: the broker wakes on this process's commits and polls every 15 seconds for other processes' writes on
   the same SQLite file; Postgres (M4) can wake it with `LISTEN`/`NOTIFY` instead. The live log tail relays the
   embedded node only; remote nodes stream their lines with M4's node endpoint. Event retention (M4) is what makes a

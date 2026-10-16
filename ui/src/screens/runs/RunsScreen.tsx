@@ -12,6 +12,7 @@ import { Segmented } from '../../common/Segmented';
 import { NoticeRegion, runAction, useNotice } from '../../common/Notice';
 import { StatusBadge, useStatusLabel } from '../../common/Status';
 import { EmptyState, ErrorState, QueryView } from '../../common/States';
+import { requestId } from '../../common/requestId';
 import { buttons, card } from '../../common/styles';
 import { useNow } from '../../common/useNow';
 import { appendPage, useLoadMore } from '../../common/useLoadMore';
@@ -63,10 +64,10 @@ export function RunsScreen() {
   // Each click is its own request id: a retry of the same click (Retry, or a resent request) returns the same run
   // instead of firing twice; a new click fires again.
   const fire = (trigger: string) => {
-    const requestId = crypto.randomUUID();
+    const id = requestId();
     setFiring(true);
     void runAction(setNotice, {
-      call: async () => t('runs.fired', { name: name(await api.triggerRun(pipeline, { trigger, requestId })) }),
+      call: async () => t('runs.fired', { name: name(await api.triggerRun(pipeline, { trigger, requestId: id })) }),
       failed: (message) => t('runs.fireFailed', { trigger, message }),
       settled: () => {
         setFiring(false);

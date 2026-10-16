@@ -13,7 +13,17 @@
     "search": "Chercher des items, des runs, des étapes",
     "preferences": "Préférences",
     "demo": "Données de démonstration",
-    "exitDemo": "Quitter la démo"
+    "exitDemo": "Quitter la démo",
+    "signOut": "Se déconnecter"
+  },
+  "signIn": {
+    "title": "Connexion",
+    "explain": "Ce serveur demande son jeton d’accès, la valeur de auth.token dans son fichier d’environnement. Demandez-le à qui l’administre.",
+    "token": "Jeton",
+    "submit": "Se connecter",
+    "signingIn": "Connexion…",
+    "wrongToken": "Ce jeton ne correspond pas à celui du serveur.",
+    "failed": "La connexion a échoué : {{message}}"
   },
   "switcher": {
     "label": "Changer de pipeline, affiché : {{name}}",
@@ -61,7 +71,8 @@
     "useDark": "Utiliser le thème sombre",
     "useSystem": "Suivre le thème du système",
     "switchLanguage": "Switch to English",
-    "showShortcuts": "Afficher les raccourcis clavier"
+    "showShortcuts": "Afficher les raccourcis clavier",
+    "signOut": "Se déconnecter"
   },
   "shortcuts": {
     "title": "Raccourcis clavier",

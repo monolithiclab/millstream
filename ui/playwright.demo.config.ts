@@ -13,7 +13,7 @@ const demos = [
 ] as const;
 
 const server = (port: number) => ({
-  // USER names the reviewer of decisions made from the UI, as on a laptop (no authentication until M4).
+  // USER names the reviewer of decisions made from the UI, as on a laptop (a server without auth.token).
   command: [
     `rm -rf /tmp/millstream-demo-${port} &&`,
     'USER=analyst MILLSTREAM_HARNESS_MODE=replay',

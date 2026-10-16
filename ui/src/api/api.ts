@@ -23,6 +23,7 @@ import type {
   Sample,
   SampleDecision,
   SamplePage,
+  Session,
   StepLessons,
   Stream,
   TriggerRequest,
@@ -112,6 +113,12 @@ export interface Api {
   decideSample(pipeline: string, delivery: string, decision: SampleDecision, options?: SendOptions): Promise<Sample>;
   acknowledgeInsight(pipeline: string, insight: string): Promise<void>;
   muteInsight(pipeline: string, insight: string): Promise<void>;
+
+  // Whether the server requires its token, and who decides; unauthorized (401) until signed in on one that does.
+  getSession(): Promise<Session>;
+  // Signs in with the server's token: the answer sets the session cookie. A wrong token is unauthorized.
+  signIn(token: string): Promise<Session>;
+  signOut(): Promise<void>;
 }
 
 // The server's error body is {error: {code, message}}.
