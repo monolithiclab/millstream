@@ -3,3 +3,5 @@
 /cmd/millstream/
 # The M1 fixture's actions run as child processes of the e2e suite, outside the coverage profile.
 /examples/
+# uiserve only wires flags to internal/ui's handler, which is tested; the UI end-to-end tests run it.
+/internal/ui/uiserve/
