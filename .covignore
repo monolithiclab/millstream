@@ -3,3 +3,5 @@
 /cmd/millstream/
 # The M1 fixture's actions run as child processes of the e2e suite, outside the coverage profile.
 /examples/
+# The store conformance suite is test code: the stores' tests run it, and it covers their code, not its own.
+/internal/store/storetest/

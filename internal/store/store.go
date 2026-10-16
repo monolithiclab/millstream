@@ -2,7 +2,8 @@
 // units of spec section 5.11 that change them. Every write goes through one writer loop that applies each unit
 // whole (D23); reads use a separate pool. The pipeline id scopes every record (spec section 4.10), so runs, items,
 // deliveries and dead letters are addressed by pipeline and id: two pipelines with a trigger of the same name fire
-// runs with the same id without colliding. The SQLite implementation lives in store/sqlite.
+// runs with the same id without colliding. The SQLite (store/sqlite) and Postgres (store/postgres) stores share
+// their implementation, store/sqlstore; store/storetest is the conformance suite both pass.
 package store
 
 import (
@@ -24,6 +25,9 @@ var (
 	ErrInvalid = errors.New("invalid request")
 	// ErrClosed means the store was closed.
 	ErrClosed = errors.New("store closed")
+	// ErrWriteLost means the store lost its write connection, and on Postgres the leadership lock it held (spec
+	// section 5.9): it can no longer write, and the engine steps down.
+	ErrWriteLost = errors.New("write connection lost")
 )
 
 // RollupBatch is the most events one Rollup pass reads.
@@ -33,6 +37,9 @@ const RollupBatch = 5000
 // trace, whatever else committed in the same batch.
 type Store interface {
 	Close() error
+	// OnCommit sets fn to be called after each batch that recorded events commits, with the sequence number of its
+	// last event: what live event streams wake on (spec section 12.1). fn must not block; nil stops the calls.
+	OnCommit(fn func(lastSeq int64))
 
 	// ApplyRevision stores a package and makes its revision the pipeline's active one. Applying the package that
 	// is already active is a no-op returning its revision.

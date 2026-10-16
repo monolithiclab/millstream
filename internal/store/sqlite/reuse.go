@@ -1,115 +1,24 @@
 package sqlite
 
 import (
-	"context"
 	"database/sql"
 	"errors"
 	"fmt"
 	"slices"
 	"strings"
 	"sync"
-	"sync/atomic"
 
-	"github.com/monolithiclab/millstream/internal/store"
+	"github.com/monolithiclab/millstream/internal/store/sqlstore"
 )
 
 // SQLite compiles a statement once per connection, and compiling costs more than running most of the store's
-// statements: reads run prepared (readDB), writes once the writer has prepared them (wtx.stmt), and a closed Memory
+// statements: reads run prepared (sqlstore.ReadDB), writes once the writer has prepared them, and a closed Memory
 // store hands its connection, emptied, with its statements, to the next one (memoryPool).
-
-// limitParam is a bound LIMIT clause. SQLite plans a query around a LIMIT bound as a bare parameter, so binding
-// that parameter expires the statement, and every run compiles it again (sqlite3_reprepare): an expression keeps
-// the value out of the plan, and the statement prepared.
-const limitParam = ` LIMIT ?+0`
-
-// readDB is a store's read pool, running each query prepared. A Memory store's goes with its connection to the pool
-// on Close, leaving the store's readDB closed.
-type readDB struct {
-	*sql.DB
-	stmts  *stmtCache
-	closed atomic.Bool
-}
-
-func newReadDB(db *sql.DB, stmts *stmtCache) *readDB {
-	if stmts == nil {
-		stmts = &stmtCache{m: map[string]*sql.Stmt{}}
-	}
-	return &readDB{DB: db, stmts: stmts}
-}
-
-// stmtCache holds the statements a read pool prepared, up to maxStmts of them.
-type stmtCache struct {
-	mu sync.Mutex
-	m  map[string]*sql.Stmt
-}
-
-// stmt returns query prepared, or nil when the cache is full or the query cannot be prepared: the caller runs it
-// unprepared, and gets the error then.
-func (r *readDB) stmt(ctx context.Context, query string) *sql.Stmt {
-	c := r.stmts
-	c.mu.Lock()
-	st, ok := c.m[query]
-	full := len(c.m) >= maxStmts
-	c.mu.Unlock()
-	if ok || full {
-		return st
-	}
-	st, err := r.PrepareContext(ctx, query) // unlocked: other reads go on while SQLite compiles
-	if err != nil {
-		return nil
-	}
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if prev, ok := c.m[query]; ok { // another read prepared it meanwhile
-		_ = st.Close()
-		return prev
-	}
-	c.m[query] = st
-	return st
-}
-
-// closedCtx fails the reads of a closed store whose connection went back to the pool.
-var closedCtx = func() context.Context {
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	return ctx
-}()
-
-// QueryContext runs query prepared.
-func (r *readDB) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
-	if r.closed.Load() {
-		return nil, store.ErrClosed
-	}
-	if st := r.stmt(ctx, query); st != nil {
-		return st.QueryContext(ctx, args...)
-	}
-	return r.DB.QueryContext(ctx, query, args...)
-}
-
-// QueryRowContext runs query prepared.
-func (r *readDB) QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row {
-	if r.closed.Load() {
-		ctx = closedCtx
-	} else if st := r.stmt(ctx, query); st != nil {
-		return st.QueryRowContext(ctx, args...)
-	}
-	return r.DB.QueryRowContext(ctx, query, args...)
-}
-
-func (r *readDB) closeStmts() {
-	c := r.stmts
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	for _, st := range c.m {
-		_ = st.Close()
-	}
-	clear(c.m)
-}
 
 // memoryDB is a Memory store's database, as the pool keeps it between stores.
 type memoryDB struct {
 	write  *sql.DB
-	reads  *stmtCache // the read statements, on write
+	reads  *sqlstore.StmtCache // the read statements, on write
 	uri    string
 	stmts  map[string]*sql.Stmt // the writer's
 	cookie int64                // the schema version (PRAGMA schema_version) as the template restored it
@@ -181,7 +90,11 @@ var templateTables = sync.OnceValues(func() ([]string, error) {
 			referrers[parent][name] = true
 		}
 	}
-	if err := closeRows(rows); err != nil {
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return nil, err
+	}
+	if err := rows.Close(); err != nil {
 		return nil, err
 	}
 	var order []string

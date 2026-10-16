@@ -10,6 +10,8 @@ import (
 	"io/fs"
 	"os"
 	"testing"
+
+	"github.com/monolithiclab/millstream/internal/store/sqlstore"
 )
 
 var update = flag.Bool("update", false, "rewrite template.db from the migrations")
@@ -75,7 +77,7 @@ func migrated(t *testing.T) *sql.DB {
 	}
 	db.SetMaxOpenConns(1)
 	t.Cleanup(func() { _ = db.Close() })
-	if err := migrate(db); err != nil {
+	if err := sqlstore.Migrate(context.Background(), db, dialect, migrations); err != nil {
 		t.Fatal(err)
 	}
 	return db

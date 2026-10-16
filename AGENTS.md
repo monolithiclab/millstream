@@ -25,6 +25,9 @@ below) for the reasoning, and `make help` for every command.
 - `cmd/millstream/`: the binary's `main`.
 - `internal/`: `cli`, `pipeline`, `ids`, `expr`, `schema`, `protocol`, `store`, `failpoint`, `engine`, `node`,
   `redact` and the other packages named in the M1 plan's file structure.
+- `internal/store/`: the log store interface; `sqlstore` is its implementation on `database/sql` (the writer loop,
+  every unit, the reads), shared by `sqlite` and `postgres`, which open, migrate and hold the connections and give a
+  `sqlstore.Dialect` for what the databases spell differently; `storetest` is the conformance suite both pass.
 - `sdk/go/`: the Go action SDK, its own module.
 - `ui/`: the web UI, built and tested only in containers (see Web UI).
 - `examples/`: fixture and example pipeline packages.

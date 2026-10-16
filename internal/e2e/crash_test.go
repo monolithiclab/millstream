@@ -22,6 +22,7 @@ import (
 	"github.com/monolithiclab/millstream/internal/failpoint"
 	"github.com/monolithiclab/millstream/internal/store"
 	"github.com/monolithiclab/millstream/internal/store/sqlite"
+	"github.com/monolithiclab/millstream/internal/store/sqlstore"
 )
 
 var phases = []string{"beforeCommit", "afterCommit"}
@@ -50,7 +51,7 @@ func TestCrashAtFailpoints(t *testing.T) {
 		hit = map[string]bool{}
 	)
 	t.Run("matrix", func(t *testing.T) {
-		for _, unit := range sqlite.Units {
+		for _, unit := range sqlstore.Units {
 			for _, phase := range phases {
 				name := unit + "." + phase
 				t.Run(name, func(t *testing.T) {

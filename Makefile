@@ -19,10 +19,10 @@ lint-shell:
 	@shellcheck scripts/check-docs scripts/test-times
 
 # No store query binds a bare LIMIT parameter, which has SQLite compile the statement again at every run: the
-# queries use limitParam (internal/store/sqlite/reads.go).
+# queries use limitParam (internal/store/sqlstore/read.go).
 .PHONY: lint-sql
 lint-sql:
-	@if grep -nEi 'LIMIT[[:space:]]+\?([[:space:]]|`|$$)' $(filter-out %_test.go,$(wildcard internal/store/sqlite/*.go)); then \
+	@if grep -nEi 'LIMIT[[:space:]]+\?([[:space:]]|`|$$)' $(filter-out %_test.go,$(wildcard internal/store/*/*.go)); then \
 		echo "a bare LIMIT ? above: use limitParam"; exit 1; fi
 
 lint: lint-shell lint-sql

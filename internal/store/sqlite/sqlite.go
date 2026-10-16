@@ -1,18 +1,11 @@
-// Package sqlite is the SQLite log store (spec section 9.1), on the pure-Go modernc.org/sqlite driver.
+// Package sqlite is the SQLite log store (spec section 9.1), on the pure-Go modernc.org/sqlite driver. The writer
+// loop, the units and the reads are store/sqlstore's; this package opens the database, migrates it and keeps the
+// in-memory stores tests and millstream test open by the hundred cheap.
 //
-// Writes go through a single writer goroutine that owns the only write connection (D23): units queue on a
-// channel, and the writer applies every queued unit (at most 64, gathered for at most 5 ms) in one transaction,
-// each under its own savepoint, so a unit that fails is rolled back alone and the others commit. Reads use a
-// separate pool of query-only connections, which WAL lets run alongside the writer.
-//
-// Clock: every timestamp a batch writes, and every comparison it makes (due retries, expired leases), uses one
-// instant read when the batch begins. That instant is Options.Now when set (tests), and otherwise the database
-// clock, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'): lease expiry uses the database clock, never a node's (spec 5.11).
-//
-// Failpoints: each unit calls failpoint.Hit("<unit>.beforeCommit") before the batch commits and
-// failpoint.Hit("<unit>.afterCommit") after, for every unit of the batch in batch order; Units lists the names.
-// A failpoint armed in-process makes the whole batch fail with the failpoint.Crash error: rolled back before the
-// commit, committed after it.
+// The writer owns the only write connection (D23); reads use a separate pool of query-only connections, which WAL
+// lets run alongside the writer. The database clock is strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), and times are stored as
+// text in sqlstore.TSLayout, so that they compare as strings. CLI commands that change state write from their own
+// process, through their own writer loop, under SQLite's file locking (spec section 5.9).
 package sqlite
 
 import (
@@ -24,53 +17,17 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"math/rand/v2"
 	"os"
 	"path/filepath"
-	"slices"
 	"strconv"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/monolithiclab/millstream/internal/store"
+	"github.com/monolithiclab/millstream/internal/store/sqlstore"
 
 	msqlite "modernc.org/sqlite" // also registers the "sqlite" driver
-)
-
-// Units names the atomic units, as their failpoints spell them.
-var Units = []string{
-	unitApplyRevision, unitFire, unitLease, unitRenew, unitDone, unitFail, unitCancel,
-	unitReplay, unitDiscard, unitExpireLeases, unitSetPaused, unitSkipFirings, unitFilter, unitDedupe,
-	unitStartReplay, unitRecordEval, unitRollup, unitRecordInsights, unitSetInsightState, unitPark,
-	unitReviewDecision, unitSampleDecision, unitReviewTimeout,
-}
-
-const (
-	unitApplyRevision   = "applyRevision"
-	unitFire            = "fire"
-	unitLease           = "lease"
-	unitRenew           = "renew"
-	unitDone            = "done"
-	unitFail            = "fail"
-	unitCancel          = "cancel"
-	unitReplay          = "replay"
-	unitDiscard         = "discard"
-	unitExpireLeases    = "expireLeases"
-	unitSetPaused       = "setPaused"
-	unitSkipFirings     = "skipFirings"
-	unitFilter          = "filter"
-	unitDedupe          = "dedupe"
-	unitStartReplay     = "startReplay"
-	unitRecordEval      = "recordEval"
-	unitRollup          = "rollup"
-	unitRecordInsights  = "recordInsights"
-	unitSetInsightState = "setInsightState"
-	unitPark            = "park"
-	unitReviewDecision  = "reviewDecision"
-	unitSampleDecision  = "sampleDecision"
-	unitReviewTimeout   = "reviewTimeout"
 )
 
 // Memory opens a store on a fresh in-memory database, freed by Close: a database of SQLite's memdb VFS under a
@@ -175,7 +132,7 @@ func backup(b *msqlite.Backup, err error) error {
 
 // Options configures a store. The zero value is the production configuration.
 type Options struct {
-	// Now replaces the database clock; see the package comment.
+	// Now replaces the database clock; see sqlstore.
 	Now func() time.Time
 	// Rand returns the retry jitter fraction in [0, 1); nil uses math/rand/v2.
 	Rand func() float64
@@ -187,33 +144,26 @@ type Options struct {
 
 // Store is the SQLite log store. It is safe for concurrent use.
 type Store struct {
-	write *sql.DB // one connection, the writer goroutine's (and a Memory store's reads, between batches)
-	read  *readDB // the read pool; on write for a Memory store
+	*sqlstore.Store
+	write *sql.DB          // one connection, the writer goroutine's (and a Memory store's reads, between batches)
+	read  *sqlstore.ReadDB // the read pool; on write for a Memory store
 	opts  Options
 	uri   string // the database, for Clone
 	// cookie is the schema version a Memory store's database had as the migrated template, which goes back to
 	// memoryPool on Close; zero for a file store, and for a clone, whose statements the restore expired.
 	cookie int64
-
-	// onCommit, when set, is told the last event sequence number of each batch that recorded events; see OnCommit.
-	onCommit atomic.Pointer[func(lastSeq int64)]
-
-	mu     sync.RWMutex // guards closed against sends on reqs
-	closed bool
-	reqs   chan *request
-	done   chan struct{} // closed when the writer exits
-
-	// Writer goroutine only.
-	revs   map[string]*revision // revisions by package hash; see revision
-	rr     int                  // round-robin offset across pipelines
-	stmts  map[string]*sql.Stmt // prepared write statements by query; see wtx.stmt
-	unseen map[string]bool      // queries of the last batch to prepare once it ends
-
-	// leasePassHook, set by tests before the store is used, sees each pass of a Lease unit with its candidates.
-	leasePassHook func(queues map[string][]candidate)
+	stmts  map[string]*sql.Stmt // a pooled connection's write statements, until the writer takes them over
 }
 
 var _ store.Store = (*Store)(nil)
+
+// dialect is SQLite's: question-mark placeholders, the clock as text, json_each, and statements prepared once.
+var dialect = sqlstore.Dialect{
+	Now:       `strftime('%Y-%m-%dT%H:%M:%fZ', 'now')`,
+	JSONEach:  func(expr string) string { return "json_each(" + expr + ")" },
+	JSONParam: func(bool) string { return "SELECT value FROM json_each(?)" },
+	Prepare:   true,
+}
 
 //go:embed migrations/*.sql
 var migrations embed.FS
@@ -227,7 +177,7 @@ func Open(path string, opts Options) (*Store, error) {
 // Clone opens a Memory store holding a copy of s's database as committed when it is called: a store to try
 // something on without touching s, or a test's copy of a history built once.
 func (s *Store) Clone(opts Options) (*Store, error) {
-	if s.read.closed.Load() { // its database may be another store's now
+	if s.read.Closed() { // its database may be another store's now
 		return nil, store.ErrClosed
 	}
 	return open(Memory, s.uri, opts)
@@ -275,22 +225,20 @@ func (s *Store) Image() ([]byte, error) {
 // open opens the store at path; a Memory store starts as a copy of the database at from, or of the migrated
 // template when from is empty.
 func open(path, from string, opts Options) (*Store, error) {
-	s := &Store{opts: opts, reqs: make(chan *request), done: make(chan struct{}), revs: map[string]*revision{},
-		stmts: map[string]*sql.Stmt{}, unseen: map[string]bool{}}
+	s := &Store{opts: opts}
 	if s.opts.BusyTimeout == 0 {
 		s.opts.BusyTimeout = 5 * time.Second
 	}
 	if s.opts.ReadConns == 0 {
 		s.opts.ReadConns = 4
 	}
-	if s.opts.Rand == nil {
-		s.opts.Rand = rand.Float64 // #nosec G404 -- retry jitter, not a secret
-	}
 	if err := s.open(path, from); err != nil {
-		_ = s.closeDBs() // the open error is the one to report
+		_ = s.closeDBs(nil) // the open error is the one to report
 		return nil, err
 	}
-	go s.writer()
+	s.Store = sqlstore.New(sqlstore.Config{Dialect: dialect, Write: s.write, Read: s.read, Stmts: s.stmts,
+		Options: sqlstore.Options{Now: opts.Now, Rand: opts.Rand}})
+	s.stmts = nil
 	return s, nil
 }
 
@@ -299,7 +247,8 @@ func (s *Store) open(path, from string) error {
 	template := memory && from == ""
 	if template { // a clone takes a connection of its own: the restore would expire a pooled one's statements
 		if m := takeMemory(); m != nil {
-			s.write, s.read, s.uri, s.stmts, s.cookie = m.write, newReadDB(m.write, m.reads), m.uri, m.stmts, m.cookie
+			s.write, s.uri, s.stmts, s.cookie = m.write, m.uri, m.stmts, m.cookie
+			s.read = sqlstore.NewReadDB(m.write, dialect, m.reads)
 			return nil
 		}
 	}
@@ -330,13 +279,13 @@ func (s *Store) open(path, from string) error {
 			return fmt.Errorf("open store: %w", err)
 		}
 	}
-	if err := migrate(s.write); err != nil {
+	if err := sqlstore.Migrate(context.Background(), s.write, dialect, migrations); err != nil {
 		return fmt.Errorf("open store %s: %w", path, err)
 	}
 	if memory {
 		// The writer's connection serves the reads too: a read waits for the batch in progress, as it would on
 		// memdb's locks, but without a connection of its own to open or busy_timeout to sleep through.
-		s.read = newReadDB(s.write, nil)
+		s.read = sqlstore.NewReadDB(s.write, dialect, nil)
 		if template {
 			if s.cookie, err = schemaVersion(s.write); err != nil {
 				return fmt.Errorf("open store: %w", err)
@@ -349,99 +298,36 @@ func (s *Store) open(path, from string) error {
 		return fmt.Errorf("open store %s: %w", path, err)
 	}
 	read.SetMaxOpenConns(s.opts.ReadConns)
-	s.read = newReadDB(read, nil)
+	s.read = sqlstore.NewReadDB(read, dialect, nil)
 	return nil
-}
-
-// migrate applies every embedded migration newer than the recorded schema version, each in its own transaction.
-func migrate(db *sql.DB) error {
-	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL)`); err != nil {
-		return fmt.Errorf("migrate: %w", err)
-	}
-	var current int
-	if err := db.QueryRow(`SELECT COALESCE(MAX(version), 0) FROM schema_version`).Scan(&current); err != nil {
-		return fmt.Errorf("migrate: %w", err)
-	}
-	names, err := fs.Glob(migrations, "migrations/*.sql")
-	if err != nil {
-		return fmt.Errorf("migrate: %w", err)
-	}
-	slices.Sort(names)
-	for _, name := range names {
-		base := filepath.Base(name)
-		version, err := strconv.Atoi(strings.SplitN(base, "_", 2)[0])
-		if err != nil {
-			return fmt.Errorf("migrate: bad migration name %s", base)
-		}
-		if version <= current {
-			continue
-		}
-		body, err := migrations.ReadFile(name)
-		if err != nil {
-			return fmt.Errorf("migrate: %w", err)
-		}
-		if err := applyMigration(db, version, string(body)); err != nil {
-			return fmt.Errorf("migrate %s: %w", base, err)
-		}
-	}
-	return nil
-}
-
-func applyMigration(db *sql.DB, version int, body string) error {
-	tx, err := db.Begin()
-	if err != nil {
-		return err
-	}
-	defer func() { _ = tx.Rollback() }()
-	if _, err := tx.Exec(body); err != nil {
-		return err
-	}
-	if _, err := tx.Exec(`INSERT INTO schema_version (version) VALUES (?)`, version); err != nil {
-		return err
-	}
-	return tx.Commit()
-}
-
-// OnCommit sets fn to be called, on the writer goroutine, after each batch that recorded events commits, with the
-// sequence number of the batch's last event: the notifier live event streams wake on (spec section 12.1). fn must
-// not block: the writer waits for it. A nil fn stops the calls. Writes another process makes to the same file are
-// not seen.
-func (s *Store) OnCommit(fn func(lastSeq int64)) {
-	if fn == nil {
-		s.onCommit.Store(nil)
-		return
-	}
-	s.onCommit.Store(&fn)
 }
 
 // Close stops accepting units, lets the writer apply the ones already queued, and closes the database.
 func (s *Store) Close() error {
-	s.mu.Lock()
-	if s.closed {
-		s.mu.Unlock()
-		return nil
+	stmts := s.Stop()
+	if stmts == nil {
+		return nil // closed already
 	}
-	s.closed = true
-	close(s.reqs)
-	s.mu.Unlock()
-	<-s.done
 	if s.cookie != 0 {
-		s.read.closed.Store(true) // its connection may serve another store from now on
-		if putMemory(&memoryDB{write: s.write, reads: s.read.stmts, uri: s.uri, stmts: s.stmts, cookie: s.cookie}) {
+		reads := s.read.Hand() // its connection may serve another store from now on
+		if putMemory(&memoryDB{write: s.write, reads: reads, uri: s.uri, stmts: stmts, cookie: s.cookie}) {
 			return nil
 		}
 	}
-	return s.closeDBs()
+	return s.closeDBs(stmts)
 }
 
-func (s *Store) closeDBs() error {
+func (s *Store) closeDBs(stmts map[string]*sql.Stmt) error {
 	var errs []error
+	for _, st := range stmts {
+		errs = append(errs, st.Close())
+	}
 	for _, st := range s.stmts {
 		errs = append(errs, st.Close())
 	}
 	dbs := []*sql.DB{s.write}
 	if s.read != nil {
-		s.read.closeStmts()
+		s.read.CloseStmts()
 		if s.read.DB != s.write { // a Memory store reads on its write connection
 			dbs = append(dbs, s.read.DB)
 		}
@@ -455,36 +341,6 @@ func (s *Store) closeDBs() error {
 		return fmt.Errorf("close store: %w", err)
 	}
 	return nil
-}
-
-// tsLayout is how times are stored: fixed width in UTC, so text order is time order.
-const tsLayout = "2006-01-02T15:04:05.000Z"
-
-func formatTime(t time.Time) string {
-	return t.UTC().Format(tsLayout)
-}
-
-func parseTime(s string) (time.Time, error) {
-	if s == "" {
-		return time.Time{}, nil
-	}
-	t, err := time.Parse(tsLayout, s)
-	if err != nil {
-		return time.Time{}, fmt.Errorf("parse stored time %q: %w", s, err)
-	}
-	return t, nil
-}
-
-// clock returns the batch's instant: Options.Now, or the database clock.
-func (s *Store) clock(ctx context.Context, tx *sql.Tx) (time.Time, error) {
-	if s.opts.Now != nil {
-		return s.opts.Now().UTC().Truncate(time.Millisecond), nil
-	}
-	var now string
-	if err := tx.QueryRowContext(ctx, `SELECT strftime('%Y-%m-%dT%H:%M:%fZ', 'now')`).Scan(&now); err != nil {
-		return time.Time{}, fmt.Errorf("read database clock: %w", err)
-	}
-	return parseTime(now)
 }
 
 // createFromImage writes the migrated template image at path when nothing is there yet, so that a new store

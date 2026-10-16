@@ -12,7 +12,7 @@ import (
 // store's reads fail rather than read the next store's rows.
 func TestMemoryPool(t *testing.T) {
 	ctx := context.Background()
-	open := func() *Store {
+	fresh := func() *Store {
 		t.Helper()
 		s, err := Open(Memory, Options{})
 		if err != nil {
@@ -26,28 +26,28 @@ func TestMemoryPool(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	first := open()
-	if _, err := first.ApplyRevision(ctx, store.PackageRecord{Hash: hashOf(fixture), Pipeline: parse(t, fixture)}); err != nil {
-		t.Fatal(err)
-	}
+	first := fresh()
+	apply(t, first)
 	closeStore(first)
 	if _, err := first.Pipelines(ctx); !errors.Is(err, store.ErrClosed) {
 		t.Fatalf("a read of a closed store = %v, want ErrClosed", err)
 	}
 
-	second := open()
+	second := fresh()
 	if second.write != first.write {
 		t.Fatal("the next store did not take the closed one's database")
 	}
 	if names, err := second.Pipelines(ctx); err != nil || len(names) != 0 {
 		t.Fatalf("pipelines of the reused database = %v, %v; want none", names, err)
 	}
-	e := &env{t: t, s: second, ctx: ctx}
-	setTable(t, e, "events", "events_off")
-	setTable(t, e, "events_off", "events")
+	for _, q := range []string{`ALTER TABLE events RENAME TO events_off`, `ALTER TABLE events_off RENAME TO events`} {
+		if err := second.Exec(ctx, q); err != nil {
+			t.Fatal(err)
+		}
+	}
 	closeStore(second)
 
-	third := open()
+	third := fresh()
 	defer closeStore(third)
 	if third.write == second.write {
 		t.Fatal("a database whose schema changed went back to the pool")
@@ -56,18 +56,18 @@ func TestMemoryPool(t *testing.T) {
 
 // A store's image opens as a store holding the same history, apart from the original.
 func TestImage(t *testing.T) {
-	e := newEnv(t, fixture)
-	e.fire("r1")
-	image, err := e.s.Image()
+	s := newStore(t)
+	fire(t, s, "r1")
+	image, err := s.Image()
 	if err != nil {
 		t.Fatal(err)
 	}
-	copied, err := OpenImage(image, Options{Now: e.clock.Now})
+	copied, err := OpenImage(image, Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer func() { _ = copied.Close() }()
-	if r, err := copied.Run(e.ctx, "listings", "r1"); err != nil || r.ID != "r1" {
+	if r, err := copied.Run(context.Background(), "listings", "r1"); err != nil || r.ID != "r1" {
 		t.Fatalf("run in the image = %+v, %v", r, err)
 	}
 	if _, err := OpenImage([]byte("not a database"), Options{}); err == nil {
