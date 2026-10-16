@@ -50,7 +50,7 @@ node: { embedded: false, token: { file: node.token } }
 secrets:
   property-sourcing: { homesiteToken: { env: HOMESITE_TOKEN }, apiKey: { file: key } }
   other: {}
-retention: { events: 90d, transcripts: 30d, rollups: 400d }
+retention: { events: 90d, transcripts: 30d, rollups: 400d, every: 30m }
 engine: { lockCheck: 2s, keepalive: 3s }
 improve:
   enabled: true
@@ -77,7 +77,7 @@ improve:
 		Secrets: map[string]map[string]SecretSource{
 			"property-sourcing": {"homesiteToken": {Env: "HOMESITE_TOKEN"}, "apiKey": {File: "key"}}, "other": {},
 		},
-		Retention: Retention{Events: 90 * day, Transcripts: 30 * day, Rollups: 400 * day},
+		Retention: Retention{Events: 90 * day, Transcripts: 30 * day, Rollups: 400 * day, Every: 30 * time.Minute},
 		Engine:    EngineConfig{LockCheck: 2 * time.Second, Keepalive: 3 * time.Second},
 		Improve: Improve{Enabled: true, Harness: "api", MinSeverity: "warning", Publish: PublishApply, BudgetDayUSD: 5,
 			EvidenceSample: 500, EvidenceTTL: 30 * day, BacktestSample: 200, DistillMinDeliveries: 500,

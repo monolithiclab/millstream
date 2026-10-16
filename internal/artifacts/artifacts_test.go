@@ -2,6 +2,7 @@ package artifacts
 
 import (
 	"bytes"
+	"compress/gzip"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -12,6 +13,7 @@ import (
 	"strings"
 	"testing"
 	"testing/iotest"
+	"time"
 )
 
 func sum(b []byte) string {
@@ -123,5 +125,90 @@ func TestPutAndOpenErrors(t *testing.T) {
 	}
 	if _, err := New(blocked).Put("listings", "x", strings.NewReader("x")); err == nil {
 		t.Fatal("Put under a file: no error")
+	}
+}
+
+// The sweep's operations (Files): list, a file's time, copy into another prefix, remove; a missing file is no error
+// to remove, and a name that is no artifact is refused.
+func TestFiles(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	s := New(t.TempDir())
+	if files, err := s.List(ctx); err != nil || len(files) != 0 {
+		t.Fatalf("List of a store never written = %v, %v", files, err)
+	}
+	ref, err := s.Put("src", "a.txt", strings.NewReader("a"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Copy(ctx, "src", "deal", ref.SHA256); err != nil {
+		t.Fatal(err)
+	}
+	files, err := s.List(ctx)
+	if err != nil || len(files) != 2 || files[0].Pipeline != "deal" || files[1].Name != ref.SHA256 {
+		t.Fatalf("List = %+v, %v", files, err)
+	}
+	old := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	path := filepath.Join(s.dir, "src", ref.SHA256)
+	if err := os.Chtimes(path, old, old); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Put("src", "again.txt", strings.NewReader("a")); err != nil { // stored again: touched
+		t.Fatal(err)
+	}
+	if mt, err := s.ModTime(ctx, "src", ref.SHA256); err != nil || !mt.After(old) {
+		t.Fatalf("ModTime after storing again = %v, %v", mt, err)
+	}
+	for _, p := range []string{"src", "src"} { // the second time, already gone
+		if err := s.Remove(ctx, p, ref.SHA256); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := s.ModTime(ctx, "src", ref.SHA256); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("ModTime of a removed file = %v", err)
+	}
+	if err := s.Copy(ctx, "src", "other", ref.SHA256); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("Copy of a missing file = %v", err)
+	}
+	for _, name := range []string{"../x", "notes.txt"} {
+		if err := s.Remove(ctx, "src", name); err == nil {
+			t.Fatalf("Remove %q was accepted", name)
+		}
+	}
+	if _, err := s.ModTime(ctx, "src", "nope"); err == nil {
+		t.Fatal("ModTime of a name that is no hash was accepted")
+	}
+}
+
+// A gzip artifact named as something else is stored compressed and read decompressed; one named .gz is gzip.
+func TestCompressed(t *testing.T) {
+	t.Parallel()
+	var buf bytes.Buffer
+	zw := gzip.NewWriter(&buf)
+	_, _ = zw.Write([]byte(`{"turns":[]}`))
+	_ = zw.Close()
+	s := New(t.TempDir())
+	ref, err := s.Put("p", "transcript.json", bytes.NewReader(buf.Bytes()))
+	if err != nil || !Compressed(ref) || Compressed(Ref{Name: "logs.gz", Type: ref.Type}) ||
+		Compressed(Ref{Name: "a.json", Type: "text/plain"}) {
+		t.Fatalf("Compressed(%+v) = %v, %v", ref, Compressed(ref), err)
+	}
+	f, err := s.Open("p", ref.SHA256)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = f.Close() }()
+	r, err := Decompressed(ref, f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b, err := io.ReadAll(r); err != nil || string(b) != `{"turns":[]}` {
+		t.Fatalf("decompressed = %q, %v", b, err)
+	}
+	if _, err := Decompressed(ref, strings.NewReader("not gzip")); err == nil {
+		t.Fatal("Decompressed accepted data that is not gzip")
+	}
+	if r, err := Decompressed(Ref{Name: "a.txt", Type: "text/plain"}, strings.NewReader("a")); err != nil || r == nil {
+		t.Fatalf("Decompressed of a plain artifact = %v, %v", r, err)
 	}
 }

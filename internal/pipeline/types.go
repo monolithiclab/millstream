@@ -62,7 +62,7 @@ type WebhookSpec struct {
 }
 
 // StreamDecl is an entry under streams: either settings for a stream of this pipeline, or an import of another
-// pipeline's stream (spec section 4.12), never both.
+// pipeline's stream (spec section 4.12) with at most a retention, never both.
 type StreamDecl struct {
 	Schema    any // a path or an inline schema, as written
 	Retention time.Duration

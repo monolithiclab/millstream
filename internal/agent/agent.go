@@ -16,6 +16,7 @@ package agent
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"errors"
@@ -355,8 +356,8 @@ func (a *adapter) metrics(w *protocol.Writer, delivery string, t Transcript, sch
 	return nil
 }
 
-// writeTranscript writes t as transcript.json in the working directory, every string in it, the harness's own
-// records included, with its secret values redacted (redact.Redactor.JSON).
+// writeTranscript writes t as transcript.json in the working directory, gzip-compressed, every string in it, the
+// harness's own records included, with its secret values redacted (redact.Redactor.JSON).
 func (a *adapter) writeTranscript(t Transcript) error {
 	if a.workdir == "" {
 		return errors.New("MILLSTREAM_WORKDIR is not set")
@@ -368,10 +369,19 @@ func (a *adapter) writeTranscript(t Transcript) error {
 	if err != nil {
 		return err
 	}
-	var data bytes.Buffer
-	if err := json.Indent(&data, raw, "", "  "); err != nil {
+	var indented bytes.Buffer
+	if err := json.Indent(&indented, raw, "", "  "); err != nil {
 		return err
 	}
-	data.WriteByte('\n')
+	indented.WriteByte('\n')
+	// Stored compressed, served decompressed (spec section 7.2): agent transcripts are repetitive JSON.
+	var data bytes.Buffer
+	zw := gzip.NewWriter(&data)
+	if _, err := zw.Write(indented.Bytes()); err != nil {
+		return err
+	}
+	if err := zw.Close(); err != nil {
+		return err
+	}
 	return os.WriteFile(filepath.Join(a.workdir, TranscriptFile), data.Bytes(), 0o600)
 }

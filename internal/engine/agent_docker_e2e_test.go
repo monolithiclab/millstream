@@ -159,8 +159,12 @@ func TestRealAgentSandbox(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = f.Close() }()
+	r, err := artifacts.Decompressed(res.Artifacts[0], f)
+	if err != nil {
+		t.Fatal(err)
+	}
 	var tr agent.Transcript
-	if err := json.NewDecoder(f).Decode(&tr); err != nil || tr.Prompt != req.Prompt || tr.TokensIn != 10 {
+	if err := json.NewDecoder(r).Decode(&tr); err != nil || tr.Prompt != req.Prompt || tr.TokensIn != 10 {
 		t.Fatalf("transcript %+v, %v", tr, err)
 	}
 }

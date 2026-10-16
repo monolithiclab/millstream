@@ -210,7 +210,7 @@ func (s *server) term(ctx context.Context, st store.Store, lead leadership) erro
 		Store: st, Logger: s.log, LeaseTTL: s.cmd.LeaseTTL, Env: rt.Env, Secrets: secrets(rt, env),
 		Artifacts: artifactStore(rt, env), Resolver: resolver(rt, env, false), Agents: agents(rt, env),
 		Notifier: notes, PackageDir: packageDir(rt, env), Check: checkOptions(rt, env),
-		Leadership: engine.Leadership{ID: s.id, Epoch: lead.identity.Epoch}, Takeover: true,
+		Leadership: engine.Leadership{ID: s.id, Epoch: lead.identity.Epoch}, Takeover: true, Retention: env.Retention,
 	})
 	if err != nil {
 		return err

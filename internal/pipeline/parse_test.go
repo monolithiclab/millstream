@@ -199,7 +199,7 @@ triggers:
   hook: { webhook: { path: /hooks/x }, inputSchema: { type: object } }
   nightly: { cron: "0 1 * * *", catchup: all }
 streams:
-  approved: { pipeline: property-sourcing, stream: listings.approved }
+  approved: { pipeline: property-sourcing, stream: listings.approved, retention: 7d }
   out: { schema: schemas/out.json, redact: [/email] }
 steps:
   s: { action: x, in: approved, fallback: { action: y } }
@@ -219,7 +219,8 @@ improve: { enabled: false }
 	if c := p.Triggers["nightly"].Cron; c == nil || c.Catchup != CatchupAll || c.TZ != "" {
 		t.Errorf("nightly = %+v", c)
 	}
-	if imp := p.Streams["approved"].Import; imp == nil || *imp != (StreamImport{"property-sourcing", "listings.approved"}) {
+	if imp := p.Streams["approved"].Import; imp == nil || *imp != (StreamImport{"property-sourcing", "listings.approved"}) ||
+		p.Streams["approved"].Retention != 7*24*time.Hour {
 		t.Errorf("approved = %+v", p.Streams["approved"])
 	}
 	if d := p.Streams["out"]; d.Schema != "schemas/out.json" || !reflect.DeepEqual(d.Redact, []string{"/email"}) {
@@ -307,7 +308,7 @@ func TestParseErrors(t *testing.T) {
 		{"webhook unknown", "pipeline: p\ntriggers: { t: { webhook: { path: /x }, token: y } }\n", "triggers.t.token: unknown key"},
 		{"trigger not mapping", "pipeline: p\ntriggers: { t: x }\n", "triggers.t: must be a mapping"},
 		{"triggers not mapping", "pipeline: p\ntriggers: [a]\n", "triggers: must be a mapping"},
-		{"stream mixed import", top + "streams: { a: { pipeline: q, stream: s, retention: 1d } }\n", "streams.a.retention: unknown key"},
+		{"stream mixed import", top + "streams: { a: { pipeline: q, stream: s, redact: [/x] } }\n", "streams.a.redact: unknown key"},
 		{"stream import missing", top + "streams: { a: { pipeline: q } }\n", "streams.a.stream: is required"},
 		{"stream import empty", top + "streams: { a: { pipeline: \"\", stream: s } }\n", "streams.a.pipeline: must not be empty"},
 		{"stream unknown", top + "streams: { a: { ttl: 1d } }\n", "streams.a.ttl: unknown key"},

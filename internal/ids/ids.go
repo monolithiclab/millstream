@@ -136,3 +136,9 @@ func isAlnum(r rune) bool { return isUpper(r) || isLower(r) || isDigit(r) }
 func ReplayRun(requestID string) string {
 	return runPrefix + "replay_" + requestID
 }
+
+// Purge is the id of a purge (spec section 9.3): purge_<request id>, so a purge requested again after a crash lands
+// on the purge it already started.
+func Purge(requestID string) string {
+	return "purge_" + requestID
+}

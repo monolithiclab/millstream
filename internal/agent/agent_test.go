@@ -2,9 +2,11 @@ package agent
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -150,7 +152,16 @@ func (s *session) run(payloads ...string) []protocol.Message {
 // transcript reads the transcript the last attempt wrote.
 func (s *session) transcript() (Transcript, string) {
 	s.t.Helper()
-	raw, err := os.ReadFile(filepath.Join(s.workdir, TranscriptFile))
+	f, err := os.Open(filepath.Join(s.workdir, TranscriptFile))
+	if err != nil {
+		s.t.Fatal(err)
+	}
+	defer func() { _ = f.Close() }()
+	zr, err := gzip.NewReader(f) // stored compressed (spec section 7.2)
+	if err != nil {
+		s.t.Fatal(err)
+	}
+	raw, err := io.ReadAll(zr)
 	if err != nil {
 		s.t.Fatal(err)
 	}
