@@ -1296,8 +1296,11 @@ export interface components {
       /** @description Firing the same request id again returns the same run. */
       requestId?: string;
     };
+    /** @description Exactly one of step (a replay run of the step over past items) and stream (a back-fill of an imported stream from the producer's retained items). */
     ReplayRequest: {
-      step: string;
+      step?: string;
+      /** @description An imported stream of the pipeline to back-fill; run does not apply. */
+      stream?: string;
       /** @description Only the items published within this duration (7d */
       since?: string;
       /** @description Only this run's items. */

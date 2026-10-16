@@ -2,7 +2,7 @@ import { Handle, Position, type Node, type NodeProps } from '@xyflow/react';
 import type { KeyboardEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { StatusGlyph, useStatusLabel } from '../../common/Status';
-import { useFormat, type Format } from '../../common/useFormat';
+import { useFormat } from '../../common/useFormat';
 import type { Import, Trigger } from '../../api/schema';
 import type { StepKind, StepModel } from './model';
 
