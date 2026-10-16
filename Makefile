@@ -176,3 +176,12 @@ test-image: image ## Smoke-test the image: version, and millstream run serving t
 .PHONY: test-deploy
 test-deploy: ## Check deploy/: docker compose config, and systemd-analyze verify of the units in a container
 	@scripts/test-deploy
+
+# GoReleaser and syft are pinned in their own tools module (tools/release/go.mod), so their dependencies never move
+# the linters'. syft is built onto the PATH GoReleaser runs it from. No signing and no publishing in a snapshot.
+RELEASE_TOOLS = .build/release-tools
+
+.PHONY: release-snapshot
+release-snapshot: ## Build a GoReleaser snapshot into dist/: archives, SBOMs, checksums, local images; publishes nothing
+	@go build -modfile=tools/release/go.mod -o $(RELEASE_TOOLS)/ github.com/goreleaser/goreleaser/v2 github.com/anchore/syft/cmd/syft
+	@PATH=$(CURDIR)/$(RELEASE_TOOLS):$$PATH goreleaser release --snapshot --clean --skip=sign

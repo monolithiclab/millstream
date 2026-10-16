@@ -1,0 +1,108 @@
+# GoReleaser v2.18.3, pinned in tools/release/go.mod with syft. Snapshot builds only in this phase:
+# make release-snapshot runs `goreleaser release --snapshot --clean --skip=sign`, which publishes nothing and needs no
+# credentials. The release workflow (tag push, cosign keyless signing, GHCR push, Homebrew tap) arrives with the first
+# public release.
+version: 2
+
+project_name: millstream
+
+before:
+  hooks:
+    # Not `go mod tidy`: a release builds the dependency set that was reviewed and tested, and tidy can rewrite
+    # go.mod/go.sum mid-release from whatever the proxy serves that minute. `verify` checks the module cache still
+    # hashes to go.sum, and writes nothing.
+    - go mod verify
+    # The web UI, built in the pinned node container (D35) into internal/ui/dist, which every build below embeds.
+    - make ui
+
+builds:
+  - id: millstream
+    main: ./cmd/millstream
+    binary: millstream
+    env: [CGO_ENABLED=0]
+    goos: [linux, darwin]
+    goarch: [amd64, arm64]
+    flags: [-trimpath]
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+
+archives:
+  - id: millstream
+    ids: [millstream]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    formats: [tar.gz]
+    files: [LICENSE, README.md, docs/deploy.md, deploy/**/*]
+
+# One SPDX SBOM per archive, written by syft. The args are spelled out because the default set ends in
+# `--enrich all`, which reaches the network on every run: a release describes what it built.
+sboms:
+  - artifacts: archive
+    args: ["$artifact", "--output", "spdx-json=$document"]
+
+checksum:
+  name_template: "SHA256SUMS"
+
+# cosign v3 writes the signature, certificate and transparency-log proof into one Sigstore bundle, keyless (the
+# workflow's OIDC identity). Signing SHA256SUMS covers every archive and SBOM, each listed there by hash.
+signs:
+  - id: cosign-checksums
+    cmd: cosign
+    signature: "${artifact}.sigstore.json"
+    args:
+      - sign-blob
+      - "--bundle=${signature}"
+      - "${artifact}"
+      - "--yes"
+    artifacts: checksum
+
+# The image packages the binaries built above (Dockerfile.release), one per platform; the source build is the
+# Dockerfile. A snapshot loads one image per platform into the local daemon and pushes nothing.
+dockers_v2:
+  - id: millstream
+    ids: [millstream]
+    dockerfile: Dockerfile.release
+    images: ["ghcr.io/monolithiclab/millstream"]
+    tags: ["{{ .Version }}", "{{ if not .Prerelease }}latest{{ end }}"]
+    platforms: [linux/amd64, linux/arm64]
+    labels:
+      org.opencontainers.image.title: "millstream"
+      org.opencontainers.image.description: "Millstream pipeline platform: engine, node and web UI in one binary"
+      org.opencontainers.image.source: "https://github.com/monolithiclab/millstream"
+      org.opencontainers.image.licenses: "Apache-2.0"
+      org.opencontainers.image.version: "{{ .Version }}"
+      org.opencontainers.image.revision: "{{ .FullCommit }}"
+      org.opencontainers.image.created: "{{ .Date }}"
+
+docker_signs:
+  - cmd: cosign
+    args: ["sign", "--yes", "${artifact}@${digest}"]
+    artifacts: images
+
+changelog:
+  use: git
+  sort: asc
+  abbrev: -1
+  filters:
+    exclude:
+      - "^Merge"
+      - "^chore"
+  groups:
+    - title: "Features"
+      regexp: '^.*?feat(\(.+\))?:'
+      order: 0
+    - title: "Bug fixes"
+      regexp: '^.*?fix(\(.+\))?:'
+      order: 1
+    - title: "Documentation"
+      regexp: '^.*?docs(\(.+\))?:'
+      order: 2
+    - title: "Other"
+      order: 999
+
+release:
+  github:
+    owner: monolithiclab
+    name: millstream
+  prerelease: auto
+  replace_existing_artifacts: true

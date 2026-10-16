@@ -1,0 +1,13 @@
+# The release image: GoReleaser (dockers_v2 in .goreleaser.yaml) builds the binaries, the UI embedded, and puts
+# each platform's under $TARGETPLATFORM/ in this build's context. The runtime matches the Dockerfile's final stage:
+# keep the two in step. Labels come from .goreleaser.yaml.
+
+# gcr.io/distroless/static-debian13:nonroot
+FROM gcr.io/distroless/static-debian13:nonroot@sha256:e2e927ec666bae08560abb3c55d0659eceabb657f56b6782ab500a9fc7f555e3
+ARG TARGETPLATFORM
+COPY $TARGETPLATFORM/millstream /millstream
+WORKDIR /home/nonroot
+ENV USER=millstream
+USER 65532:65532
+EXPOSE 7070
+ENTRYPOINT ["/millstream"]
