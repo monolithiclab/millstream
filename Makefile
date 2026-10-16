@@ -47,8 +47,12 @@ lint: lint-sdk
 # build binaries, start processes or Docker, drive the CLI or the engine end to end, or run long are behind the e2e
 # build tag. test-e2e runs them all, tagged and untagged, under -race, and prints the coverage of the whole suite.
 # They run the built binaries, so the test cache cannot see changes to the code they exercise: -count=1.
+# PKG=<packages> runs those packages' tests alone, tagged and untagged, without -race or coverage: the iteration tier.
 .PHONY: test-e2e
-test-e2e: ## Run every test with -race, the e2e-tagged ones included, and print the full coverage (slow: CI, milestones)
+test-e2e: ## Run every test with -race, the e2e-tagged ones included, and print the full coverage; PKG=./internal/foo/... runs those alone, without -race
+ifdef PKG
+	@go test -tags e2e -count=1 $(PKG)
+else
 	@mkdir -p build
 	@docker version >/dev/null 2>&1 || echo "Docker is unavailable: the Postgres tests skip (internal/store/postgres/pgtest)"
 	@go test -race -count=1 -tags e2e -coverprofile=build/cover-e2e.out ./...
@@ -61,6 +65,7 @@ test-e2e: ## Run every test with -race, the e2e-tagged ones included, and print 
 	fi
 	@go tool cover -func=build/cover-e2e.out | awk '/^total:/ {print "Total coverage, e2e build: " $$NF}'
 	@cd $(SDK_DIR) && go test -race -count=1 -tags e2e ./...
+endif
 
 .PHONY: test-times
 test-times: ## Measure the default suite against its test-time budget (serial-equivalent, per test, per package)
