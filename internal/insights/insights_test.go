@@ -310,6 +310,27 @@ type goldenInsight struct {
 	Evidence json.RawMessage `json:"evidence"`
 }
 
+// The first run of a pipeline has nothing to compare with.
+func TestReportWithoutHistory(t *testing.T) {
+	s := newSim(t, shop)
+	s.quickRun("only", now.Add(-time.Hour))
+	r, err := BuildReport(s.ctx, s.st, "shop", "only", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Comparison != nil || r.ETA != nil || len(r.CriticalPath.Steps) != 3 || r.Items["scored"] != 2 {
+		t.Fatalf("report = %+v", r)
+	}
+	var text bytes.Buffer
+	if err := r.WriteText(&text, now); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(text.Bytes(), []byte("No earlier run to compare with.")) ||
+		!bytes.Contains(text.Bytes(), []byte("Failures by cluster:\n  none")) {
+		t.Errorf("report:\n%s", text.String())
+	}
+}
+
 // Golden insights over the fixture's history: a slowStep (the scorer holds the critical path, its p95 regressed),
 // two failure clusters (flaky, recovered on retry; deterministic, dead), the scorer's cost (per output up threefold,
 // a schema-validation failure) and the unschedulable publish step.
@@ -458,26 +479,5 @@ func TestGoldenReports(t *testing.T) {
 
 	if _, err := BuildReport(s.ctx, s.st, "shop", "missing", now); err == nil {
 		t.Error("a report of a missing run")
-	}
-}
-
-// The first run of a pipeline has nothing to compare with.
-func TestReportWithoutHistory(t *testing.T) {
-	s := newSim(t, shop)
-	s.quickRun("only", now.Add(-time.Hour))
-	r, err := BuildReport(s.ctx, s.st, "shop", "only", now)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if r.Comparison != nil || r.ETA != nil || len(r.CriticalPath.Steps) != 3 || r.Items["scored"] != 2 {
-		t.Fatalf("report = %+v", r)
-	}
-	var text bytes.Buffer
-	if err := r.WriteText(&text, now); err != nil {
-		t.Fatal(err)
-	}
-	if !bytes.Contains(text.Bytes(), []byte("No earlier run to compare with.")) ||
-		!bytes.Contains(text.Bytes(), []byte("Failures by cluster:\n  none")) {
-		t.Errorf("report:\n%s", text.String())
 	}
 }
