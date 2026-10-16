@@ -60,6 +60,11 @@ earlier designs are in the git history of the spec.
   pipeline's items and cost today, and unschedulable deliveries on the nodes view, are not computed yet.
 - HTTP API: an item's descendants are found by scanning its pipeline's items' parents (`json_each`); an index of
   parent to child (or reading the deliveries of the item) before volumes grow.
+- HTTP API reads to tighten before volumes grow: count queries instead of reading open dead letters and reviews to
+  count them (pipelines list), a delivery's attempts filtered in SQL (a `delivery_id` column on events) and decoded
+  by one reader shared with `insights`, an index on `deliveries (pipeline, finished_at)` for the live step stats,
+  and a dead-letter replay across runs as one unit (the API applies one unit per run, so a failure part-way leaves
+  the earlier runs replayed). Dead-letter fingerprints could share `insights`' error grouping.
 - Live events: the broker wakes on this process's commits and polls every 15 seconds for other processes' writes on
   the same SQLite file; Postgres (M4) can wake it with `LISTEN`/`NOTIFY` instead. The live log tail relays the
   embedded node only; remote nodes stream their lines with M4's node endpoint. Event retention (M4) is what makes a
