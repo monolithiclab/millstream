@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { formatDateTime, formatDuration, formatMoney, formatNumber, formatRelativeTime } from './format';
+import {
+  formatClock,
+  formatDateTime,
+  formatDay,
+  formatDuration,
+  formatMoney,
+  formatNumber,
+  formatPercent,
+  formatRelativeTime,
+} from './format';
 
 const nb = ' ';
 const nnb = ' ';
@@ -67,5 +76,21 @@ describe('formatDateTime', () => {
     expect(formatDateTime(date, 'en', 'UTC')).toBe('Oct 15, 2026, 6:12:00 AM');
     expect(formatDateTime(date, 'fr', 'UTC')).toBe('15 oct. 2026, 06:12:00');
     expect(formatDateTime(date, 'en')).toContain('2026');
+  });
+});
+
+describe('formatClock, formatDay and formatPercent', () => {
+  const date = new Date('2026-10-15T06:31:04Z');
+  it('formats times of day on a 24-hour clock', () => {
+    expect(formatClock(date, 'en', false, 'UTC')).toBe('06:31');
+    expect(formatClock(date, 'fr', true, 'UTC')).toBe('06:31:04');
+  });
+  it('formats short days', () => {
+    expect(formatDay(date, 'en', 'UTC')).toBe('Thu, Oct 15');
+    expect(formatDay(date, 'fr', 'UTC')).toBe('jeu. 15 oct.');
+  });
+  it('formats shares as percentages', () => {
+    expect(formatPercent(0.34, 'en')).toBe('34%');
+    expect(formatPercent(0.345, 'fr', 1)).toBe(`34,5${nb}%`);
   });
 });

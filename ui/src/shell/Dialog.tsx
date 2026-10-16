@@ -5,14 +5,17 @@ const focusable =
   'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 // A modal dialog per the interaction notes: focus moves in (to the first control, else the dialog), Tab stays
-// inside, Esc or the backdrop closes, and focus returns to where it came from.
+// inside, Esc or the backdrop closes, and focus returns to where it came from. A sheet rises from the bottom of a
+// narrow screen (the 375 px inbox) and is an ordinary dialog from 640 px.
 export function Dialog({
   labelledBy,
   onClose,
+  sheet = false,
   children,
 }: {
   labelledBy: string;
   onClose: () => void;
+  sheet?: boolean;
   children: ReactNode;
 }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -48,7 +51,9 @@ export function Dialog({
   }, []);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center p-4 pt-[12vh]">
+    <div
+      className={`fixed inset-0 z-50 flex justify-center ${sheet ? 'items-end sm:items-start sm:p-4 sm:pt-[12vh]' : 'items-start p-4 pt-[12vh]'}`}
+    >
       <div className="absolute inset-0 bg-ink/30" aria-hidden="true" data-testid="backdrop" onMouseDown={onClose} />
       <div
         ref={ref}
@@ -56,7 +61,7 @@ export function Dialog({
         aria-modal="true"
         aria-labelledby={labelledBy}
         tabIndex={-1}
-        className="relative w-full max-w-xl overflow-hidden rounded-3 border border-control-line bg-surface shadow-2"
+        className={`relative w-full max-w-xl overflow-hidden border border-control-line bg-surface shadow-2 ${sheet ? 'rounded-t-[24px] sm:rounded-3' : 'rounded-3'}`}
       >
         {children}
       </div>

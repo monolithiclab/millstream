@@ -6,8 +6,19 @@ import { useLocation } from 'react-router-dom';
 // new screen's heading so screen readers announce it.
 let loaded = false;
 
-// Every screen's frame: its h1, the document title, and focus on navigation.
-export function ScreenPage({ title, eyebrow, children }: { title: string; eyebrow?: ReactNode; children: ReactNode }) {
+// Every screen's frame: its h1, the document title, and focus on navigation. `header` sits beside the h1 (state,
+// figures, filters, actions) and wraps under it on narrow screens.
+export function ScreenPage({
+  title,
+  eyebrow,
+  header,
+  children,
+}: {
+  title: string;
+  eyebrow?: ReactNode;
+  header?: ReactNode;
+  children: ReactNode;
+}) {
   const { t } = useTranslation();
   const { pathname } = useLocation();
   const heading = useRef<HTMLHeadingElement>(null);
@@ -22,17 +33,27 @@ export function ScreenPage({ title, eyebrow, children }: { title: string; eyebro
     loaded = true;
   }, [pathname]);
 
+  const h1 = (
+    <h1
+      ref={heading}
+      id="page-title"
+      tabIndex={-1}
+      className="m-0 font-display text-title font-normal focus-visible:outline-none"
+    >
+      {title}
+    </h1>
+  );
   return (
     <section aria-labelledby="page-title" className="flex flex-col gap-2">
       {eyebrow}
-      <h1
-        ref={heading}
-        id="page-title"
-        tabIndex={-1}
-        className="m-0 font-display text-title font-normal focus-visible:outline-none"
-      >
-        {title}
-      </h1>
+      {header === undefined ? (
+        h1
+      ) : (
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2.5">
+          {h1}
+          {header}
+        </div>
+      )}
       {children}
     </section>
   );
