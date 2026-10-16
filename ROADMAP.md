@@ -96,6 +96,9 @@ earlier designs are in the git history of the spec.
   another engine signs the UI out (shared sessions in the store would survive it); `/metrics` reads every rollup
   series on each scrape, aggregated in SQL (an incremental total would serve a store holding many months of rollups
   more cheaply).
+- Remote nodes (M4 Task 4) plug into `api.Options.NodeAPI`, served under `api.NodePrefix` (`/node/v1`) before the
+  Host guard and outside `auth.token` and the session cookie: a node is not a browser, so the node API must require
+  the node token on every request itself. Until then the prefix answers `notFound` on every engine.
 - Live events: the broker wakes on this process's commits and polls every 15 seconds for other processes' writes on
   the same SQLite file; Postgres (M4) can wake it with `LISTEN`/`NOTIFY` instead. The live log tail relays the
   embedded node only; remote nodes stream their lines with M4's node endpoint. Event retention (M4) is what makes a

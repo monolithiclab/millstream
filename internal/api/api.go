@@ -43,6 +43,12 @@ const Prefix = "/api/v1"
 // MetricsPath is where the Prometheus exposition is served, beside the API.
 const MetricsPath = "/metrics"
 
+// NodePrefix is where remote nodes reach the engine (spec section 5.9, M4 Task 4). A node is not a browser: its
+// requests bypass the Host and Origin guards, which defend the UI and the API against DNS rebinding and cross-site
+// pages, and neither auth.token nor the session cookie admits them. Options.NodeAPI serves the prefix and
+// authenticates every request by the node token itself.
+const NodePrefix = "/node/v1"
+
 // UserHeader names the person deciding a review on a server without token authentication.
 const UserHeader = "X-Millstream-User"
 
@@ -101,6 +107,9 @@ type Options struct {
 	Identity Identity
 	// Deployment lists the deployment's engines for /nodes; nil lists this one alone.
 	Deployment Deployment
+	// NodeAPI serves the node protocol under NodePrefix, outside the browser guards and outside auth.token: it must
+	// require the node token on every request. Nil answers the prefix notFound (no remote nodes, M4 Task 4).
+	NodeAPI http.Handler
 	// Standby serves a standby engine's API (spec section 5.9): reads only, from a read-only store; every action
 	// answers 503 unavailable, naming the active engine in ActiveEngineHeader and ActiveAddressHeader when
 	// Deployment knows it.
@@ -323,10 +332,22 @@ func jsonContent(r *http.Request) bool {
 //
 // No response may be framed by another page (clickjacking): every one says so, and the UI's pages carry a content
 // security policy that loads nothing from elsewhere. Artifacts replace it with their own sandbox (serveArtifact).
+//
+// Remote nodes' requests under NodePrefix go to Options.NodeAPI before the Host guard (see NodePrefix).
 func Handler(s *Server, ui http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h := w.Header()
 		h.Set("X-Frame-Options", "DENY")
+		if r.URL.Path == NodePrefix || strings.HasPrefix(r.URL.Path, NodePrefix+"/") {
+			h.Set("Content-Security-Policy", apiPolicy)
+			h.Set("X-Content-Type-Options", "nosniff")
+			if s.opts.NodeAPI == nil {
+				writeErrorBody(w, http.StatusNotFound, codeNotFound, "this engine serves no remote nodes")
+				return
+			}
+			s.opts.NodeAPI.ServeHTTP(w, r)
+			return
+		}
 		next := ui
 		if strings.HasPrefix(r.URL.Path, "/api/") || prometheusRequest(r) {
 			h.Set("Content-Security-Policy", apiPolicy)

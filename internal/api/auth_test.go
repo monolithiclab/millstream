@@ -179,3 +179,31 @@ func TestStandbyAuth(t *testing.T) {
 	wantError(t, do(t, other, request{target: "/api/v1/session", header: session}), http.StatusUnauthorized,
 		codeUnauthorized)
 }
+
+// Remote nodes' prefix bypasses the browser guards and auth.token: the node API, which checks the node token itself,
+// answers a node naming any host; without one the prefix is not found, never the UI.
+func TestNodePrefixSeam(t *testing.T) {
+	f := readFixture(t)
+	nodes := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusTeapot) })
+	ui := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("ui")) })
+	with := must(New(Options{Store: f.st, Auth: &Auth{Token: "s3cret"}, NodeAPI: nodes}))
+	without := must(New(Options{Store: f.st, Auth: &Auth{Token: "s3cret"}}))
+	for _, tt := range []struct {
+		srv  *Server
+		path string
+		want int
+	}{
+		{with, NodePrefix + "/pull", http.StatusTeapot},
+		{with, NodePrefix, http.StatusTeapot},
+		{with, "/node/v10", http.StatusForbidden}, // not the prefix: the Host guard applies
+		{without, NodePrefix + "/pull", http.StatusNotFound},
+	} {
+		rec := httptest.NewRecorder()
+		r := httptest.NewRequest(http.MethodPost, tt.path, nil)
+		r.Host = "engine.internal:7443"
+		Handler(tt.srv, ui).ServeHTTP(rec, r)
+		if rec.Code != tt.want {
+			t.Errorf("%s: %d, want %d", tt.path, rec.Code, tt.want)
+		}
+	}
+}
