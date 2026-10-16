@@ -15,6 +15,10 @@ import (
 // DefaultHeartbeat is how often a quiet stream sends a comment, so proxies and clients see it alive.
 const DefaultHeartbeat = 15 * time.Second
 
+// writeTimeout bounds each write of a stream: a client that stops reading is cut off rather than holding the
+// handler (the server's read deadline does not apply to streams, which read nothing once open).
+const writeTimeout = 10 * time.Second
+
 // The server-sent events of the live streams (spec section 12.1). A stream answers 200 with text/event-stream once
 // its scope is checked; a scope that does not exist answers a JSON error before.
 const (
@@ -40,10 +44,11 @@ type Event struct {
 	Data     json.RawMessage `json:"data"`
 }
 
-// sse writes a stream's events and its heartbeats.
+// sse writes a stream's events and its heartbeats, each write under its own deadline.
 type sse struct {
-	w http.ResponseWriter
-	f http.Flusher
+	w  http.ResponseWriter
+	f  http.Flusher
+	rc *http.ResponseController
 }
 
 // startSSE answers the stream's headers.
@@ -52,13 +57,42 @@ func startSSE(w http.ResponseWriter) (*sse, error) {
 	if !ok {
 		return nil, errors.New("live: the response cannot stream")
 	}
+	rc := http.NewResponseController(w)
+	// A stream outlives the server's read timeout, meant for reading requests.
+	if err := rc.SetReadDeadline(time.Time{}); err != nil && !errors.Is(err, http.ErrNotSupported) {
+		return nil, err
+	}
 	h := w.Header()
 	h.Set("Content-Type", "text/event-stream")
 	h.Set("Cache-Control", "no-store")
 	h.Set("X-Accel-Buffering", "no") // a buffering proxy would hold the events back
+	s := &sse{w: w, f: f, rc: rc}
+	if err := s.deadline(); err != nil {
+		return nil, err
+	}
 	w.WriteHeader(http.StatusOK)
 	f.Flush()
-	return &sse{w: w, f: f}, nil
+	return s, nil
+}
+
+// deadline sets the deadline of the next write; a writer without deadlines (a test's recorder) has none.
+func (s *sse) deadline() error {
+	if err := s.rc.SetWriteDeadline(time.Now().Add(writeTimeout)); err != nil && !errors.Is(err, http.ErrNotSupported) {
+		return err
+	}
+	return nil
+}
+
+// write writes raw stream text under a fresh deadline and flushes it.
+func (s *sse) write(text string) error {
+	if err := s.deadline(); err != nil {
+		return err
+	}
+	if _, err := s.w.Write([]byte(text)); err != nil {
+		return err
+	}
+	s.f.Flush()
+	return nil
 }
 
 // event writes one event; data is JSON-encoded. An id of "" is left out.
@@ -74,19 +108,19 @@ func (s *sse) event(name, id string, data any) error {
 	b.WriteString("event: " + name + "\ndata: ")
 	b.Write(body) // JSON has no newline: one data line
 	b.WriteString("\n\n")
-	if _, err := s.w.Write([]byte(b.String())); err != nil {
-		return err
-	}
-	s.f.Flush()
-	return nil
+	return s.write(b.String())
 }
 
-func (s *sse) heartbeat() error {
-	if _, err := s.w.Write([]byte(": heartbeat\n\n")); err != nil {
-		return err
+func (s *sse) heartbeat() error { return s.write(": heartbeat\n\n") }
+
+// cursor sends an id with no data: no event fires, but the client's last event id moves to seq, so a quiet stream
+// resumes from where the log is rather than from its last event in scope, which may fall out of retention.
+func (s *sse) cursor(sub *Subscription) error {
+	seq, ok := sub.Cursor()
+	if !ok {
+		return nil // events are queued, with their own ids
 	}
-	s.f.Flush()
-	return nil
+	return s.write("id: " + strconv.FormatInt(seq, 10) + "\n\n")
 }
 
 // cursor is the client's last event id: the Last-Event-ID header, or the lastEventId query parameter, which a
@@ -98,11 +132,13 @@ func cursor(r *http.Request) string {
 	return r.URL.Query().Get("lastEventId")
 }
 
-// stream sends what c delivers with send, and a heartbeat every Heartbeat, until the request ends, done closes or
-// a write fails (the client is gone).
-func stream[T any](s *Server, r *http.Request, out *sse, done <-chan struct{}, c <-chan T, send func(T) error) {
-	beat := s.opts.Clock.NewTimer(s.opts.Heartbeat)
-	defer func() { beat.Stop() }()
+// stream sends what c delivers with send, and beat every Heartbeat, until the request ends, done closes or a write
+// fails (the client is gone).
+func stream[T any](s *Server, r *http.Request, done <-chan struct{}, c <-chan T, send func(T) error,
+	beat func() error,
+) {
+	timer := s.opts.Clock.NewTimer(s.opts.Heartbeat)
+	defer func() { timer.Stop() }()
 	for {
 		var err error
 		select {
@@ -112,9 +148,9 @@ func stream[T any](s *Server, r *http.Request, out *sse, done <-chan struct{}, c
 			return
 		case v := <-c:
 			err = send(v)
-		case <-beat.C():
-			err = out.heartbeat()
-			beat = s.opts.Clock.NewTimer(s.opts.Heartbeat)
+		case <-timer.C():
+			err = beat()
+			timer = s.opts.Clock.NewTimer(s.opts.Heartbeat)
 		}
 		if err != nil {
 			return
@@ -135,9 +171,17 @@ func (s *Server) livePipeline(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	send := func(snap PipelineSnapshot) error { return out.event(sseSnapshot, "", snap) }
+	// A snapshot the broker took before the first one may still arrive: the stream never goes back in time.
+	var last PipelineSnapshot
+	send := func(snap PipelineSnapshot) error {
+		if snap.Seq < last.Seq || (snap.Seq == last.Seq && snap.At.Before(last.At)) {
+			return nil
+		}
+		last = snap
+		return out.event(sseSnapshot, "", snap)
+	}
 	if send(first) == nil {
-		stream(s, r, out, sub.Done(), sub.C(), send)
+		stream(s, r, sub.Done(), sub.C(), send, out.heartbeat)
 	}
 	return nil
 }
@@ -215,8 +259,17 @@ func (s *Server) streamEvents(w http.ResponseWriter, r *http.Request, f Filter) 
 			return nil
 		}
 	}
+	if out.cursor(sub) != nil {
+		return nil
+	}
+	beat := func() error {
+		if err := out.heartbeat(); err != nil {
+			return err
+		}
+		return out.cursor(sub)
+	}
 	// Done closes when the subscriber is dropped for falling behind or the broker stops: the client resumes.
-	stream(s, r, out, sub.Done(), sub.C(), send)
+	stream(s, r, sub.Done(), sub.C(), send, beat)
 	return nil
 }
 
@@ -243,6 +296,6 @@ func (s *Server) liveLogs(w http.ResponseWriter, r *http.Request) error {
 			return nil
 		}
 	}
-	stream(s, r, out, sub.Done(), sub.C(), send)
+	stream(s, r, sub.Done(), sub.C(), send, out.heartbeat)
 	return nil
 }

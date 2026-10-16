@@ -210,9 +210,24 @@ func (h *logHandler) Handle(ctx context.Context, rec slog.Record) error {
 		rec.Attrs(set)
 	}
 	if l.DeliveryID != "" {
+		l.Message = capLine(l.Message)
 		h.ring.Add(l)
 	}
 	return err
+}
+
+// MaxLogLine is the most bytes of a line's message the ring keeps: an action printing a megabyte on one line costs
+// the ring, and each client, no more than this.
+const MaxLogLine = 8 << 10
+
+// truncatedMark ends a message cut at MaxLogLine.
+const truncatedMark = " …[truncated]"
+
+func capLine(msg string) string {
+	if len(msg) <= MaxLogLine {
+		return msg
+	}
+	return strings.ToValidUTF8(msg[:MaxLogLine-len(truncatedMark)], "") + truncatedMark
 }
 
 func (h *logHandler) WithAttrs(attrs []slog.Attr) slog.Handler {

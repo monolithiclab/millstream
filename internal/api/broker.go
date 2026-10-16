@@ -9,6 +9,7 @@ import (
 	"maps"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/monolithiclab/millstream/internal/insights"
@@ -90,12 +91,25 @@ type Subscription struct {
 	filter Filter
 	c      chan store.Event
 	done   chan struct{}
+	// pos is the last event the broker considered for the subscription, in its scope or not: stored after an event
+	// in scope is queued on c.
+	pos atomic.Int64
 	// Backlog is the events a resumption replayed, in order: the client's missed events up to the subscription.
 	Backlog []store.Event
 }
 
 // C delivers the events after the backlog, in order.
 func (s *Subscription) C() <-chan store.Event { return s.c }
+
+// Cursor is a position the client may resume from once it has received everything C delivered so far: every event
+// of the scope up to it was queued on C. It is false while C holds events, which carry their own ids.
+func (s *Subscription) Cursor() (int64, bool) {
+	pos := s.pos.Load() // before the length: an event in scope is queued before pos moves past it
+	if len(s.c) > 0 {
+		return 0, false
+	}
+	return pos, true
+}
 
 // Done is closed when the subscription ends: closed by Close, dropped for falling behind, or the broker stopped.
 func (s *Subscription) Done() <-chan struct{} { return s.done }
@@ -129,7 +143,7 @@ func (s *PipelineSubscription) C() <-chan PipelineSnapshot { return s.c }
 // Done is closed when the subscription ends.
 func (s *PipelineSubscription) Done() <-chan struct{} { return s.done }
 
-// Close ends the subscription.
+// Close ends the subscription; a pipeline's feed goes with its last subscriber.
 func (s *PipelineSubscription) Close() {
 	s.b.mu.Lock()
 	defer s.b.mu.Unlock()
@@ -137,6 +151,9 @@ func (s *PipelineSubscription) Close() {
 		if _, ok := f.subs[s]; ok {
 			delete(f.subs, s)
 			close(s.done)
+		}
+		if len(f.subs) == 0 {
+			delete(s.b.feeds, s.pipeline)
 		}
 	}
 }
@@ -320,15 +337,16 @@ func (b *Broker) fanoutLocked(ev store.Event) {
 		return *item
 	}
 	for s := range b.subs {
-		if !s.filter.matches(ev, itemOf) {
-			continue
+		if s.filter.matches(ev, itemOf) {
+			select {
+			case s.c <- ev:
+			default:
+				b.log.Warn("live subscriber dropped: too slow", "pipeline", s.filter.Pipeline, "seq", ev.Seq)
+				b.dropLocked(s)
+				continue
+			}
 		}
-		select {
-		case s.c <- ev:
-		default:
-			b.log.Warn("live subscriber dropped: too slow", "pipeline", s.filter.Pipeline, "seq", ev.Seq)
-			b.dropLocked(s)
-		}
+		s.pos.Store(ev.Seq)
 	}
 	if f := b.feeds[ev.Pipeline]; f != nil && len(f.subs) > 0 && f.due.IsZero() {
 		now := b.opts.Clock.Now()
@@ -356,6 +374,7 @@ func (b *Broker) Subscribe(ctx context.Context, f Filter, cursor int64, resume b
 		return nil, fmt.Errorf("live events: the broker is not running: %w", errUnavailable)
 	}
 	head := b.head
+	s.pos.Store(head)
 	b.subs[s] = struct{}{}
 	b.mu.Unlock()
 	if !resume {
@@ -397,10 +416,14 @@ func (b *Broker) backlog(ctx context.Context, f Filter, cursor, head int64) ([]s
 	return out, nil
 }
 
-// SubscribePipeline subscribes to a pipeline's step snapshots and returns the first, taken now.
+// SubscribePipeline subscribes to a pipeline's step snapshots and returns the first, taken now. A pipeline that does
+// not exist is notFound, and gets no feed.
 func (b *Broker) SubscribePipeline(ctx context.Context, pipelineName string) (*PipelineSubscription, PipelineSnapshot,
 	error,
 ) {
+	if _, err := b.st.ActiveRevision(ctx, pipelineName); err != nil {
+		return nil, PipelineSnapshot{}, err
+	}
 	s := &PipelineSubscription{b: b, pipeline: pipelineName, c: make(chan PipelineSnapshot, 1),
 		done: make(chan struct{})}
 	b.mu.Lock()
@@ -458,12 +481,14 @@ func (b *Broker) flush(ctx context.Context) {
 			continue
 		}
 		b.mu.Lock()
-		for s := range b.feeds[name].subs {
-			select { // the latest replaces a snapshot not read yet
-			case <-s.c:
-			default:
+		if f := b.feeds[name]; f != nil { // its last subscriber may have left meanwhile
+			for s := range f.subs {
+				select { // the latest replaces a snapshot not read yet
+				case <-s.c:
+				default:
+				}
+				s.c <- snap
 			}
-			s.c <- snap
 		}
 		b.mu.Unlock()
 	}

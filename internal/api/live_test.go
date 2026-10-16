@@ -5,7 +5,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -14,6 +16,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/monolithiclab/millstream/internal/store"
 )
@@ -27,6 +30,24 @@ type streamWriter struct {
 	flushed chan struct{}
 	// gate, when set, holds every Write until it is closed: a client that does not read.
 	gate chan struct{}
+	// deadlines counts the write deadlines set (http.ResponseController finds SetWriteDeadline here); unbounded is
+	// set when the read deadline is cleared.
+	deadlines int
+	unbounded bool
+}
+
+func (w *streamWriter) SetWriteDeadline(time.Time) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.deadlines++
+	return nil
+}
+
+func (w *streamWriter) SetReadDeadline(t time.Time) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.unbounded = t.IsZero()
+	return nil
 }
 
 func newStreamWriter() *streamWriter {
@@ -593,6 +614,83 @@ func TestCheckLoopback(t *testing.T) {
 	} {
 		if err := CheckLoopback(addr); (err == nil) != ok {
 			t.Errorf("CheckLoopback(%q) = %v", addr, err)
+		}
+	}
+}
+
+// A state stream sends its position with no data on subscribing and with each heartbeat, so a quiet stream's client
+// resumes from where the log is; every write has its own deadline.
+func TestLiveCursor(t *testing.T) {
+	e := newLiveEnv(t, BrokerOptions{}, scratch)
+	head := must(e.st.LastEventSeq(e.ctx))
+	s := e.open(t, "/api/v1/live/runs/r2?pipeline=listings", nil)
+	s.w.waitFor(t, func(out string) bool { return strings.Contains(out, "id: "+strconv.FormatInt(head, 10)+"\n\n") })
+	e.fire("cursor") // another run's events move the position on
+	e.b.pump(e.ctx)
+	later := must(e.st.LastEventSeq(e.ctx))
+	for e.clock.pending() == 0 { // the handler arms its timer once subscribed
+		s.w.waitFor(t, func(string) bool { return true })
+	}
+	e.clock.Advance(DefaultHeartbeat)
+	out := s.w.waitFor(t, func(out string) bool {
+		return strings.Contains(out, ": heartbeat\n\nid: "+strconv.FormatInt(later, 10)+"\n\n")
+	})
+	if evs := parseSSE(out); len(evs) != 0 {
+		t.Errorf("a quiet run's stream fired events: %+v", evs)
+	}
+	s.w.mu.Lock()
+	defer s.w.mu.Unlock()
+	if s.w.deadlines < 3 || !s.w.unbounded {
+		t.Errorf("%d write deadlines for 3 writes; read deadline cleared: %v", s.w.deadlines, s.w.unbounded)
+	}
+}
+
+// A pipeline's snapshots never go back in time, even when one taken before the first arrives after it; a feed exists
+// only for a pipeline that does, and only while someone subscribes.
+func TestLiveSnapshotOrder(t *testing.T) {
+	e := newLiveEnv(t, BrokerOptions{}, scratch)
+	s := e.open(t, "/api/v1/live/pipelines/listings", nil)
+	first := parseSSE(s.w.waitFor(t, events(1)))[0]
+	var snap PipelineSnapshot
+	must(0, json.Unmarshal([]byte(first.data), &snap))
+	push := func(p PipelineSnapshot) {
+		e.b.mu.Lock()
+		for sub := range e.b.feeds["listings"].subs {
+			sub.c <- p
+		}
+		e.b.mu.Unlock()
+	}
+	stale := snap
+	stale.Seq--
+	push(stale)
+	newer := snap
+	newer.Seq++
+	push(newer)
+	evs := parseSSE(s.w.waitFor(t, events(2)))
+	if len(evs) != 2 || !strings.Contains(evs[1].data, fmt.Sprintf(`"seq":%d`, newer.Seq)) {
+		t.Fatalf("snapshots = %+v", evs)
+	}
+	s.cancel()
+	<-s.done
+	if _, _, err := e.b.SubscribePipeline(e.ctx, "nope"); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("a pipeline that does not exist: %v", err)
+	}
+	e.b.mu.Lock()
+	defer e.b.mu.Unlock()
+	if len(e.b.feeds) != 0 {
+		t.Errorf("feeds left = %v", slices.Collect(maps.Keys(e.b.feeds)))
+	}
+}
+
+// A log line's message is cut at MaxLogLine, marked, and left valid UTF-8.
+func Test_capLine(t *testing.T) {
+	if got := capLine("short"); got != "short" {
+		t.Errorf("short = %q", got)
+	}
+	for _, long := range []string{strings.Repeat("x", MaxLogLine+1), strings.Repeat("é", MaxLogLine)} {
+		got := capLine(long)
+		if len(got) > MaxLogLine || !strings.HasSuffix(got, truncatedMark) || !utf8.ValidString(got) {
+			t.Errorf("long line cut to %d bytes, ending %q", len(got), got[len(got)-20:])
 		}
 	}
 }
