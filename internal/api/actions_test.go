@@ -148,6 +148,15 @@ func TestActions(t *testing.T) {
 	if rec.Code != http.StatusOK || rec.Body.String() != `{"count":1}`+"\n" {
 		t.Fatalf("discard: %d %s", rec.Code, rec.Body.String())
 	}
+	// A run cancelled with an open dead letter discards it: replaying all never stops on a cancelled run.
+	f.fire("cancelled")
+	f.done(f.lease("crawl"), out("x", `{"price":1}`), out("y", `{"price":2}`))
+	lc := f.lease("score") // y's score still pending: the run is running
+	must(f.st.Fail(f.ctx, store.FailRequest{LeaseRef: lc.Ref(), Attempt: lc.Attempt, Class: "nonRetryable",
+		Message: "price 1 is below the floor"}))
+	if rec := post("/api/v1/pipelines/listings/runs/"+lc.RunID+"/cancel", "", nil); rec.Code != http.StatusNoContent {
+		t.Fatalf("cancel: %d %s", rec.Code, rec.Body.String())
+	}
 	if rec := post(dl+"replay", `{"all":true}`, nil); rec.Body.String() != `{"count":0}`+"\n" {
 		t.Errorf("replay all: %s", rec.Body.String())
 	}

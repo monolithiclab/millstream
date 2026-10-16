@@ -1,6 +1,7 @@
 package sqlite
 
 import (
+	"errors"
 	"testing"
 	"time"
 
@@ -122,5 +123,26 @@ func TestOpenRevisions(t *testing.T) {
 	}
 	if got := open(); len(got) != 1 || got[0] != rev2 {
 		t.Fatalf("OpenRevisions after r1 settled = %v", got)
+	}
+}
+
+// Cancelling a run discards its open dead letters: a cancelled run is never replayed, so they would stay open for
+// ever and stop a replay of all the pipeline's dead letters.
+func TestCancelDiscardsDeadLetters(t *testing.T) {
+	e := newEnv(t, fixture)
+	e.fire("r1")
+	e.fail(e.leaseStep("crawl"), false) // its dead letter waits for alert, so the run is still running
+	if err := e.s.Cancel(e.ctx, "listings", "r1"); err != nil {
+		t.Fatal(err)
+	}
+	dls := e.deadLetters("r1")
+	if len(dls) != 1 || dls[0].State != store.DeadLetterDiscarded {
+		t.Fatalf("dead letters = %+v", dls)
+	}
+	if evs := e.eventKinds(store.EventDeadLetterDiscarded); len(evs) != 1 {
+		t.Fatalf("discard events = %d", len(evs))
+	}
+	if _, err := e.s.ReplayDeadLetters(e.ctx, "listings", "r1", nil, false); !errors.Is(err, store.ErrConflict) {
+		t.Fatalf("replaying a cancelled run: %v", err)
 	}
 }

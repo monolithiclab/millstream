@@ -245,7 +245,7 @@ export interface paths {
     };
     get?: never;
     put?: never;
-    /** Cancel a run (spec section 5.3). */
+    /** Cancel a run and discard its open dead letters (spec section 5.3). */
     post: operations['cancelRun'];
     delete?: never;
     options?: never;

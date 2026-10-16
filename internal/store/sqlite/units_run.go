@@ -11,8 +11,9 @@ import (
 )
 
 // Cancel is the Cancel unit (spec section 5.11): the run is cancelled and its pending deliveries, retries
-// included, with it. Leased deliveries finish later, and Done or Fail cancels them. Cancelling a cancelled run is
-// a no-op; a settled run cannot be cancelled.
+// included, with it. Leased deliveries finish later, and Done or Fail cancels them. Its open dead letters are
+// discarded: a cancelled run is never replayed, so they could only be left open for ever. Cancelling a cancelled
+// run is a no-op; a settled run cannot be cancelled.
 func (s *Store) Cancel(ctx context.Context, pipelineName, runID string) error {
 	return s.submit(ctx, unitCancel, func(w *wtx) error {
 		run, err := w.run(pipelineName, runID)
@@ -41,8 +42,30 @@ func (s *Store) Cancel(ctx context.Context, pipelineName, runID string) error {
 		if err := w.cancelReviews(pipelineName, runID); err != nil {
 			return err
 		}
+		if err := w.discardOpenDeadLetters(pipelineName, runID); err != nil {
+			return err
+		}
 		return w.settle(pipelineName, runID)
 	})
+}
+
+// discardOpenDeadLetters discards the open dead letters of a run being cancelled, each with its event.
+func (w *wtx) discardOpenDeadLetters(pipelineName, runID string) error {
+	letters, err := w.openDeadLetters(pipelineName, runID, nil)
+	if err != nil {
+		return err
+	}
+	for _, dl := range letters {
+		if _, err := w.exec(`UPDATE dead_letters SET state = ? WHERE pipeline = ? AND id = ?`,
+			store.DeadLetterDiscarded, pipelineName, dl.id); err != nil {
+			return err
+		}
+		if err := w.event(pipelineName, runID, store.EventDeadLetterDiscarded,
+			map[string]any{"deadLetterId": dl.id, "reason": "runCancelled"}); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // deadLetterRow is a dead letter the replay unit acts on.

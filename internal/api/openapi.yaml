@@ -197,7 +197,7 @@ paths:
     parameters: [{ $ref: "#/components/parameters/pipeline" }, { $ref: "#/components/parameters/run" }]
     post:
       operationId: cancelRun
-      summary: Cancel a run (spec section 5.3).
+      summary: Cancel a run and discard its open dead letters (spec section 5.3).
       responses:
         default: { $ref: "#/components/responses/Error" }
         "415": { $ref: "#/components/responses/Error" }
