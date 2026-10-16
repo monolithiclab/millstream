@@ -203,3 +203,15 @@ func TestReaderAndWriterLimitIsMaxLine(t *testing.T) {
 		t.Fatalf("NewWriterLimit: limit %d, want %d", w.maxLine, testLine)
 	}
 }
+
+// An attempt's cost is the sum of its cost_usd metrics, whatever else it reports.
+func TestCostUSD(t *testing.T) {
+	t.Parallel()
+	ms := []Metric{{Name: MetricCostUSD, Value: 0.25}, {Name: "tokens", Value: 100}, {Name: MetricCostUSD, Value: 0.5}}
+	if got := CostUSD(ms); got != 0.75 {
+		t.Fatalf("CostUSD = %g, want 0.75", got)
+	}
+	if got := CostUSD(nil); got != 0 {
+		t.Fatalf("CostUSD(nil) = %g", got)
+	}
+}

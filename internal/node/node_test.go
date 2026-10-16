@@ -11,6 +11,7 @@ import (
 
 	"github.com/monolithiclab/millstream/internal/pipeline"
 	"github.com/monolithiclab/millstream/internal/protocol"
+	"github.com/monolithiclab/millstream/internal/redact"
 	"github.com/monolithiclab/millstream/internal/runtime/exec"
 	"github.com/monolithiclab/millstream/internal/runtime/exec/exectest/fakeexec"
 	"github.com/monolithiclab/millstream/internal/store"
@@ -252,17 +253,27 @@ func sliceOf(v any) []any {
 	return s
 }
 
-// Metrics without a name or a finite value are dropped, and at most store.MaxAttemptMetrics are kept.
+// Metrics without a name or a finite value are dropped, and at most store.MaxAttemptMetrics are kept. Names, label
+// keys and label values are redacted of the delivery's secrets, as error messages are.
 func TestStoreMetrics(t *testing.T) {
 	t.Parallel()
+	red := redact.New(map[string]string{"apiToken": "s3cr3t-token"})
 	in := []protocol.Metric{{Name: "a", Value: 1, Labels: map[string]string{"k": "v"}}, {Name: "", Value: 1},
-		{Name: "nan", Value: math.NaN()}, {Name: "inf", Value: math.Inf(-1)}}
+		{Name: "nan", Value: math.NaN()}, {Name: "inf", Value: math.Inf(-1)},
+		{Name: "calls_s3cr3t-token", Value: 1, Labels: map[string]string{"s3cr3t-token": "url?key=s3cr3t-token"}}}
 	for range store.MaxAttemptMetrics + 5 {
 		in = append(in, protocol.Metric{Name: "many", Value: 2})
 	}
-	out := storeMetrics(slog.New(slog.DiscardHandler), in)
+	out := storeMetrics(slog.New(slog.DiscardHandler), red, in)
 	if len(out) != store.MaxAttemptMetrics || out[0].Name != "a" || out[0].Labels["k"] != "v" {
 		t.Fatalf("metrics = %d, first %+v", len(out), out[0])
+	}
+	if m := out[1]; m.Name != "calls_[redacted:apiToken]" || len(m.Labels) != 1 ||
+		m.Labels["[redacted:apiToken]"] != "url?key=[redacted:apiToken]" {
+		t.Fatalf("metric with a secret = %+v", m)
+	}
+	if in[4].Labels["s3cr3t-token"] == "" {
+		t.Fatal("the action's labels were changed in place")
 	}
 }
 

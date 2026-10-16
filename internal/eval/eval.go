@@ -256,11 +256,7 @@ func runAction(ctx context.Context, opts Options, c *Case, res *Result) (any, er
 	if err != nil {
 		return nil, err
 	}
-	for _, m := range r.Metrics {
-		if m.Name == protocol.MetricCostUSD {
-			res.CostUSD += m.Value
-		}
-	}
+	res.CostUSD = protocol.CostUSD(r.Metrics)
 	if r.Err != nil {
 		return nil, fmt.Errorf("the action failed: %s", r.Err.Message)
 	}

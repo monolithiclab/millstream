@@ -99,6 +99,17 @@ type Emit struct {
 // the sum of its cost_usd metrics, and it settles the delivery's budget reservation (spec section 5.9).
 const MetricCostUSD = "cost_usd"
 
+// CostUSD is an attempt's cost: the sum of its cost_usd metrics.
+func CostUSD(metrics []Metric) float64 {
+	var sum float64
+	for _, m := range metrics {
+		if m.Name == MetricCostUSD {
+			sum += m.Value
+		}
+	}
+	return sum
+}
+
 // Metric records a measurement for a delivery.
 type Metric struct {
 	Delivery string            `json:"delivery"`

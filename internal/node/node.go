@@ -222,7 +222,7 @@ func (l *loop) execute(ctx context.Context, log *slog.Logger, a Assignment) {
 	rctx, cancel := context.WithTimeout(l.base, reportTimeout)
 	defer cancel()
 	ref, attempt := a.Lease.Ref(), a.Lease.Attempt
-	cost, metrics := costOf(res.Metrics), storeMetrics(log, res.Metrics)
+	cost, metrics := protocol.CostUSD(res.Metrics), storeMetrics(log, a.Redact, res.Metrics)
 	var rerr error
 	switch {
 	case err != nil:
@@ -250,21 +250,11 @@ func (l *loop) execute(ctx context.Context, log *slog.Logger, a Assignment) {
 	}
 }
 
-// costOf sums the cost_usd metrics of an attempt.
-func costOf(metrics []protocol.Metric) float64 {
-	var sum float64
-	for _, m := range metrics {
-		if m.Name == protocol.MetricCostUSD {
-			sum += m.Value
-		}
-	}
-	return sum
-}
-
 // storeMetrics returns the metrics an attempt reports for the store: the action's metric messages, without the
 // ones whose value is not a finite number or that have no name, and at most store.MaxAttemptMetrics, each dropped
-// one logged.
-func storeMetrics(log *slog.Logger, ms []protocol.Metric) []store.Metric {
+// one logged. Names and labels are the action's text, so the delivery's secrets are redacted out of them, as out of
+// its error messages.
+func storeMetrics(log *slog.Logger, red *redact.Redactor, ms []protocol.Metric) []store.Metric {
 	var out []store.Metric
 	for _, m := range ms {
 		switch {
@@ -274,7 +264,14 @@ func storeMetrics(log *slog.Logger, ms []protocol.Metric) []store.Metric {
 			log.Warn("metric dropped: too many metrics for one attempt", "metric", m.Name,
 				"max", store.MaxAttemptMetrics)
 		default:
-			out = append(out, store.Metric{Name: m.Name, Value: m.Value, Labels: m.Labels})
+			var labels map[string]string
+			if m.Labels != nil {
+				labels = make(map[string]string, len(m.Labels))
+				for k, v := range m.Labels {
+					labels[red.String(k)] = red.String(v)
+				}
+			}
+			out = append(out, store.Metric{Name: red.String(m.Name), Value: m.Value, Labels: labels})
 		}
 	}
 	return out
