@@ -75,6 +75,9 @@ type Dialect struct {
 	// JSONParam returns the subquery selecting the elements of a JSON array bound as one parameter, as integers or
 	// as text.
 	JSONParam func(integers bool) string
+	// LastInsertID says the driver reports an insert's integer key (SQLite's rowid), which the writer reads instead
+	// of a RETURNING clause.
+	LastInsertID bool
 	// Prepare has the writer and the read pool prepare their statements and keep them: SQLite compiles a
 	// statement once per connection, which costs more than running most of them. Postgres's driver caches the
 	// statements it prepares itself.
@@ -106,12 +109,11 @@ type Config struct {
 	// connection); New takes them over. Nil starts with none.
 	Stmts map[string]*sql.Stmt
 	// Check, when set, tells whether the write connection still works. The writer calls it every CheckEvery while
-	// idle, and after a batch fails as a whole; once it fails, the write connection is lost for good: OnLost is
-	// called with its error, every unit queued or submitted from then on fails with store.ErrWriteLost, and the
-	// writer no longer touches the connection.
+	// idle, and after a batch fails as a whole; once it fails, the write connection is lost for good: Lost is
+	// closed, every unit queued or submitted from then on fails with store.ErrWriteLost, and the writer no longer
+	// touches the connection.
 	Check      func(ctx context.Context) error
 	CheckEvery time.Duration
-	OnLost     func(err error)
 }
 
 // Store applies the units and serves the reads. It is safe for concurrent use. The store that created it owns the
@@ -135,7 +137,9 @@ type Store struct {
 	rr     int                  // round-robin offset across pipelines
 	stmts  map[string]*sql.Stmt // prepared write statements by query; see wtx.stmt
 	unseen map[string]bool      // queries of the last batch to prepare once it ends
-	lost   error                // set once Check failed: the write connection is gone
+	lost   error                // set once Check failed: the write connection is gone; lostCh closes after
+
+	lostCh chan struct{} // closed once lost is set
 
 	// leasePassHook, set by tests before the store is used, sees each pass of a Lease unit with its candidates.
 	leasePassHook func(queues map[string][]candidate)
@@ -144,7 +148,7 @@ type Store struct {
 // New starts the writer of a store on cfg's connections.
 func New(cfg Config) *Store {
 	s := &Store{d: cfg.Dialect, cfg: cfg, opts: cfg.Options, read: cfg.Read, reqs: make(chan *request),
-		done: make(chan struct{}), revs: map[string]*revision{}, stmts: cfg.Stmts, unseen: map[string]bool{}}
+		done: make(chan struct{}), lostCh: make(chan struct{}), revs: map[string]*revision{}, stmts: cfg.Stmts, unseen: map[string]bool{}}
 	if s.stmts == nil {
 		s.stmts = map[string]*sql.Stmt{}
 	}
@@ -164,6 +168,21 @@ func (s *Store) OnCommit(fn func(lastSeq int64)) {
 		return
 	}
 	s.onCommit.Store(&fn)
+}
+
+// Lost is closed when the store loses its write connection for good (Config.Check failed), and on Postgres the
+// leadership lock with it: the engine must stop dispatching at once and step down (spec section 5.9). LostErr then
+// says why. A store without a Check never closes it.
+func (s *Store) Lost() <-chan struct{} { return s.lostCh }
+
+// LostErr returns why the write connection was lost, wrapping store.ErrWriteLost, or nil while it is not.
+func (s *Store) LostErr() error {
+	select {
+	case <-s.lostCh:
+		return s.lost // written before lostCh was closed
+	default:
+		return nil
+	}
 }
 
 // Stop stops accepting units and waits for the writer to apply the ones already queued. It returns the writer's

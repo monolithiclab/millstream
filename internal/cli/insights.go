@@ -14,7 +14,6 @@ import (
 	"github.com/monolithiclab/millstream/internal/metrics"
 	"github.com/monolithiclab/millstream/internal/pipeline"
 	"github.com/monolithiclab/millstream/internal/store"
-	"github.com/monolithiclab/millstream/internal/store/sqlite"
 )
 
 // MetricsCmd is "millstream metrics".
@@ -36,7 +35,7 @@ func (c MetricsCmd) Run(rt *Runtime) error {
 		}
 		since = time.Now().Add(-d)
 	}
-	return withStore(rt, func(st *sqlite.Store) error {
+	return withStore(rt, func(st store.Store) error {
 		rollups, err := st.MetricRollups(rt.Ctx, store.MetricFilter{Pipeline: c.Pipeline, Name: c.Name, Since: since})
 		if err != nil {
 			return err
@@ -103,7 +102,7 @@ func (c InsightsListCmd) Run(rt *Runtime) error {
 	if c.State == "all" {
 		state = ""
 	}
-	return withStore(rt, func(st *sqlite.Store) error {
+	return withStore(rt, func(st store.Store) error {
 		ins, err := st.Insights(rt.Ctx, store.InsightFilter{Pipeline: c.Pipeline, State: state})
 		if err != nil {
 			return err
@@ -151,7 +150,7 @@ func (c InsightsMuteCmd) Run(rt *Runtime) error { return c.set(rt, store.Insight
 
 // set finds the insight, in --pipeline or in the one pipeline that has it, and sets its state.
 func (c insightRef) set(rt *Runtime, state store.InsightState) error {
-	return withStore(rt, func(st *sqlite.Store) error {
+	return withStore(rt, func(st store.Store) error {
 		ins, err := st.Insights(rt.Ctx, store.InsightFilter{Pipeline: c.Pipeline})
 		if err != nil {
 			return err
@@ -187,7 +186,7 @@ type RunReportCmd struct {
 
 // Run prints the run's report (spec section 11.1).
 func (c RunReportCmd) Run(rt *Runtime) error {
-	return withStore(rt, func(st *sqlite.Store) error {
+	return withStore(rt, func(st store.Store) error {
 		now := time.Now()
 		r, err := insights.BuildReport(rt.Ctx, st, c.Pipeline, c.RunID, now)
 		if err != nil {

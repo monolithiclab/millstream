@@ -1,10 +1,12 @@
 package storetest
 
 import (
+	"errors"
 	"reflect"
 	"strings"
 	"testing"
 
+	"github.com/monolithiclab/millstream/internal/failpoint"
 	"github.com/monolithiclab/millstream/internal/ids"
 	"github.com/monolithiclab/millstream/internal/store"
 )
@@ -144,4 +146,18 @@ func TestSetPaused(t *testing.T, open Opener) {
 	wantState(t, "paused events", len(e.eventKinds(store.EventPaused)), 2)
 	wantState(t, "resumed events", len(e.eventKinds(store.EventResumed)), 2)
 	wantErr(t, e.s.SetPaused(e.ctx, "nope", "", true), store.ErrNotFound)
+}
+
+// A revision whose unit crashed before its commit gives its number back: applied again, it is numbered as it would
+// have been, on every store, so a revision's number never depends on a crash (spec section 9.1).
+func TestRevisionNumbersSurviveACrash(t *testing.T, open Opener) {
+	e := newEnv(t, open)
+	reset := failpoint.Set("applyRevision.beforeCommit")
+	_, err := e.s.ApplyRevision(e.ctx, store.PackageRecord{Hash: hashOf(fixture), Pipeline: parse(t, fixture)})
+	reset()
+	if !errors.As(err, new(failpoint.Crash)) {
+		t.Fatalf("ApplyRevision = %v, want the failpoint crash", err)
+	}
+	wantState(t, "revision applied again", e.apply(fixture), store.RevisionID(1))
+	wantState(t, "the next revision", e.apply(fixtureFixed), store.RevisionID(2))
 }

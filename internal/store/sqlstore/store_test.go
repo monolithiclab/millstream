@@ -176,24 +176,22 @@ func (brokenConn) BeginTx(context.Context, *sql.TxOptions) (*sql.Tx, error)  { r
 func (brokenConn) PrepareContext(context.Context, string) (*sql.Stmt, error) { return nil, errReset }
 
 // A batch that fails as a whole has the writer check its connection: a connection that fails the check is lost for
-// good, OnLost is told once, and every unit from then on fails with ErrWriteLost without touching the connection.
+// good, Lost is closed with the error, and every unit from then on fails with ErrWriteLost without touching the connection.
 // A connection that passes the check carries on.
 func TestWriteLost(t *testing.T) {
 	ctx := context.Background()
 	healthy := true
-	var lost []error
 	s := New(Config{Write: brokenConn{}, Read: NewReadDB(nil, Dialect{}, nil), Options: Options{Now: func() time.Time { return t0 }},
 		Check: func(context.Context) error {
 			if healthy {
 				return nil
 			}
 			return errReset
-		},
-		OnLost: func(err error) { lost = append(lost, err) }})
+		}})
 	defer s.Stop()
 	unit := func() error { return s.Exec(ctx, `SELECT 1`) }
 
-	if err := unit(); !errors.Is(err, errReset) || errors.Is(err, store.ErrWriteLost) {
+	if err := unit(); !errors.Is(err, errReset) || errors.Is(err, store.ErrWriteLost) || s.LostErr() != nil {
 		t.Fatalf("a failed begin with a healthy connection = %v; want the begin's error alone", err)
 	}
 	healthy = false
@@ -209,7 +207,8 @@ func TestWriteLost(t *testing.T) {
 	if err := unit(); !errors.Is(err, store.ErrWriteLost) {
 		t.Fatalf("a unit once the check passes again = %v, want ErrWriteLost", err)
 	}
-	if len(lost) != 1 || !errors.Is(lost[0], store.ErrWriteLost) || !errors.Is(lost[0], errReset) {
-		t.Fatalf("OnLost calls = %v; want one, with ErrWriteLost and the check's error", lost)
+	<-s.Lost()
+	if err := s.LostErr(); !errors.Is(err, store.ErrWriteLost) || !errors.Is(err, errReset) {
+		t.Fatalf("LostErr = %v; want ErrWriteLost and the check's error", err)
 	}
 }

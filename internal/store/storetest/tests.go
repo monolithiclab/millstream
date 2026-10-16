@@ -76,4 +76,5 @@ var Tests = append([]Test{
 	{"TestReads", TestReads},
 	{"TestAPIReads", TestAPIReads},
 	{"TestDoneFirstCommit", TestDoneFirstCommit},
+	{"TestRevisionNumbersSurviveACrash", TestRevisionNumbersSurviveACrash},
 }, e2eTests...)

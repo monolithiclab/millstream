@@ -12,7 +12,6 @@ import (
 	"github.com/monolithiclab/millstream/internal/engine"
 	"github.com/monolithiclab/millstream/internal/pipeline"
 	"github.com/monolithiclab/millstream/internal/store"
-	"github.com/monolithiclab/millstream/internal/store/sqlite"
 )
 
 // TriggerCmd is "millstream trigger".
@@ -30,7 +29,7 @@ func (c TriggerCmd) Run(rt *Runtime) error {
 	if !json.Valid([]byte(c.Payload)) {
 		return usageError("--payload: not valid JSON")
 	}
-	return withStore(rt, func(st *sqlite.Store) error {
+	return withStore(rt, func(st store.Store) error {
 		if err := checkFlagsDeclared(rt, st, c.Pipeline, c.Var); err != nil {
 			return err
 		}
@@ -84,7 +83,7 @@ type CancelCmd struct {
 
 // Run cancels the run.
 func (c CancelCmd) Run(rt *Runtime) error {
-	return withStore(rt, func(st *sqlite.Store) error {
+	return withStore(rt, func(st store.Store) error {
 		if err := st.Cancel(rt.Ctx, c.Pipeline, c.RunID); err != nil {
 			return err
 		}
@@ -133,7 +132,7 @@ func (c ReplayCmd) deadLetters(rt *Runtime) error {
 	case c.Since != "" || c.Where != "" || c.Revision != 0 || c.RequestID != "" || len(c.Var) > 0:
 		return usageError("--since, --where, --revision, --request-id and --var go with --step, not --from dlq")
 	}
-	return withStore(rt, func(st *sqlite.Store) error {
+	return withStore(rt, func(st store.Store) error {
 		n, err := st.ReplayDeadLetters(rt.Ctx, c.Pipeline, c.RunID, c.IDs, c.Migrate)
 		if err != nil {
 			return err
@@ -154,7 +153,7 @@ func (c ReplayCmd) replayStep(rt *Runtime) error {
 			return usageError("--since: " + err.Error())
 		}
 	}
-	return withStore(rt, func(st *sqlite.Store) error {
+	return withStore(rt, func(st store.Store) error {
 		if err := checkFlagsDeclared(rt, st, c.Pipeline, c.Var); err != nil {
 			return err
 		}
@@ -193,7 +192,7 @@ type DLQListCmd struct {
 
 // Run prints the dead letters as a table.
 func (c DLQListCmd) Run(rt *Runtime) error {
-	return withStore(rt, func(st *sqlite.Store) error {
+	return withStore(rt, func(st store.Store) error {
 		f := store.DeadLetterFilter{Pipeline: c.Pipeline, RunID: c.RunID}
 		if c.State != "all" {
 			f.State = store.DeadLetterState(c.State)
@@ -229,7 +228,7 @@ type DLQDiscardCmd struct {
 
 // Run discards the dead letters.
 func (c DLQDiscardCmd) Run(rt *Runtime) error {
-	return withStore(rt, func(st *sqlite.Store) error {
+	return withStore(rt, func(st store.Store) error {
 		n, err := st.DiscardDeadLetters(rt.Ctx, c.Pipeline, c.IDs)
 		if err != nil {
 			return err
@@ -258,7 +257,7 @@ type ResumeCmd struct {
 func (c ResumeCmd) Run(rt *Runtime) error { return setPaused(rt, c.Pipeline, c.Step, false) }
 
 func setPaused(rt *Runtime, pipelineName, step string, paused bool) error {
-	return withStore(rt, func(st *sqlite.Store) error {
+	return withStore(rt, func(st store.Store) error {
 		if err := st.SetPaused(rt.Ctx, pipelineName, step, paused); err != nil {
 			return err
 		}

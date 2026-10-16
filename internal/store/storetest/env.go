@@ -13,7 +13,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -380,20 +379,4 @@ func (e *env) on(t *testing.T) *env {
 	c := *e
 	c.t = t
 	return &c
-}
-
-// storedTime scans a time as a store keeps it: SQLite's text, or Postgres's timestamptz.
-type storedTime struct{ time.Time }
-
-func (s *storedTime) Scan(v any) error {
-	switch x := v.(type) {
-	case time.Time:
-		s.Time = x
-		return nil
-	case string:
-		t, err := time.Parse(time.RFC3339Nano, x)
-		s.Time = t
-		return err
-	}
-	return fmt.Errorf("scan a stored time from %T", v)
 }

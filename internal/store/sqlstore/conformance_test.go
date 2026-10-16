@@ -268,3 +268,7 @@ func TestAPIReads(t *testing.T) {
 func TestDoneFirstCommit(t *testing.T) {
 	storetest.TestDoneFirstCommit(t, memoryStore)
 }
+
+func TestRevisionNumbersSurviveACrash(t *testing.T) {
+	storetest.TestRevisionNumbersSurviveACrash(t, memoryStore)
+}

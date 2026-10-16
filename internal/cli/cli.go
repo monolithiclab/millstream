@@ -16,7 +16,7 @@ import (
 	"github.com/alecthomas/kong"
 
 	"github.com/monolithiclab/millstream/internal/runtime/exec"
-	"github.com/monolithiclab/millstream/internal/store/sqlite"
+	"github.com/monolithiclab/millstream/internal/store"
 )
 
 // Exit codes: a closed set, so deferred work always runs before the process exits.
@@ -56,7 +56,7 @@ type Runtime struct {
 	HTTPClient *http.Client
 	// Store, when set, is the state database the commands use instead of opening --db, and leave open: tests run a
 	// series of commands against one store with it.
-	Store *sqlite.Store
+	Store store.Store
 	// CurrentUser names the account running the command, for when $USER is unset; nil asks os/user.
 	CurrentUser func() (string, error)
 }

@@ -60,6 +60,10 @@ func TestLockAndEnvironmentErrors(t *testing.T) {
 		{"bad environment file for lock", env, []string{"--env-file", bad, "lock", pkg}, 1, "listen"},
 		{"bad environment file for test", env, []string{"--env-file", bad, "test", "pipeline", pkg}, 1, "listen"},
 		{"no container runtime", nil, []string{"--env-file", envFile, "lock", pkg}, 1, "needs Docker or Podman"},
+		{"--db and a store key", env, []string{"--db", unusedDB(), "--env-file", fixture("environments/sqlite.yaml"),
+			"status"}, 2, "--db: the environment file's store key names the store already"},
+		{"postgres DSN unset", env, []string{"--env-file", fixture("environments/postgres.yaml"), "status"}, 1,
+			"store.postgres.dsn: environment variable MILLSTREAM_DSN is not set"},
 		{"no package", env, []string{"lock", filepath.Join(pkg, "absent")}, 1, "load package"},
 	}
 	for _, tt := range tests {

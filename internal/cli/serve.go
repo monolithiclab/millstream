@@ -11,8 +11,9 @@ import (
 
 	"github.com/monolithiclab/millstream/internal/api"
 	"github.com/monolithiclab/millstream/internal/engine"
+	"github.com/monolithiclab/millstream/internal/pipeline"
 	"github.com/monolithiclab/millstream/internal/review"
-	"github.com/monolithiclab/millstream/internal/store/sqlite"
+	"github.com/monolithiclab/millstream/internal/store"
 	"github.com/monolithiclab/millstream/internal/ui"
 )
 
@@ -28,7 +29,7 @@ const (
 
 // apiServer serves the API and the web UI of millstream run (spec section 12), with the broker of its live streams.
 type apiServer struct {
-	st     *sqlite.Store
+	st     store.Store
 	http   *http.Server
 	broker *api.Broker
 	ln     net.Listener
@@ -37,14 +38,14 @@ type apiServer struct {
 }
 
 // server builds run's API server over the store and the engine: the broker wakes on the store's commits.
-func (c RunPackagesCmd) server(rt *Runtime, st *sqlite.Store, e *engine.Engine, notes *review.Notifier,
+func (c RunPackagesCmd) server(rt *Runtime, env *pipeline.Environment, st store.Store, e *engine.Engine, notes *review.Notifier,
 	logs *api.LogRing, embedded api.Node, log *slog.Logger,
 ) (*apiServer, error) {
 	b, err := api.NewBroker(api.BrokerOptions{Store: st, Logger: log})
 	if err != nil {
 		return nil, err
 	}
-	a, err := api.New(api.Options{Store: st, Engine: e, Artifacts: artifactStore(rt), Broker: b, Logs: logs,
+	a, err := api.New(api.Options{Store: st, Engine: e, Artifacts: artifactStore(rt, env), Broker: b, Logs: logs,
 		Nodes: []api.Node{embedded}, Version: rt.Version, User: identity(rt), Logger: log,
 		NotificationFailures: notes.Failures})
 	if err != nil {

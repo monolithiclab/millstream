@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/monolithiclab/millstream/internal/store"
+	"github.com/monolithiclab/millstream/internal/store/sqlstore"
 )
 
 // dedupePipeline is a crawl feeding a dedupe step (unique) and a filter step (gate) side by side.
@@ -149,7 +150,7 @@ func TestDedupeWindow(t *testing.T, open Opener) {
 				}
 				// The key now records the second item, seen now: the window restarts from it.
 				var firstItem string
-				var seenAt storedTime
+				var seenAt sqlstore.TimeCol
 				if err := e.s.QueryRow(e.ctx, `SELECT first_item, seen_at FROM dedupe_keys
 					WHERE pipeline = 'dd' AND step = 'unique' AND generation = 0 AND key = ?`, key).
 					Scan(&firstItem, &seenAt); err != nil {

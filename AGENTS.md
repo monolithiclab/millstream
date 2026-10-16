@@ -58,13 +58,24 @@ below) for the reasoning, and `make help` for every command.
   engine and insights tests run serially: the transpiled SQLite allocates under one process-wide lock, so parallel
   tests contend instead of overlapping. A table's subtests that take microseconds do not call `t.Parallel` either:
   pausing and resuming one costs more than running it.
+- The store tests are the conformance suite `internal/store/storetest`: exported functions taking an opener, one per
+  behaviour, run against SQLite in `internal/store/sqlstore`'s tests (one top-level wrapper each in
+  `conformance_test.go`, so test-times and coverage count them where the code lives) and against Postgres in
+  `internal/store/postgres` under the tag. A new store test goes in storetest, listed in `storetest.Tests` and
+  wrapped in sqlstore; `TestTestsListed` and `TestConformanceListed` name what is missing. A test that must reach
+  behind the units uses the store's `Exec`, `Unit` or `QueryRow`, written with `?` placeholders.
+- Postgres tests (`internal/store/postgres`, `stores`, and the crash suite's Postgres half in `internal/e2e`) run
+  under the e2e tag in Docker: `pgtest` starts one container of `pgtest.Image` (the official `postgres:17`, pinned by
+  digest) per test binary on first use, migrates a template database once and copies a new database from it for each
+  test; `TestMain` calls `pgtest.Stop`. Without Docker they skip, saying so. Run them alone with
+  `go test -tags e2e ./internal/store/postgres/...`.
 - `make test-e2e` (`go test -race -count=1 -tags e2e ./...`, and the SDK module's) runs everything, tagged and
   untagged, under the race detector, and prints the whole suite's coverage (`make test` checks the default build's
-  against `COVERAGE_MIN`): the `internal/e2e` package (crash matrix, M1 and M2 scenarios), the end-to-end CLI and
-  engine tests, the real-process twins of the in-process tests (under the tag, `fakeexec` runs the built fake
-  binary), Docker tests, and the long property runs. It is slow, is not part of `make ci`, and runs in CI as its own
-  job; run it before closing a milestone and after touching the exec runtime, the node, the CLI's run path, the
-  store's concurrency or the crash recovery.
+  against `COVERAGE_MIN`): the `internal/e2e` package (crash matrix on SQLite and Postgres, M1 and M2 scenarios), the
+  end-to-end CLI and engine tests, the real-process twins of the in-process tests (under the tag, `fakeexec` runs the
+  built fake binary), Docker and Postgres tests, and the long property runs. It is slow, is not part of `make ci`,
+  and runs in CI as its own job; run it before closing a milestone and after touching the exec runtime, the node,
+  the CLI's run path, the store's concurrency or the crash recovery.
 
 ## Web UI
 

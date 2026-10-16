@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/monolithiclab/millstream/internal/runtime/exec/exectest/fakeexec"
+	"github.com/monolithiclab/millstream/internal/store"
 	"github.com/monolithiclab/millstream/internal/store/sqlite"
 )
 
@@ -173,8 +174,8 @@ func (b *watchBuffer) Write(p []byte) (int, error) {
 type state struct {
 	t   *testing.T
 	db  string
-	pkg string // the package applied: e2e build only
-	st  *sqlite.Store
+	pkg string      // the package applied: e2e build only
+	st  store.Store // nil under the e2e tag: the commands open the copied database
 }
 
 // exec runs the CLI against the state under ctx with env as the whole environment.

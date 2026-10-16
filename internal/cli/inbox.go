@@ -10,7 +10,6 @@ import (
 
 	"github.com/monolithiclab/millstream/internal/review"
 	"github.com/monolithiclab/millstream/internal/store"
-	"github.com/monolithiclab/millstream/internal/store/sqlite"
 )
 
 // InboxCmd is "millstream inbox": the reviews and review samples of review steps (spec section 8).
@@ -76,7 +75,7 @@ func toReviewJSON(r store.Review) reviewJSON {
 
 // Run lists the open reviews, oldest first.
 func (c InboxListCmd) Run(rt *Runtime) error {
-	return withStore(rt, func(st *sqlite.Store) error {
+	return withStore(rt, func(st store.Store) error {
 		rs, err := st.Reviews(rt.Ctx, store.ReviewFilter{Pipeline: c.Pipeline, Inbox: c.Inbox})
 		if err != nil {
 			return err
@@ -130,7 +129,7 @@ type InboxShowCmd struct {
 
 // Run prints the review: where it waits, until when, its display, what may be edited and the item's payload.
 func (c InboxShowCmd) Run(rt *Runtime) error {
-	return withStore(rt, func(st *sqlite.Store) error {
+	return withStore(rt, func(st store.Store) error {
 		r, err := st.Review(rt.Ctx, c.Pipeline, c.Delivery)
 		if err != nil {
 			return err
@@ -266,7 +265,7 @@ func decide(rt *Runtime, ref deliveryRef, who reviewerFlag, req store.ReviewDeci
 	if err != nil {
 		return err
 	}
-	return withStore(rt, func(st *sqlite.Store) error {
+	return withStore(rt, func(st store.Store) error {
 		r, err := st.Review(rt.Ctx, ref.Pipeline, ref.Delivery)
 		if err != nil {
 			return err
@@ -314,7 +313,7 @@ type sampleJSON struct {
 
 // Run lists the open review samples, oldest first.
 func (c InboxSamplesListCmd) Run(rt *Runtime) error {
-	return withStore(rt, func(st *sqlite.Store) error {
+	return withStore(rt, func(st store.Store) error {
 		ss, err := st.ReviewSamples(rt.Ctx, store.SampleFilter{Pipeline: c.Pipeline, Inbox: c.Inbox})
 		if err != nil {
 			return err
@@ -358,7 +357,7 @@ func (c InboxSampleCmd) Run(rt *Runtime) error {
 	if err != nil {
 		return err
 	}
-	return withStore(rt, func(st *sqlite.Store) error {
+	return withStore(rt, func(st store.Store) error {
 		s, err := st.ReviewSample(rt.Ctx, c.Pipeline, c.Delivery)
 		if err != nil {
 			return err

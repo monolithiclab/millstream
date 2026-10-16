@@ -14,7 +14,6 @@ import (
 	"github.com/monolithiclab/millstream/internal/eval"
 	"github.com/monolithiclab/millstream/internal/pipeline"
 	"github.com/monolithiclab/millstream/internal/store"
-	"github.com/monolithiclab/millstream/internal/store/sqlite"
 )
 
 // EvalCmd is "millstream eval".
@@ -49,7 +48,11 @@ func (c EvalCmd) Run(rt *Runtime) error {
 		results[i] = eval.Run(rt.Ctx, opts, ec)
 	}
 	var previous map[string]float64
-	if rt.DBSet {
+	record, err := recordsEvals(rt)
+	if err != nil {
+		return err
+	}
+	if record {
 		if previous, err = recordEval(rt, opts, results); err != nil {
 			return err
 		}
@@ -167,10 +170,23 @@ func packageAbove(dir string) (string, error) {
 	}
 }
 
+// recordsEvals reports whether eval records its scores: when --db names the database, or the environment file's
+// store key names the store.
+func recordsEvals(rt *Runtime) (bool, error) {
+	if rt.DBSet {
+		return true, nil
+	}
+	env, err := environment(rt)
+	if err != nil {
+		return false, err
+	}
+	return env.Store.Set(), nil
+}
+
 // recordEval records the scores in the state database and returns each case's previous score.
 func recordEval(rt *Runtime, opts eval.Options, results []eval.Result) (map[string]float64, error) {
 	previous := map[string]float64{}
-	err := withStore(rt, func(st *sqlite.Store) error {
+	err := withStore(rt, func(st store.Store) error {
 		past, err := st.EvalResults(rt.Ctx, opts.Action.Name)
 		if err != nil {
 			return err

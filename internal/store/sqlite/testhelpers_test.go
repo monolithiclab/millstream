@@ -17,7 +17,23 @@ import (
 // TestMain raises the collector's target: the transpiled SQLite allocates heavily, and the tests trade memory for time.
 func TestMain(m *testing.M) {
 	debug.SetGCPercent(400)
+	warm()
 	os.Exit(m.Run())
+}
+
+// warm runs a unit or two on a Memory store, so that what the process does once (SQLite's initialisation, the
+// template's load, the units' first statements, parsing a pipeline) is not counted to its first test.
+func warm() {
+	s, err := Open(Memory, Options{})
+	if err != nil {
+		return
+	}
+	defer func() { _ = s.Close() }()
+	if p, err := pipeline.Parse([]byte(fixture)); err == nil {
+		ctx := context.Background()
+		_, _ = s.ApplyRevision(ctx, store.PackageRecord{Hash: hashOf(fixture), Pipeline: p})
+		_, _ = s.Fire(ctx, store.Firing{Pipeline: "listings", Trigger: "daily", Key: "warm", RunID: "warm"})
+	}
 }
 
 // fixture is a pipeline for the tests of opening and reusing stores.

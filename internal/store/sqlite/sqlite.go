@@ -157,12 +157,14 @@ type Store struct {
 
 var _ store.Store = (*Store)(nil)
 
-// dialect is SQLite's: question-mark placeholders, the clock as text, json_each, and statements prepared once.
+// dialect is SQLite's: question-mark placeholders, the clock as text, json_each, the rowid of an insert, and
+// statements prepared once.
 var dialect = sqlstore.Dialect{
-	Now:       `strftime('%Y-%m-%dT%H:%M:%fZ', 'now')`,
-	JSONEach:  func(expr string) string { return "json_each(" + expr + ")" },
-	JSONParam: func(bool) string { return "SELECT value FROM json_each(?)" },
-	Prepare:   true,
+	Now:          `strftime('%Y-%m-%dT%H:%M:%fZ', 'now')`,
+	JSONEach:     func(expr string) string { return "json_each(" + expr + ")" },
+	JSONParam:    func(bool) string { return "SELECT value FROM json_each(?)" },
+	LastInsertID: true,
+	Prepare:      true,
 }
 
 //go:embed migrations/*.sql

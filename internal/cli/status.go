@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/monolithiclab/millstream/internal/store"
-	"github.com/monolithiclab/millstream/internal/store/sqlite"
 )
 
 // StatusCmd is "millstream status".
@@ -24,7 +23,7 @@ type StatusCmd struct {
 // when a budget did), then the most recent runs with their state, item
 // count and open dead letters.
 func (c StatusCmd) Run(rt *Runtime) error {
-	return withStore(rt, func(st *sqlite.Store) error {
+	return withStore(rt, func(st store.Store) error {
 		pipelines, err := st.Pipelines(rt.Ctx)
 		if err != nil {
 			return err
@@ -105,7 +104,7 @@ type event struct {
 func (c TailCmd) Run(rt *Runtime) error {
 	ctx, stop := signalContext(rt.Ctx)
 	defer stop()
-	return withStore(rt, func(st *sqlite.Store) error {
+	return withStore(rt, func(st store.Store) error {
 		enc := json.NewEncoder(rt.IO.Out)
 		after := c.From
 		for {

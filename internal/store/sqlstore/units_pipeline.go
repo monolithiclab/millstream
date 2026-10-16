@@ -46,10 +46,15 @@ func (s *Store) ApplyRevision(ctx context.Context, pkg store.PackageRecord) (sto
 			name); err != nil {
 			return err
 		}
-		if err := w.queryRow(`INSERT INTO revisions (pipeline, package_hash, pipeline_json, applied_at, state)
-			VALUES (?, ?, ?, ?, 'active') RETURNING id`, name, pkg.Hash, string(data), w.ts()).Scan(&id); err != nil {
+		// Numbered after the last revision, as events are: a revision rolled back gives its number back, where a
+		// Postgres sequence would leave a gap and number the next one differently after a crash.
+		rev, err := w.insertKey(`INSERT INTO revisions (id, pipeline, package_hash, pipeline_json, applied_at, state)
+			VALUES ((SELECT COALESCE(MAX(id), 0) + 1 FROM revisions), ?, ?, ?, ?, 'active')`, "id",
+			name, pkg.Hash, string(data), w.ts())
+		if err != nil {
 			return fmt.Errorf("insert revision: %w", err)
 		}
+		id = store.RevisionID(rev)
 		if _, err := w.exec(`INSERT INTO pipelines (id, active_revision, state) VALUES (?, ?, 'active')
 			ON CONFLICT (id) DO UPDATE SET active_revision = excluded.active_revision`, name, id); err != nil {
 			return err

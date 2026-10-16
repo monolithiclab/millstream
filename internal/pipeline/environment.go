@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -48,6 +49,57 @@ type Environment struct {
 	// UIListen is ui.listen: the address millstream run serves the API and the web UI on; empty means
 	// 127.0.0.1:7070. Until token authentication (M4) it must be a loopback address.
 	UIListen string
+	// Store is the store key: the log store the commands and the engine use (spec section 14).
+	Store StoreConfig
+}
+
+// StoreConfig is the store key: SQLite at a path, or Postgres at a DSN read from a source, never written in the
+// file. The zero value, no store key, is SQLite at the --db path.
+type StoreConfig struct {
+	// SQLitePath is store.sqlite.path, relative to the environment file.
+	SQLitePath string
+	// PostgresDSN is store.postgres.dsn: where the DSN is read from.
+	PostgresDSN *SecretSource
+}
+
+// Set reports whether the store key is there.
+func (c StoreConfig) Set() bool { return c.SQLitePath != "" || c.PostgresDSN != nil }
+
+// Path is where the SQLite database lives: the store key's path, else defaultPath (the --db flag). With Postgres,
+// it is defaultPath, whose directory holds the local artifact store until the artifacts key arrives.
+func (c StoreConfig) Path(defaultPath string) string {
+	if c.SQLitePath != "" {
+		return c.SQLitePath
+	}
+	return defaultPath
+}
+
+// SecretSource is where a secret's value is read from: an environment variable ({ env: NAME }) or a file
+// ({ file: path }, relative to the environment file), such as a container secret's mount.
+type SecretSource struct {
+	Env  string
+	File string
+}
+
+// Value reads the secret: the variable, which must be set and not empty, through lookup, or the file, without its
+// trailing newline. Errors name the source, never the value.
+func (s SecretSource) Value(lookup func(string) (string, bool)) (string, error) {
+	if s.Env != "" {
+		v, ok := lookup(s.Env)
+		if !ok || v == "" {
+			return "", fmt.Errorf("environment variable %s is not set", s.Env)
+		}
+		return v, nil
+	}
+	b, err := os.ReadFile(s.File) // #nosec G304 -- the operator names the secret's file
+	if err != nil {
+		return "", fmt.Errorf("read secret file: %w", err)
+	}
+	v := strings.TrimRight(string(b), "\r\n")
+	if v == "" {
+		return "", fmt.Errorf("secret file %s is empty", s.File)
+	}
+	return v, nil
 }
 
 // Price is a model's price per million tokens, in US dollars.
@@ -57,8 +109,8 @@ type Price struct {
 }
 
 // laterEnvironmentKeys are keys of the environment file in spec section 14 that this build does not read yet.
-var laterEnvironmentKeys = []string{"environment", "store", "artifacts", "listen", "auth", "node", "secrets",
-	"retention", "improve"}
+var laterEnvironmentKeys = []string{"environment", "artifacts", "listen", "auth", "node", "secrets", "retention",
+	"improve"}
 
 // LoadEnvironment reads the environment file at path. A missing file is an empty environment when required is
 // false, an error otherwise.
@@ -74,8 +126,15 @@ func LoadEnvironment(path string, required bool) (*Environment, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
-	if env.AgentBinary != "" && !filepath.IsAbs(env.AgentBinary) {
-		env.AgentBinary = filepath.Join(filepath.Dir(path), env.AgentBinary)
+	abs := func(p *string) {
+		if *p != "" && !filepath.IsAbs(*p) {
+			*p = filepath.Join(filepath.Dir(path), *p)
+		}
+	}
+	abs(&env.AgentBinary)
+	abs(&env.Store.SQLitePath)
+	if env.Store.PostgresDSN != nil {
+		abs(&env.Store.PostgresDSN.File)
 	}
 	return env, nil
 }
@@ -100,7 +159,7 @@ func ParseEnvironment(data []byte) (*Environment, error) {
 			return nil, errAt(k, k.Value, "is not supported by this build yet")
 		}
 	}
-	if err := f.allow("registries", "runtime", "prices", "agents", "lessons", "ui"); err != nil {
+	if err := f.allow("registries", "runtime", "prices", "agents", "lessons", "ui", "store"); err != nil {
 		return nil, err
 	}
 	for _, err := range []error{
@@ -110,6 +169,7 @@ func ParseEnvironment(data []byte) (*Environment, error) {
 		readAgents(f, env),
 		readLessons(f, env),
 		readUI(f, env),
+		readStore(f, env),
 	} {
 		if err != nil {
 			return nil, err
@@ -247,3 +307,76 @@ func readUI(f *fields, env *Environment) error {
 	}
 	return nil
 }
+
+// readStore reads store: exactly one of sqlite: { path } and postgres: { dsn: <secret source> }.
+func readStore(f *fields, env *Environment) error {
+	n := f.get("store")
+	if isNull(n) {
+		return nil
+	}
+	sf, err := mapping(n, f.sub("store"))
+	if err != nil {
+		return err
+	}
+	if err := sf.allow("sqlite", "postgres"); err != nil {
+		return err
+	}
+	if len(sf.keys) != 1 {
+		return errAt(sf.node, sf.path, "want exactly one of sqlite and postgres")
+	}
+	if v := sf.get("sqlite"); v != nil {
+		lf, err := mapping(v, sf.sub("sqlite"))
+		if err != nil {
+			return err
+		}
+		if err := lf.allow("path"); err != nil {
+			return err
+		}
+		env.Store.SQLitePath, err = lf.requiredStr("path")
+		return err
+	}
+	pf, err := mapping(sf.get("postgres"), sf.sub("postgres"))
+	if err != nil {
+		return err
+	}
+	if err := pf.allow("dsn"); err != nil {
+		return err
+	}
+	dsn, err := pf.require("dsn")
+	if err != nil {
+		return err
+	}
+	src, err := secretSource(dsn, pf.sub("dsn"))
+	if err != nil {
+		return err
+	}
+	env.Store.PostgresDSN = &src
+	return nil
+}
+
+// secretSource reads a secret's source: { env: NAME } or { file: path }. A value written in the file itself is
+// refused: secrets stay out of it.
+func secretSource(n *yaml.Node, path string) (SecretSource, error) {
+	f, err := mapping(n, path)
+	if err != nil {
+		return SecretSource{}, errAt(deref(n), path, "want { env: NAME } or { file: path }: a secret is never written in "+
+			"the environment file")
+	}
+	if err := f.allow("env", "file"); err != nil {
+		return SecretSource{}, err
+	}
+	if len(f.keys) != 1 {
+		return SecretSource{}, errAt(f.node, path, "want exactly one of env and file")
+	}
+	var s SecretSource
+	if err := optional(f, "env", &s.Env, nonEmptyStr); err != nil {
+		return s, err
+	}
+	if s.Env != "" && !envName.MatchString(s.Env) {
+		return s, errAt(f.get("env"), f.sub("env"), "want an environment variable name such as MILLSTREAM_DSN")
+	}
+	return s, optional(f, "file", &s.File, nonEmptyStr)
+}
+
+// envName is an environment variable's name.
+var envName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)

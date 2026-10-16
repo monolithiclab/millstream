@@ -38,7 +38,19 @@ func TestParseEnvironmentErrors(t *testing.T) {
 	t.Parallel()
 	tests := map[string]struct{ src, want string }{
 		"unknown key":       {"registry: {}\n", "line 1: registry: unknown key"},
-		"later key":         {"store: { sqlite: {} }\n", "line 1: store: is not supported by this build yet"},
+		"later key":         {"auth: { token: { env: T } }\n", "line 1: auth: is not supported by this build yet"},
+		"store both":        {"store: { sqlite: { path: a }, postgres: { dsn: { env: D } } }\n", "store: want exactly one"},
+		"store none":        {"store: {}\n", "store: want exactly one of sqlite and postgres"},
+		"store scalar":      {"store: sqlite\n", "store: must be a mapping"},
+		"store key":         {"store: { mysql: {} }\n", "store.mysql: unknown key"},
+		"sqlite no path":    {"store: { sqlite: {} }\n", "store.sqlite.path: is required"},
+		"sqlite key":        {"store: { sqlite: { file: a } }\n", "store.sqlite.file: unknown key"},
+		"dsn missing":       {"store: { postgres: {} }\n", "store.postgres.dsn: is required"},
+		"dsn inline":        {"store: { postgres: { dsn: \"postgres://u:pw@h/db\" } }\n", "store.postgres.dsn: want { env: NAME }"},
+		"dsn both":          {"store: { postgres: { dsn: { env: D, file: f } } }\n", "store.postgres.dsn: want exactly one"},
+		"dsn bad env":       {"store: { postgres: { dsn: { env: \"my dsn\" } } }\n", "store.postgres.dsn.env: want an environment"},
+		"dsn source key":    {"store: { postgres: { dsn: { vault: x } } }\n", "store.postgres.dsn.vault: unknown key"},
+		"postgres key":      {"store: { postgres: { dsn: { env: D }, pool: 3 } }\n", "store.postgres.pool: unknown key"},
 		"not a mapping":     {"- a\n", "must be a mapping"},
 		"bad namespace":     {"registries: { Lab: ghcr.io/x }\n", "registries.Lab: a namespace is lowercase"},
 		"scheme":            {"registries: { lab: https://ghcr.io/x }\n", "registries.lab: want a repository prefix"},
@@ -76,6 +88,58 @@ func TestParseEnvironmentErrors(t *testing.T) {
 	}
 }
 
+func TestParseEnvironmentStore(t *testing.T) {
+	t.Parallel()
+	for src, want := range map[string]StoreConfig{
+		"store: { sqlite: { path: state/m.db } }\n":                  {SQLitePath: "state/m.db"},
+		"store: { postgres: { dsn: { env: MILLSTREAM_DSN } } }\n":    {PostgresDSN: &SecretSource{Env: "MILLSTREAM_DSN"}},
+		"store: { postgres: { dsn: { file: /run/secrets/dsn } } }\n": {PostgresDSN: &SecretSource{File: "/run/secrets/dsn"}},
+		"registries: {}\n": {},
+	} {
+		env, err := ParseEnvironment([]byte(src))
+		if err != nil {
+			t.Fatalf("%s: %v", src, err)
+		}
+		got := env.Store
+		if got.SQLitePath != want.SQLitePath || (got.PostgresDSN == nil) != (want.PostgresDSN == nil) ||
+			got.PostgresDSN != nil && *got.PostgresDSN != *want.PostgresDSN {
+			t.Errorf("%s: store %+v, want %+v", src, got, want)
+		}
+	}
+}
+
+func TestSecretSourceValue(t *testing.T) {
+	t.Parallel()
+	lookup := func(name string) (string, bool) {
+		v, ok := map[string]string{"SET": "postgres://x", "EMPTY": ""}[name]
+		return v, ok
+	}
+	file := filepath.Join(t.TempDir(), "dsn")
+	if err := os.WriteFile(file, []byte("postgres://from-file\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	empty := filepath.Join(t.TempDir(), "empty")
+	if err := os.WriteFile(empty, []byte("\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, tt := range []struct {
+		src  SecretSource
+		want string // "" for an error
+	}{
+		{SecretSource{Env: "SET"}, "postgres://x"},
+		{SecretSource{Env: "EMPTY"}, ""},
+		{SecretSource{Env: "UNSET"}, ""},
+		{SecretSource{File: file}, "postgres://from-file"},
+		{SecretSource{File: empty}, ""},
+		{SecretSource{File: filepath.Join(t.TempDir(), "absent")}, ""},
+	} {
+		got, err := tt.src.Value(lookup)
+		if got != tt.want || (err == nil) != (tt.want != "") {
+			t.Errorf("%+v.Value() = %q, %v; want %q", tt.src, got, err, tt.want)
+		}
+	}
+}
+
 func TestLoadEnvironment(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
@@ -100,6 +164,19 @@ func TestLoadEnvironment(t *testing.T) {
 	}
 	if env, err := LoadEnvironment(rel, true); err != nil || env.AgentBinary != filepath.Join(dir, "bin", "millstream") {
 		t.Fatalf("relative linuxBinary: %+v, %v", env, err)
+	}
+	// So are store.sqlite.path and a DSN's file.
+	for src, want := range map[string]func(*Environment) string{
+		"store: { sqlite: { path: state/m.db } }\n":             func(e *Environment) string { return e.Store.SQLitePath },
+		"store: { postgres: { dsn: { file: secrets/dsn } } }\n": func(e *Environment) string { return e.Store.PostgresDSN.File },
+	} {
+		if err := os.WriteFile(rel, []byte(src), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		env, err := LoadEnvironment(rel, true)
+		if err != nil || !filepath.IsAbs(want(env)) || !strings.HasPrefix(want(env), dir) {
+			t.Fatalf("%s: %+v, %v", src, env, err)
+		}
 	}
 }
 

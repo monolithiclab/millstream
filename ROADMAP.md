@@ -77,6 +77,14 @@ earlier designs are in the git history of the spec.
   the same SQLite file; Postgres (M4) can wake it with `LISTEN`/`NOTIFY` instead. The live log tail relays the
   embedded node only; remote nodes stream their lines with M4's node endpoint. Event retention (M4) is what makes a
   cursor too old besides the 10,000-event resume limit.
+- Postgres store (M4 Task 1): every command opening a Postgres store takes the deployment's leadership lock, so a
+  CLI command waits while an engine runs; the commands reach a served engine through its API, or open read-only,
+  with `serve` (Task 2). Session keepalives and failover orchestration (stepping down on `Lost`, the standby
+  rebuilding its state) are Task 3; until then an idle store notices a dead session by its 5-second ping.
+- Postgres store: its indexes mirror SQLite's, plus a queue index for Lease; tune them on the section 16 benchmark,
+  with a profile. The writer's statements rely on pgx's statement cache rather than preparing them as on SQLite.
+- Crash suite on Postgres: the failpoint matrices (run and commands) run on both stores; the seeded random kill
+  points, the M2 agent path and the review fixtures still run on SQLite only.
 
 ## Execution (icebox)
 

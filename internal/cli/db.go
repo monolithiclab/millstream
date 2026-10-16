@@ -1,30 +1,36 @@
 package cli
 
 import (
-	"fmt"
-	"os"
 	"path/filepath"
 
 	"github.com/monolithiclab/millstream/internal/artifacts"
-	"github.com/monolithiclab/millstream/internal/store/sqlite"
+	"github.com/monolithiclab/millstream/internal/pipeline"
+	"github.com/monolithiclab/millstream/internal/store"
+	"github.com/monolithiclab/millstream/internal/store/stores"
 )
 
-// artifactStore is the local artifact store next to the state database: <directory of --db>/artifacts.
-func artifactStore(rt *Runtime) *artifacts.Store {
-	return artifacts.New(filepath.Join(filepath.Dir(rt.DB), "artifacts"))
+// artifactStore is the local artifact store next to the state database: <directory of the database>/artifacts, the
+// store key's SQLite path or --db (with Postgres, --db's directory, until the artifacts key arrives).
+func artifactStore(rt *Runtime, env *pipeline.Environment) *artifacts.Store {
+	return artifacts.New(filepath.Join(filepath.Dir(env.Store.Path(rt.DB)), "artifacts"))
 }
 
-// openStore opens the state database named by --db, creating its directory.
-func openStore(rt *Runtime) (*sqlite.Store, error) {
-	if err := os.MkdirAll(filepath.Dir(rt.DB), 0o750); err != nil {
-		return nil, fmt.Errorf("create database directory: %w", err)
+// openStore opens the log store the environment file's store key names, else the SQLite database --db names,
+// creating its directory. --db given with a store key is a usage error: two places would name the store.
+func openStore(rt *Runtime) (store.Store, error) {
+	env, err := environment(rt)
+	if err != nil {
+		return nil, err
 	}
-	return sqlite.Open(rt.DB, sqlite.Options{})
+	if rt.DBSet && env.Store.Set() {
+		return nil, usageError("--db: the environment file's store key names the store already")
+	}
+	return stores.Open(rt.Ctx, env.Store, rt.DB, rt.Env)
 }
 
-// withStore opens the state database, runs fn and closes it, reporting the first error; with Runtime.Store set, it
-// runs fn on that store and leaves it open.
-func withStore(rt *Runtime, fn func(st *sqlite.Store) error) (err error) {
+// withStore opens the log store, runs fn and closes it, reporting the first error; with Runtime.Store set, it runs
+// fn on that store and leaves it open.
+func withStore(rt *Runtime, fn func(st store.Store) error) (err error) {
 	if rt.Store != nil {
 		return fn(rt.Store)
 	}

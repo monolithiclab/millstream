@@ -50,6 +50,7 @@ lint: lint-sdk
 .PHONY: test-e2e
 test-e2e: ## Run every test with -race, the e2e-tagged ones included, and print the full coverage (slow: CI, milestones)
 	@mkdir -p build
+	@docker version >/dev/null 2>&1 || echo "Docker is unavailable: the Postgres tests skip (internal/store/postgres/pgtest)"
 	@go test -race -count=1 -tags e2e -coverprofile=build/cover-e2e.out ./...
 	@if [ -f .covignore ]; then \
 		patterns=$$(grep -vE '^[[:space:]]*(#|$$)' .covignore || true); \
