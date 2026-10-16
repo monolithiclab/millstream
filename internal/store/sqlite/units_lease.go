@@ -213,7 +213,7 @@ func (w *wtx) dueDeliveries(ref store.StepRef, n int, runs []string, revs []stor
 		JOIN items i ON i.pipeline = d.pipeline AND i.id = d.item_id
 		WHERE d.pipeline = ? AND d.step = ? AND d.state = ? AND d.next_attempt_at <= ?
 			AND d.run_id NOT IN (SELECT value FROM json_each(?)) AND r.revision NOT IN (SELECT value FROM json_each(?))
-		ORDER BY d.rowid LIMIT ?`, ref.Pipeline, ref.Step, store.DeliveryPending, w.ts(), jsonList(runs),
+		ORDER BY d.rowid`+limitParam, ref.Pipeline, ref.Step, store.DeliveryPending, w.ts(), jsonList(runs),
 		jsonList(revs), n)
 	if err != nil {
 		return nil, err

@@ -56,7 +56,7 @@ func (w *wtx) rollup() (int, error) {
 		!errors.Is(err, sql.ErrNoRows) {
 		return 0, fmt.Errorf("read rollup cursor: %w", err)
 	}
-	rows, err := w.query(`SELECT seq, ts, pipeline, run_id, kind, data FROM events WHERE seq > ? ORDER BY seq LIMIT ?`,
+	rows, err := w.query(`SELECT seq, ts, pipeline, run_id, kind, data FROM events WHERE seq > ? ORDER BY seq`+limitParam,
 		cursor, store.RollupBatch)
 	if err != nil {
 		return 0, err

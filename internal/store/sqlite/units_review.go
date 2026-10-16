@@ -638,7 +638,7 @@ func pageQuery(base, pipelineName, inbox, step, state string, after int64, limit
 	}
 	q := base + w.String() + ` ORDER BY r.rowid`
 	if limit > 0 {
-		q += ` LIMIT ?`
+		q += limitParam
 		w.args = append(w.args, limit)
 	}
 	return q, w.args

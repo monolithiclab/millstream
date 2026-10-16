@@ -17,6 +17,11 @@ import (
 // statements: reads run prepared (readDB), writes once the writer has prepared them (wtx.stmt), and a closed Memory
 // store hands its connection, emptied, with its statements, to the next one (memoryPool).
 
+// limitParam is a bound LIMIT clause. SQLite plans a query around a LIMIT bound as a bare parameter, so binding
+// that parameter expires the statement, and every run compiles it again (sqlite3_reprepare): an expression keeps
+// the value out of the plan, and the statement prepared.
+const limitParam = ` LIMIT ?+0`
+
 // readDB is a store's read pool, running each query prepared. A Memory store's goes with its connection to the pool
 // on Close, leaving the store's readDB closed.
 type readDB struct {

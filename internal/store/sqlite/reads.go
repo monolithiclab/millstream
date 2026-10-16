@@ -111,7 +111,7 @@ func (s *Store) Runs(ctx context.Context, f store.RunFilter) ([]store.Run, error
 	}
 	q := `SELECT ` + runColumns + ` FROM runs` + w.String() + ` ORDER BY started_at DESC, rowid DESC`
 	if f.Limit > 0 {
-		q += ` LIMIT ?`
+		q += limitParam
 		w.args = append(w.args, f.Limit)
 	}
 	runs, err := scan(ctx, s.read, q, w.args, func(r *sql.Rows) (store.Run, error) { return scanRun(r) })
@@ -228,7 +228,7 @@ func (s *Store) Events(ctx context.Context, afterSeq int64, limit int) ([]store.
 		limit = 1000
 	}
 	evs, err := scan(ctx, s.read, `SELECT seq, ts, pipeline, run_id, kind, data FROM events WHERE seq > ?
-		ORDER BY seq LIMIT ?`, []any{afterSeq, limit}, scanEvent)
+		ORDER BY seq`+limitParam, []any{afterSeq, limit}, scanEvent)
 	if err != nil {
 		return nil, fmt.Errorf("events: %w", err)
 	}

@@ -3,6 +3,10 @@ package sqlite
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
+	"regexp"
+	"strings"
 	"testing"
 
 	"github.com/monolithiclab/millstream/internal/store"
@@ -51,5 +55,27 @@ func TestMemoryPool(t *testing.T) {
 	defer closeStore(third)
 	if third.write == second.write {
 		t.Fatal("a database whose schema changed went back to the pool")
+	}
+}
+
+// No query binds a bare LIMIT parameter, which would have SQLite compile its statement again at every run
+// (limitParam): the store's queries live in its non-test sources.
+func TestNoBareLimitParam(t *testing.T) {
+	files, err := filepath.Glob("*.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	bare := regexp.MustCompile(`(?i)\bLIMIT\s+\?(\s|$|` + "`" + `)`)
+	for _, f := range files {
+		if strings.HasSuffix(f, "_test.go") {
+			continue
+		}
+		src, err := os.ReadFile(f) // #nosec G304 -- the package's own sources
+		if err != nil {
+			t.Fatal(err)
+		}
+		if loc := bare.FindIndex(src); loc != nil {
+			t.Errorf("%s: a bare LIMIT ? at offset %d: use limitParam", f, loc[0])
+		}
 	}
 }
