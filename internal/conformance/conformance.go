@@ -1,7 +1,7 @@
 // Package conformance is the action protocol conformance suite (docs/protocol.md, Conformance): generic checks any
-// action must pass, whatever it computes. It drives the action's process itself, over os/exec and the raw lines of
-// its stdout, rather than through the exec runtime, which hides what it sees as violations behind a retry: the
-// suite reports each one. Every check is answered pass, fail or skip (when a check it needs failed), with a reason.
+// action must pass, whatever it computes. It drives the action's process itself, over os/exec (or an exec.Starter's
+// pipes, for in-process test actions) and the raw lines of its stdout, rather than through the exec runtime, which
+// hides what it sees as violations behind a retry: the suite reports each one. Every check is answered pass, fail or skip (when a check it needs failed), with a reason.
 //
 // The suite starts four processes: one for the handshake, an item, the silence between deliveries and shutdown; one
 // for hello and item messages carrying keys the action cannot know; and two for a malformed config, null and with
@@ -18,7 +18,6 @@ import (
 	"io"
 	"maps"
 	"os"
-	osexec "os/exec"
 	"slices"
 	"strings"
 	"sync"
@@ -65,6 +64,9 @@ type Target struct {
 	ConfigSchema json.RawMessage
 	// Timeout bounds each wait; zero is DefaultTimeout.
 	Timeout time.Duration
+	// IdleWindow is how long the suite watches the process stay silent between deliveries; zero is the shorter of
+	// Timeout and 500 ms.
+	IdleWindow time.Duration
 }
 
 // Result is one check's outcome.
@@ -76,6 +78,9 @@ type Result struct {
 func Run(ctx context.Context, t Target) []Result {
 	if t.Timeout <= 0 {
 		t.Timeout = DefaultTimeout
+	}
+	if t.IdleWindow <= 0 {
+		t.IdleWindow = min(maxIdleWindow, t.Timeout)
 	}
 	s := &suite{t: t, results: map[string]Result{}}
 	s.main(ctx)
@@ -193,7 +198,7 @@ func (s *suite) keyed(emits []protocol.Emit) {
 
 // idle watches the process between deliveries: nothing but a late metric of the delivery just answered.
 func (s *suite) idle(p *process, answered string) {
-	window := min(maxIdleWindow, s.t.Timeout)
+	window := s.t.IdleWindow
 	deadline := time.After(window)
 	for {
 		select {
@@ -301,47 +306,51 @@ func (r rawMessage) Type() string { return r.typ }
 
 // process is a running action under test.
 type process struct {
-	s        *suite
-	session  string
-	cmd      *osexec.Cmd
-	stdin    io.WriteCloser
-	workdir  string
-	lines    chan []byte // stdout lines; closed at the end of stdout
-	exited   chan struct{}
-	waitErr  error
-	stderr   tailBuffer
-	killOnce sync.Once
+	s         *suite
+	session   string
+	stdin     io.WriteCloser
+	wait      func() error
+	terminate func() // ends the action: its process group, or a Starter's action
+	workdir   string
+	lines     chan []byte // stdout lines; closed at the end of stdout
+	exited    chan struct{}
+	waitErr   error
+	stderr    tailBuffer
+	killOnce  sync.Once
 }
 
-// start spawns the action in a process group of its own, with a temporary MILLSTREAM_WORKDIR.
+// start spawns the action in a process group of its own, with a temporary MILLSTREAM_WORKDIR; a launcher that is an
+// exec.Starter (the tests' in-process actions) starts it itself.
 func (s *suite) start(ctx context.Context, session string) (*process, error) {
 	workdir, err := os.MkdirTemp("", "millstream-conformance-")
 	if err != nil {
 		return nil, fmt.Errorf("create workdir: %w", err)
 	}
-	cmd, err := s.t.Launcher.Command(s.t.Spec, workdir)
-	if err != nil {
+	p := &process{s: s, session: session, workdir: workdir, lines: make(chan []byte, 64), exited: make(chan struct{})}
+	var stdout io.Reader
+	if starter, ok := s.t.Launcher.(exec.Starter); ok {
+		proc, err := starter.Start(s.t.Spec, workdir)
+		if err != nil {
+			_ = os.RemoveAll(workdir)
+			return nil, fmt.Errorf("start the action: %w", err)
+		}
+		p.stdin, stdout, p.terminate = proc.Stdin, proc.Stdout, proc.Kill
+		stderrDone := make(chan struct{})
+		go func() { // Wait returns once stderr is drained
+			_, _ = io.Copy(&p.stderr, proc.Stderr)
+			close(stderrDone)
+		}()
+		p.wait = func() error {
+			<-stderrDone
+			return proc.Wait()
+		}
+	} else if stdout, err = p.startCommand(); err != nil {
 		_ = os.RemoveAll(workdir)
 		return nil, err
 	}
-	exec.SetProcessGroup(cmd)
-	p := &process{s: s, session: session, cmd: cmd, workdir: workdir, lines: make(chan []byte, 64),
-		exited: make(chan struct{})}
-	cmd.Stderr = &p.stderr
-	stdout, err := cmd.StdoutPipe()
-	if err == nil {
-		p.stdin, err = cmd.StdinPipe()
-	}
-	if err == nil {
-		err = cmd.Start()
-	}
-	if err != nil {
-		_ = os.RemoveAll(workdir)
-		return nil, fmt.Errorf("start the action: %w", err)
-	}
 	go func() {
 		p.read(stdout) // Wait closes stdout: only once it is drained, so no line is lost
-		p.waitErr = cmd.Wait()
+		p.waitErr = p.wait()
 		close(p.exited)
 	}()
 	go func() {
@@ -352,6 +361,33 @@ func (s *suite) start(ctx context.Context, session string) (*process, error) {
 		}
 	}()
 	return p, nil
+}
+
+// startCommand starts the launcher's command for the action, in a process group of its own, and returns its stdout.
+func (p *process) startCommand() (io.Reader, error) {
+	t := p.s.t
+	cmd, err := t.Launcher.Command(t.Spec, p.workdir)
+	if err != nil {
+		return nil, err
+	}
+	exec.SetProcessGroup(cmd)
+	cmd.Stderr = &p.stderr
+	stdout, err := cmd.StdoutPipe()
+	if err == nil {
+		p.stdin, err = cmd.StdinPipe()
+	}
+	if err == nil {
+		err = cmd.Start()
+	}
+	if err != nil {
+		return nil, fmt.Errorf("start the action: %w", err)
+	}
+	p.wait = cmd.Wait
+	p.terminate = func() {
+		exec.KillProcessGroup(cmd.Process)
+		t.Launcher.Kill(t.Spec, p.workdir)
+	}
+	return stdout, nil
 }
 
 // read splits stdout into lines, recording a line over the limit as a violation.
@@ -563,8 +599,7 @@ func (p *process) kill() {
 		select {
 		case <-p.exited:
 		default:
-			exec.KillProcessGroup(p.cmd.Process)
-			p.s.t.Launcher.Kill(p.s.t.Spec, p.workdir)
+			p.terminate()
 			<-p.exited
 		}
 		_ = os.RemoveAll(p.workdir)

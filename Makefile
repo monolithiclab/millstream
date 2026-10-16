@@ -2,8 +2,8 @@ include common.mk
 include common.go.mk
 
 VULNCHECK_PACKAGES = ./cmd/... ./internal/...
-# The default build's coverage: the code only real processes reach (scaffold, conformance) is covered by test-e2e.
-COVERAGE_MIN = 87
+# The default build's coverage (make test enforces it); test-e2e prints the whole suite's, real processes included.
+COVERAGE_MIN = 89
 
 # make test runs the default build without -race, to stay within its budget (scripts/test-times): the race detector
 # runs in test-e2e. golangci-lint sees one build: the e2e-tagged one holds every file.
