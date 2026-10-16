@@ -146,7 +146,7 @@ type Store struct {
 
 	// Writer goroutine only.
 	revs   map[string]*revision // revisions by package hash; see revision
-	rr     int                  // round-robin offset across pipelines
+	rrLast string               // the pipeline the round-robin served last
 	stmts  map[string]*sql.Stmt // prepared write statements by query; see wtx.stmt
 	unseen map[string]bool      // queries of the last batch to prepare once it ends
 	lost   error                // set once Check failed: the write connection is gone; lostCh closes after

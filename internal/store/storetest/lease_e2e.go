@@ -13,22 +13,43 @@ import (
 // Lease variants the e2e build adds: the default build covers the same paths through the other lease tests.
 
 // The dispatcher serves pipelines with ready deliveries in round-robin (spec section 4.10): a pipeline with a
-// backlog never starves another, and the first pipeline served rotates.
+// backlog never starves another, each call carries on after the pipeline served last, and a pipeline the engine
+// holds back (at its limit) drops out of the rotation without giving the next one an extra turn.
 func TestLeaseRoundRobin(t *testing.T, open Opener) {
-	e := newEnv(t, open, fixture, strings.Replace(fixture, "pipeline: listings", "pipeline: other", 1))
-	for _, id := range []string{"a1", "a2", "a3", "a4"} {
-		e.firePipeline("listings", "daily", id)
+	third := strings.Replace(fixture, "pipeline: listings", "pipeline: third", 1)
+	e := newEnv(t, open, fixture, strings.Replace(fixture, "pipeline: listings", "pipeline: other", 1), third)
+	for _, name := range []string{"listings", "other", "third"} {
+		for _, id := range []string{"a1", "a2", "a3", "a4"} {
+			e.firePipeline(name, "daily", id)
+		}
 	}
-	e.firePipeline("other", "daily", "b1")
 	ls := e.lease(2)
-	if len(ls) != 2 || ls[0].Pipeline == ls[1].Pipeline {
-		t.Fatalf("leases = %+v; want one per pipeline", ls)
+	if len(ls) != 2 || ls[0].Pipeline != "listings" || ls[1].Pipeline != "other" {
+		t.Fatalf("leases = %+v; want listings then other", ls)
 	}
-	first := ls[0].Pipeline
-	e.firePipeline("other", "daily", "b2")
-	ls = e.lease(1)
-	if len(ls) != 1 || ls[0].Pipeline == first {
-		t.Fatalf("next lease from %s; want the rotation to start with the other pipeline", ls[0].Pipeline)
+	order := func(req store.LeaseRequest) string {
+		t.Helper()
+		req.Owner, req.Max, req.TTL = "node1", 1, time.Minute
+		got, err := e.s.Lease(e.ctx, req)
+		if err != nil || len(got) != 1 {
+			t.Fatalf("Lease = %+v, %v", got, err)
+		}
+		return got[0].Pipeline
+	}
+	var served []string
+	for range 3 {
+		served = append(served, order(store.LeaseRequest{}))
+	}
+	if strings.Join(served, " ") != "third listings other" {
+		t.Fatalf("served %v; want the rotation to carry on after other", served)
+	}
+	// listings is at its limit: other and third alternate, neither taking its turn.
+	served = nil
+	for range 4 {
+		served = append(served, order(store.LeaseRequest{PipelineSlots: map[string]int{"listings": 0}}))
+	}
+	if strings.Join(served, " ") != "third other third other" {
+		t.Fatalf("served %v with listings held back; want other and third in turn", served)
 	}
 }
 
