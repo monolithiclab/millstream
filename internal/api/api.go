@@ -283,22 +283,21 @@ func jsonContent(r *http.Request) bool {
 	return err == nil && mt == "application/json"
 }
 
-// Handler serves the API under /api/, the Prometheus exposition on /metrics, and everything else with ui, the web
+// Handler serves the API under /api/, the Prometheus exposition on /metrics (unless the request accepts HTML: a
+// browser loading the UI's metrics explorer), and everything else with ui, the web
 // UI's single-page app, to requests naming a loopback host, or with Auth one of its hosts: a page whose name resolves
 // to this machine (DNS rebinding) must not reach the API as if it were the UI.
 //
 // No response may be framed by another page (clickjacking): every one says so, and the UI's pages carry a content
 // security policy that loads nothing from elsewhere. Artifacts replace it with their own sandbox (serveArtifact).
 func Handler(s *Server, ui http.Handler) http.Handler {
-	mux := http.NewServeMux()
-	mux.Handle("/api/", s)
-	mux.Handle(MetricsPath, s)
-	mux.Handle("/", ui)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h := w.Header()
 		h.Set("X-Frame-Options", "DENY")
-		if strings.HasPrefix(r.URL.Path, "/api/") || r.URL.Path == MetricsPath {
+		next := ui
+		if strings.HasPrefix(r.URL.Path, "/api/") || prometheusRequest(r) {
 			h.Set("Content-Security-Policy", apiPolicy)
+			next = s
 		} else {
 			h.Set("Content-Security-Policy", uiPolicy)
 		}
@@ -306,8 +305,14 @@ func Handler(s *Server, ui http.Handler) http.Handler {
 			writeErrorBody(w, http.StatusForbidden, codeForbidden, "host "+r.Host+" is not one this server answers")
 			return
 		}
-		mux.ServeHTTP(w, r)
+		next.ServeHTTP(w, r)
 	})
+}
+
+// prometheusRequest reports whether a request is a scrape of /metrics: one that does not accept HTML, since /metrics
+// is also the UI's metrics explorer, which a browser loads as a page.
+func prometheusRequest(r *http.Request) bool {
+	return r.URL.Path == MetricsPath && !strings.Contains(r.Header.Get("Accept"), "text/html")
 }
 
 // Content security policies. The UI's scripts, styles, fonts and API calls are all its own; its styles include

@@ -14,8 +14,15 @@ import (
 // /metrics serves the rollups and what the engine measures itself in the Prometheus text format.
 func TestPrometheusEndpoint(t *testing.T) {
 	f := readFixture(t)
-	rec := httptest.NewRecorder()
-	f.srv.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, MetricsPath, nil))
+	ui := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("ui")) })
+	get := func(accept string) *httptest.ResponseRecorder {
+		rec := httptest.NewRecorder()
+		r := httptest.NewRequest(http.MethodGet, MetricsPath, nil)
+		r.Host, r.Header["Accept"] = "127.0.0.1:7070", []string{accept}
+		Handler(f.srv, ui).ServeHTTP(rec, r)
+		return rec
+	}
+	rec := get("text/plain;version=0.0.4;q=0.5,*/*;q=0.1") // Prometheus's
 	body := rec.Body.String()
 	if rec.Code != http.StatusOK || rec.Header().Get("Content-Type") != prometheusType {
 		t.Fatalf("GET /metrics: %d %s\n%s", rec.Code, rec.Header().Get("Content-Type"), body)
@@ -33,6 +40,10 @@ func TestPrometheusEndpoint(t *testing.T) {
 	}
 	if strings.Contains(body, "millstream_writer_batch_size_count 0\n") {
 		t.Error("no writer batch counted")
+	}
+	// /metrics is also the UI's metrics explorer: a browser loading it as a page gets the UI.
+	if got := get("text/html,application/xhtml+xml,*/*;q=0.8").Body.String(); got != "ui" {
+		t.Errorf("a page load of /metrics: %.40q", got)
 	}
 }
 
