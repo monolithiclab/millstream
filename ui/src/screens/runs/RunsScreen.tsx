@@ -63,10 +63,13 @@ export function RunsScreen() {
   const fireable = triggers.status === 'ready' ? triggers.data.triggers.filter((tr) => tr.kind !== 'webhook') : [];
   const [firing, setFiring] = useState(false);
   const { notice, setNotice, dismiss } = useNotice();
+  // Each click is its own request id: a retry of the same click (Retry, or a resent request) returns the same run
+  // instead of firing twice; a new click fires again.
   const fire = (trigger: string) => {
+    const requestId = crypto.randomUUID();
     setFiring(true);
     void runAction(setNotice, {
-      call: async () => t('runs.fired', { name: name(await api.triggerRun(pipeline, { trigger })) }),
+      call: async () => t('runs.fired', { name: name(await api.triggerRun(pipeline, { trigger, requestId })) }),
       failed: (message) => t('runs.fireFailed', { trigger, message }),
       settled: () => {
         setFiring(false);

@@ -1,4 +1,4 @@
-import { act, screen, within } from '@testing-library/react';
+import { act, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '../../api/api';
 import { DEMO_NOW, demoFixtures } from '../../api/demo';
@@ -75,9 +75,14 @@ describe('RunsScreen', () => {
     const { user } = renderApp({ route: '/p/listings-daily/runs', api });
     await screen.findByRole('list', { name: 'Runs, newest first' });
     await user.click(screen.getByRole('button', { name: 'Run daily now' }));
-    expect(api.calls).toEqual([{ method: 'triggerRun', args: ['listings-daily', { trigger: 'daily' }] }]);
     expect(await screen.findByText(/^Run \d\d:\d\d · .+ started$/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Run daily now' })).toBeEnabled();
+    await user.click(screen.getByRole('button', { name: 'Run daily now' }));
+    // Each click sends a request id of its own, so the server never mistakes a second click for a retry.
+    const requests = api.calls.map((c) => c.args[1] as { trigger: string; requestId: string });
+    expect(requests.map((r) => r.trigger)).toEqual(['daily', 'daily']);
+    expect(requests[0]?.requestId).toMatch(/^[0-9a-f-]{36}$/);
+    expect(requests[1]?.requestId).not.toBe(requests[0]?.requestId);
   });
 
   it('offers no button for a webhook, and says when a firing fails', async () => {
@@ -88,11 +93,20 @@ describe('RunsScreen', () => {
         ...pipeline,
         triggers: [...pipeline.triggers, { name: 'hook', kind: 'webhook', stream: 'trigger.hook' }],
       });
-    api.triggerRun = () => Promise.reject(new ApiError(503, 'unavailable', 'no engine'));
+    const ids: (string | undefined)[] = [];
+    api.triggerRun = (_p, request) => {
+      ids.push(request?.requestId);
+      return Promise.reject(new ApiError(503, 'unavailable', 'no engine'));
+    };
     const { user } = renderApp({ route: '/p/listings-daily/runs', api });
     await user.click(await screen.findByRole('button', { name: 'Run daily now' }));
     expect(screen.queryByRole('button', { name: 'Run hook now' })).not.toBeInTheDocument();
-    expect(await screen.findByRole('alert')).toHaveTextContent('daily could not be fired: no engine');
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('daily could not be fired: no engine');
+    // Retry resends the same click: the same request id.
+    await user.click(within(alert).getByRole('button', { name: 'Retry' }));
+    await waitFor(() => expect(ids).toHaveLength(2));
+    expect(ids[1]).toBe(ids[0]);
   });
 
   it('retries after an error', async () => {

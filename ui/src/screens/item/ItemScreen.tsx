@@ -13,6 +13,7 @@ import { ErrorState, Loading } from '../../common/States';
 import { useResource } from '../../common/useResource';
 import { StatusBadge, type StatusKey } from '../../common/Status';
 import { byteSize, formatBytes, useFormat } from '../../common/useFormat';
+import { useCoalescedRefresh } from '../../live/useCoalescedRefresh';
 import { parseData, useLiveStream } from '../../live/useLiveStream';
 import { pipelinePath, runPath } from '../../routes';
 import { ScreenPage } from '../ScreenPage';
@@ -25,6 +26,9 @@ const MAX_EVENTS = 200;
 const JOURNEY_DEPTH = 10;
 
 type Tab = 'journey' | 'payload' | 'lineage' | 'logs' | 'events';
+
+// The delivery states an item is still moving in.
+const live = new Set<Delivery['state']>(['pending', 'leased', 'awaitingReview']);
 
 // The words an item is called by: its title or name when the payload has one, else its key, else its id.
 export function itemTitle(item: Item): string {
@@ -126,8 +130,8 @@ function Meta({ label, children }: { label: string; children: ReactNode }) {
 
 // Item detail (canvas "Item" and its 375 px French board): what the item is and where it stands, its journey with
 // every attempt and the agent's transcript, its payload, artifacts and lineage, its live logs and raw events. Live:
-// each state event of the item's stream reloads it. Below the md breakpoint the payload and the lineage move into
-// tabs, as the phone board shows.
+// the item's state events reload it, coalesced, until it settles. Below the md breakpoint the payload and the
+// lineage move into tabs, as the phone board shows.
 export function ItemScreen() {
   const { pipeline = '', item: itemId = '' } = useParams();
   const { t } = useTranslation();
@@ -154,7 +158,11 @@ export function ItemScreen() {
     data.refresh();
     upstream.refresh();
   };
-  useLiveStream(liveUrls.item(pipeline, itemId), {
+  // State events come in bursts: one reload per LIVE_REFRESH_MS. Once nothing of the item is waiting, running or
+  // in review, it has settled: the stream closes (the logs tab keeps its own).
+  const scheduleRefresh = useCoalescedRefresh(data.refresh);
+  const settled = ready !== null && ready.deliveries.length > 0 && !ready.deliveries.some((d) => live.has(d.state));
+  useLiveStream(settled ? null : liveUrls.item(pipeline, itemId), {
     events: ['state'],
     onMessage: (message) => {
       const event = message.type === 'state' ? parseData<Event>(message) : null;
@@ -166,7 +174,7 @@ export function ItemScreen() {
           MAX_EVENTS,
         ),
       }));
-      data.refresh();
+      scheduleRefresh();
     },
     onReconnect: refresh,
     onSnapshotRequired: refresh,
