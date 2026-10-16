@@ -347,6 +347,39 @@ func TestRunRedactsSecrets(t *testing.T) {
 	}
 }
 
+// TestRunRedactsSecretsFromRecordings: a recording, committed with the tests, stores the response with the secret
+// values redacted, in its text, structured output and transcript (the prompt turn included); its key is still the
+// hash of the request as sent, so a replay of the same request finds it.
+func TestRunRedactsSecretsFromRecordings(t *testing.T) {
+	t.Parallel()
+	secret := `sk-"quoted"\value<é>`
+	h := &fakeHarness{fn: func(req Request) (Response, error) {
+		data, _ := json.Marshal(map[string]string{"echo": req.Prompt})
+		structured, _ := json.Marshal(map[string]any{"score": 1, "note": secret})
+		return Response{Text: "```json\n{\"score\": 1}\n```\n" + secret, Structured: structured, Transcript: []Turn{
+			{Role: "user", Text: req.Prompt}, {Role: "assistant", Text: "token " + secret, Data: data},
+		}}, nil
+	}}
+	dir := t.TempDir()
+	s := newSession(t, memPackage(t, testManifest, "Use {{ .Config.token }} on {{ .Payload.url }}."), h)
+	s.env["MILLSTREAM_SECRET_API_TOKEN"] = secret
+	s.env[EnvHarnessMode], s.env[EnvHarnessDir] = ModeRecord, dir
+	s.config = map[string]any{"token": secret}
+	s.run(`{"url": "u"}`)
+	if len(h.reqs) != 1 {
+		t.Fatalf("harness called %d times", len(h.reqs))
+	}
+	key := Key(pipeline.HarnessAPI, h.reqs[0])
+	raw, err := os.ReadFile(filepath.Join(dir, key+".json")) // #nosec G304 -- the test's own directory
+	if err != nil {
+		t.Fatalf("no recording under the unredacted request's key: %v", err)
+	}
+	if strings.Contains(string(raw), "quoted") || strings.Contains(string(raw), "value") ||
+		!strings.Contains(string(raw), "[redacted:apiToken]") {
+		t.Fatalf("recording leaks the secret:\n%s", raw)
+	}
+}
+
 // TestCost: the harness's own cost wins over the price table; without either, the cost is 0 and a warning says why.
 func TestCost(t *testing.T) {
 	t.Parallel()

@@ -5,8 +5,11 @@
 package redact
 
 import (
+	"bytes"
 	"cmp"
 	"context"
+	"encoding/json"
+	"fmt"
 	"log/slog"
 	"maps"
 	"slices"
@@ -46,6 +49,41 @@ func (r *Redactor) String(s string) string {
 		return s
 	}
 	return r.r.Replace(s)
+}
+
+// JSON returns the JSON document data with every string in it, object keys included, redacted: matching decoded
+// strings catches a value whatever escaping the document used. Numbers keep their text; objects come back with
+// sorted keys. A nil redactor returns data itself.
+func (r *Redactor) JSON(data []byte) ([]byte, error) {
+	if r == nil {
+		return data, nil
+	}
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.UseNumber()
+	var doc any
+	if err := dec.Decode(&doc); err != nil {
+		return nil, fmt.Errorf("redact: %w", err)
+	}
+	return json.Marshal(r.value(doc))
+}
+
+// value redacts every string of a decoded JSON value, object keys included.
+func (r *Redactor) value(v any) any {
+	switch v := v.(type) {
+	case string:
+		return r.String(v)
+	case []any:
+		for i, e := range v {
+			v[i] = r.value(e)
+		}
+	case map[string]any:
+		out := make(map[string]any, len(v))
+		for k, e := range v {
+			out[r.String(k)] = r.value(e)
+		}
+		return out
+	}
+	return v
 }
 
 // Logger returns l with its records redacted: the message and every string value, in groups too. A nil redactor

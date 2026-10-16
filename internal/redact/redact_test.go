@@ -24,6 +24,23 @@ func TestString(t *testing.T) {
 	}
 }
 
+// JSON redacts decoded strings, keys included, whatever escaping the document used, and keeps numbers as written.
+func TestJSON(t *testing.T) {
+	t.Parallel()
+	r := New(map[string]string{"token": "s<3>cr3t"})
+	got, err := r.JSON([]byte(`{"a": ["x s\u003c3\u003ecr3t", 1.50], "s<3>cr3t": {"n": 7}}`))
+	if want := `{"[redacted:token]":{"n":7},"a":["x [redacted:token]",1.50]}`; err != nil || string(got) != want {
+		t.Fatalf("JSON = %s, %v; want %s", got, err, want)
+	}
+	if _, err := r.JSON([]byte(`{`)); err == nil {
+		t.Fatal("JSON of a broken document succeeded")
+	}
+	var none *Redactor
+	if got, err := none.JSON([]byte(`{"b":1, "a":2}`)); err != nil || string(got) != `{"b":1, "a":2}` {
+		t.Fatalf("nil JSON = %s, %v", got, err)
+	}
+}
+
 func TestNilRedactor(t *testing.T) {
 	t.Parallel()
 	var r *Redactor

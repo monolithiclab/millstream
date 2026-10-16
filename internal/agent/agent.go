@@ -193,7 +193,8 @@ func (a *adapter) setup(secrets map[string]string) error {
 	if newHarness == nil {
 		newHarness = a.defaultHarness
 	}
-	a.harness = Recorder{Harness: newHarness(act.Agent, apiKey), Name: act.Agent.Harness, Mode: mode, Dir: dir}
+	a.harness = Recorder{Harness: newHarness(act.Agent, apiKey), Name: act.Agent.Harness, Mode: mode, Dir: dir,
+		Redact: a.redact}
 	return nil
 }
 
@@ -360,44 +361,22 @@ func (a *adapter) metrics(w *protocol.Writer, delivery string, t Transcript, sch
 }
 
 // writeTranscript writes t as transcript.json in the working directory, every string in it, the harness's own
-// records included, with its secret values redacted. Redacting decoded strings catches a value whatever escaping
-// the harness used in its JSON.
+// records included, with its secret values redacted (redact.Redactor.JSON).
 func (a *adapter) writeTranscript(t Transcript) error {
 	if a.workdir == "" {
 		return errors.New("MILLSTREAM_WORKDIR is not set")
 	}
 	raw, err := json.Marshal(t)
+	if err == nil {
+		raw, err = a.redact.JSON(raw)
+	}
 	if err != nil {
 		return err
 	}
-	dec := json.NewDecoder(bytes.NewReader(raw))
-	dec.UseNumber() // numbers come back as written
-	var doc any
-	if err := dec.Decode(&doc); err != nil {
+	var data bytes.Buffer
+	if err := json.Indent(&data, raw, "", "  "); err != nil {
 		return err
 	}
-	data, err := json.MarshalIndent(a.redactJSON(doc), "", "  ")
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(filepath.Join(a.workdir, TranscriptFile), append(data, '\n'), 0o600)
-}
-
-// redactJSON redacts every string of a decoded JSON value, object keys included.
-func (a *adapter) redactJSON(v any) any {
-	switch v := v.(type) {
-	case string:
-		return a.redact.String(v)
-	case []any:
-		for i, e := range v {
-			v[i] = a.redactJSON(e)
-		}
-	case map[string]any:
-		out := make(map[string]any, len(v))
-		for k, e := range v {
-			out[a.redact.String(k)] = a.redactJSON(e)
-		}
-		return out
-	}
-	return v
+	data.WriteByte('\n')
+	return os.WriteFile(filepath.Join(a.workdir, TranscriptFile), data.Bytes(), 0o600)
 }

@@ -133,14 +133,15 @@ func TestRunAgentRecordReplay(t *testing.T) {
 
 // TestJudge: the judge asks the api harness for a verdict on the output against the rubric; recorded once against a
 // fake model, it replays from the recording. The case's score is the mean of its assertions' share and the judge's
-// score, and the judge's score never fails a case. A verdict out of range is an error.
+// score, and the judge's score never fails a case. A verdict out of range is an error. The recording holds the
+// pipeline's secrets redacted, here one in the input the judge's prompt carries.
 func TestJudge(t *testing.T) {
 	t.Parallel()
 	srv, calls := fakeModel(t, "Fine.\n```json\n{\"score\": 0.5, \"reason\": \"The city is right.\"}\n```")
 	// The keyed mode's output is deterministic, unlike echo's (a pid): the judge's prompt, and its recording key,
 	// holds the output.
 	dir := writePackage(t, srv.URL, map[string]string{"actions/echo/evals/judged.yaml": `
-input: { city: Lyon }
+input: { city: Lyon, note: sk-test }
 config: { mode: keyed, n: 1 }
 assert: [output == 0]
 judge: { rubric: "The output is zero.", model: claude-haiku-5, baseUrl: "` + srv.URL + `", apiKeySecret: apiToken }
@@ -158,7 +159,8 @@ judge: { rubric: "The output is zero.", model: claude-haiku-5, baseUrl: "` + srv
 		t.Fatalf("recordings = %v", files)
 	}
 	raw, _ := os.ReadFile(filepath.Join(recordings, files[0].Name())) // #nosec G304 -- test file
-	if !strings.Contains(string(raw), "The output is zero.") || !strings.Contains(string(raw), `\"city\": \"Lyon\"`) {
+	if !strings.Contains(string(raw), "The output is zero.") || !strings.Contains(string(raw), `\"city\": \"Lyon\"`) ||
+		strings.Contains(string(raw), "sk-test") || !strings.Contains(string(raw), "[redacted:apiToken]") {
 		t.Fatalf("recording = %s", raw)
 	}
 	opts.Client = nil // the model is gone: a replay never calls it

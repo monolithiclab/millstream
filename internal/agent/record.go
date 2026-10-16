@@ -10,6 +10,8 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+
+	"github.com/monolithiclab/millstream/internal/redact"
 )
 
 // Harness modes (MILLSTREAM_HARNESS_MODE): live calls the harness; record calls it and stores each response;
@@ -56,6 +58,9 @@ type Recorder struct {
 	// Mode is ModeLive, ModeRecord or ModeReplay; Dir holds the recordings, one <key>.json file each.
 	Mode string
 	Dir  string
+	// Redact redacts the secret values out of what a recording stores, the prompt turn and the model's output
+	// included: recordings are committed. The key is still the hash of the request as sent.
+	Redact *redact.Redactor
 }
 
 // Recording is a stored harness response with what it was recorded for.
@@ -109,9 +114,40 @@ func (r Recorder) replay(req Request) (Response, error) {
 	return rec.Response, nil
 }
 
+// redactResponse returns resp with the secret values redacted out of its text, its structured output and every
+// turn of its transcript.
+func redactResponse(red *redact.Redactor, resp Response) (Response, error) {
+	if red == nil {
+		return resp, nil
+	}
+	var err error
+	resp.Text = red.String(resp.Text)
+	if len(resp.Structured) > 0 {
+		if resp.Structured, err = red.JSON(resp.Structured); err != nil {
+			return Response{}, err
+		}
+	}
+	turns := make([]Turn, len(resp.Transcript))
+	for i, t := range resp.Transcript {
+		t.Text = red.String(t.Text)
+		if len(t.Data) > 0 {
+			if t.Data, err = red.JSON(t.Data); err != nil {
+				return Response{}, err
+			}
+		}
+		turns[i] = t
+	}
+	resp.Transcript = turns
+	return resp, nil
+}
+
 // store writes the recording through a temporary file, so a reader never sees half of one.
 func (r Recorder) store(req Request, resp Response) error {
 	key := Key(r.Name, req)
+	resp, err := redactResponse(r.Redact, resp)
+	if err != nil {
+		return fmt.Errorf("record: %w", err)
+	}
 	data, err := json.MarshalIndent(Recording{Key: key, Harness: r.Name, Model: req.Model, Response: resp}, "", "  ")
 	if err != nil {
 		return fmt.Errorf("record: %w", err)
