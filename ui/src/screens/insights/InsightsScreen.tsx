@@ -1,6 +1,6 @@
-import { useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Link, useParams, useSearchParams } from 'react-router-dom';
+import { Link, useLocation, useParams, useSearchParams } from 'react-router-dom';
 import { withQuery } from '../../api/api';
 import { useApi } from '../../api/context';
 import type { Insight, InsightState } from '../../api/schema';
@@ -49,8 +49,23 @@ export function InsightsScreen() {
   const { t } = useTranslation();
   const { pipeline = '' } = useParams();
   const [search, setSearch] = useSearchParams();
-  const tab = (['attention', 'resolved', 'muted'] as const).find((x) => x === search.get('state')) ?? 'attention';
   const insights = useResource(`insights:${pipeline}`, (api) => api.listInsights({ pipeline }));
+  // A link to one insight (#id, from a lesson) opens on its tab, scrolled to its card and focused.
+  const { hash } = useLocation();
+  const target = hash.length > 1 ? decodeURIComponent(hash.slice(1)) : null;
+  const targeted = insights.status === 'ready' ? insights.data.find((i) => i.id === target) : undefined;
+  const tab =
+    (['attention', 'resolved', 'muted'] as const).find((x) => x === search.get('state')) ??
+    (targeted ? tabOf(targeted.state) : 'attention');
+  const focused = useRef<string | null>(null);
+  useEffect(() => {
+    if (targeted === undefined || focused.current === targeted.id) return;
+    const card = document.getElementById(targeted.id);
+    if (card === null) return;
+    focused.current = targeted.id;
+    card.scrollIntoView({ block: 'start' });
+    card.focus();
+  }, [targeted]);
   const kindLabel = useInsightKindLabel();
   const [hidden, setHidden] = useState<string[]>([]);
   const [step, setStep] = useState('');
@@ -301,7 +316,8 @@ function InsightCard({ insight, now, onChanged }: { insight: Insight; now: numbe
     <article
       id={insight.id}
       aria-labelledby={`${insight.id}-title`}
-      className={`${card} flex flex-col gap-3 px-5 py-[18px]`}
+      tabIndex={-1}
+      className={`${card} flex scroll-mt-4 flex-col gap-3 px-5 py-[18px]`}
     >
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-tiny">
         <StatusBadge status={stateGlyph(insight.state)} label={statusLabel(insight.state)} />

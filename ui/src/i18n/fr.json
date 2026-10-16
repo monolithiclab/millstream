@@ -765,7 +765,21 @@
     "added": "ajoutée le {{date}}",
     "fromInsight": "d’après le constat {{id}}",
     "fromReview": "d’après la revue {{id}}",
-    "fromProposal": "d’après la proposition {{id}}"
+    "fromProposal": "d’après la proposition {{id}}",
+    "review": {
+      "title": "Revue {{id}}",
+      "decision": "Décision",
+      "approved": "Approuvé",
+      "edited": "Approuvé avec modifications",
+      "rejected": "Rejeté",
+      "undecided": "Pas encore décidé",
+      "reviewer": "Par",
+      "decidedAt": "Quand",
+      "reason": "Motif",
+      "note": "Note",
+      "step": "Étape · boîte",
+      "changes": "Modifications"
+    }
   },
   "nodes": {
     "busy": "{{leases}} emplacements occupés sur {{slots}}",

@@ -7,8 +7,9 @@ import { ScreenPage } from '../ScreenPage';
 import { EmptyState, QueryView } from '../../common/States';
 import { card, cardTitle } from '../../common/styles';
 import { useResource } from '../../common/useResource';
+import { ReviewSource } from './ReviewSource';
 
-// A lesson's source (spec 11.4) is "kind/id": an insight links to its card, a review to its recorded decision; a
+// A lesson's source (spec 11.4) is "kind/id": an insight links to its card, a review opens its decision in a panel; a
 // proposal has no page until the Improve view (M5), so it is named only.
 function Source({ pipeline, source }: { pipeline: string; source: string }) {
   const { t } = useTranslation();
@@ -17,13 +18,7 @@ function Source({ pipeline, source }: { pipeline: string; source: string }) {
   if (kind === 'insight' && id) {
     return <Link to={`${pipelinePath(pipeline, 'insights')}#${enc(id)}`}>{t('lessons.fromInsight', { id })}</Link>;
   }
-  if (kind === 'review' && id) {
-    return (
-      <a href={`/api/v1/pipelines/${enc(pipeline)}/reviews/${enc(id)}`} target="_blank" rel="noreferrer">
-        {t('lessons.fromReview', { id })}
-      </a>
-    );
-  }
+  if (kind === 'review' && id) return <ReviewSource pipeline={pipeline} delivery={id} />;
   if (kind === 'proposal' && id) return <span>{t('lessons.fromProposal', { id })}</span>;
   return <span className="font-mono">{source}</span>;
 }

@@ -765,7 +765,21 @@
     "added": "added {{date}}",
     "fromInsight": "from insight {{id}}",
     "fromReview": "from review {{id}}",
-    "fromProposal": "from proposal {{id}}"
+    "fromProposal": "from proposal {{id}}",
+    "review": {
+      "title": "Review {{id}}",
+      "decision": "Decision",
+      "approved": "Approved",
+      "edited": "Approved with changes",
+      "rejected": "Rejected",
+      "undecided": "Not decided yet",
+      "reviewer": "By",
+      "decidedAt": "When",
+      "reason": "Reason",
+      "note": "Note",
+      "step": "Step · inbox",
+      "changes": "Changes"
+    }
   },
   "nodes": {
     "busy": "{{leases}} of {{slots}} slots busy",
