@@ -113,6 +113,9 @@ export interface Api {
   decideSample(pipeline: string, delivery: string, decision: SampleDecision, options?: SendOptions): Promise<Sample>;
   acknowledgeInsight(pipeline: string, insight: string): Promise<void>;
   muteInsight(pipeline: string, insight: string): Promise<void>;
+  // A remote node: drain stops leasing to it until it restarts; revoke refuses its id for good and ends its leases.
+  drainNode(node: string): Promise<void>;
+  revokeNode(node: string): Promise<void>;
 
   // Whether the server requires its token, and who decides; unauthorized (401) until signed in on one that does.
   getSession(): Promise<Session>;

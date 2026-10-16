@@ -60,6 +60,8 @@ export type Insight = Schemas['Insight'];
 export type StepLessons = Schemas['StepLessons'];
 export type Nodes = Schemas['Nodes'];
 export type Node = Schemas['Node'];
+// A step whose pending deliveries no node can take.
+export type Unschedulable = NonNullable<Nodes['unschedulable']>[number];
 export type DeploymentEngine = Schemas['DeploymentEngine'];
 
 // The data of the server-sent events.

@@ -128,7 +128,7 @@ const screens: ScreenCase[] = [
   {
     name: 'nodes',
     path: async () => '/nodes',
-    ready: (page) => expect(page.getByRole('table')).toBeVisible(),
+    ready: (page) => expect(page.getByRole('table', { name: /^(Nodes|Nœuds), / })).toBeVisible(),
   },
   {
     name: 'logs',

@@ -119,6 +119,8 @@ const cases: Case[] = [
   ],
   ['acknowledgeInsight', (a) => a.acknowledgeInsight('p', 'in'), 'POST', `${P}/insights/in/acknowledge`, {}],
   ['muteInsight', (a) => a.muteInsight('p', 'in'), 'POST', `${P}/insights/in/mute`, {}],
+  ['drainNode', (a) => a.drainNode('gpu 1'), 'POST', '/api/v1/nodes/gpu%201/drain', {}],
+  ['revokeNode', (a) => a.revokeNode('n'), 'POST', '/api/v1/nodes/n/revoke', {}],
   ['getSession', (a) => a.getSession(), 'GET', '/api/v1/session'],
   ['signIn', (a) => a.signIn('s3cret'), 'POST', '/api/v1/session', { token: 's3cret' }],
   ['signOut', (a) => a.signOut(), 'DELETE', '/api/v1/session'],

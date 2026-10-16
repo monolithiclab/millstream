@@ -73,6 +73,12 @@ export const statuses = {
   resolved: { tone: 'ok', d: SH.check },
   muted: { tone: 'mute', d: SH.circle, mark: SH.slash },
   sample: { tone: 'human', d: SH.diamond },
+  // A node: its state, and its health from its heartbeats.
+  draining: { tone: 'warn', d: SH.circle, mark: SH.half, markFill: true },
+  revoked: { tone: 'bad', d: SH.circle, mark: SH.slash },
+  healthy: { tone: 'ok', d: SH.check },
+  late: { tone: 'warn', d: SH.tri },
+  lost: { tone: 'bad', d: SH.tri, filled: true },
 } satisfies Record<string, Glyph>;
 
 export type StatusKey = keyof typeof statuses;
@@ -106,6 +112,11 @@ const labels: Record<StatusKey, `status.${StatusKey}`> = {
   resolved: 'status.resolved',
   muted: 'status.muted',
   sample: 'status.sample',
+  draining: 'status.draining',
+  revoked: 'status.revoked',
+  healthy: 'status.healthy',
+  late: 'status.late',
+  lost: 'status.lost',
 };
 
 export function isStatus(value: string): value is StatusKey {

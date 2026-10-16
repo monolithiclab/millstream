@@ -18,7 +18,7 @@ describe('FakeApi', () => {
     expect((await api.getReview('listings-daily', 'dl_4b2e')).display).toMatch(/^T3 · 68 m² · Paris 19e\n/);
     expect((await api.listSamples({ state: 'open', inbox: 'analysts' })).items).toHaveLength(1);
     expect((await api.listSamples({ pipeline: 'other' })).items).toHaveLength(0);
-    expect((await api.listNodes()).nodes).toHaveLength(1);
+    expect((await api.listNodes()).nodes).toHaveLength(3);
     await expect(api.getLineage('p', 'it_1')).rejects.toBeInstanceOf(ApiError);
     expect(await api.listRunDeliveries('listings-daily', 'run_0600', { step: 'score', state: 'dead' })).toHaveLength(2);
     expect((await api.listRevisions('listings-daily')).map((r) => r.id)).toEqual([14, 13, 12]);
@@ -98,6 +98,36 @@ describe('FakeApi', () => {
       'decideReview',
     ]);
     expect((await api.listInbox()).items.map((r) => r.deliveryId)).not.toContain('dl_4b2e');
+  });
+
+  it('drains and revokes remote nodes, refusing the embedded one and a standby', async () => {
+    const api = new FakeApi();
+    await api.drainNode('gpu-01');
+    expect((await api.listNodes()).nodes.find((n) => n.id === 'gpu-01')).toMatchObject({
+      state: 'draining',
+      leases: 3,
+    });
+    await api.revokeNode('gpu-01');
+    expect((await api.listNodes()).nodes.find((n) => n.id === 'gpu-01')).toMatchObject({
+      state: 'revoked',
+      leases: 0,
+    });
+    await api.revokeNode('never-seen');
+    await expect(api.drainNode('mill-01')).rejects.toMatchObject({ status: 409 });
+    await expect(api.revokeNode('mill-01')).rejects.toMatchObject({ status: 409 });
+    await expect(api.drainNode('nope')).rejects.toMatchObject({ status: 404 });
+    expect(api.calls.map((c) => c.method)).toEqual([
+      'drainNode',
+      'revokeNode',
+      'revokeNode',
+      'drainNode',
+      'revokeNode',
+      'drainNode',
+    ]);
+    const engine = { state: 'standby' as const, id: 'mill-02', version: '0.0.0', notificationsFailed: 0 };
+    const standby = new FakeApi({ ...demoFixtures, nodes: { ...demoFixtures.nodes, engine } });
+    await expect(standby.drainNode('gpu-01')).rejects.toMatchObject({ status: 503 });
+    expect((await new FakeApi().listNodes()).nodes.find((n) => n.id === 'gpu-01')?.state).toBe('active');
   });
 
   it('keeps insight states per instance', async () => {

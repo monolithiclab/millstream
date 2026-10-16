@@ -103,6 +103,8 @@ export class HttpApi implements Api {
   acknowledgeInsight: Api['acknowledgeInsight'] = (p, insight) =>
     this.post(`${pipelinePath(p)}/insights/${enc(insight)}/acknowledge`);
   muteInsight: Api['muteInsight'] = (p, insight) => this.post(`${pipelinePath(p)}/insights/${enc(insight)}/mute`);
+  drainNode: Api['drainNode'] = (node) => this.post(`/nodes/${enc(node)}/drain`);
+  revokeNode: Api['revokeNode'] = (node) => this.post(`/nodes/${enc(node)}/revoke`);
 
   getSession: Api['getSession'] = () => this.get('/session');
   signIn: Api['signIn'] = (token) => this.post('/session', { token });

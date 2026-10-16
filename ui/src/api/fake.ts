@@ -442,6 +442,9 @@ export class FakeApi implements Api {
   acknowledgeInsight: Api['acknowledgeInsight'] = (...args) =>
     this.setInsight('acknowledgeInsight', args, 'acknowledged');
   muteInsight: Api['muteInsight'] = (...args) => this.setInsight('muteInsight', args, 'muted');
+  // Draining stops leasing to a node; revoking also ends its leases. The embedded node refuses both, a standby too.
+  drainNode: Api['drainNode'] = (...args) => this.setNode('drainNode', args, 'draining');
+  revokeNode: Api['revokeNode'] = (...args) => this.setNode('revokeNode', args, 'revoked');
 
   getSession: Api['getSession'] = () =>
     Promise.resolve(
@@ -459,6 +462,22 @@ export class FakeApi implements Api {
     this.signedIn = false;
     return this.record('signOut', [], undefined);
   };
+
+  private setNode(method: string, args: [string], state: 'draining' | 'revoked'): Promise<void> {
+    const { engine, nodes } = this.fixtures.nodes;
+    const node = nodes.find((n) => n.id === args[0]);
+    if (engine.state === 'standby') return this.refuse(method, args, 503, 'unavailable', 'this engine is a standby');
+    if (node?.embedded) return this.refuse(method, args, 409, 'conflict', `node ${args[0]} is embedded in the engine`);
+    if (!node) {
+      // The server records an unknown id as revoked, but has nothing to drain.
+      return state === 'revoked'
+        ? this.record(method, args, undefined)
+        : this.refuse(method, args, 404, 'notFound', `node ${args[0]} not found`);
+    }
+    node.state = state;
+    if (state === 'revoked') node.leases = 0;
+    return this.record(method, args, undefined);
+  }
 
   private setInsight(method: string, args: [string, string], state: Insight['state']): Promise<void> {
     const insight = this.fixtures.insights.find((i) => i.pipeline === args[0] && i.id === args[1]);

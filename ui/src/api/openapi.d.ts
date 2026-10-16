@@ -820,10 +820,48 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /** The engine serving the request, the deployment's engines, and the nodes, with the leases each holds. */
+    /** The engine serving the request, the deployment's engines, the nodes with the leases each holds, and the steps whose pending deliveries no node can take. */
     get: operations['listNodes'];
     put?: never;
     post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/nodes/{node}/drain': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        node: components['parameters']['node'];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Drain a remote node: the engine leases it nothing more and it finishes what it holds; it is active again when it registers from a new process (spec section 5.10). The embedded node cannot be drained (conflict). */
+    post: operations['drainNode'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/nodes/{node}/revoke': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        node: components['parameters']['node'];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Revoke a node id: the engine refuses it from then on and ends the leases it holds at once, each attempt consumed as a lease expiry's, so fencing refuses anything it sends afterwards (spec section 15.7). An id never registered is recorded revoked. */
+    post: operations['revokeNode'];
     delete?: never;
     options?: never;
     head?: never;
@@ -1456,7 +1494,16 @@ export interface components {
       };
       /** @description The deployment's engines, the active one first, then the standbys in the order they began to wait (spec section 5.9). On SQLite, the serving engine alone. */
       engines: components['schemas']['DeploymentEngine'][];
+      /** @description The embedded node, then the remote nodes that registered or were revoked, by id. */
       nodes: components['schemas']['Node'][];
+      /** @description The steps whose pending deliveries none of the registered nodes, active and heard from within a lease, can take: none offers the runtime the step's action needs or carries its placement labels (spec section 5.10). The active engine's view: a standby leaves it out. */
+      unschedulable?: {
+        pipeline: string;
+        step: string;
+        pending: number;
+        /** @description What a node must offer, such as "runtime exec, labels gpu=true". */
+        needs: string;
+      }[];
     };
     DeploymentEngine: {
       id: string;
@@ -1477,12 +1524,27 @@ export interface components {
       id: string;
       embedded: boolean;
       version: string;
+      /** @description The node runs another version than the engine serving the response. */
+      behind: boolean;
       slots: number;
       leases: number;
       labels: {
         [key: string]: string;
       };
+      /** @description The runtimes it offers (spec section 5.10): exec, container, and agent:<harness> per harness. */
       runtimes: string[];
+      /** @enum {string} */
+      state: 'active' | 'draining' | 'revoked';
+      /**
+       * @description From its last heartbeat: healthy within three heartbeat intervals, late within a lease, lost beyond (its leases expire). The embedded node is always healthy.
+       * @enum {string}
+       */
+      health: 'healthy' | 'late' | 'lost';
+      /**
+       * Format: date-time
+       * @description A remote node's last registration or heartbeat.
+       */
+      lastHeartbeat?: string;
     };
     /** @description The data of a "state" event. */
     Event: {
@@ -1581,6 +1643,7 @@ export interface components {
     item: string;
     delivery: string;
     insight: string;
+    node: string;
     artifactName: string;
     /** @description A page's next. */
     cursor: string;
@@ -2842,6 +2905,55 @@ export interface operations {
           'application/json': components['schemas']['Nodes'];
         };
       };
+      default: components['responses']['Error'];
+    };
+  };
+  drainNode: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        node: components['parameters']['node'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Draining. */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      404: components['responses']['Error'];
+      409: components['responses']['Error'];
+      415: components['responses']['Error'];
+      503: components['responses']['Error'];
+      default: components['responses']['Error'];
+    };
+  };
+  revokeNode: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        node: components['parameters']['node'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Revoked. */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      409: components['responses']['Error'];
+      415: components['responses']['Error'];
+      503: components['responses']['Error'];
       default: components['responses']['Error'];
     };
   };
