@@ -130,6 +130,32 @@ describe('MetricsScreen', () => {
     expect(u.ctx.fillText.mock.calls.map((c) => c[0])).toContain('r14 applied');
   });
 
+  it('skips revision marks outside the plot, draws at a pixel ratio of 1 by default, and needs no ResizeObserver', async () => {
+    vi.stubGlobal('ResizeObserver', undefined);
+    vi.stubGlobal('devicePixelRatio', 0);
+    const { unmount } = await open('/metrics?m=delivery_cost_usd&p=listings-daily&range=30d&stat=sum');
+    await vi.waitFor(() => expect(plots.some((p) => p.data.length > 1)).toBe(true));
+    const chart = latest();
+    const hooks = chart.opts.hooks as Hooks;
+    const u = new (await import('uplot')).default({} as never, [] as never) as unknown as {
+      ctx: { fillText: ReturnType<typeof vi.fn>; setLineDash: ReturnType<typeof vi.fn> };
+      bbox: { left: number; width: number };
+    };
+    hooks.draw[0]!(u);
+    expect(u.ctx.fillText.mock.calls.map((c) => c[0])).toContain('r14 applied');
+    expect(u.ctx.setLineDash).toHaveBeenCalledWith([3, 3]);
+    // valToPos answers 500: a plot that ends before it draws no mark.
+    u.ctx.fillText.mockClear();
+    u.bbox.width = 400;
+    hooks.draw[0]!(u);
+    expect(u.ctx.fillText).not.toHaveBeenCalled();
+    u.bbox.left = 600;
+    hooks.draw[0]!(u);
+    expect(u.ctx.fillText).not.toHaveBeenCalled();
+    unmount();
+    expect(chart.destroyed).toBe(true);
+  });
+
   it('formats axes by unit and reports the hovered bucket in text', async () => {
     await open('/metrics?m=delivery_cost_usd');
     const opts = latest().opts as { axes: { values?: (u: unknown, s: number[]) => string[] }[]; hooks: Hooks };

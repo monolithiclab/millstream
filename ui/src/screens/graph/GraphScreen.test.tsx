@@ -189,6 +189,60 @@ describe('pipeline graph', () => {
     await waitFor(() => expect(within(panel).getByText('No open dead letters at this step.')).toBeInTheDocument());
   });
 
+  it('discards a recent failure from the panel after a confirmation that it is for good', async () => {
+    const api = new FakeApi();
+    const { user } = renderApp({ api, route: '/p/listings-daily/graph?step=fetch' });
+    const panel = await screen.findByRole('complementary', { name: 'fetch' });
+    await user.click(within(panel).getByRole('button', { name: 'Discard' }));
+    const dialog = screen.getByRole('dialog', { name: 'Discard 1 dead letter?' });
+    expect(dialog).toHaveTextContent('They leave the open dead letters for good: nothing replays them later.');
+    await user.click(within(dialog).getByRole('button', { name: 'Discard 1 dead letter' }));
+    expect(await screen.findByText('1 dead letter discarded')).toBeInTheDocument();
+    expect(api.calls.at(-1)).toEqual({
+      method: 'discardDeadLetters',
+      args: ['listings-daily', { ids: ['it_dl_e2f8'] }],
+    });
+    await waitFor(() => expect(within(panel).getByText('No open dead letters at this step.')).toBeInTheDocument());
+  });
+
+  it('opens a review step paused by its budget, with nothing waiting, and more unrouted failures than it lists', async () => {
+    const fixtures = structuredClone({ ...demoFixtures, metrics: undefined });
+    const review = fixtures.pipelines[0]!.steps.find((s) => s.name === 'analyst-review')!;
+    Object.assign(review, { paused: true, pauseCause: 'budget.day' });
+    const unrouted = [1, 2, 3, 4, 5].map((n) => ({
+      ...demoFixtures.deadLetters[0]!,
+      id: `it_unrouted_${n}`,
+      step: 'analyst-review',
+      kind: 'unrouted' as const,
+      fingerprint: 'fp_unrouted',
+      pattern: 'no route matched the output',
+      error: 'no route matched the output',
+      createdAt: `2026-10-15T06:0${n}:00Z`,
+    }));
+    fixtures.deadLetters.push(...unrouted);
+    const { user } = renderApp({
+      api: new FakeApi({ ...fixtures, metrics: demoFixtures.metrics }),
+      route: '/p/listings-daily/graph?step=analyst-review',
+    });
+    const panel = await screen.findByRole('complementary', { name: 'analyst-review' });
+    emit(snapshot);
+    expect(within(panel).getByText('Paused by budget.day')).toBeInTheDocument();
+    expect(within(panel).getByRole('button', { name: 'Resume step' })).toBeInTheDocument();
+    expect(within(panel).getByText('To review').nextElementSibling).toHaveTextContent(/^\d+$/);
+    expect(within(panel).getByText('Waiting').nextElementSibling).toHaveTextContent('0');
+    expect(within(panel).getByText('Waiting').nextElementSibling).toHaveClass('text-ink');
+    expect(within(panel).getByText('Errors').nextElementSibling).toHaveClass('text-ink');
+    const failures = await within(panel).findAllByText('Unrouted');
+    expect(failures).toHaveLength(3);
+    expect(within(panel).getByText('2 more in the dead letters.')).toBeInTheDocument();
+    // Esc closes the confirmation opened from the panel first, then the panel.
+    await user.click(within(panel).getAllByRole('button', { name: 'Discard' })[0]!);
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.getByRole('complementary', { name: 'analyst-review' })).toBeInTheDocument();
+  });
+
   it('lets grains drift, holds them in a hidden tab, and freezes them under reduced motion', async () => {
     const view = renderApp({ route: '/p/listings-daily/graph' });
     await step('score');

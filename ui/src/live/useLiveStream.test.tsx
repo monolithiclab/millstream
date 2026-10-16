@@ -12,6 +12,7 @@ import {
   resumeUrl,
   STALE_MS,
   useLiveStream,
+  type LiveMessage,
   type LiveOptions,
 } from './useLiveStream';
 
@@ -88,6 +89,28 @@ describe('useLiveStream', () => {
     // Back to the base delay after a successful open.
     act(() => FakeEventSource.latest().fail());
     expect(result.current.retryAt).toBe(Date.now() + 1000);
+  });
+
+  it('reconnect with Last-Event-ID resumes without duplicates: ids 1..5 once each, in order', () => {
+    const onMessage = vi.fn();
+    const onReconnect = vi.fn();
+    subscribe('/api/v1/live/runs/r', { onMessage, onReconnect, events: ['state'] });
+    const first = FakeEventSource.latest();
+    act(() => {
+      first.open();
+      for (const id of ['1', '2', '3']) first.emit('state', `{"seq":${id}}`, id);
+      first.fail();
+    });
+    act(() => vi.advanceTimersByTime(1000));
+    const second = FakeEventSource.latest();
+    expect(FakeEventSource.instances).toHaveLength(2);
+    expect(second.url).toBe('/api/v1/live/runs/r?lastEventId=3');
+    act(() => {
+      second.open();
+      for (const id of ['4', '5']) second.emit('state', `{"seq":${id}}`, id);
+    });
+    expect(onMessage.mock.calls.map(([m]) => (m as LiveMessage).id)).toEqual(['1', '2', '3', '4', '5']);
+    expect(onReconnect).toHaveBeenCalledTimes(1);
   });
 
   it('reports reconnecting after the grace period and stale after five seconds', () => {

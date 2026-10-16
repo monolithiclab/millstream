@@ -182,8 +182,10 @@ describe('InboxScreen', () => {
     expect(decisions(api)[0]!.args[2]).toMatchObject({ patch: [{ path: '/marginPct', value: 17.85 }] });
   });
 
+  // Two reviewers on the same item: the loser's decision answers 409 "already decided", sent once, never retried.
   it('shows the server message and keeps the card gone on a 409', async () => {
-    await openInbox();
+    const api = new FakeApi();
+    await openInbox({ api });
     press('j');
     press('j');
     expect(title()).toHaveTextContent('T4 · 91 m² · Montreuil');
@@ -194,8 +196,27 @@ describe('InboxScreen', () => {
       'T4 · 91 m² · Montreuil was decided elsewhere or timed out. review of delivery dl_7c1d was already decided by claire at 06:29',
     );
     expect(screen.queryByRole('button', { name: /T4 · 91 m² · Montreuil/ })).not.toBeInTheDocument();
+    await elapse(UNDO_MS * 2);
+    expect(decisions(api).map((c) => [c.method, c.args[1]])).toEqual([['decideReview', 'dl_7c1d']]);
     fireEvent.click(within(alert).getByRole('button', { name: 'Dismiss' }));
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('shows the server timeout message and keeps the card gone when the review timed out while open (409)', async () => {
+    const timedOut = 'review of delivery dl_7c1d timed out at 2026-10-16T06:29:00Z, applied reject: conflict';
+    const api = new FakeApi({ ...demoFixtures, conflicts: { dl_7c1d: timedOut } });
+    await openInbox({ api });
+    press('j');
+    press('j');
+    expect(title()).toHaveTextContent('T4 · 91 m² · Montreuil');
+    press('a');
+    await elapse(UNDO_MS);
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent(`T4 · 91 m² · Montreuil was decided elsewhere or timed out. ${timedOut}`);
+    expect(screen.queryByRole('button', { name: /T4 · 91 m² · Montreuil/ })).not.toBeInTheDocument();
+    expect(title()).not.toHaveTextContent('T4 · 91 m² · Montreuil');
+    await elapse(UNDO_MS * 2);
+    expect(decisions(api).map((c) => [c.method, c.args[1]])).toEqual([['decideReview', 'dl_7c1d']]);
   });
 
   it('brings the card back when the server refuses for another reason', async () => {

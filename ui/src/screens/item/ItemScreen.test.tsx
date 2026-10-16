@@ -141,6 +141,39 @@ describe('item detail', () => {
     expect(within(journey).getByRole('log')).toHaveTextContent('Waiting for log lines…');
   });
 
+  it('keeps each raw event once across a reconnection that resumes from the last event id', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const api = new FakeApi();
+    const { user } = renderApp({ api, route });
+    const journey = await screen.findByRole('region', { name: 'Journey' });
+    const streams = () => FakeEventSource.instances.filter((s) => s.url.startsWith('/api/v1/live/items/'));
+    const event = (seq: number, kind: string) =>
+      JSON.stringify({ seq, ts: '2026-10-15T06:20:00Z', pipeline: 'listings-daily', kind, data: {} });
+    act(() => {
+      streams()[0]!.open();
+      streams()[0]!.emit('state', event(41, 'leased'), '41');
+      streams()[0]!.emit('state', event(42, 'reviewRequested'), '42');
+      streams()[0]!.fail();
+    });
+    const reads = vi.spyOn(api, 'listItemDeliveries');
+    await act(() => vi.advanceTimersByTimeAsync(1000));
+    const second = streams()[1]!;
+    expect(second.url).toBe('/api/v1/live/items/it_7f3a9c21?pipeline=listings-daily&lastEventId=42');
+    act(() => second.open());
+    // The reconnection reloads the item through REST; the raw events come only from the stream.
+    await waitFor(() => expect(reads).toHaveBeenCalled());
+    act(() => {
+      // A server that replays the event at the cursor is not shown twice.
+      second.emit('state', event(42, 'reviewRequested'), '42');
+      second.emit('state', event(43, 'reviewDecided'), '43');
+    });
+    await user.click(within(journey).getByRole('tab', { name: 'Raw events' }));
+    const kinds = within(journey)
+      .getAllByRole('listitem')
+      .map((li) => li.querySelector('.font-bold')?.textContent);
+    expect(kinds).toEqual(['reviewDecided', 'reviewRequested', 'leased']);
+  });
+
   it('moves the payload and the lineage into tabs at 375 px, in French', async () => {
     // Below the md breakpoint.
     mockMatchMedia(() => false);
