@@ -69,6 +69,31 @@ describe('RunsScreen', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('cursor expired');
   });
 
+  it('fires a trigger by hand and says the run started', async () => {
+    const api = new FakeApi();
+    const { user } = renderApp({ route: '/p/listings-daily/runs', api });
+    await screen.findByRole('list', { name: 'Runs, newest first' });
+    await user.click(screen.getByRole('button', { name: 'Run daily now' }));
+    expect(api.calls).toEqual([{ method: 'triggerRun', args: ['listings-daily', { trigger: 'daily' }] }]);
+    expect(await screen.findByText(/^Run \d\d:\d\d · .+ started$/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Run daily now' })).toBeEnabled();
+  });
+
+  it('offers no button for a webhook, and says when a firing fails', async () => {
+    const api = new FakeApi();
+    const pipeline = await api.getPipeline('listings-daily');
+    api.getPipeline = () =>
+      Promise.resolve({
+        ...pipeline,
+        triggers: [...pipeline.triggers, { name: 'hook', kind: 'webhook', stream: 'trigger.hook' }],
+      });
+    api.triggerRun = () => Promise.reject(new ApiError(503, 'unavailable', 'no engine'));
+    const { user } = renderApp({ route: '/p/listings-daily/runs', api });
+    await user.click(await screen.findByRole('button', { name: 'Run daily now' }));
+    expect(screen.queryByRole('button', { name: 'Run hook now' })).not.toBeInTheDocument();
+    expect(await screen.findByRole('alert')).toHaveTextContent('daily could not be fired: no engine');
+  });
+
   it('retries after an error', async () => {
     let fail = true;
     const api = new FakeApi();

@@ -9,7 +9,7 @@ import { usePreferences } from '../../preferences';
 import { runPath } from '../../routes';
 import { ScreenPage } from '../ScreenPage';
 import { Segmented } from '../../common/Segmented';
-import { errorMessage } from '../../common/Notice';
+import { NoticeRegion, errorMessage, runAction, useNotice } from '../../common/Notice';
 import { StatusBadge, useStatusLabel } from '../../common/Status';
 import { EmptyState, ErrorState, QueryView } from '../../common/States';
 import { buttons, card } from '../../common/styles';
@@ -65,11 +65,48 @@ export function RunsScreen() {
       setLoadingMore(false);
     }
   };
+  // Any trigger but a webhook can be fired by hand (spec section 4.6); a webhook is fired by its caller's token.
+  const triggers = useResource(`pipeline:${pipeline}`, (a) => a.getPipeline(pipeline));
+  const fireable = triggers.status === 'ready' ? triggers.data.triggers.filter((tr) => tr.kind !== 'webhook') : [];
+  const [firing, setFiring] = useState(false);
+  const { notice, setNotice, dismiss } = useNotice();
+  const fire = (trigger: string) => {
+    setFiring(true);
+    void runAction(setNotice, {
+      call: async () => t('runs.fired', { name: name(await api.triggerRun(pipeline, { trigger })) }),
+      failed: (message) => t('runs.fireFailed', { trigger, message }),
+      settled: () => {
+        setFiring(false);
+        runs.refresh();
+      },
+    });
+  };
+
   const setState = (value: Filter) => setSearch(value === 'all' ? {} : { state: value });
   const duration = (run: Run) => (run.settledAt ? Date.parse(run.settledAt) : now) - Date.parse(run.startedAt);
 
   return (
-    <ScreenPage title={t('nav.runs')} eyebrow={<p className="m-0 font-mono text-small text-ink-2">{pipeline}</p>}>
+    <ScreenPage
+      title={t('nav.runs')}
+      eyebrow={<p className="m-0 font-mono text-small text-ink-2">{pipeline}</p>}
+      header={
+        fireable.length > 0 && (
+          <div className="flex flex-wrap gap-2 md:ml-auto">
+            {fireable.map((tr) => (
+              <button
+                key={tr.name}
+                type="button"
+                disabled={firing}
+                onClick={() => fire(tr.name)}
+                className={buttons.primary}
+              >
+                {t('runs.fire', { trigger: tr.name })}
+              </button>
+            ))}
+          </div>
+        )
+      }
+    >
       <Segmented
         label={t('runs.filter.label')}
         options={filters.map((value) => ({ value, label: label(value) }))}
@@ -137,6 +174,7 @@ export function RunsScreen() {
           );
         }}
       </QueryView>
+      <NoticeRegion notice={notice} onDismiss={dismiss} />
     </ScreenPage>
   );
 }
