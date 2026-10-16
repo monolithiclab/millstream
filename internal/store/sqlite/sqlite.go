@@ -194,6 +194,9 @@ type Store struct {
 	// memoryPool on Close; zero for a file store, and for a clone, whose statements the restore expired.
 	cookie int64
 
+	// onCommit, when set, is told the last event sequence number of each batch that recorded events; see OnCommit.
+	onCommit atomic.Pointer[func(lastSeq int64)]
+
 	mu     sync.RWMutex // guards closed against sends on reqs
 	closed bool
 	reqs   chan *request
@@ -357,6 +360,18 @@ func applyMigration(db *sql.DB, version int, body string) error {
 		return err
 	}
 	return tx.Commit()
+}
+
+// OnCommit sets fn to be called, on the writer goroutine, after each batch that recorded events commits, with the
+// sequence number of the batch's last event: the notifier live event streams wake on (spec section 12.1). fn must
+// not block: the writer waits for it. A nil fn stops the calls. Writes another process makes to the same file are
+// not seen.
+func (s *Store) OnCommit(fn func(lastSeq int64)) {
+	if fn == nil {
+		s.onCommit.Store(nil)
+		return
+	}
+	s.onCommit.Store(&fn)
 }
 
 // Close stops accepting units, lets the writer apply the ones already queued, and closes the database.

@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -137,7 +138,7 @@ func TestReads(t *testing.T) {
 	}
 	r := e.run("r1")
 	want := store.Run{
-		ID: "r1", Pipeline: "listings", Revision: 1, Trigger: "daily", TriggerKey: "r1", TriggerSource: store.SourceManual,
+		Seq: 1, ID: "r1", Pipeline: "listings", Revision: 1, Trigger: "daily", TriggerKey: "r1", TriggerSource: store.SourceManual,
 		Kind: store.RunKindTrigger,
 		Vars: map[string]any{"minScore": int64(70)}, VarSources: map[string]string{"minScore": "default"},
 		State: store.RunRunning, StartedAt: t0,
@@ -171,6 +172,84 @@ func TestReads(t *testing.T) {
 	_, err = e.s.Revision(e.ctx, 99)
 	wantErr(t, err, store.ErrNotFound)
 	_, err = e.s.PipelineState(e.ctx, "nope")
+	wantErr(t, err, store.ErrNotFound)
+}
+
+// The reads of the HTTP API: paging cursors, lineage, a step's live state, the commit notifier.
+func TestAPIReads(t *testing.T) {
+	e := newEnv(t, fixture)
+	var notified []int64
+	e.s.OnCommit(func(seq int64) { notified = append(notified, seq) })
+	e.fire("r1")
+	e.fire("r2") // started at the same instant as r1: Seq breaks the tie
+	last, err := e.s.LastEventSeq(e.ctx)
+	if err != nil || last == 0 || len(notified) != 2 || notified[1] != last {
+		t.Fatalf("LastEventSeq = %d, %v; notified %v", last, err, notified)
+	}
+	e.s.OnCommit(nil)
+	page, err := e.s.Runs(e.ctx, store.RunFilter{Pipeline: "listings", Limit: 1})
+	if err != nil || len(page) != 1 || page[0].ID != "r2" {
+		t.Fatalf("first page = %v, %v", page, err)
+	}
+	next, err := e.s.Runs(e.ctx, store.RunFilter{Pipeline: "listings", Limit: 1,
+		After: store.RunPosition{StartedAt: page[0].StartedAt, Seq: page[0].Seq}})
+	if err != nil || len(next) != 1 || next[0].ID != "r1" {
+		t.Fatalf("second page = %v, %v", next, err)
+	}
+
+	l := e.leaseStep("crawl")
+	e.done(l, out("a", `{"score": 80}`), out("b", `{"score": 10}`))
+	children, err := e.s.Items(e.ctx, store.ItemFilter{Pipeline: "listings", Parent: l.Item.ID})
+	if err != nil || len(children) != 4 { // two outputs, each on listings.raw and listings.audit
+		t.Fatalf("children = %v, %v", children, err)
+	}
+	got, err := e.s.Items(e.ctx, store.ItemFilter{IDs: []string{children[0].ID, l.Item.ID}})
+	if err != nil || len(got) != 2 || got[0].ID != l.Item.ID {
+		t.Fatalf("Items by id = %v, %v", got, err)
+	}
+	after, err := e.s.Items(e.ctx, store.ItemFilter{Pipeline: "listings", After: children[0].Seq, Limit: 2})
+	if err != nil || len(after) != 2 || after[0].ID != children[1].ID {
+		t.Fatalf("Items after %d = %v, %v", children[0].Seq, after, err)
+	}
+	ds, err := e.s.Deliveries(e.ctx, store.DeliveryFilter{Pipeline: "listings", ID: l.DeliveryID, ItemID: l.Item.ID,
+		Step: "crawl"})
+	if err != nil || len(ds) != 1 || ds[0].ID != l.DeliveryID {
+		t.Fatalf("Deliveries of the item = %v, %v", ds, err)
+	}
+	evs, err := e.s.PipelineEvents(e.ctx, store.EventFilter{Pipeline: "listings", RunID: l.RunID,
+		Kinds: []string{store.EventDeliveryDone}})
+	if err != nil || len(evs) != 1 || !strings.Contains(string(evs[0].Data), `"itemId":"`+l.Item.ID+`"`) {
+		t.Fatalf("done events of the run = %v, %v", evs, err)
+	}
+
+	counts, err := e.s.StreamCounts(e.ctx, "listings")
+	if err != nil || counts["trigger.daily"] != 2 || counts["listings.raw"] != 2 {
+		t.Fatalf("StreamCounts = %v, %v", counts, err)
+	}
+	stats, err := e.s.StepStats(e.ctx, "listings", t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	byStep := map[string]store.StepStats{}
+	for _, s := range stats {
+		byStep[s.Step] = s
+	}
+	if c := byStep["crawl"]; c.Pending != 1 || c.Finished != 1 || len(c.Latencies) != 1 {
+		t.Errorf("crawl stats = %+v", c)
+	}
+	if s := byStep["score"]; s.Pending != 2 {
+		t.Errorf("score stats = %+v", s)
+	}
+
+	revs, err := e.s.Revisions(e.ctx, "listings")
+	if err != nil || len(revs) != 1 || revs[0].PackageHash != hashOf(fixture) {
+		t.Fatalf("Revisions = %v, %v", revs, err)
+	}
+	bundle, err := e.s.Package(e.ctx, revs[0].PackageHash)
+	if err != nil || string(bundle) != fixture {
+		t.Fatalf("Package = %q, %v", bundle, err)
+	}
+	_, err = e.s.Package(e.ctx, "nope")
 	wantErr(t, err, store.ErrNotFound)
 }
 

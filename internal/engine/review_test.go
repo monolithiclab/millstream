@@ -3,6 +3,7 @@ package engine
 import (
 	"io"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -87,7 +88,11 @@ func TestReviewStepInTheEngine(t *testing.T) {
 	v.clock.Advance(61 * time.Minute)
 	v.e.reviewTimeouts(v.ctx)
 	notifier.Wait()
+	// Notifications are sent in the background, each on its own: the parked one may land after the escalation.
 	posts := hook.posts()
+	slices.SortFunc(posts, func(a, b string) int {
+		return strings.Compare(strings.Replace(a, "escalated", "~", 1), strings.Replace(b, "escalated", "~", 1))
+	})
 	if len(posts) != 2 || !strings.HasPrefix(posts[0], "https://hooks.example/x ") ||
 		!strings.Contains(posts[0], `Review needed in inbox analysts: p/gate, item a. `+
 			`https://ms.example/inbox/analysts/`+parked[0].DeliveryID) ||

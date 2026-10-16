@@ -118,6 +118,8 @@ type Store interface {
 	DeadLetters(ctx context.Context, f DeadLetterFilter) ([]DeadLetter, error)
 	// Events returns up to limit events with a sequence number above afterSeq, in sequence order.
 	Events(ctx context.Context, afterSeq int64, limit int) ([]Event, error)
+	// LastEventSeq returns the sequence number of the last event committed, zero when there is none.
+	LastEventSeq(ctx context.Context) (int64, error)
 	// PipelineEvents returns the events f selects, in sequence order.
 	PipelineEvents(ctx context.Context, f EventFilter) ([]Event, error)
 	// MetricRollups returns the rollups f selects.
@@ -138,6 +140,15 @@ type Store interface {
 	// may still have deliveries to dispatch.
 	OpenRevisions(ctx context.Context) ([]RevisionID, error)
 	Revision(ctx context.Context, id RevisionID) (Revision, error)
+	// Revisions returns a pipeline's revisions, newest first.
+	Revisions(ctx context.Context, pipeline string) ([]Revision, error)
+	// Package returns the bundle of the package applied under hash.
+	Package(ctx context.Context, hash string) ([]byte, error)
+	// StreamCounts returns how many items each stream of a pipeline holds, by stream.
+	StreamCounts(ctx context.Context, pipeline string) (map[string]int64, error)
+	// StepStats returns each step's deliveries by state now, and those that finished since the instant given, by
+	// step: the live state of a pipeline (spec section 12.1).
+	StepStats(ctx context.Context, pipeline string, since time.Time) ([]StepStats, error)
 	// Artifacts returns the artifact store entries of a pipeline (all pipelines when empty), by pipeline and hash.
 	Artifacts(ctx context.Context, pipeline string) ([]Artifact, error)
 	// AttemptArtifacts returns the artifacts the attempts of a delivery kept, by attempt then name.

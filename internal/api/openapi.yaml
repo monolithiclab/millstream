@@ -1,0 +1,1343 @@
+openapi: 3.1.0
+info:
+  title: Millstream HTTP API
+  version: v1
+  description: |
+    The HTTP API of Millstream (spec section 12.1). Every record but a pipeline is scoped by its pipeline, so
+    resources sit under /pipelines/{pipeline}; the inbox, insights and metrics read across pipelines. JSON keys are
+    lowerCamelCase; times are RFC 3339; money is US dollars. Errors are {"error": {"code", "message"}}, with code one
+    of notFound, conflict, invalid, unavailable, methodNotAllowed, tooLarge, forbidden, unsupportedMediaType and
+    internal. Lists that grow without bound page by an opaque cursor: pass a page's next as the cursor of the next
+    request. No authentication until M4: the server listens on a loopback address and answers only requests naming a
+    loopback host (forbidden otherwise), every POST carries a JSON content type (unsupportedMediaType otherwise), and
+    a decision is recorded under the X-Millstream-User header, else the server's $USER.
+
+    Live data is served as server-sent events (text/event-stream) under /live. A run's or an item's stream sends
+    "state" events whose id is the event's sequence number; a client resumes after its last id with the
+    Last-Event-ID header or the lastEventId query parameter, and receives exactly the events of its scope it
+    missed, in order. A cursor that cannot be resumed gets one "snapshotRequired" event and the stream ends: reload
+    state through the REST API and subscribe again without a cursor. A pipeline's stream sends "snapshot" events (at
+    most four a second, never resumable). The log stream sends "log" events, and a "gap" event first when lines
+    were lost since the client's cursor. Every stream sends a comment every 15 seconds while quiet.
+servers:
+  - url: /api/v1
+paths:
+  /openapi.yaml:
+    get:
+      operationId: getOpenApi
+      summary: This document.
+      responses:
+        default: { $ref: "#/components/responses/Error" }
+        "200":
+          description: The OpenAPI document.
+          content:
+            application/yaml:
+              schema: { type: string }
+  /pipelines:
+    get:
+      operationId: listPipelines
+      summary: Every pipeline with its active revision's graph and its state.
+      responses:
+        default: { $ref: "#/components/responses/Error" }
+        "200":
+          description: The pipelines, by name.
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/Pipeline" } }
+  /pipelines/{pipeline}:
+    parameters: [{ $ref: "#/components/parameters/pipeline" }]
+    get:
+      operationId: getPipeline
+      summary: A pipeline.
+      responses:
+        default: { $ref: "#/components/responses/Error" }
+        "200":
+          description: The pipeline.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Pipeline" }
+        "404": { $ref: "#/components/responses/Error" }
+  /pipelines/{pipeline}/pause:
+    parameters: [{ $ref: "#/components/parameters/pipeline" }]
+    post:
+      operationId: pausePipeline
+      summary: Pause the pipeline; its deliveries stay pending.
+      responses:
+        default: { $ref: "#/components/responses/Error" }
+        "415": { $ref: "#/components/responses/Error" }
+        "204": { description: Paused. }
+        "404": { $ref: "#/components/responses/Error" }
+  /pipelines/{pipeline}/resume:
+    parameters: [{ $ref: "#/components/parameters/pipeline" }]
+    post:
+      operationId: resumePipeline
+      summary: Resume the pipeline, lifting the pauses a budget made too.
+      responses:
+        default: { $ref: "#/components/responses/Error" }
+        "415": { $ref: "#/components/responses/Error" }
+        "204": { description: Resumed. }
+        "404": { $ref: "#/components/responses/Error" }
+  /pipelines/{pipeline}/steps/{step}/pause:
+    parameters: [{ $ref: "#/components/parameters/pipeline" }, { $ref: "#/components/parameters/step" }]
+    post:
+      operationId: pauseStep
+      summary: Pause a step of the active revision.
+      responses:
+        default: { $ref: "#/components/responses/Error" }
+        "415": { $ref: "#/components/responses/Error" }
+        "204": { description: Paused. }
+        "404": { $ref: "#/components/responses/Error" }
+  /pipelines/{pipeline}/steps/{step}/resume:
+    parameters: [{ $ref: "#/components/parameters/pipeline" }, { $ref: "#/components/parameters/step" }]
+    post:
+      operationId: resumeStep
+      summary: Resume a step of the active revision.
+      responses:
+        default: { $ref: "#/components/responses/Error" }
+        "415": { $ref: "#/components/responses/Error" }
+        "204": { description: Resumed. }
+        "404": { $ref: "#/components/responses/Error" }
+  /pipelines/{pipeline}/revisions:
+    parameters: [{ $ref: "#/components/parameters/pipeline" }]
+    get:
+      operationId: listRevisions
+      summary: The pipeline's revisions, newest first.
+      responses:
+        default: { $ref: "#/components/responses/Error" }
+        "200":
+          description: The revisions, without their graphs.
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/Revision" } }
+        "404": { $ref: "#/components/responses/Error" }
+  /pipelines/{pipeline}/revisions/{revision}:
+    parameters:
+      - { $ref: "#/components/parameters/pipeline" }
+      - { name: revision, in: path, required: true, schema: { type: integer } }
+    get:
+      operationId: getRevision
+      summary: A revision with its graph.
+      responses:
+        default: { $ref: "#/components/responses/Error" }
+        "200":
+          description: The revision.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Revision" }
+        "400": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+  /pipelines/{pipeline}/streams:
+    parameters: [{ $ref: "#/components/parameters/pipeline" }]
+    get:
+      operationId: listStreams
+      summary: The streams of the active revision, and any other stream holding items, with their item counts.
+      responses:
+        default: { $ref: "#/components/responses/Error" }
+        "200":
+          description: The streams, by name.
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/Stream" } }
+        "404": { $ref: "#/components/responses/Error" }
+  /pipelines/{pipeline}/runs:
+    parameters: [{ $ref: "#/components/parameters/pipeline" }]
+    get:
+      operationId: listRuns
+      summary: The pipeline's runs, newest first.
+      parameters:
+        - { name: state, in: query, schema: { $ref: "#/components/schemas/RunState" } }
+        - { $ref: "#/components/parameters/cursor" }
+        - { $ref: "#/components/parameters/limit" }
+      responses:
+        default: { $ref: "#/components/responses/Error" }
+        "200":
+          description: A page of runs.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RunPage" }
+        "400": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+    post:
+      operationId: triggerRun
+      summary: Fire a trigger by hand, recorded as manual.
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TriggerRequest" }
+      responses:
+        default: { $ref: "#/components/responses/Error" }
+        "415": { $ref: "#/components/responses/Error" }
+        "201":
+          description: The run the firing started.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Run" }
+        "200":
+          description: The run the request id had already started.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Run" }
+        "400": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+  /pipelines/{pipeline}/runs/{run}:
+    parameters: [{ $ref: "#/components/parameters/pipeline" }, { $ref: "#/components/parameters/run" }]
+    get:
+      operationId: getRun
+      summary: A run with its item counts per stream and its open dead letters.
+      responses:
+        default: { $ref: "#/components/responses/Error" }
+        "200":
+          description: The run.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Run" }
+        "404": { $ref: "#/components/responses/Error" }
+  /pipelines/{pipeline}/runs/{run}/cancel:
+    parameters: [{ $ref: "#/components/parameters/pipeline" }, { $ref: "#/components/parameters/run" }]
+    post:
+      operationId: cancelRun
+      summary: Cancel a run (spec section 5.3).
+      responses:
+        default: { $ref: "#/components/responses/Error" }
+        "415": { $ref: "#/components/responses/Error" }
+        "204": { description: Cancelled. }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+  /pipelines/{pipeline}/runs/{run}/report:
+    parameters: [{ $ref: "#/components/parameters/pipeline" }, { $ref: "#/components/parameters/run" }]
+    get:
+      operationId: getRunReport
+      summary: A run's report (spec section 11.1).
+      responses:
+        default: { $ref: "#/components/responses/Error" }
+        "200":
+          description: The report.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RunReport" }
+        "404": { $ref: "#/components/responses/Error" }
+  /pipelines/{pipeline}/runs/{run}/deliveries:
+    parameters: [{ $ref: "#/components/parameters/pipeline" }, { $ref: "#/components/parameters/run" }]
+    get:
+      operationId: listRunDeliveries
+      summary: A run's deliveries, in creation order.
+      parameters:
+        - { name: step, in: query, schema: { type: string } }
+        - { name: state, in: query, schema: { $ref: "#/components/schemas/DeliveryState" } }
+      responses:
+        default: { $ref: "#/components/responses/Error" }
+        "200":
+          description: The deliveries.
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/Delivery" } }
+        "404": { $ref: "#/components/responses/Error" }
+  /pipelines/{pipeline}/replay:
+    parameters: [{ $ref: "#/components/parameters/pipeline" }]
+    post:
+      operationId: replay
+      summary: Start a replay run of a step over past items (spec section 5.7).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ReplayRequest" }
+      responses:
+        default: { $ref: "#/components/responses/Error" }
+        "415": { $ref: "#/components/responses/Error" }
+        "201":
+          description: The replay run started.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Run" }
+        "200":
+          description: The replay run the request id had already started.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Run" }
+        "400": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+  /pipelines/{pipeline}/items:
+    parameters: [{ $ref: "#/components/parameters/pipeline" }]
+    get:
+      operationId: listItems
+      summary: The pipeline's items in insertion order, filtered by stream, run and a CEL expression.
+      description: |
+        where is a CEL expression over item (the payload), envelope, vars and run, as replay's --where. A page of a
+        filtered list reads at most 5000 items: it may come back short with a next cursor.
+      parameters:
+        - { name: stream, in: query, schema: { type: string } }
+        - { name: run, in: query, schema: { type: string } }
+        - { name: where, in: query, schema: { type: string } }
+        - { $ref: "#/components/parameters/cursor" }
+        - { $ref: "#/components/parameters/limit" }
+      responses:
+        default: { $ref: "#/components/responses/Error" }
+        "200":
+          description: A page of items.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ItemPage" }
+        "400": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+  /pipelines/{pipeline}/items/{item}:
+    parameters: [{ $ref: "#/components/parameters/pipeline" }, { $ref: "#/components/parameters/item" }]
+    get:
+      operationId: getItem
+      summary: An item with its payload.
+      responses:
+        default: { $ref: "#/components/responses/Error" }
+        "200":
+          description: The item.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Item" }
+        "404": { $ref: "#/components/responses/Error" }
+  /pipelines/{pipeline}/items/{item}/lineage:
+    parameters: [{ $ref: "#/components/parameters/pipeline" }, { $ref: "#/components/parameters/item" }]
+    get:
+      operationId: getLineage
+      summary: An item's ancestors and descendants, nearest first.
+      parameters:
+        - { name: depth, in: query, schema: { type: integer, minimum: 1, maximum: 50, default: 10 } }
+      responses:
+        default: { $ref: "#/components/responses/Error" }
+        "200":
+          description: The lineage.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Lineage" }
+        "400": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+  /pipelines/{pipeline}/items/{item}/deliveries:
+    parameters: [{ $ref: "#/components/parameters/pipeline" }, { $ref: "#/components/parameters/item" }]
+    get:
+      operationId: listItemDeliveries
+      summary: The deliveries of an item, the steps that read it.
+      parameters:
+        - { name: step, in: query, schema: { type: string } }
+        - { name: state, in: query, schema: { $ref: "#/components/schemas/DeliveryState" } }
+      responses:
+        default: { $ref: "#/components/responses/Error" }
+        "200":
+          description: The deliveries.
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/Delivery" } }
+        "404": { $ref: "#/components/responses/Error" }
+  /pipelines/{pipeline}/items/{item}/artifacts/{name}:
+    parameters:
+      - { $ref: "#/components/parameters/pipeline" }
+      - { $ref: "#/components/parameters/item" }
+      - { $ref: "#/components/parameters/artifactName" }
+    get:
+      operationId: getItemArtifact
+      summary: An artifact of an item, with its media type.
+      responses:
+        default: { $ref: "#/components/responses/Error" }
+        "200": { $ref: "#/components/responses/Artifact" }
+        "404": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+  /pipelines/{pipeline}/deliveries/{delivery}:
+    parameters: [{ $ref: "#/components/parameters/pipeline" }, { $ref: "#/components/parameters/delivery" }]
+    get:
+      operationId: getDelivery
+      summary: A delivery with its attempts and the artifacts each kept.
+      responses:
+        default: { $ref: "#/components/responses/Error" }
+        "200":
+          description: The delivery.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Delivery" }
+        "404": { $ref: "#/components/responses/Error" }
+  /pipelines/{pipeline}/deliveries/{delivery}/attempts/{attempt}/artifacts/{name}:
+    parameters:
+      - { $ref: "#/components/parameters/pipeline" }
+      - { $ref: "#/components/parameters/delivery" }
+      - { name: attempt, in: path, required: true, schema: { type: integer } }
+      - { $ref: "#/components/parameters/artifactName" }
+    get:
+      operationId: getAttemptArtifact
+      summary: An artifact an attempt kept, such as an agent's transcript.
+      responses:
+        default: { $ref: "#/components/responses/Error" }
+        "200": { $ref: "#/components/responses/Artifact" }
+        "400": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+  /pipelines/{pipeline}/dead-letters:
+    parameters: [{ $ref: "#/components/parameters/pipeline" }]
+    get:
+      operationId: listDeadLetters
+      summary: Dead letters grouped by step, kind and error fingerprint, largest group first.
+      parameters:
+        - name: state
+          in: query
+          schema: { type: string, enum: [open, replayed, discarded, all], default: open }
+      responses:
+        default: { $ref: "#/components/responses/Error" }
+        "200":
+          description: The groups.
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/DeadLetterGroup" } }
+        "400": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+  /pipelines/{pipeline}/dead-letters/replay:
+    parameters: [{ $ref: "#/components/parameters/pipeline" }]
+    post:
+      operationId: replayDeadLetters
+      summary: Replay open dead letters into their runs (spec section 5.6).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DeadLetterSelection" }
+      responses:
+        default: { $ref: "#/components/responses/Error" }
+        "415": { $ref: "#/components/responses/Error" }
+        "200":
+          description: How many were replayed.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Count" }
+        "400": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+  /pipelines/{pipeline}/dead-letters/discard:
+    parameters: [{ $ref: "#/components/parameters/pipeline" }]
+    post:
+      operationId: discardDeadLetters
+      summary: Discard open dead letters, accepting the loss.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DeadLetterSelection" }
+      responses:
+        default: { $ref: "#/components/responses/Error" }
+        "415": { $ref: "#/components/responses/Error" }
+        "200":
+          description: How many were discarded.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Count" }
+        "400": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+  /pipelines/{pipeline}/lessons:
+    parameters: [{ $ref: "#/components/parameters/pipeline" }]
+    get:
+      operationId: listLessons
+      summary: The lessons files of the active revision's steps (spec section 11.4).
+      responses:
+        default: { $ref: "#/components/responses/Error" }
+        "200":
+          description: The steps that have lessons, by name.
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/StepLessons" } }
+        "404": { $ref: "#/components/responses/Error" }
+  /pipelines/{pipeline}/reviews/{delivery}:
+    parameters: [{ $ref: "#/components/parameters/pipeline" }, { $ref: "#/components/parameters/delivery" }]
+    get:
+      operationId: getReview
+      summary: The review of a delivery of a review step.
+      responses:
+        default: { $ref: "#/components/responses/Error" }
+        "200":
+          description: The review.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Review" }
+        "404": { $ref: "#/components/responses/Error" }
+  /pipelines/{pipeline}/reviews/{delivery}/decision:
+    parameters: [{ $ref: "#/components/parameters/pipeline" }, { $ref: "#/components/parameters/delivery" }]
+    post:
+      operationId: decideReview
+      summary: Approve, edit then approve, or reject a review (spec section 8).
+      parameters: [{ $ref: "#/components/parameters/user" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ReviewDecision" }
+      responses:
+        default: { $ref: "#/components/responses/Error" }
+        "415": { $ref: "#/components/responses/Error" }
+        "200":
+          description: The review as decided.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Review" }
+        "400": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "413": { $ref: "#/components/responses/Error" }
+  /pipelines/{pipeline}/samples/{delivery}:
+    parameters: [{ $ref: "#/components/parameters/pipeline" }, { $ref: "#/components/parameters/delivery" }]
+    get:
+      operationId: getSample
+      summary: The review sample of an auto-approved delivery.
+      responses:
+        default: { $ref: "#/components/responses/Error" }
+        "200":
+          description: The sample.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Sample" }
+        "404": { $ref: "#/components/responses/Error" }
+  /pipelines/{pipeline}/samples/{delivery}/decision:
+    parameters: [{ $ref: "#/components/parameters/pipeline" }, { $ref: "#/components/parameters/delivery" }]
+    post:
+      operationId: decideSample
+      summary: Agree or disagree with the rule that approved a sampled item; it changes nothing else.
+      parameters: [{ $ref: "#/components/parameters/user" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SampleDecision" }
+      responses:
+        default: { $ref: "#/components/responses/Error" }
+        "415": { $ref: "#/components/responses/Error" }
+        "200":
+          description: The sample as decided.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Sample" }
+        "400": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+  /pipelines/{pipeline}/insights/{insight}/acknowledge:
+    parameters: [{ $ref: "#/components/parameters/pipeline" }, { $ref: "#/components/parameters/insight" }]
+    post:
+      operationId: acknowledgeInsight
+      summary: Acknowledge an insight; the projector keeps updating it and resolves it when it clears.
+      responses:
+        default: { $ref: "#/components/responses/Error" }
+        "415": { $ref: "#/components/responses/Error" }
+        "204": { description: Acknowledged. }
+        "404": { $ref: "#/components/responses/Error" }
+  /pipelines/{pipeline}/insights/{insight}/mute:
+    parameters: [{ $ref: "#/components/parameters/pipeline" }, { $ref: "#/components/parameters/insight" }]
+    post:
+      operationId: muteInsight
+      summary: Mute an insight; it stays muted whatever the projector finds.
+      responses:
+        default: { $ref: "#/components/responses/Error" }
+        "415": { $ref: "#/components/responses/Error" }
+        "204": { description: Muted. }
+        "404": { $ref: "#/components/responses/Error" }
+  /inbox:
+    get:
+      operationId: listInbox
+      summary: Reviews, oldest first; the open ones by default.
+      parameters:
+        - { name: pipeline, in: query, schema: { type: string } }
+        - { name: inbox, in: query, schema: { type: string } }
+        - { name: step, in: query, schema: { type: string } }
+        - { name: state, in: query, schema: { $ref: "#/components/schemas/ReviewState" } }
+        - { $ref: "#/components/parameters/cursor" }
+        - { $ref: "#/components/parameters/limit" }
+      responses:
+        default: { $ref: "#/components/responses/Error" }
+        "200":
+          description: A page of reviews.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReviewPage" }
+        "400": { $ref: "#/components/responses/Error" }
+  /inbox/samples:
+    get:
+      operationId: listSamples
+      summary: Review samples, oldest first; the open ones by default.
+      parameters:
+        - { name: pipeline, in: query, schema: { type: string } }
+        - { name: inbox, in: query, schema: { type: string } }
+        - { name: step, in: query, schema: { type: string } }
+        - { name: state, in: query, schema: { $ref: "#/components/schemas/SampleState" } }
+        - { $ref: "#/components/parameters/cursor" }
+        - { $ref: "#/components/parameters/limit" }
+      responses:
+        default: { $ref: "#/components/responses/Error" }
+        "200":
+          description: A page of samples.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SamplePage" }
+        "400": { $ref: "#/components/responses/Error" }
+  /insights:
+    get:
+      operationId: listInsights
+      summary: Insights by pipeline, most recently updated first.
+      parameters:
+        - { name: pipeline, in: query, schema: { type: string } }
+        - { name: state, in: query, schema: { $ref: "#/components/schemas/InsightState" } }
+      responses:
+        default: { $ref: "#/components/responses/Error" }
+        "200":
+          description: The insights.
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/Insight" } }
+  /metrics:
+    get:
+      operationId: getMetrics
+      summary: A metric's one-minute rollups over a range, one series per group (spec section 10.2).
+      parameters:
+        - { name: name, in: query, required: true, schema: { type: string } }
+        - { name: pipeline, in: query, schema: { type: string } }
+        - name: groupBy
+          in: query
+          description: A label to group by (step, action, …); one series of every label set without it.
+          schema: { type: string }
+        - { $ref: "#/components/parameters/since" }
+        - { $ref: "#/components/parameters/from" }
+        - { $ref: "#/components/parameters/to" }
+      responses:
+        default: { $ref: "#/components/responses/Error" }
+        "200":
+          description: The series, by group.
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/MetricSeries" } }
+        "400": { $ref: "#/components/responses/Error" }
+  /metrics/names:
+    get:
+      operationId: listMetricNames
+      summary: The names of the metrics with rollups in a range.
+      parameters:
+        - { name: pipeline, in: query, schema: { type: string } }
+        - { $ref: "#/components/parameters/since" }
+        - { $ref: "#/components/parameters/from" }
+        - { $ref: "#/components/parameters/to" }
+      responses:
+        default: { $ref: "#/components/responses/Error" }
+        "200":
+          description: The names, sorted.
+          content:
+            application/json:
+              schema: { type: array, items: { type: string } }
+        "400": { $ref: "#/components/responses/Error" }
+  /nodes:
+    get:
+      operationId: listNodes
+      summary: The engine and the nodes it serves, with the leases each holds.
+      responses:
+        default: { $ref: "#/components/responses/Error" }
+        "200":
+          description: The engine and its nodes.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Nodes" }
+  /live/pipelines/{pipeline}:
+    parameters: [{ $ref: "#/components/parameters/pipeline" }]
+    get:
+      operationId: livePipeline
+      summary: 'Server-sent events: the pipeline''s step snapshots ("snapshot", data PipelineSnapshot).'
+      responses:
+        default: { $ref: "#/components/responses/Error" }
+        "200": { $ref: "#/components/responses/EventStream" }
+        "404": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+  /live/runs/{run}:
+    parameters:
+      - { $ref: "#/components/parameters/run" }
+      - { $ref: "#/components/parameters/livePipeline" }
+      - { $ref: "#/components/parameters/lastEventIdQuery" }
+      - { $ref: "#/components/parameters/lastEventIdHeader" }
+    get:
+      operationId: liveRun
+      summary: 'Server-sent events: a run''s state events ("state", data Event, id the sequence number).'
+      responses:
+        default: { $ref: "#/components/responses/Error" }
+        "200": { $ref: "#/components/responses/EventStream" }
+        "400": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+  /live/items/{item}:
+    parameters:
+      - { $ref: "#/components/parameters/item" }
+      - { $ref: "#/components/parameters/livePipeline" }
+      - { $ref: "#/components/parameters/lastEventIdQuery" }
+      - { $ref: "#/components/parameters/lastEventIdHeader" }
+    get:
+      operationId: liveItem
+      summary: 'Server-sent events: an item''s state events: its publication and its deliveries'' lifecycle.'
+      responses:
+        default: { $ref: "#/components/responses/Error" }
+        "200": { $ref: "#/components/responses/EventStream" }
+        "400": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+  /live/logs:
+    get:
+      operationId: liveLogs
+      summary: 'Server-sent events: the live log tail of the embedded node ("log", data LogLine; "gap").'
+      parameters:
+        - { name: pipeline, in: query, schema: { type: string } }
+        - { name: run, in: query, schema: { type: string } }
+        - { name: step, in: query, schema: { type: string } }
+        - { name: item, in: query, schema: { type: string } }
+        - { name: delivery, in: query, schema: { type: string } }
+        - { $ref: "#/components/parameters/lastEventIdQuery" }
+        - { $ref: "#/components/parameters/lastEventIdHeader" }
+      responses:
+        default: { $ref: "#/components/responses/Error" }
+        "200": { $ref: "#/components/responses/EventStream" }
+        "503": { $ref: "#/components/responses/Error" }
+components:
+  parameters:
+    pipeline: { name: pipeline, in: path, required: true, schema: { type: string } }
+    step: { name: step, in: path, required: true, schema: { type: string } }
+    run: { name: run, in: path, required: true, schema: { type: string } }
+    item: { name: item, in: path, required: true, schema: { type: string } }
+    delivery: { name: delivery, in: path, required: true, schema: { type: string } }
+    insight: { name: insight, in: path, required: true, schema: { type: string } }
+    artifactName: { name: name, in: path, required: true, schema: { type: string } }
+    cursor: { name: cursor, in: query, description: A page's next., schema: { type: string } }
+    limit: { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 500, default: 50 } }
+    since:
+      name: since
+      in: query
+      description: The range starts this long ago (10m, 1h, 7d); one hour by default.
+      schema: { type: string }
+    from: { name: from, in: query, schema: { type: string, format: date-time } }
+    to: { name: to, in: query, schema: { type: string, format: date-time } }
+    user:
+      name: X-Millstream-User
+      in: header
+      description: Who decides, until authentication (M4); the server's $USER without it.
+      schema: { type: string }
+    livePipeline:
+      name: pipeline
+      in: query
+      required: true
+      description: The pipeline of the run or item; their ids are unique within a pipeline only.
+      schema: { type: string }
+    lastEventIdQuery:
+      name: lastEventId
+      in: query
+      description: The last event id received, to resume; the same as the Last-Event-ID header.
+      schema: { type: string }
+    lastEventIdHeader: { name: Last-Event-ID, in: header, schema: { type: string } }
+  responses:
+    Error:
+      description: An error.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Artifact:
+      description: The artifact's content, served as its media type under a sandbox policy.
+      content:
+        application/octet-stream:
+          schema: { type: string, format: binary }
+    EventStream:
+      description: A stream of server-sent events.
+      content:
+        text/event-stream:
+          schema: { type: string }
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      additionalProperties: false
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          additionalProperties: false
+          properties:
+            code:
+              type: string
+              enum: [notFound, conflict, invalid, unavailable, methodNotAllowed, tooLarge, forbidden,
+                unsupportedMediaType, internal]
+            message: { type: string }
+    RunState: { type: string, enum: [running, waitingReview, succeeded, completedWithErrors, cancelled] }
+    DeliveryState:
+      type: string
+      enum: [pending, leased, done, filtered, awaitingReview, dead, cancelled]
+    ReviewState: { type: string, enum: [open, decided, timedOut, cancelled] }
+    SampleState: { type: string, enum: [open, decided, unreviewed] }
+    InsightState: { type: string, enum: [open, acknowledged, resolved, muted] }
+    Pipeline:
+      type: object
+      required: [name, state, revision, steps, triggers, streams, openDeadLetters, openReviews]
+      additionalProperties: false
+      properties:
+        name: { type: string }
+        description: { type: string }
+        state: { type: string, enum: [active, paused] }
+        revision: { type: integer }
+        steps: { type: array, items: { $ref: "#/components/schemas/Step" } }
+        triggers: { type: array, items: { $ref: "#/components/schemas/Trigger" } }
+        streams: { type: array, items: { type: string } }
+        lastRun: { $ref: "#/components/schemas/RunSummary" }
+        openDeadLetters: { type: integer }
+        openReviews: { type: integer }
+    Step:
+      type: object
+      required: [name, action, builtin, in, out, dlq, concurrency, paused]
+      additionalProperties: false
+      properties:
+        name: { type: string }
+        action: { type: string }
+        builtin: { type: boolean }
+        in: { type: array, items: { type: string } }
+        out: { type: array, items: { type: string } }
+        dlq: { type: string }
+        concurrency: { type: integer }
+        paused: { type: boolean }
+        pauseCause: { type: string, description: The budget that paused the step (budget.run or budget.day). }
+    Trigger:
+      type: object
+      required: [name, kind, stream]
+      additionalProperties: false
+      properties:
+        name: { type: string }
+        kind: { type: string, enum: [cron, manual, webhook] }
+        schedule: { type: string }
+        stream: { type: string }
+    Revision:
+      type: object
+      required: [id, pipeline, packageHash, appliedAt, active]
+      additionalProperties: false
+      properties:
+        id: { type: integer }
+        pipeline: { type: string }
+        packageHash: { type: string }
+        appliedAt: { type: string, format: date-time }
+        active: { type: boolean }
+        graph: { $ref: "#/components/schemas/Graph" }
+    Graph:
+      type: object
+      required: [steps, triggers, streams]
+      additionalProperties: false
+      properties:
+        description: { type: string }
+        steps: { type: array, items: { $ref: "#/components/schemas/Step" } }
+        triggers: { type: array, items: { $ref: "#/components/schemas/Trigger" } }
+        streams: { type: array, items: { type: string } }
+    Stream:
+      type: object
+      required: [name, producers, consumers, items]
+      additionalProperties: false
+      properties:
+        name: { type: string }
+        producers: { type: array, items: { type: string } }
+        consumers: { type: array, items: { type: string } }
+        items: { type: integer }
+    RunSummary:
+      type: object
+      required: [id, state, startedAt]
+      additionalProperties: false
+      properties:
+        id: { type: string }
+        state: { $ref: "#/components/schemas/RunState" }
+        startedAt: { type: string, format: date-time }
+        settledAt: { type: string, format: date-time }
+    Run:
+      type: object
+      required: [id, pipeline, revision, kind, triggerKey, triggerSource, generation, state, startedAt, costUsd, vars,
+        varSources]
+      additionalProperties: false
+      properties:
+        id: { type: string }
+        pipeline: { type: string }
+        revision: { type: integer }
+        kind: { type: string, enum: [trigger, replay] }
+        trigger: { type: string }
+        triggerKey: { type: string }
+        triggerSource: { type: string, enum: [cron, manual] }
+        scheduledAt: { type: string, format: date-time }
+        generation: { type: integer }
+        state: { $ref: "#/components/schemas/RunState" }
+        startedAt: { type: string, format: date-time }
+        settledAt: { type: string, format: date-time }
+        costUsd: { type: number }
+        vars: { type: object }
+        varSources: { type: object, additionalProperties: { type: string } }
+        items:
+          type: object
+          description: Items per stream; on one run only.
+          additionalProperties: { type: integer }
+        openDeadLetters: { type: integer, description: On one run only. }
+    RunPage:
+      type: object
+      required: [items]
+      additionalProperties: false
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/Run" } }
+        next: { type: string }
+    RunReport:
+      type: object
+      required: [pipeline, run, kind, state, startedAt, settledAt, durationSeconds, costUsd, items, criticalPath,
+        steps, failures, comparison, eta]
+      additionalProperties: false
+      properties:
+        pipeline: { type: string }
+        run: { type: string }
+        kind: { type: string }
+        state: { $ref: "#/components/schemas/RunState" }
+        startedAt: { type: string, format: date-time }
+        settledAt: { type: [string, "null"], format: date-time }
+        durationSeconds: { type: number }
+        costUsd: { type: number }
+        items: { type: object, additionalProperties: { type: integer } }
+        criticalPath:
+          type: object
+          required: [totalSeconds, steps]
+          additionalProperties: false
+          properties:
+            totalSeconds: { type: number }
+            steps:
+              type: [array, "null"]
+              items:
+                type: object
+                required: [step, delivery, latencySeconds, waitSeconds, workSeconds, backoffSeconds, share]
+                additionalProperties: false
+                properties:
+                  step: { type: string }
+                  delivery: { type: string }
+                  latencySeconds: { type: number }
+                  waitSeconds: { type: number }
+                  workSeconds: { type: number }
+                  backoffSeconds: { type: number }
+                  share: { type: number }
+        steps:
+          type: [array, "null"]
+          items:
+            type: object
+            required: [step, deliveries, failedAttempts, p50Seconds, p95Seconds, maxSeconds, meanWaitSeconds,
+              meanWorkSeconds, costUsd]
+            additionalProperties: false
+            properties:
+              step: { type: string }
+              deliveries: { type: integer }
+              failedAttempts: { type: integer }
+              p50Seconds: { type: number }
+              p95Seconds: { type: number }
+              maxSeconds: { type: number }
+              meanWaitSeconds: { type: number }
+              meanWorkSeconds: { type: number }
+              costUsd: { type: number }
+        failures:
+          type: [array, "null"]
+          items:
+            type: object
+            required: [step, class, message, example, count, recovered]
+            additionalProperties: false
+            properties:
+              step: { type: string }
+              class: { type: string }
+              message: { type: string }
+              example: { type: string }
+              count: { type: integer }
+              recovered: { type: integer }
+        comparison:
+          oneOf:
+            - type: "null"
+            - type: object
+              required: [runs, durationSeconds, costUsd, items, failedAttempts]
+              additionalProperties: false
+              properties:
+                runs: { type: integer }
+                durationSeconds: { $ref: "#/components/schemas/Figure" }
+                costUsd: { $ref: "#/components/schemas/Figure" }
+                items: { $ref: "#/components/schemas/Figure" }
+                failedAttempts: { $ref: "#/components/schemas/Figure" }
+        eta: { type: [string, "null"], format: date-time }
+    Figure:
+      type: object
+      required: [value, median]
+      additionalProperties: false
+      properties:
+        value: { type: number }
+        median: { type: number }
+    ArtifactRef:
+      type: object
+      required: [name, sha256, size, type]
+      additionalProperties: false
+      properties:
+        name: { type: string }
+        sha256: { type: string }
+        size: { type: integer }
+        type: { type: string, description: The media type. }
+    Item:
+      type: object
+      required: [id, pipeline, runId, stream, step, key, parents, generation, ts, payload, artifacts]
+      additionalProperties: false
+      properties:
+        id: { type: string }
+        pipeline: { type: string }
+        runId: { type: string }
+        stream: { type: string }
+        step: { type: string }
+        key: { type: string }
+        parents: { type: array, items: { type: string } }
+        generation: { type: integer }
+        ts: { type: string, format: date-time }
+        payload: {}
+        artifacts: { type: array, items: { $ref: "#/components/schemas/ArtifactRef" } }
+    ItemPage:
+      type: object
+      required: [items]
+      additionalProperties: false
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/Item" } }
+        next: { type: string }
+    LineageNode:
+      type: object
+      required: [id, runId, stream, step, key, parents, ts]
+      additionalProperties: false
+      properties:
+        id: { type: string }
+        runId: { type: string }
+        stream: { type: string }
+        step: { type: string }
+        key: { type: string }
+        parents: { type: array, items: { type: string } }
+        ts: { type: string, format: date-time }
+    Lineage:
+      type: object
+      required: [item, up, down, truncated]
+      additionalProperties: false
+      properties:
+        item: { type: string }
+        up: { type: array, items: { $ref: "#/components/schemas/LineageNode" } }
+        down: { type: array, items: { $ref: "#/components/schemas/LineageNode" } }
+        truncated: { type: boolean }
+    Delivery:
+      type: object
+      required: [id, pipeline, runId, step, itemId, generation, state, attempt, costUsd, createdAt, waitMs, workMs]
+      additionalProperties: false
+      properties:
+        id: { type: string }
+        pipeline: { type: string }
+        runId: { type: string }
+        step: { type: string }
+        itemId: { type: string }
+        generation: { type: integer }
+        state: { $ref: "#/components/schemas/DeliveryState" }
+        attempt: { type: integer }
+        leaseOwner: { type: string }
+        leaseExpiresAt: { type: string, format: date-time }
+        nextAttemptAt: { type: string, format: date-time }
+        errorClass: { type: string }
+        errorMessage: { type: string }
+        filterReason: { type: string }
+        costUsd: { type: number }
+        createdAt: { type: string, format: date-time }
+        leasedAt: { type: string, format: date-time }
+        finishedAt: { type: string, format: date-time }
+        waitMs: { type: integer }
+        workMs: { type: integer }
+        attempts: { type: array, items: { $ref: "#/components/schemas/Attempt" }, description: On one delivery only. }
+    Attempt:
+      type: object
+      required: [attempt, outcome, costUsd, workMs, artifacts]
+      additionalProperties: false
+      properties:
+        attempt: { type: integer }
+        owner: { type: string }
+        leasedAt: { type: string, format: date-time }
+        endedAt: { type: string, format: date-time }
+        outcome:
+          type: string
+          enum: [running, done, retry, dead, filtered, cancelled, leaseExpired, awaitingReview]
+        errorClass: { type: string }
+        error: { type: string }
+        costUsd: { type: number }
+        workMs: { type: integer }
+        artifacts: { type: array, items: { $ref: "#/components/schemas/ArtifactRef" } }
+    DeadLetterGroup:
+      type: object
+      required: [fingerprint, step, kind, error, count, firstSeen, lastSeen, deadLetters]
+      additionalProperties: false
+      properties:
+        fingerprint: { type: string }
+        step: { type: string }
+        kind: { type: string, enum: [dead, unrouted] }
+        error: { type: string, description: The error with what varies between occurrences replaced. }
+        count: { type: integer }
+        firstSeen: { type: string, format: date-time }
+        lastSeen: { type: string, format: date-time }
+        deadLetters: { type: array, items: { $ref: "#/components/schemas/DeadLetter" } }
+    DeadLetter:
+      type: object
+      required: [id, runId, originDelivery, stream, state, error, createdAt]
+      additionalProperties: false
+      properties:
+        id: { type: string }
+        runId: { type: string }
+        originDelivery: { type: string }
+        stream: { type: string }
+        state: { type: string, enum: [open, replayed, discarded] }
+        error: { type: string }
+        createdAt: { type: string, format: date-time }
+    DeadLetterSelection:
+      type: object
+      description: Exactly one of ids, fingerprint and all, among the pipeline's open dead letters.
+      additionalProperties: false
+      properties:
+        ids: { type: array, items: { type: string } }
+        fingerprint: { type: string }
+        all: { type: boolean }
+        migrate: { type: boolean, description: Replay only. Move each run to the active revision first. }
+    Count:
+      type: object
+      required: [count]
+      additionalProperties: false
+      properties:
+        count: { type: integer }
+    TriggerRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        trigger: { type: string, description: The pipeline's first manual trigger by default. }
+        payload: { description: "The trigger item's payload; {} by default." }
+        requestId: { type: string, description: Firing the same request id again returns the same run. }
+    ReplayRequest:
+      type: object
+      required: [step]
+      additionalProperties: false
+      properties:
+        step: { type: string }
+        since: { type: string, description: Only the items published within this duration (7d, 12h). }
+        run: { type: string, description: Only this run's items. }
+        where: { type: string, description: Only the items for which this CEL expression holds. }
+        revision: { type: integer, description: The revision to run on; the active one by default. }
+        requestId: { type: string }
+    MetricSeries:
+      type: object
+      required: [name, group, points]
+      additionalProperties: false
+      properties:
+        name: { type: string }
+        group: { type: string }
+        points:
+          type: array
+          items:
+            type: object
+            required: [t, count, sum, min, max]
+            additionalProperties: false
+            properties:
+              t: { type: string, format: date-time }
+              count: { type: integer }
+              sum: { type: number }
+              min: { type: number }
+              max: { type: number }
+    Review:
+      type: object
+      required: [pipeline, deliveryId, runId, step, inbox, state, version, parkedAt, editable, reasons, display, item]
+      additionalProperties: false
+      properties:
+        pipeline: { type: string }
+        deliveryId: { type: string }
+        runId: { type: string }
+        step: { type: string }
+        inbox: { type: string }
+        state: { $ref: "#/components/schemas/ReviewState" }
+        version: { type: integer, description: Name it in a decision to refuse a review escalated since. }
+        parkedAt: { type: string, format: date-time }
+        deadline: { type: string, format: date-time }
+        editable: { type: array, items: { type: string } }
+        reasons: { type: array, items: { type: string } }
+        display: { type: string }
+        decision: { type: string, enum: [approve, reject] }
+        reviewer: { type: string }
+        reason: { type: string }
+        text: { type: string }
+        patch: { type: array, items: { type: object }, description: The edit as a JSON Patch. }
+        decidedAt: { type: string, format: date-time }
+        item: { $ref: "#/components/schemas/Item" }
+    ReviewPage:
+      type: object
+      required: [items]
+      additionalProperties: false
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/Review" } }
+        next: { type: string }
+    ReviewDecision:
+      type: object
+      required: [decision]
+      additionalProperties: false
+      properties:
+        decision: { type: string, enum: [approve, reject] }
+        version: { type: integer, description: The version the reviewer saw; the current one when absent. }
+        patch: { type: array, items: { type: object }, description: A JSON Patch within the editable pointers. }
+        reason: { type: string, description: A reason code; required to reject when the step lists some. }
+        text: { type: string }
+    Sample:
+      type: object
+      required: [pipeline, deliveryId, runId, step, inbox, state, display, createdAt, item]
+      additionalProperties: false
+      properties:
+        pipeline: { type: string }
+        deliveryId: { type: string }
+        runId: { type: string }
+        step: { type: string }
+        inbox: { type: string }
+        state: { $ref: "#/components/schemas/SampleState" }
+        display: { type: string }
+        createdAt: { type: string, format: date-time }
+        deadline: { type: string, format: date-time }
+        decision: { type: string, enum: [agree, disagree] }
+        reviewer: { type: string }
+        reason: { type: string }
+        decidedAt: { type: string, format: date-time }
+        item: { $ref: "#/components/schemas/Item" }
+    SamplePage:
+      type: object
+      required: [items]
+      additionalProperties: false
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/Sample" } }
+        next: { type: string }
+    SampleDecision:
+      type: object
+      required: [decision]
+      additionalProperties: false
+      properties:
+        decision: { type: string, enum: [agree, disagree] }
+        reason: { type: string }
+    Insight:
+      type: object
+      required: [pipeline, id, kind, scope, severity, state, summary, windowStart, windowEnd, openedAt, updatedAt,
+        evidence]
+      additionalProperties: false
+      properties:
+        pipeline: { type: string }
+        id: { type: string }
+        kind: { type: string }
+        scope: { type: string, description: The step it concerns, or pipeline. }
+        severity: { type: string, enum: [info, warning, error] }
+        state: { $ref: "#/components/schemas/InsightState" }
+        summary: { type: string }
+        windowStart: { type: string, format: date-time }
+        windowEnd: { type: string, format: date-time }
+        openedAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        evidence: { type: object }
+    StepLessons:
+      type: object
+      required: [step, rules, examples]
+      additionalProperties: false
+      properties:
+        step: { type: string }
+        rules:
+          type: array
+          items:
+            type: object
+            required: [text]
+            additionalProperties: false
+            properties:
+              text: { type: string }
+              source: { type: string }
+              added: { type: string }
+        examples:
+          type: array
+          items:
+            type: object
+            required: [input, output]
+            additionalProperties: false
+            properties:
+              input: {}
+              output: {}
+              why: { type: string }
+              source: { type: string }
+    Nodes:
+      type: object
+      required: [engine, nodes]
+      additionalProperties: false
+      properties:
+        engine:
+          type: object
+          required: [state, version]
+          additionalProperties: false
+          properties:
+            state: { type: string, enum: [active, standby] }
+            version: { type: string }
+        nodes: { type: array, items: { $ref: "#/components/schemas/Node" } }
+    Node:
+      type: object
+      required: [id, embedded, version, slots, leases, labels, runtimes]
+      additionalProperties: false
+      properties:
+        id: { type: string }
+        embedded: { type: boolean }
+        version: { type: string }
+        slots: { type: integer }
+        leases: { type: integer }
+        labels: { type: object, additionalProperties: { type: string } }
+        runtimes: { type: array, items: { type: string } }
+    Event:
+      type: object
+      description: The data of a "state" event.
+      required: [seq, ts, pipeline, kind, data]
+      additionalProperties: false
+      properties:
+        seq: { type: integer }
+        ts: { type: string, format: date-time }
+        pipeline: { type: string }
+        runId: { type: string }
+        kind: { type: string }
+        data: { type: object }
+    PipelineSnapshot:
+      type: object
+      description: The data of a "snapshot" event.
+      required: [pipeline, at, seq, paused, steps]
+      additionalProperties: false
+      properties:
+        pipeline: { type: string }
+        at: { type: string, format: date-time }
+        seq: { type: integer, description: The last event the snapshot reflects. }
+        paused: { type: boolean }
+        steps:
+          type: array
+          items:
+            type: object
+            required: [step, paused, queued, inFlight, awaitingReview, throughputPerMin, errorRate, p95LatencyMs]
+            additionalProperties: false
+            properties:
+              step: { type: string }
+              paused: { type: boolean }
+              queued: { type: integer }
+              inFlight: { type: integer }
+              awaitingReview: { type: integer }
+              throughputPerMin: { type: number }
+              errorRate: { type: number }
+              p95LatencyMs: { type: integer }
+    LogLine:
+      type: object
+      description: The data of a "log" event.
+      required: [ts, level, message, pipeline, runId, step, itemId, deliveryId, attempt]
+      additionalProperties: false
+      properties:
+        ts: { type: string, format: date-time }
+        level: { type: string }
+        message: { type: string }
+        pipeline: { type: string }
+        runId: { type: string }
+        step: { type: string }
+        itemId: { type: string }
+        deliveryId: { type: string }
+        attempt: { type: integer }
+        node: { type: string }
+    SnapshotRequired:
+      type: object
+      description: The data of a "snapshotRequired" event, which ends the stream.
+      required: [lastEventId]
+      additionalProperties: false
+      properties:
+        lastEventId: { type: string }
+    Gap:
+      type: object
+      description: The data of a "gap" event of the log stream.
+      required: [lastEventId]
+      additionalProperties: false
+      properties:
+        lastEventId: { type: string }

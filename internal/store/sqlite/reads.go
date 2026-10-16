@@ -25,6 +25,17 @@ func (w *where) eq(column string, v string) {
 	}
 }
 
+// in keeps the rows whose column is one of vs, when there are any.
+func (w *where) in(column string, vs []string) {
+	if len(vs) == 0 {
+		return
+	}
+	w.conds = append(w.conds, column+" IN (?"+strings.Repeat(", ?", len(vs)-1)+")")
+	for _, v := range vs {
+		w.args = append(w.args, v)
+	}
+}
+
 func (w *where) since(column string, t time.Time) {
 	if !t.IsZero() {
 		w.conds = append(w.conds, column+" >= ?")
@@ -70,7 +81,7 @@ func closeRows(rows *sql.Rows) error {
 	return nil
 }
 
-const runColumns = `pipeline, id, revision, trigger, trigger_key, trigger_source, COALESCE(scheduled_at, ''), kind,
+const runColumns = `rowid, pipeline, id, revision, trigger, trigger_key, trigger_source, COALESCE(scheduled_at, ''), kind,
 	generation, vars, var_sources, state, started_at, COALESCE(settled_at, ''), cost_usd`
 
 func scanRun(rows interface{ Scan(...any) error }) (store.Run, error) {
@@ -79,7 +90,7 @@ func scanRun(rows interface{ Scan(...any) error }) (store.Run, error) {
 		vars, sources, started, settledAt string
 		scheduledAt                       string
 	)
-	if err := rows.Scan(&r.Pipeline, &r.ID, &r.Revision, &r.Trigger, &r.TriggerKey, &r.TriggerSource, &scheduledAt,
+	if err := rows.Scan(&r.Seq, &r.Pipeline, &r.ID, &r.Revision, &r.Trigger, &r.TriggerKey, &r.TriggerSource, &scheduledAt,
 		&r.Kind, &r.Generation, &vars, &sources, &r.State, &started, &settledAt, &r.CostUSD); err != nil {
 		return r, fmt.Errorf("scan run: %w", err)
 	}
@@ -108,6 +119,10 @@ func (s *Store) Runs(ctx context.Context, f store.RunFilter) ([]store.Run, error
 	w.eq("state", string(f.State))
 	if f.Unsettled {
 		w.conds = append(w.conds, "settled_at IS NULL")
+	}
+	if f.After.Seq > 0 {
+		w.conds = append(w.conds, "(started_at, rowid) < (?, ?)")
+		w.args = append(w.args, formatTime(f.After.StartedAt), f.After.Seq)
 	}
 	q := `SELECT ` + runColumns + ` FROM runs` + w.String() + ` ORDER BY started_at DESC, rowid DESC`
 	if f.Limit > 0 {
@@ -150,12 +165,26 @@ func (s *Store) Items(ctx context.Context, f store.ItemFilter) ([]store.Item, er
 	w.eq("pipeline", f.Pipeline)
 	w.eq("stream", f.Stream)
 	w.eq("run_id", f.RunID)
+	w.in("id", f.IDs)
+	if f.Parent != "" {
+		w.conds = append(w.conds, "EXISTS (SELECT 1 FROM json_each(parents) WHERE value = ?)")
+		w.args = append(w.args, f.Parent)
+	}
 	w.since("ts", f.Since)
-	items, err := scan(ctx, s.read, `SELECT pipeline, id, run_id, stream, step, key, parents, generation, ts, payload,
-		artifacts FROM items`+w.String()+` ORDER BY rowid`, w.args, func(rows *sql.Rows) (store.Item, error) {
+	if f.After > 0 {
+		w.conds = append(w.conds, "rowid > ?")
+		w.args = append(w.args, f.After)
+	}
+	q := `SELECT rowid, pipeline, id, run_id, stream, step, key, parents, generation, ts, payload, artifacts FROM items` +
+		w.String() + ` ORDER BY rowid`
+	if f.Limit > 0 {
+		q += limitParam
+		w.args = append(w.args, f.Limit)
+	}
+	items, err := scan(ctx, s.read, q, w.args, func(rows *sql.Rows) (store.Item, error) {
 		var it store.Item
 		var parents, ts, body, artifacts string
-		if err := rows.Scan(&it.Pipeline, &it.ID, &it.RunID, &it.Stream, &it.Step, &it.Key, &parents,
+		if err := rows.Scan(&it.Seq, &it.Pipeline, &it.ID, &it.RunID, &it.Stream, &it.Step, &it.Key, &parents,
 			&it.Generation, &ts, &body, &artifacts); err != nil {
 			return it, fmt.Errorf("scan item: %w", err)
 		}
@@ -172,7 +201,10 @@ func (s *Store) Items(ctx context.Context, f store.ItemFilter) ([]store.Item, er
 func (s *Store) Deliveries(ctx context.Context, f store.DeliveryFilter) ([]store.Delivery, error) {
 	var w where
 	w.eq("pipeline", f.Pipeline)
+	w.eq("id", f.ID)
 	w.eq("run_id", f.RunID)
+	w.eq("step", f.Step)
+	w.eq("item_id", f.ItemID)
 	w.eq("state", string(f.State))
 	w.since("created_at", f.Since)
 	ds, err := scan(ctx, s.read, `SELECT pipeline, id, run_id, step, item_id, generation, state, attempt, lease_owner,
@@ -239,12 +271,8 @@ func (s *Store) Events(ctx context.Context, afterSeq int64, limit int) ([]store.
 func (s *Store) PipelineEvents(ctx context.Context, f store.EventFilter) ([]store.Event, error) {
 	var w where
 	w.eq("pipeline", f.Pipeline)
-	if len(f.Kinds) > 0 {
-		w.conds = append(w.conds, "kind IN (?"+strings.Repeat(", ?", len(f.Kinds)-1)+")")
-		for _, k := range f.Kinds {
-			w.args = append(w.args, k)
-		}
-	}
+	w.eq("run_id", f.RunID)
+	w.in("kind", f.Kinds)
 	w.since("ts", f.Since)
 	evs, err := scan(ctx, s.read, `SELECT seq, ts, pipeline, run_id, kind, data FROM events`+w.String()+
 		` ORDER BY seq`, w.args, scanEvent)
@@ -252,6 +280,15 @@ func (s *Store) PipelineEvents(ctx context.Context, f store.EventFilter) ([]stor
 		return nil, fmt.Errorf("pipeline events: %w", err)
 	}
 	return evs, nil
+}
+
+// LastEventSeq returns the last event's sequence number, zero when there is none.
+func (s *Store) LastEventSeq(ctx context.Context) (int64, error) {
+	var seq int64
+	if err := s.read.QueryRowContext(ctx, `SELECT COALESCE(MAX(seq), 0) FROM events`).Scan(&seq); err != nil {
+		return 0, fmt.Errorf("last event: %w", err)
+	}
+	return seq, nil
 }
 
 func scanEvent(rows *sql.Rows) (store.Event, error) {
@@ -303,6 +340,105 @@ func (s *Store) Revision(ctx context.Context, id store.RevisionID) (store.Revisi
 	r.PipelineJSON = []byte(data)
 	r.AppliedAt, err = parseTime(appliedAt)
 	return r, err
+}
+
+// Revisions returns a pipeline's revisions, newest first.
+func (s *Store) Revisions(ctx context.Context, pipelineName string) ([]store.Revision, error) {
+	revs, err := scan(ctx, s.read, `SELECT id, pipeline, package_hash, pipeline_json, applied_at FROM revisions
+		WHERE pipeline = ? ORDER BY id DESC`, []any{pipelineName}, func(rows *sql.Rows) (store.Revision, error) {
+		var r store.Revision
+		var data, appliedAt string
+		if err := rows.Scan(&r.ID, &r.Pipeline, &r.PackageHash, &data, &appliedAt); err != nil {
+			return r, fmt.Errorf("scan revision: %w", err)
+		}
+		r.PipelineJSON = []byte(data)
+		var err error
+		r.AppliedAt, err = parseTime(appliedAt)
+		return r, err
+	})
+	if err != nil {
+		return nil, fmt.Errorf("revisions of %s: %w", pipelineName, err)
+	}
+	return revs, nil
+}
+
+// Package returns the bundle of the package applied under hash.
+func (s *Store) Package(ctx context.Context, hash string) ([]byte, error) {
+	var bundle []byte
+	if err := s.read.QueryRowContext(ctx, `SELECT bundle FROM packages WHERE hash = ?`, hash).Scan(&bundle); err != nil {
+		return nil, notFound(err, "package "+hash)
+	}
+	return bundle, nil
+}
+
+// StreamCounts returns how many items each stream of a pipeline holds.
+func (s *Store) StreamCounts(ctx context.Context, pipelineName string) (map[string]int64, error) {
+	type count struct {
+		stream string
+		n      int64
+	}
+	counts, err := scan(ctx, s.read, `SELECT stream, COUNT(*) FROM items WHERE pipeline = ? GROUP BY stream`,
+		[]any{pipelineName}, func(rows *sql.Rows) (count, error) {
+			var c count
+			err := rows.Scan(&c.stream, &c.n)
+			return c, err
+		})
+	if err != nil {
+		return nil, fmt.Errorf("stream counts of %s: %w", pipelineName, err)
+	}
+	out := make(map[string]int64, len(counts))
+	for _, c := range counts {
+		out[c.stream] = c.n
+	}
+	return out, nil
+}
+
+// StepStats returns each step's deliveries by state, and those finished since since.
+func (s *Store) StepStats(ctx context.Context, pipelineName string, since time.Time) ([]store.StepStats, error) {
+	type row struct {
+		step, state, created, finished string
+	}
+	rows, err := scan(ctx, s.read, `SELECT step, state, created_at, finished_at FROM deliveries
+		WHERE pipeline = ? AND (state IN (?, ?, ?) OR finished_at >= ?) ORDER BY step`,
+		[]any{pipelineName, store.DeliveryPending, store.DeliveryLeased, store.DeliveryAwaitingReview, formatTime(since)},
+		func(rows *sql.Rows) (row, error) {
+			var r row
+			err := rows.Scan(&r.step, &r.state, &r.created, &r.finished)
+			return r, err
+		})
+	if err != nil {
+		return nil, fmt.Errorf("step stats of %s: %w", pipelineName, err)
+	}
+	var out []store.StepStats
+	for _, r := range rows {
+		if len(out) == 0 || out[len(out)-1].Step != r.step {
+			out = append(out, store.StepStats{Step: r.step})
+		}
+		st := &out[len(out)-1]
+		switch store.DeliveryState(r.state) {
+		case store.DeliveryPending:
+			st.Pending++
+		case store.DeliveryLeased:
+			st.Leased++
+		case store.DeliveryAwaitingReview:
+			st.AwaitingReview++
+		default:
+			created, err := parseTime(r.created)
+			if err != nil {
+				return nil, err
+			}
+			finished, err := parseTime(r.finished)
+			if err != nil {
+				return nil, err
+			}
+			st.Finished++
+			if store.DeliveryState(r.state) == store.DeliveryDead {
+				st.Dead++
+			}
+			st.Latencies = append(st.Latencies, max(finished.Sub(created), 0))
+		}
+	}
+	return out, nil
 }
 
 // PipelineState returns the pipeline's active revision and pause state.

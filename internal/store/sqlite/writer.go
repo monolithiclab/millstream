@@ -34,6 +34,8 @@ type wtx struct {
 	tx  *sql.Tx
 	now time.Time
 	s   *Store
+	// lastSeq is the sequence number of the last event the unit recorded, zero for none.
+	lastSeq int64
 }
 
 // submit queues a unit and waits until the batch holding it commits or fails. Once queued, the unit's outcome is
@@ -157,15 +159,20 @@ func (s *Store) commitBatch(batch []*request, results []error) (err error) {
 	if err != nil {
 		return err
 	}
+	var lastSeq int64 // the batch's last event: units apply in order, so a later unit's events come after
 	for i, r := range batch {
 		if err := r.ctx.Err(); err != nil {
 			results[i] = err
 			continue
 		}
 		var abort error
-		results[i], abort = applyUnit(&wtx{ctx: ctx, tx: tx, now: now, s: s}, r.fn)
+		w := &wtx{ctx: ctx, tx: tx, now: now, s: s}
+		results[i], abort = applyUnit(w, r.fn)
 		if abort != nil {
 			return abort // rolled back whole; units without an error of their own get this one
+		}
+		if results[i] == nil && w.lastSeq > 0 {
+			lastSeq = w.lastSeq // a unit rolled back to its savepoint gave its numbers back
 		}
 	}
 	for i, r := range batch {
@@ -177,6 +184,11 @@ func (s *Store) commitBatch(batch []*request, results []error) (err error) {
 		return fmt.Errorf("commit: %w", err)
 	}
 	committed = true
+	if lastSeq > 0 {
+		if fn := s.onCommit.Load(); fn != nil {
+			(*fn)(lastSeq)
+		}
+	}
 	for i, r := range batch {
 		if results[i] == nil {
 			failpoint.Hit(r.unit + ".afterCommit")
@@ -261,9 +273,15 @@ func (w *wtx) event(pipeline, runID, kind string, data map[string]any) error {
 	if err != nil {
 		return fmt.Errorf("encode %s event: %w", kind, err)
 	}
-	_, err = w.exec(`INSERT INTO events (ts, pipeline, run_id, kind, data) VALUES (?, ?, ?, ?, ?)`,
+	res, err := w.exec(`INSERT INTO events (ts, pipeline, run_id, kind, data) VALUES (?, ?, ?, ?, ?)`,
 		w.ts(), pipeline, runID, kind, string(body))
-	return err
+	if err != nil {
+		return err
+	}
+	if w.lastSeq, err = res.LastInsertId(); err != nil {
+		return fmt.Errorf("event sequence: %w", err)
+	}
+	return nil
 }
 
 // notFound reports sql.ErrNoRows as store.ErrNotFound naming what was looked up.

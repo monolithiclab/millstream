@@ -56,6 +56,15 @@ earlier designs are in the git history of the spec.
 - Container mounts: `--mount` refuses a path holding a comma, and never creates a missing source; quote such paths
   if Docker and Podman both accept a quoted CSV field.
 
+- HTTP API: rollback, disable and node drain or revoke arrive with the M4 commands they share a unit with; a
+  pipeline's items and cost today, and unschedulable deliveries on the nodes view, are not computed yet.
+- HTTP API: an item's descendants are found by scanning its pipeline's items' parents (`json_each`); an index of
+  parent to child (or reading the deliveries of the item) before volumes grow.
+- Live events: the broker wakes on this process's commits and polls every 15 seconds for other processes' writes on
+  the same SQLite file; Postgres (M4) can wake it with `LISTEN`/`NOTIFY` instead. The live log tail relays the
+  embedded node only; remote nodes stream their lines with M4's node endpoint. Event retention (M4) is what makes a
+  cursor too old besides the 10,000-event resume limit.
+
 ## Execution (icebox)
 
 - Streaming publication (`commit: emit`): outputs visible as they are emitted, for long crawls (D20).

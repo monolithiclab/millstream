@@ -69,7 +69,7 @@ func (w *wtx) endAttempt(d *deliveryRow, terminal bool, a attemptEnd) (map[strin
 		work, finished, d.pipeline, d.id); err != nil {
 		return nil, err
 	}
-	data := map[string]any{"deliveryId": d.id, "step": d.step, "attempt": d.attempt}
+	data := map[string]any{"deliveryId": d.id, "itemId": d.itemID, "step": d.step, "attempt": d.attempt}
 	if !d.leasedAt.IsZero() { // a parked review's attempt ended when it parked: its decision adds no work
 		data["workMs"] = work
 	}

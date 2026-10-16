@@ -140,3 +140,27 @@ func TestViolations(t *testing.T) {
 		})
 	}
 }
+
+func TestDocument(t *testing.T) {
+	d, err := CompileDocument([]byte(`{"defs": {"n": {"type": "integer"}, "list": {"type": "array",
+		"items": {"$ref": "#/defs/n"}}}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := d.Schema("/defs/list")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again, _ := d.Schema("/defs/list"); again != s {
+		t.Error("a schema compiled twice")
+	}
+	if s.Validate([]any{float64(1)}) != nil || s.Validate([]any{"x"}) == nil {
+		t.Error("the schema does not validate as written")
+	}
+	if _, err := d.Schema("/defs/nope"); err == nil {
+		t.Error("a missing pointer compiled")
+	}
+	if _, err := CompileDocument([]byte(`{"$ref": "https://example.com/s.json"}`)); err == nil {
+		t.Error("a remote reference was accepted")
+	}
+}

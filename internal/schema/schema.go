@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"sync"
 
 	"github.com/santhosh-tekuri/jsonschema/v6"
 	"golang.org/x/text/language"
@@ -161,4 +162,44 @@ func checkRefs(root any) error {
 
 func isLocalRef(ref string) bool {
 	return ref == "#" || (len(ref) > 1 && ref[0] == '#' && ref[1] == '/')
+}
+
+// Document is a JSON document holding schemas at JSON pointers, such as an OpenAPI document's: parsed once, each
+// schema compiled once, on first use, with the same-document rule of Compile. It is safe for concurrent use.
+type Document struct {
+	mu       sync.Mutex
+	c        *jsonschema.Compiler
+	compiled map[string]*Schema
+}
+
+// CompileDocument parses a document whose schemas Schema compiles.
+func CompileDocument(doc []byte) (*Document, error) {
+	v, err := parse(doc)
+	if err != nil {
+		return nil, err
+	}
+	c := jsonschema.NewCompiler()
+	c.DefaultDraft(jsonschema.Draft2020)
+	c.AssertFormat()
+	c.UseLoader(refuseLoader{})
+	if err := c.AddResource(docURL, v); err != nil {
+		return nil, fmt.Errorf("compile schema: %w", err)
+	}
+	return &Document{c: c, compiled: map[string]*Schema{}}, nil
+}
+
+// Schema returns the schema at a JSON pointer of the document ("/components/schemas/Run").
+func (d *Document) Schema(pointer string) (*Schema, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if s, ok := d.compiled[pointer]; ok {
+		return s, nil
+	}
+	cs, err := d.c.Compile(docURL + "#" + pointer)
+	if err != nil {
+		return nil, fmt.Errorf("compile schema %s: %w", pointer, err)
+	}
+	s := &Schema{compiled: cs}
+	d.compiled[pointer] = s
+	return s, nil
 }

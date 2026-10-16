@@ -119,7 +119,7 @@ func (w *wtx) lease(req store.LeaseRequest) ([]store.Lease, error) {
 			}
 			l.ExpiresAt = expires
 			data := map[string]any{
-				"deliveryId": l.DeliveryID, "step": l.Step, "attempt": l.Attempt, "owner": req.Owner,
+				"deliveryId": l.DeliveryID, "itemId": l.Item.ID, "step": l.Step, "attempt": l.Attempt, "owner": req.Owner,
 				"fencingToken": l.FencingToken, "waitMs": wait,
 			}
 			if reserve > 0 {
@@ -368,7 +368,8 @@ func (w *wtx) expire(d *deliveryRow) error {
 		return err
 	}
 	if err := w.event(d.pipeline, d.runID, store.EventLeaseExpired, map[string]any{
-		"deliveryId": d.id, "step": d.step, "attempt": d.attempt, "owner": d.owner, "chargedUsd": d.reserved,
+		"deliveryId": d.id, "itemId": d.itemID, "step": d.step, "attempt": d.attempt, "owner": d.owner,
+		"chargedUsd": d.reserved,
 	}); err != nil {
 		return err
 	}

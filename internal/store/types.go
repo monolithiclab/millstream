@@ -444,6 +444,8 @@ type ReplayStart struct {
 
 // Run is a run record.
 type Run struct {
+	// Seq orders runs started at the same instant: with StartedAt, a paging cursor (RunFilter.After).
+	Seq           int64
 	ID            string
 	Pipeline      string
 	Revision      RevisionID
@@ -465,6 +467,8 @@ type Run struct {
 
 // Item is an item envelope with its payload (spec section 5.2).
 type Item struct {
+	// Seq orders items by insertion: a paging cursor (ItemFilter.After).
+	Seq        int64
 	ID         string
 	Pipeline   string
 	RunID      string
@@ -559,29 +563,48 @@ type Event struct {
 	Data     json.RawMessage
 }
 
-// RunFilter selects runs; empty fields match everything. Runs come newest first.
+// RunFilter selects runs; empty fields match everything. Runs come newest first (StartedAt, then Seq).
 type RunFilter struct {
 	Pipeline string
 	State    RunState
 	// Unsettled keeps the runs not settled yet, whatever their state (running, waitingReview, cancelled while live).
 	Unsettled bool
-	Limit     int
+	// After keeps the runs that come after this run in that order: the next page. A zero Seq starts at the newest.
+	After RunPosition
+	Limit int
 }
 
-// ItemFilter selects items; empty fields match everything. Items come in insertion order.
+// RunPosition is where a run sits in the order runs come in.
+type RunPosition struct {
+	StartedAt time.Time
+	Seq       int64
+}
+
+// ItemFilter selects items; empty fields match everything. Items come in insertion order, those after the cursor
+// After (an Item.Seq), at most Limit (all when zero).
 type ItemFilter struct {
 	Pipeline string
 	Stream   string
 	RunID    string
+	// IDs keeps the items with these ids.
+	IDs []string
+	// Parent keeps the items that have this item among their parents.
+	Parent string
 	// Since keeps the items published at or after it.
 	Since time.Time
+	After int64
+	Limit int
 }
 
 // DeliveryFilter selects deliveries; empty fields match everything. Deliveries come in creation order.
 type DeliveryFilter struct {
 	Pipeline string
+	ID       string
 	RunID    string
-	State    DeliveryState
+	Step     string
+	// ItemID keeps the deliveries of this input item.
+	ItemID string
+	State  DeliveryState
 	// Since keeps the deliveries created at or after it.
 	Since time.Time
 }
@@ -589,9 +612,23 @@ type DeliveryFilter struct {
 // EventFilter selects a pipeline's events; empty fields match everything. Events come in sequence order.
 type EventFilter struct {
 	Pipeline string
+	RunID    string
 	Kinds    []string
 	// Since keeps the events recorded at or after it.
 	Since time.Time
+}
+
+// StepStats is a step's deliveries by state now, and those that finished within a window (StepStats in Store).
+type StepStats struct {
+	Step           string
+	Pending        int64
+	Leased         int64
+	AwaitingReview int64
+	// Finished counts the deliveries that became terminal within the window, Dead those of them that ended dead,
+	// and Latencies holds their latencies, in no particular order.
+	Finished  int64
+	Dead      int64
+	Latencies []time.Duration
 }
 
 // MetricRollup is one metric's one-minute rollup for one label set (spec section 10.2).
