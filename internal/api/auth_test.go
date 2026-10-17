@@ -3,6 +3,7 @@ package api
 import (
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -152,6 +153,61 @@ func TestSessionsBounded(t *testing.T) {
 	ss.create(t0.Add(90*time.Minute), t0.Add(3*time.Hour)) // every session of the first hour has expired
 	if len(ss.byID) != 2 {
 		t.Fatalf("after expiry: %d sessions", len(ss.byID))
+	}
+}
+
+// Ten failed sign-ins from one address within a minute refuse it, the right token included, until the minute is up;
+// successful ones do not count, and another address is heard. The table is bounded, an IPv6 address counted by its
+// /64.
+func TestFailedSignInsLimited(t *testing.T) {
+	srv, clock := authServer(t, false)
+	signIn := func(token string) *httptest.ResponseRecorder {
+		return do(t, srv, request{method: http.MethodPost, target: "/api/v1/session", body: `{"token":"` + token + `"}`})
+	}
+	for range maxFailures {
+		if rec := signIn("s3cret"); rec.Code != http.StatusOK {
+			t.Fatalf("sign in: %d", rec.Code)
+		}
+	}
+	for range maxFailures {
+		wantError(t, signIn("wrong"), http.StatusUnauthorized, codeUnauthorized)
+	}
+	clock.Advance(15 * time.Second)
+	rec := signIn("s3cret")
+	wantError(t, rec, http.StatusTooManyRequests, codeTooManyRequests)
+	if got := rec.Header().Get("Retry-After"); got != "45" {
+		t.Errorf("Retry-After = %q", got)
+	}
+	r := httptest.NewRequest(http.MethodPost, "/api/v1/session", strings.NewReader(`{"token":"s3cret"}`))
+	r.Header.Set("Content-Type", "application/json")
+	r.RemoteAddr = "198.51.100.7:4242"
+	other := httptest.NewRecorder()
+	srv.ServeHTTP(other, r)
+	if other.Code != http.StatusOK {
+		t.Errorf("another address: %d", other.Code)
+	}
+	clock.Advance(45 * time.Second)
+	if rec := signIn("s3cret"); rec.Code != http.StatusOK {
+		t.Fatalf("after the window: %d", rec.Code)
+	}
+
+	for addr, want := range map[string]string{"192.0.2.1:80": "192.0.2.1", "[2001:db8:0:1:aa::1]:443": "2001:db8:0:1::/64",
+		"pipe": "pipe"} {
+		if got := remoteAddr(&http.Request{RemoteAddr: addr}); got != want {
+			t.Errorf("remoteAddr(%s) = %s, want %s", addr, got, want)
+		}
+	}
+	f := newFailures()
+	for i := range maxFailureAddrs {
+		f.fail(strconv.Itoa(i), t0.Add(time.Duration(i)))
+	}
+	f.fail("late", t0.Add(time.Second))
+	if _, ok := f.byAddr["0"]; ok || len(f.byAddr) != maxFailureAddrs {
+		t.Fatalf("over the bound: oldest kept %v, %d addresses", ok, len(f.byAddr))
+	}
+	f.fail("later", t0.Add(time.Minute+time.Millisecond)) // every window but late's has ended
+	if len(f.byAddr) != 2 {
+		t.Fatalf("after expiry: %d addresses", len(f.byAddr))
 	}
 }
 

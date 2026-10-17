@@ -75,6 +75,7 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Session" }
         "401": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/TooManyFailures" }
         "503": { $ref: "#/components/responses/Error" }
     delete:
       operationId: deleteSession
@@ -224,7 +225,9 @@ paths:
         "413": { $ref: "#/components/responses/Error" }
         "415": { $ref: "#/components/responses/Error" }
         "429":
-          description: Over the trigger's rate; Retry-After says in how many seconds a request is accepted again.
+          description: >-
+            Over the trigger's rate, or ten failed token checks from the caller's address within a minute; Retry-After
+            says in how many seconds a request is accepted again.
           headers:
             Retry-After: { schema: { type: integer } }
           content:
@@ -1014,6 +1017,15 @@ components:
   responses:
     Error:
       description: An error.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    TooManyFailures:
+      description: >-
+        Ten failed attempts from the caller's address within a minute (tooManyRequests); Retry-After says in how
+        many seconds it is heard again.
+      headers:
+        Retry-After: { schema: { type: integer } }
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }

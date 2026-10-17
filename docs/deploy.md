@@ -238,6 +238,10 @@ A second `millstream serve` on the same Postgres database, with the same environ
 - **Webhook tokens.** Each webhook trigger has its own token, stored as a hash and compared in constant time; it
   admits that trigger's requests only, never the API. Rotate it with `millstream trigger token --rotate` or the UI
   when it may have leaked.
+- **Failed attempts.** Ten failed sign-ins or webhook token checks from one address within a minute refuse that
+  address (`429`, with `Retry-After`) for the rest of the minute. Behind a reverse proxy every client shares the
+  proxy's address, so a flood of wrong tokens briefly refuses everyone's sign-ins and webhooks; rate limit at the
+  proxy as well.
 - **Node token and TLS.** Nodes present the deployment's node token, over TLS except on loopback (spec section 15.7).
   A node can fetch packages and artifacts only for the deliveries it holds. `millstream nodes revoke <id>` refuses
   a node; rotating the token disconnects every node until it has the new one (see Remote nodes).

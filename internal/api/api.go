@@ -152,6 +152,7 @@ type Server struct {
 	log      *slog.Logger
 	hooks    http.Handler // the webhook triggers, served by Handler outside the browser guards
 	tokenSum [32]byte     // the SHA-256 of Auth.Token
+	failures *failures    // failed sign-ins and webhook token checks, by remote address
 }
 
 // handler is a route's handler: an error is answered by writeError.
@@ -263,7 +264,7 @@ func New(opts Options) (*Server, error) {
 		}
 		opts.Auth = &a
 	}
-	s := &Server{opts: opts, log: opts.Logger}
+	s := &Server{opts: opts, log: opts.Logger, failures: newFailures()}
 	if opts.Auth != nil {
 		s.tokenSum = sha256.Sum256([]byte(opts.Auth.Token))
 	}
@@ -502,6 +503,7 @@ const (
 	codeForbidden            = "forbidden"
 	codeUnauthorized         = "unauthorized"
 	codeUnsupportedMediaType = "unsupportedMediaType"
+	codeTooManyRequests      = "tooManyRequests"
 	codeInternal             = "internal"
 )
 

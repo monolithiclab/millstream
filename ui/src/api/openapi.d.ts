@@ -1744,6 +1744,16 @@ export interface components {
         'application/json': components['schemas']['Error'];
       };
     };
+    /** @description Ten failed attempts from the caller's address within a minute (tooManyRequests); Retry-After says in how many seconds it is heard again. */
+    TooManyFailures: {
+      headers: {
+        'Retry-After'?: number;
+        [name: string]: unknown;
+      };
+      content: {
+        'application/json': components['schemas']['Error'];
+      };
+    };
     /** @description The artifact's content, served as its media type under a sandbox policy. */
     Artifact: {
       headers: {
@@ -1869,6 +1879,7 @@ export interface operations {
         };
       };
       401: components['responses']['Error'];
+      429: components['responses']['TooManyFailures'];
       503: components['responses']['Error'];
       default: components['responses']['Error'];
     };
@@ -2109,7 +2120,7 @@ export interface operations {
       409: components['responses']['Error'];
       413: components['responses']['Error'];
       415: components['responses']['Error'];
-      /** @description Over the trigger's rate; Retry-After says in how many seconds a request is accepted again. */
+      /** @description Over the trigger's rate, or ten failed token checks from the caller's address within a minute; Retry-After says in how many seconds a request is accepted again. */
       429: {
         headers: {
           'Retry-After'?: number;
