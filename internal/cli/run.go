@@ -93,10 +93,12 @@ func (c RunPackagesCmd) Run(rt *Runtime) error {
 	}
 	return withStoreMode(rt, engineStore, postgres.Options{}, func(st store.Store) error {
 		notes := notifier(rt, env, log)
+		id := newEngineID()
 		e, err := engine.New(engine.Options{
 			Store: st, Logger: log, LeaseTTL: c.LeaseTTL, Env: rt.Env, Secrets: secrets(rt, env), Flags: c.Var,
 			NoCron: c.Once, Artifacts: arts, Resolver: actions, Agents: agents(rt, env),
 			Notifier: notes, PackageDir: packageDir(rt, env), Check: checkOptions(rt, env), Retention: env.Retention,
+			Leadership: engine.Leadership{ID: id},
 		})
 		if err != nil {
 			return err
@@ -134,7 +136,7 @@ func (c RunPackagesCmd) Run(rt *Runtime) error {
 			}
 		}
 		h := engineHost{listen: listen, sec: sec, embedded: true, slots: c.Slots, leaseTTL: c.LeaseTTL,
-			lead: leadership{identity: api.Identity{ID: newEngineID(), Since: time.Now()}}, arts: arts, laptop: true}
+			lead: leadership{identity: api.Identity{ID: id, Since: time.Now()}}, arts: arts, laptop: true}
 		if err := h.run(ctx, rt, env, st, e, notes, log, wait); err != nil {
 			return err
 		}
@@ -154,7 +156,7 @@ type engineHost struct {
 	embedded bool
 	slots    int
 	leaseTTL time.Duration
-	lead     leadership // who the engine is on a deployment with a standby; zero for run
+	lead     leadership // who the engine is on a deployment with a standby; for run, its id alone
 	arts     artifacts.Store
 	// nodeToken serves the node protocol to remote nodes (serve with node.token); empty serves none.
 	nodeToken string

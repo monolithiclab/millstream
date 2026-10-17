@@ -16,11 +16,18 @@ func Test_runOnce(t *testing.T) {
 	if out != want {
 		t.Fatalf("summary:\n%s\nwant:\n%s", out, want)
 	}
-	logged := false
+	logged, dispatched := false, false
 	for _, line := range splitLines(errOut) {
 		var m map[string]any
 		if err := json.Unmarshal([]byte(line), &m); err != nil {
 			t.Fatalf("stderr line is not JSON: %q", line)
+		}
+		if m["msg"] == "first dispatch" {
+			// The engine logs under the id its embedded node is named after.
+			dispatched = true
+			if id, _ := m["engine"].(string); id == "" {
+				t.Fatalf("first dispatch without the engine id: %s", line)
+			}
 		}
 		if m["msg"] == "delivery done" {
 			logged = true
@@ -31,8 +38,8 @@ func Test_runOnce(t *testing.T) {
 			}
 		}
 	}
-	if !logged {
-		t.Fatalf("no delivery logged:\n%s", errOut)
+	if !logged || !dispatched {
+		t.Fatalf("no delivery or no first dispatch logged:\n%s", errOut)
 	}
 
 	if !e2eBuild {
