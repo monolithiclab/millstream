@@ -78,7 +78,15 @@ func (e *Engine) assign(ctx context.Context, owner string, l store.Lease) (node.
 	if !ok {
 		return node.Assignment{}, dispatchErr(ClassConfig, false, "step %s is not in revision %d", l.Step, l.Revision)
 	}
-	act := e.action(rev, step.Action)
+	ref := step.Action
+	if l.Fallback { // the primary abstained or failed, or an audit (spec section 11.5)
+		if step.Fallback == nil {
+			return node.Assignment{}, dispatchErr(ClassConfig, false, "step %s has no fallback in revision %d", l.Step,
+				l.Revision)
+		}
+		ref = step.Fallback.Action
+	}
+	act := e.action(rev, ref)
 	if act.err != nil {
 		return node.Assignment{}, act.err
 	}
@@ -87,7 +95,7 @@ func (e *Engine) assign(ctx context.Context, owner string, l store.Lease) (node.
 	}
 	if err := validateJSON(act.input, l.Item.Payload); err != nil {
 		return node.Assignment{}, dispatchErr(ClassInputSchema, false, "item %s does not match the input schema of %s: %w",
-			l.Item.ID, step.Action, err)
+			l.Item.ID, ref, err)
 	}
 	run, err := e.st.Run(ctx, l.Pipeline, l.RunID)
 	if err != nil {
@@ -117,12 +125,12 @@ func (e *Engine) assign(ctx context.Context, owner string, l store.Lease) (node.
 		}
 		if err != nil {
 			return node.Assignment{}, dispatchErr(ClassConfig, false,
-				"config of step %s does not match the config schema of %s: %w", l.Step, step.Action, err)
+				"config of step %s does not match the config schema of %s: %w", l.Step, ref, err)
 		}
 	}
 	launch := node.Launch{
 		Kind: act.a.Kind, Action: act.a.Name, Version: act.a.Version, Digest: act.digest, PackageHash: rev.hash,
-		Ref: step.Action, Lifecycle: act.a.Lifecycle, Config: config, Vars: run.Vars,
+		Ref: ref, Lifecycle: act.a.Lifecycle, Config: config, Vars: run.Vars,
 	}
 	switch act.a.Kind {
 	case pipeline.KindContainer:
@@ -165,6 +173,7 @@ func (e *Engine) assign(ctx context.Context, owner string, l store.Lease) (node.
 			},
 			Attempt:        l.Attempt,
 			IdempotencyKey: ids.Idempotency(l.Step, l.Item.ID, l.Generation),
+			Audit:          l.Audit,
 		},
 		Timeout: step.Timeout,
 		Redact:  red,

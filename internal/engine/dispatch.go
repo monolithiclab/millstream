@@ -8,6 +8,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/monolithiclab/millstream/internal/ids"
 	"github.com/monolithiclab/millstream/internal/node"
 	"github.com/monolithiclab/millstream/internal/pipeline"
 	"github.com/monolithiclab/millstream/internal/store"
@@ -65,7 +66,7 @@ func (e *Engine) PullWithin(ctx context.Context, owner string, maxN int, within 
 				completed = true
 				continue
 			}
-			if e.runBuiltin(resolve, l) {
+			if !l.Audit && e.runBuiltin(resolve, l) {
 				completed = true
 				continue
 			}
@@ -179,6 +180,11 @@ func (e *Engine) limitSources(ctx context.Context) (sources, error) {
 			if ra.err == nil && ra.a.Kind == pipeline.KindAgent {
 				src.reserve[store.AgentStep{StepRef: ref, Revision: rev.id}] = ra.a.Agent.MaxCostUSD
 			}
+			if step.Fallback != nil {
+				if fa := e.action(rev, step.Fallback.Action); fa.err == nil && fa.a.Kind == pipeline.KindAgent {
+					src.reserve[store.AgentStep{StepRef: ref, Revision: rev.id, Fallback: true}] = fa.a.Agent.MaxCostUSD
+				}
+			}
 			if _, ok := src.steps[ref]; !ok {
 				src.steps[ref] = step
 				src.placement[ref] = stepPlacement(rev.p, step, ra)
@@ -283,8 +289,13 @@ func (e *Engine) Heartbeat(ctx context.Context, owner string, refs []store.Lease
 	return lost, nil
 }
 
-// Done implements node.Transport. The delivery stops counting in flight once its lease ended (see ended).
+// Done implements node.Transport. The delivery stops counting in flight once its lease ended (see ended). An
+// audit's lease ends the audit instead (EndAudit).
 func (e *Engine) Done(ctx context.Context, req store.DoneRequest) error {
+	if ids.IsAudit(req.DeliveryID) {
+		return e.endAudit(ctx, store.AuditEnd{LeaseRef: req.LeaseRef, Owner: req.Owner, Outputs: req.Outputs,
+			CostUSD: req.CostUSD, Metrics: req.Metrics})
+	}
 	state, err := e.st.Done(ctx, req)
 	f := e.settleFlight(req.LeaseRef, err)
 	if err != nil {
@@ -298,6 +309,10 @@ func (e *Engine) Done(ctx context.Context, req store.DoneRequest) error {
 // before it is stored, so neither the delivery's error nor its dead letter holds them.
 func (e *Engine) Fail(ctx context.Context, req store.FailRequest) error {
 	req.Message = e.lookup(req.LeaseRef).redact.String(req.Message)
+	if ids.IsAudit(req.DeliveryID) {
+		return e.endAudit(ctx, store.AuditEnd{LeaseRef: req.LeaseRef, Owner: req.Owner, Class: req.Class,
+			Message: req.Message, CostUSD: req.CostUSD, Unreported: req.Unreported, Metrics: req.Metrics})
+	}
 	state, err := e.st.Fail(ctx, req)
 	f := e.settleFlight(req.LeaseRef, err)
 	if err != nil {
@@ -305,6 +320,17 @@ func (e *Engine) Fail(ctx context.Context, req store.FailRequest) error {
 	}
 	e.flightLog(req.LeaseRef, f).Info("delivery failed", "state", string(state), "class", req.Class,
 		"retryable", req.Retryable)
+	return nil
+}
+
+// endAudit ends an audit's lease with the fallback's outcome, counting in flight like Done.
+func (e *Engine) endAudit(ctx context.Context, req store.AuditEnd) error {
+	err := e.st.EndAudit(ctx, req)
+	f := e.settleFlight(req.LeaseRef, err)
+	if err != nil {
+		return fmt.Errorf("end audit %s: %w", req.DeliveryID, err)
+	}
+	e.flightLog(req.LeaseRef, f).Info("audit ended", "class", req.Class, "outputs", len(req.Outputs))
 	return nil
 }
 

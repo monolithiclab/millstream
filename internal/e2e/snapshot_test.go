@@ -27,6 +27,7 @@ type item struct {
 	Parents                  string
 	Payload                  string
 	Artifacts                string
+	ProducedBy               string
 }
 
 // delivery is what a snapshot keeps of a delivery: its run, step and state.
@@ -56,6 +57,9 @@ type snapshot struct {
 	// content holds timings, so they are compared by count, and each must be referenced exactly once per attempt
 	// that keeps it: a transcript counted twice after a crash shows here or fails readSnapshot.
 	AttemptArtifacts map[string]int
+	// Audits are the ids of the fallback audits, every one ended: sampled deterministically, they are the same
+	// after a crash, but an audit whose lease a crash cut ends failed rather than done, so states are not compared.
+	Audits map[string]bool
 }
 
 // counts returns the number of items per stream.
@@ -78,7 +82,7 @@ func readSnapshot(t *testing.T, db string) snapshot {
 	s := snapshot{
 		Runs: map[string]store.RunState{}, Revisions: map[string]store.RevisionID{}, Items: map[string]item{},
 		Deliveries: map[string]delivery{}, DeadLetters: map[string]deadLetter{}, Refcounts: map[string]int64{},
-		AttemptArtifacts: map[string]int{},
+		AttemptArtifacts: map[string]int{}, Audits: map[string]bool{},
 	}
 	runs, err := st.Runs(ctx, store.RunFilter{})
 	if err != nil {
@@ -116,7 +120,7 @@ func readSnapshot(t *testing.T, db string) snapshot {
 		}
 		s.Items[it.ID] = item{RunID: it.RunID, Stream: it.Stream, Step: it.Step, Key: it.Key,
 			Generation: it.Generation, Parents: strings.Join(it.Parents, ","), Payload: payload,
-			Artifacts: string(artifacts)}
+			Artifacts: string(artifacts), ProducedBy: it.ProducedBy}
 		if it.Key == "" {
 			continue
 		}
@@ -161,6 +165,16 @@ func readSnapshot(t *testing.T, db string) snapshot {
 		}
 		delete(s.Refcounts, sha)
 	}
+	audits, err := st.Audits(ctx, store.AuditFilter{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, a := range audits {
+		if a.State == store.AuditPending || a.State == store.AuditLeased {
+			t.Errorf("audit %s of delivery %s is %s after the run", a.ID, a.DeliveryID, a.State)
+		}
+		s.Audits[a.ID] = true
+	}
 	checkLedgers(t, st)
 	return s
 }
@@ -191,11 +205,16 @@ func checkLedgers(t *testing.T, st store.Store) {
 	if n := count(`SELECT COUNT(*) FROM deliveries WHERE reserved_usd != 0`); n != 0 {
 		t.Errorf("%g deliveries keep a budget reservation after the runs settled", n)
 	}
+	if n := count(`SELECT COUNT(*) FROM audits WHERE reserved_usd != 0`); n != 0 {
+		t.Errorf("%g audits keep a budget reservation after they ended", n)
+	}
+	// Audits are charged to the day, never to a run (spec section 11.5).
 	days := count(`SELECT COALESCE(SUM(spent_usd), 0) FROM budget_days`)
+	audits := count(`SELECT COALESCE(SUM(cost_usd), 0) FROM audits`)
 	runs := count(`SELECT COALESCE(SUM(cost_usd), 0) FROM runs`)
 	deliveries := count(`SELECT COALESCE(SUM(cost_usd), 0) FROM deliveries`)
-	if math.Abs(days-runs) > 1e-9 || math.Abs(runs-deliveries) > 1e-9 {
-		t.Errorf("spend disagrees: budget days %g, runs %g, deliveries %g", days, runs, deliveries)
+	if math.Abs(days-audits-runs) > 1e-9 || math.Abs(runs-deliveries) > 1e-9 {
+		t.Errorf("spend disagrees: budget days %g, audits %g, runs %g, deliveries %g", days, audits, runs, deliveries)
 	}
 	if n := count(`SELECT COUNT(*) FROM dedupe_keys k WHERE NOT EXISTS (SELECT 1 FROM deliveries d
 		WHERE d.pipeline = k.pipeline AND d.step = k.step AND d.generation = k.generation AND d.item_id = k.first_item
@@ -239,6 +258,7 @@ func wantSame(t *testing.T, got, want snapshot) {
 		diffMaps("dead letter", got.DeadLetters, want.DeadLetters),
 		diffMaps("artifact refcount", got.Refcounts, want.Refcounts),
 		diffMaps("attempt artifacts of delivery", got.AttemptArtifacts, want.AttemptArtifacts),
+		diffMaps("audit", got.Audits, want.Audits),
 	)
 	if len(diff) > 0 {
 		if len(diff) > 20 {

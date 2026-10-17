@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"log/slog"
 	"path/filepath"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -386,6 +387,17 @@ func (e *Engine) resync(ctx context.Context) error {
 			attempt: d.Attempt, token: d.FencingToken, owner: d.LeaseOwner,
 		}
 	}
+	// Leased audits hold their step's slots too (spec section 11.5).
+	as, err := e.st.Audits(ctx, store.AuditFilter{State: store.AuditLeased})
+	if err != nil {
+		return fmt.Errorf("engine: read leased audits: %w", err)
+	}
+	for _, a := range as {
+		inflight[store.DeliveryKey{Pipeline: a.Pipeline, ID: a.ID}] = flight{
+			step: store.StepRef{Pipeline: a.Pipeline, Step: a.Step}, runID: a.RunID, itemID: a.ItemID, attempt: 1,
+			token: a.FencingToken, owner: a.LeaseOwner,
+		}
+	}
 	e.inflight = inflight
 	return nil
 }
@@ -405,14 +417,19 @@ func (e *Engine) Settled(ctx context.Context, runs []RunRef) (bool, error) {
 	return true, nil
 }
 
-// WaitSettled waits until every run named is settled, or waiting only on reviews, or ctx ends. It checks again whenever a lease in flight ends,
-// and polls for what settles a run elsewhere (another engine's nodes, a cancel).
+// WaitSettled waits until every run named is settled, or waiting only on reviews, and the audits of their deliveries
+// ended (an audit never holds its run open, spec section 11.5, but run --once leaves none behind), or ctx ends. It
+// checks again whenever a lease in flight ends, and polls for what settles a run elsewhere (another engine's nodes, a
+// cancel).
 func (e *Engine) WaitSettled(ctx context.Context, runs []RunRef) error {
 	poll := time.NewTicker(50 * time.Millisecond)
 	defer poll.Stop()
 	for {
 		changed := e.changes()
 		ok, err := e.Settled(ctx, runs)
+		if err == nil && ok {
+			ok, err = e.auditsEnded(ctx, runs)
+		}
 		if err != nil || ok {
 			return err
 		}
@@ -423,6 +440,22 @@ func (e *Engine) WaitSettled(ctx context.Context, runs []RunRef) error {
 		case <-poll.C:
 		}
 	}
+}
+
+// auditsEnded reports whether every audit of the runs named ended: none pending or leased.
+func (e *Engine) auditsEnded(ctx context.Context, runs []RunRef) (bool, error) {
+	for _, r := range runs {
+		as, err := e.st.Audits(ctx, store.AuditFilter{Pipeline: r.Pipeline, RunID: r.ID})
+		if err != nil {
+			return false, fmt.Errorf("audits: %w", err)
+		}
+		if slices.ContainsFunc(as, func(a store.Audit) bool {
+			return a.State == store.AuditPending || a.State == store.AuditLeased
+		}) {
+			return false, nil
+		}
+	}
+	return true, nil
 }
 
 // Changes returns a channel closed when a lease in flight next ends: when new work may be due, which a remote

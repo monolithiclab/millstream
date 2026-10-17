@@ -1,8 +1,8 @@
 // Package insights is the insights projector and the run reports (spec section 11.1): deterministic analysis of the
 // log store, no LLM involved. The projector reads a pipeline's deliveries (their timings), the events that end
 // attempts (their errors, costs and the actions' metrics), its review decisions and samples, and the critical paths
-// of its recent runs, and finds the kinds this build computes: slowStep, failureCluster, cost, reviewPattern and
-// unschedulable. Each insight's id is a fingerprint
+// of its recent runs, and the fallback audits that ended, and finds the kinds this build computes: slowStep,
+// failureCluster, cost, reviewPattern, unschedulable and drift (from audits). Each insight's id is a fingerprint
 // of what it is about, so the store updates one row for a recurring problem and resolves it once the projector no
 // longer finds it.
 //
@@ -54,9 +54,9 @@ const (
 	SeverityError   = "error"
 )
 
-// Kinds are the insight kinds this build computes; waste, drift and distillable arrive later.
+// Kinds are the insight kinds this build computes; waste and distillable arrive later.
 var Kinds = []string{pipeline.InsightSlowStep, pipeline.InsightFailureCluster, pipeline.InsightCost,
-	pipeline.InsightReviewPattern, pipeline.InsightUnschedulable}
+	pipeline.InsightReviewPattern, pipeline.InsightUnschedulable, pipeline.InsightDrift}
 
 // Data is what the projector reads of one pipeline.
 type Data struct {
@@ -72,6 +72,8 @@ type Data struct {
 	// baseline, in order.
 	Decisions []Decision
 	Samples   []SampleOutcome
+	// Audits are the fallback audits that ended in the window or the baseline, in order.
+	Audits []AuditOutcome
 	// Pending are the steps whose pending deliveries no registered node can take now (spec section 5.10), as the
 	// engine finds them.
 	Pending []PendingStep
@@ -103,6 +105,9 @@ func Load(ctx context.Context, st store.Store, pipelineName string, now time.Tim
 		return nil, fmt.Errorf("insights of %s: %w", pipelineName, err)
 	}
 	if d.Decisions, d.Samples, err = readReviews(ctx, st, pipelineName, since); err != nil {
+		return nil, fmt.Errorf("insights of %s: %w", pipelineName, err)
+	}
+	if d.Audits, err = readAudits(ctx, st, pipelineName, since); err != nil {
 		return nil, fmt.Errorf("insights of %s: %w", pipelineName, err)
 	}
 	runs, err := st.Runs(ctx, store.RunFilter{Pipeline: pipelineName, Limit: 200})
@@ -172,6 +177,8 @@ func Compute(d *Data, kinds []string) []store.Insight {
 			found = reviewPatterns(d)
 		case pipeline.InsightUnschedulable:
 			found = unschedulable(d)
+		case pipeline.InsightDrift:
+			found = drifts(d)
 		}
 		out = append(out, found...)
 	}
@@ -602,6 +609,9 @@ func Summary(in store.Insight) string {
 			return fmt.Sprintf("%s deliveries waiting: %s", f("count"), f("example"))
 		}
 		return fmt.Sprintf("%s attempts no runtime can take: %s: %s", f("count"), f("class"), f("example"))
+	case pipeline.InsightDrift:
+		return fmt.Sprintf("the fallback disagreed with the primary on %s of %s audits (%s disagreed, %s failed)",
+			p("disagreementShare"), f("audits"), f("disagreed"), f("failed"))
 	case pipeline.InsightReviewPattern:
 		return fmt.Sprintf("%s rejected, %s edited, %s auto-approved, sampled agreement %s, intervention %s, p50 "+
 			"decision %ss", p("rejectionRate"), p("editRate"), p("autoApprovalRate"), p("sampledAgreement"),

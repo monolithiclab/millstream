@@ -77,6 +77,17 @@ const (
 	// ReviewSamples counts the decided and expired review samples {step, agreement}: agree, disagree or
 	// unreviewed.
 	ReviewSamples = "review_samples"
+	// FallbackDeliveries counts the done deliveries of a step with a fallback (spec section 11.5) {step, producedBy}:
+	// primary or fallback. Coverage is the primary's share, the fallback rate the fallback's.
+	FallbackDeliveries = "fallback_deliveries"
+	// FallbackHandoffs counts the deliveries handed to a step's fallback {step, cause}: abstain or error.
+	FallbackHandoffs = "fallback_handoffs"
+	// FallbackCost is the cost in US dollars of an attempt of a step's fallback action {step, use}: delivery, or
+	// audit.
+	FallbackCost = "fallback_cost_usd"
+	// Audits counts the ended fallback audits {step, agreement}: agree, disagree, failed or cancelled. Audit
+	// agreement is agree over agree and disagree.
+	Audits = "audits"
 )
 
 // Metrics the engine measures itself, exposed beside the rollups as Families on /metrics (spec section 10.2).
@@ -106,6 +117,7 @@ var kinds = map[string]Kind{
 	Unschedulable: Counter, QueueDepth: Gauge, OldestPending: Gauge, DeliveryLatency: Histogram,
 	DeliveryWait: Distribution, DeliveryWork: Distribution, DeliveryCost: Distribution, RunDuration: Distribution,
 	RunCost: Distribution, ReviewDecisions: Counter, ReviewTimeToDecision: Distribution, ReviewSamples: Counter,
+	FallbackDeliveries: Counter, FallbackHandoffs: Counter, FallbackCost: Distribution, Audits: Counter,
 	LeasesHeld: Gauge, WriterBatchSize: Histogram, NotificationsFailed: Counter, EvalScore: Gauge,
 }
 
@@ -153,6 +165,10 @@ type eventData struct {
 	Decision   string         `json:"decision"`
 	Reviewer   string         `json:"reviewer"`
 	DecisionMS *int64         `json:"timeToDecisionMs"`
+	ProducedBy string         `json:"producedBy"`
+	Fallback   bool           `json:"fallback"`
+	Cause      string         `json:"cause"`
+	Agreement  *float64       `json:"agreement"`
 }
 
 // Points returns the measurements an event carries. An event it cannot decode carries none.
@@ -213,6 +229,21 @@ func Points(ev store.Event) []Point {
 		add(ReviewSamples, with("agreement", d.Decision), 1)
 	case store.EventSampleExpired:
 		add(ReviewSamples, with("agreement", string(store.SampleUnreviewed)), 1)
+	case store.EventDeliveryFallback:
+		add(FallbackHandoffs, with("cause", d.Cause), 1)
+	case store.EventAuditEnded:
+		agreement := d.State
+		if d.Agreement != nil {
+			agreement = "disagree"
+			if *d.Agreement == 1 {
+				agreement = "agree"
+			}
+		}
+		add(Audits, with("agreement", agreement), 1)
+		if d.CostUSD != 0 {
+			add(FallbackCost, with("use", "audit"), d.CostUSD)
+		}
+		return ps
 	case store.EventRunSettled:
 		state := map[string]string{"state": d.State}
 		if d.DurationMS != nil {
@@ -221,10 +252,16 @@ func Points(ev store.Event) []Point {
 		add(RunCost, state, d.CostUSD)
 		return ps
 	}
-	if d.WorkMS != nil { // the end of an attempt: done, retry, dead, filtered, cancelled
+	if ev.Kind == store.EventDeliveryDone && d.ProducedBy != "" {
+		add(FallbackDeliveries, with("producedBy", d.ProducedBy), 1)
+	}
+	if d.WorkMS != nil { // the end of an attempt: done, retry, dead, filtered, cancelled, handed to the fallback
 		add(DeliveryWork, step, seconds(*d.WorkMS))
 		if d.CostUSD != 0 {
 			add(DeliveryCost, step, d.CostUSD)
+			if d.Fallback {
+				add(FallbackCost, with("use", "delivery"), d.CostUSD)
+			}
 		}
 		for _, m := range d.Metrics {
 			labels := maps.Clone(m.Labels)

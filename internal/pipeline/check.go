@@ -61,7 +61,8 @@ func Check(pkg *Package, actions ActionResolver, env func(string) (string, bool)
 	if opts.LessonsMaxTokens <= 0 {
 		opts.LessonsMaxTokens = DefaultLessonsMaxTokens
 	}
-	c := &checker{pkg: pkg, p: pkg.Pipeline, env: env, opts: opts, actions: map[string]*Action{}}
+	c := &checker{pkg: pkg, p: pkg.Pipeline, env: env, opts: opts, actions: map[string]*Action{},
+		fallbacks: map[string]*Action{}}
 	c.producers, c.consumers = c.p.streamIndex()
 	c.stepNames = slices.Sorted(maps.Keys(c.p.Steps))
 	c.checkSecrets()
@@ -92,6 +93,7 @@ type checker struct {
 	env                  func(string) (string, bool)
 	opts                 CheckOptions
 	actions              map[string]*Action // resolved action of each step whose reference resolved
+	fallbacks            map[string]*Action // resolved fallback action of each step with one that resolved
 	producers, consumers map[string][]string
 	stepNames            []string
 	diags                []Diagnostic
@@ -197,6 +199,7 @@ func (c *checker) checkStep(name string, actions ActionResolver) {
 	}
 
 	c.checkLessons(name, s, a)
+	fb := c.checkFallback(name, s, a, actions)
 
 	cfgAt := joinPath(at, "config")
 	cfg, skipped := c.inferConfig(s.Config, cfgAt)
@@ -209,6 +212,57 @@ func (c *checker) checkStep(name string, actions ActionResolver) {
 	case len(s.Config) > 0:
 		c.warnf(cfgAt, "action %s declares no config schema: config is not checked", a.Ref)
 	}
+	if fb != nil && fb.Config != nil { // the fallback runs with the step's config too
+		c.checkConfigSchema(fb, cfg, skipped, cfgAt)
+	}
+}
+
+// checkFallback checks a step's fallback (spec section 11.5) and returns its action when it resolved. It requires: a
+// step action that is not a builtin; a fallback action that resolves, is not a builtin, and whose output schema the
+// primary's accepts; and, with audits, effects: none declared by both actions.
+func (c *checker) checkFallback(name string, s Step, a *Action, actions ActionResolver) *Action {
+	if s.Fallback == nil {
+		return nil
+	}
+	at := joinPath(joinPath("steps", name), "fallback")
+	if a != nil && a.Builtin {
+		c.errorf(at, "the %s builtin cannot have a fallback", a.Name)
+		return nil
+	}
+	fb, err := actions.Resolve(c.pkg, s.Fallback.Action)
+	switch {
+	case errors.Is(err, ErrUnavailable):
+		c.warnf(joinPath(at, "action"), "%v", err)
+		return nil
+	case err != nil:
+		c.errorf(joinPath(at, "action"), "%v", err)
+		return nil
+	case fb.Builtin:
+		c.errorf(joinPath(at, "action"), "a fallback action cannot be the %s builtin", fb.Name)
+		return nil
+	}
+	c.fallbacks[name] = fb
+	if fb.Agent != nil {
+		c.checkAgent(joinPath(at, "action"), fb)
+	}
+	if err := BudgetMaxCost(c.p.Budget, name, fb); err != nil {
+		c.errorf(joinPath(at, "action"), "%v", err)
+	}
+	if a != nil && a.Output != nil && fb.Output != nil {
+		for _, f := range schema.Compatible(fb.Output, a.Output) {
+			c.add(f.Severity, joinPath(at, "action"), "the output schema of %s against the output schema of %s: %s",
+				fb.Ref, a.Ref, f.Message)
+		}
+	}
+	if s.Fallback.AuditRate > 0 {
+		for _, x := range []*Action{a, fb} {
+			if x != nil && x.Effects != EffectsNone {
+				c.errorf(joinPath(at, "auditRate"), "audits run both actions on the same item: %s must declare "+
+					"effects: none", x.Ref)
+			}
+		}
+	}
+	return fb
 }
 
 // checkAgent checks what an agent action needs from the pipeline: its API key secret declared, and a network to
@@ -554,7 +608,8 @@ func (c *checker) checkCompatibility() {
 func (c *checker) checkExternalEffects() {
 	g := c.stepGraph()
 	for _, name := range c.stepNames {
-		if a := c.actions[name]; a == nil || a.Kind != KindAgent {
+		primary, fb := c.actions[name], c.fallbacks[name]
+		if (primary == nil || primary.Kind != KindAgent) && (fb == nil || fb.Kind != KindAgent) {
 			continue
 		}
 		seen := map[string]bool{name: true}

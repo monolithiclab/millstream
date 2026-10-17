@@ -300,10 +300,28 @@ func insertReview(path, step string) error {
 }
 
 // insertBuiltins turns v1 into the builtins variant: crawl writes listings.crawled, which unique, affordable and
-// vetted turn into the listings.raw score reads.
+// vetted turn into the listings.raw score reads; score runs rules backed by the scorer as its fallback (spec section
+// 11.5): the rules abstain on the listings of Lyon, which the scorer then scores, and half of the listings the rules
+// cover are audited.
 func insertBuiltins(path string) error {
+	if err := addRules(filepath.Dir(path)); err != nil {
+		return err
+	}
 	return rewrite(path, [2]string{"    out: listings.raw\n", "    out: listings.crawled\n"},
-		[2]string{"  score:\n", builtinSteps})
+		[2]string{"  score:\n", builtinSteps},
+		[2]string{"    action: ./actions/score\n", "    action: ./actions/rules\n" +
+			"    fallback: { action: ./actions/score, auditRate: 0.5 }\n"})
+}
+
+// addRules adds actions/rules to a fixture copy: the scorer, compiled, run with --abstain-city=Lyon.
+func addRules(dir string) error {
+	src, dst := filepath.Join(dir, "actions", "score"), filepath.Join(dir, "actions", "rules")
+	if err := os.CopyFS(dst, os.DirFS(src)); err != nil {
+		return err
+	}
+	return rewrite(filepath.Join(dst, "action.yaml"),
+		[2]string{"name: m1-fixture/score\n", "name: m1-fixture/score-rules\n"},
+		[2]string{"command: [score]", "command: [score, --abstain-city=Lyon]"})
 }
 
 // commandTimeout bounds every millstream invocation, so a hang fails the test instead of the whole suite.

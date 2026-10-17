@@ -101,6 +101,33 @@ steps:
 			},
 		},
 		{
+			name: "fallback",
+			yaml: checkHeader + `steps:
+  rules: { action: ./actions/score, in: trigger.go, fallback: { action: ./actions/agent, auditRate: 0.1 } }
+  pass: { action: filter, in: trigger.go, config: { expr: "true" }, fallback: { action: ./actions/score } }
+  ghost: { action: ./actions/crawl, in: trigger.go, config: { city: L }, fallback: { action: ./actions/missing } }
+  loud:
+    action: ./actions/crawl
+    in: trigger.go
+    config: { city: L }
+    fallback: { action: ./actions/notify, auditRate: 0.5 }
+  self: { action: ./actions/crawl, in: trigger.go, config: { city: L }, fallback: { action: dedupe } }
+`,
+			want: []string{
+				"error steps.ghost.fallback.action: action ./actions/missing: no actions/missing/action.yaml in the package",
+				"error steps.loud.fallback.auditRate: audits run both actions on the same item: ./actions/notify must " +
+					"declare effects: none",
+				"error steps.pass.fallback: the filter builtin cannot have a fallback",
+				"error steps.rules.fallback.action: the output schema of ./actions/agent against the output schema of " +
+					"./actions/score: the consumer requires property \"score\", which the producer does not declare",
+				"error steps.rules.fallback.auditRate: audits run both actions on the same item: ./actions/agent must " +
+					"declare effects: none",
+				"error steps.rules.fallback.auditRate: audits run both actions on the same item: ./actions/score must " +
+					"declare effects: none",
+				"error steps.self.fallback.action: a fallback action cannot be the dedupe builtin",
+			},
+		},
+		{
 			name: "actions and routes",
 			yaml: checkHeader + `steps:
   a:
