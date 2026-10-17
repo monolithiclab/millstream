@@ -204,7 +204,7 @@ func (b *Bundle) Encode() ([]byte, error) {
 		return nil, err
 	}
 	var buf bytes.Buffer
-	zw := gzip.NewWriter(&buf)
+	zw, _ := gzip.NewWriterLevel(&buf, gzip.BestSpeed) // a valid level: no error; JSON compresses well at any level
 	tw := tar.NewWriter(zw)
 	put := func(name string, data []byte) {
 		if err == nil {

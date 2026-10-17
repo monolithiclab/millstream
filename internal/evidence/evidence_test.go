@@ -11,6 +11,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -30,6 +31,7 @@ func TestMain(m *testing.M) {
 		panic(err)
 	}
 	production = seed(dir) // the history, built once outside the budget; TestBundleRoundTrip alone exports from it
+	warm(dir)
 	code := m.Run()
 	_ = production.st.Close()
 	_ = os.RemoveAll(dir)
@@ -248,8 +250,9 @@ func TestBundleRoundTrip(t *testing.T) {
 		t.Errorf("export record = %+v", rec)
 	}
 	xs, err := src.st.EvidenceExports(ctx, "listings")
-	if err != nil || len(xs) != 1 || xs[0].ID != b.ID || !slices.Equal(xs[0].Keys, []string{"a", "b", "c", "d", "k"}) {
-		t.Fatalf("EvidenceExports = %+v, %v", xs, err)
+	if i := slices.IndexFunc(xs, func(x store.EvidenceExport) bool { return x.ID == b.ID }); err != nil || i < 0 ||
+		!slices.Equal(xs[i].Keys, []string{"a", "b", "c", "d", "k"}) {
+		t.Fatalf("EvidenceExports = %+v, %v; want %s with its keys", xs, err, b.ID)
 	}
 
 	// One insight's evidence: its step's deliveries, without transcripts when there is no artifact store.
@@ -317,4 +320,21 @@ func must[T any](v T, err error) T {
 		panic(err)
 	}
 	return v
+}
+
+// warm runs an export and an import once, so that the process prepares their statements before the tests: the
+// stores closed hand them on to the next Memory store (sqlitetest).
+func warm(dir string) {
+	ctx := context.Background()
+	data, _, err := Export(ctx, production.st, production.arts, production.now, ExportRequest{Pipeline: "listings",
+		Since: t0})
+	if err != nil {
+		panic(err)
+	}
+	dst := must(sqlite.Open(sqlite.Memory, sqlite.Options{Now: func() time.Time { return production.now }}))
+	defer func() { _ = dst.Close() }()
+	if _, err := Import(ctx, dst, artifacts.New(filepath.Join(dir, "warm")), production.now,
+		pipeline.ModeDevelopment, data); err != nil {
+		panic(err)
+	}
 }

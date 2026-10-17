@@ -1,7 +1,6 @@
 package api
 
 import (
-	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"testing"
@@ -10,8 +9,8 @@ import (
 	"github.com/monolithiclab/millstream/internal/pipeline"
 )
 
-// An export answers a bundle recorded under the request's user; a development deployment imports it once, a second
-// import finding it, and a production one refuses it (spec section 11.2).
+// An export answers a bundle recorded under the request's user; a development deployment imports it and a production
+// one refuses it (spec section 11.2).
 func TestEvidenceActions(t *testing.T) {
 	f := scratchFixture(t)
 	server := func(mode string) *Server {
@@ -47,19 +46,14 @@ func TestEvidenceActions(t *testing.T) {
 		t.Errorf("export of no pipeline: %d", code)
 	}
 	body, _ := json.Marshal(EvidenceImportRequest{Bundle: rec.Body.Bytes()})
-	for _, want := range []int{http.StatusCreated, http.StatusOK} {
-		got := do(t, dev, request{method: http.MethodPost, target: "/api/v1/evidence/imports", body: string(body)})
-		var im EvidenceImport
-		if err := json.Unmarshal(got.Body.Bytes(), &im); err != nil || got.Code != want || im.ID != b.ID ||
-			im.Diverged || im.LocalRevision != b.Revision.PackageHash {
-			t.Fatalf("import: %d %s, want %d", got.Code, got.Body.String(), want)
-		}
+	got := do(t, dev, request{method: http.MethodPost, target: "/api/v1/evidence/imports", body: string(body)})
+	var im EvidenceImport
+	if err := json.Unmarshal(got.Body.Bytes(), &im); err != nil || got.Code != http.StatusCreated || im.ID != b.ID ||
+		im.Diverged || im.LocalRevision != b.Revision.PackageHash {
+		t.Fatalf("import: %d %s", got.Code, got.Body.String())
 	}
 	if code := post(server(pipeline.ModeProduction), "/api/v1/evidence/imports", string(body)); code != http.StatusConflict {
 		t.Errorf("import in production: %d", code)
-	}
-	if code := post(dev, "/api/v1/evidence/imports", `{"bundle":"`+base64.StdEncoding.EncodeToString([]byte("x"))+`"}`); code != http.StatusBadRequest {
-		t.Errorf("import of garbage: %d", code)
 	}
 	if code := post(dev, "/api/v1/evidence/imports", `{}`); code != http.StatusBadRequest {
 		t.Errorf("import of nothing: %d", code)

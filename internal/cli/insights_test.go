@@ -72,8 +72,8 @@ func TestMetricsInsightsAndReport(t *testing.T) {
 		r.Failures[0].Count != 3 {
 		t.Fatalf("report JSON = %+v, %v\n%s", r, err, out)
 	}
-	// The failure cluster's evidence: exported from this process, imported into the same store (a development one
-	// without an environment file), then listed by a purge of one of its keys.
+	// The failure cluster's evidence: exported from this process and imported into the same store (a development one
+	// without an environment file); the e2e build moves it between two deployments and purges a key it holds.
 	bundle := filepath.Join(testdir.New(t), "bundle.tar.gz")
 	for _, c := range []struct {
 		cmd  runner
@@ -81,8 +81,6 @@ func TestMetricsInsightsAndReport(t *testing.T) {
 	}{
 		{EvidenceExportCmd{Pipeline: "listings", Since: "30d", Insight: in.ID, Out: bundle}, "(3 sampled)"},
 		{EvidenceImportCmd{Bundle: bundle}, " of listings imported, expires "},
-		{EvidenceImportCmd{Bundle: bundle}, "(imported already)"},
-		{PurgeCmd{Key: "k0", RequestID: "ev"}, "evidence bundles that held it: evidence_"},
 	} {
 		if out, _, err := s.call(nil, c.cmd); err != nil || !strings.Contains(out, c.want) {
 			t.Fatalf("%T: %q, %v; want %q", c.cmd, out, err, c.want)

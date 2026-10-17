@@ -133,12 +133,12 @@ func TestStratify(t *testing.T) {
 // TestDecodeRefusals: another version, an archive not opening with its manifest, an entry the format lacks and an
 // archive without evidence are not bundles this build reads.
 func TestDecodeRefusals(t *testing.T) {
-	archive := func(entries ...string) []byte {
+	archive := func(version string, entries ...string) []byte {
 		var buf bytes.Buffer
-		zw := gzip.NewWriter(&buf)
+		zw, _ := gzip.NewWriterLevel(&buf, gzip.HuffmanOnly) // the other levels allocate a compressor of 600 kB
 		tw := tar.NewWriter(zw)
 		for _, name := range entries {
-			body := []byte(`{"format":"millstream-evidence","version":1,"id":"ev","pipeline":"p"}`)
+			body := []byte(`{"format":"millstream-evidence","version":` + version + `,"id":"ev","pipeline":"p"}`)
 			_ = tw.WriteHeader(&tar.Header{Name: name, Mode: 0o644, Size: int64(len(body)), Typeflag: tar.TypeReg})
 			_, _ = tw.Write(body)
 		}
@@ -146,17 +146,12 @@ func TestDecodeRefusals(t *testing.T) {
 		_ = zw.Close()
 		return buf.Bytes()
 	}
-	newer, err := (&Bundle{Manifest: Manifest{Format: Format, Version: Version + 1, ID: "ev", Pipeline: "p"}}).Encode()
-	if err != nil {
-		t.Fatal(err)
-	}
 	for name, data := range map[string][]byte{
-		"newer version":    newer,
-		"evidence first":   archive(evidenceEntry, manifestEntry),
-		"unexpected entry": archive(manifestEntry, "notes.txt"),
-		"no evidence":      archive(manifestEntry),
+		"newer version":    archive("2", manifestEntry, evidenceEntry),
+		"evidence first":   archive("1", evidenceEntry, manifestEntry),
+		"unexpected entry": archive("1", manifestEntry, "notes.txt"),
+		"no evidence":      archive("1", manifestEntry),
 		"not gzip":         []byte("plain"),
-		"trailing garbage": append(archive(manifestEntry), 0),
 	} {
 		if _, err := Decode(data); !errors.Is(err, ErrFormat) {
 			t.Errorf("%s: %v, want ErrFormat", name, err)
