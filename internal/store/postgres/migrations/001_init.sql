@@ -420,6 +420,7 @@ CREATE TABLE purges (
     items        bigint NOT NULL,
     erased       bigint NOT NULL DEFAULT 0,
     pipelines    text NOT NULL, -- JSON array of the pipelines whose items it erases
+    bundles      text NOT NULL, -- JSON array of the evidence bundles that held a key it erased
     requested_at timestamptz NOT NULL,
     finished_at  timestamptz
 );
@@ -434,3 +435,47 @@ CREATE TABLE purge_items (
     PRIMARY KEY (purge_id, pipeline, item_id)
 );
 CREATE INDEX purge_items_pending ON purge_items (purge_id, erased);
+
+-- Evidence (spec section 11.2). evidence_key holds the deployment's redaction key, one row made by the first export:
+-- the stable hash that replaces a redacted value is keyed by it, and it never leaves the store.
+CREATE TABLE evidence_key (
+    id  bigint PRIMARY KEY, -- always 1
+    key text NOT NULL -- hex
+);
+
+-- Production: every bundle exported, who exported it and when, its scope (JSON: since, insight, sample), the production
+-- revision's package hash, and when it expires. evidence_export_keys lists the item keys each bundle holds, so a purge
+-- lists the bundles that held a key it erases, then forgets the key here too.
+CREATE TABLE evidence_exports (
+    id            text PRIMARY KEY, -- the bundle id
+    pipeline      text NOT NULL,
+    exported_by   text NOT NULL,
+    exported_at   timestamptz NOT NULL,
+    scope         text NOT NULL,
+    revision_hash text NOT NULL,
+    items         bigint NOT NULL,
+    expires_at    timestamptz NOT NULL
+);
+
+CREATE TABLE evidence_export_keys (
+    bundle   text NOT NULL,
+    pipeline text NOT NULL,
+    item_key text NOT NULL,
+    PRIMARY KEY (bundle, pipeline, item_key)
+);
+CREATE INDEX evidence_export_keys_key ON evidence_export_keys (item_key);
+
+-- Development: every bundle imported, read-only history kept whole in the artifact store under its pipeline's prefix
+-- (sha256 there, counted in artifacts), until it expires: the retention job then deletes the row and the file.
+CREATE TABLE evidence_imports (
+    id            text PRIMARY KEY, -- the bundle id
+    pipeline      text NOT NULL,
+    revision_hash text NOT NULL, -- the production revision's package hash
+    sha256        text NOT NULL,
+    size          bigint NOT NULL,
+    items         bigint NOT NULL,
+    exported_at   timestamptz NOT NULL,
+    imported_at   timestamptz NOT NULL,
+    expires_at    timestamptz NOT NULL
+);
+CREATE INDEX evidence_imports_expiry ON evidence_imports (expires_at);

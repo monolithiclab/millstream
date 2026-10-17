@@ -101,8 +101,9 @@ func TestUnitsAreNamed(t *testing.T) {
 		}
 		seen[u] = true
 	}
-	if len(Units) != 33 { // spec section 5.11, with Disable, Rollback, the node, trigger token, retention and purge units
-		t.Fatalf("%d units, want 33", len(Units))
+	if len(Units) != 37 { // spec section 5.11, with Disable, Rollback, the node, trigger token, retention, purge and
+		// evidence units
+		t.Fatalf("%d units, want 37", len(Units))
 	}
 }
 

@@ -86,11 +86,29 @@ func (e *apiError) Is(target error) bool {
 // do sends a request with body as JSON (none when nil) and decodes a 2xx answer into out when it is not nil. It
 // returns the answer's status.
 func (c *apiClient) do(ctx context.Context, method, path string, body, out any) (int, error) {
+	res, data, err := c.send(ctx, method, path, body, maxAnswer)
+	if err != nil {
+		return res.StatusCode, err
+	}
+	if out != nil && len(data) > 0 {
+		if err := json.Unmarshal(data, out); err != nil {
+			return res.StatusCode, fmt.Errorf("decode the server's answer: %w", err)
+		}
+	}
+	return res.StatusCode, nil
+}
+
+// send sends a request with body as JSON (none when nil) and returns a 2xx answer with its body, read up to limit
+// bytes; any other answer is an error, an apiError when the API explains it. The answer is never nil.
+func (c *apiClient) send(ctx context.Context, method, path string, body any, limit int64) (*http.Response, []byte,
+	error,
+) {
+	none := &http.Response{}
 	var rd io.Reader
 	if body != nil {
 		b, err := json.Marshal(body)
 		if err != nil {
-			return 0, err
+			return none, nil, err
 		}
 		rd = bytes.NewReader(b)
 	}
@@ -101,7 +119,7 @@ func (c *apiClient) do(ctx context.Context, method, path string, body, out any) 
 	}
 	req, err := http.NewRequestWithContext(ctx, method, u.String(), rd)
 	if err != nil {
-		return 0, err
+		return none, nil, err
 	}
 	if method == http.MethodPost {
 		req.Header.Set("Content-Type", "application/json")
@@ -114,29 +132,27 @@ func (c *apiClient) do(ctx context.Context, method, path string, body, out any) 
 	}
 	res, err := c.http.Do(req)
 	if err != nil {
-		return 0, fmt.Errorf("reach the server: %w", err)
+		return none, nil, fmt.Errorf("reach the server: %w", err)
 	}
 	defer func() { _ = res.Body.Close() }()
-	data, err := io.ReadAll(io.LimitReader(res.Body, 64<<20))
+	data, err := io.ReadAll(io.LimitReader(res.Body, limit))
 	if err != nil {
-		return res.StatusCode, fmt.Errorf("read the server's answer: %w", err)
+		return res, nil, fmt.Errorf("read the server's answer: %w", err)
 	}
 	if res.StatusCode >= 300 {
 		var eb struct {
 			Error struct{ Code, Message string } `json:"error"`
 		}
 		if json.Unmarshal(data, &eb) != nil || eb.Error.Code == "" {
-			return res.StatusCode, fmt.Errorf("%s %s: %s", method, u.Path, res.Status)
+			return res, nil, fmt.Errorf("%s %s: %s", method, u.Path, res.Status)
 		}
-		return res.StatusCode, &apiError{code: eb.Error.Code, msg: eb.Error.Message}
+		return res, nil, &apiError{code: eb.Error.Code, msg: eb.Error.Message}
 	}
-	if out != nil && len(data) > 0 {
-		if err := json.Unmarshal(data, out); err != nil {
-			return res.StatusCode, fmt.Errorf("decode the server's answer: %w", err)
-		}
-	}
-	return res.StatusCode, nil
+	return res, data, nil
 }
+
+// maxAnswer bounds a JSON answer the client reads.
+const maxAnswer = 64 << 20
 
 // post sends a POST, an empty object when body is nil.
 func (c *apiClient) post(ctx context.Context, path string, body, out any) (int, error) {

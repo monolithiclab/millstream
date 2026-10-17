@@ -36,7 +36,7 @@ var Units = []string{
 	unitStartReplay, unitRecordEval, unitRollup, unitRecordInsights, unitSetInsightState, unitPark,
 	unitReviewDecision, unitSampleDecision, unitReviewTimeout, unitDisable, unitRollback,
 	unitRegisterNode, unitSetNodeState, unitTriggerTokens, unitRetain, unitStartPurge, unitErasePurge, unitFinishPurge,
-	unitDeleteArtifacts,
+	unitDeleteArtifacts, unitEvidenceKey, unitRecordExport, unitRecordImport, unitExpireEvidence,
 }
 
 const (
@@ -73,6 +73,10 @@ const (
 	unitErasePurge      = "erasePurge"
 	unitFinishPurge     = "finishPurge"
 	unitDeleteArtifacts = "deleteArtifacts"
+	unitEvidenceKey     = "evidenceKey"
+	unitRecordExport    = "recordExport"
+	unitRecordImport    = "recordImport"
+	unitExpireEvidence  = "expireEvidence"
 )
 
 // Dialect is what the SQLite and Postgres stores spell differently under the shared SQL.

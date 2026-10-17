@@ -160,6 +160,7 @@ func Test_commandsThroughTheServer(t *testing.T) {
 	}
 	trigger := TriggerFireCmd{Pipeline: "extra", Trigger: "adhoc", Payload: "{}", RequestID: "r1"}
 	replay := ReplayCmd{Pipeline: "extra", Step: "pass", RequestID: "rp"}
+	bundle := filepath.Join(testdir.New(t), "bundle.tar.gz")
 	for _, step := range []struct {
 		cmd runner
 		out string // a prefix of what it prints, or of the error
@@ -182,6 +183,8 @@ func Test_commandsThroughTheServer(t *testing.T) {
 		{NodesRevokeCmd{Node: "gpu-1"}, "gpu-1 revoked\n", false},
 		{PurgeCmd{Key: "nobody", RequestID: "pg"}, "purge_pg done: 0 items erased\n", false},
 		{PurgeCmd{Key: "nobody", RequestID: "pg"}, "purge_pg done: 0 items erased (already started)\n", false},
+		{EvidenceExportCmd{Pipeline: "extra", Since: "1d", Out: bundle}, "of extra (0 sampled), expires", false},
+		{EvidenceImportCmd{Bundle: bundle}, "no artifact store", true},
 		{TriggerFireCmd{Pipeline: "extra", Trigger: "adhoc", Payload: "{}", Var: map[string]string{"x": "1"}}, "--var", true},
 		{InboxApproveCmd{deliveryRef: deliveryRef{Delivery: "d1"}, reviewerFlag: reviewerFlag{As: "ana"}}, "--pipeline", true},
 		{InboxSampleCmd{deliveryRef: deliveryRef{Delivery: "d1"}, Decision: "agree", reviewerFlag: reviewerFlag{As: "ana"}},

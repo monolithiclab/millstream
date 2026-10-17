@@ -39,6 +39,8 @@ var Tests = append([]Test{
 	{"TestPipelines", TestPipelines},
 	{"TestLeasePipelineSlots", TestLeasePipelineSlots},
 	{"TestInsightLifecycle", TestInsightLifecycle},
+	{"TestEvidenceExports", TestEvidenceExports},
+	{"TestEvidenceImports", TestEvidenceImports},
 	{"TestInsightRequests", TestInsightRequests},
 	{"TestRecordInsightsFailpoint", TestRecordInsightsFailpoint},
 	{"TestLease", TestLease},

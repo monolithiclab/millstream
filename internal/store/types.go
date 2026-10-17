@@ -1098,13 +1098,15 @@ type PurgeRequest struct {
 // Purge is a durable erasure operation (spec section 9.3, the purges table). It holds no erased data: the key or
 // item named is not kept.
 type Purge struct {
-	ID          string
-	Scope       PurgeScope
-	Pipeline    string
-	State       PurgeState
-	Items       int64    // the items fenced: those named, their descendants and their copies in other pipelines
-	Erased      int64    // how many of them are erased so far
-	Pipelines   []string // the pipelines holding them, sorted
+	ID        string
+	Scope     PurgeScope
+	Pipeline  string
+	State     PurgeState
+	Items     int64    // the items fenced: those named, their descendants and their copies in other pipelines
+	Erased    int64    // how many of them are erased so far
+	Pipelines []string // the pipelines holding them, sorted
+	// Bundles are the evidence bundles exported holding the key of an item it fenced (spec section 11.2), sorted.
+	Bundles     []string
 	RequestedAt time.Time
 	FinishedAt  time.Time
 }
@@ -1114,3 +1116,36 @@ type ArtifactKey struct {
 	Pipeline string
 	SHA256   string
 }
+
+// EvidenceExport records an evidence bundle a production deployment exported (spec section 11.2): who exported it,
+// its scope as JSON, the production revision's package hash, when it expires, and the item keys it holds.
+// ExportedAt is the store clock's instant of the unit.
+type EvidenceExport struct {
+	ID           string
+	Pipeline     string
+	ExportedBy   string
+	ExportedAt   time.Time
+	Scope        json.RawMessage
+	RevisionHash string
+	Items        int
+	ExpiresAt    time.Time
+	Keys         []string
+}
+
+// EvidenceImport records an evidence bundle a development deployment imported (spec section 11.2): kept whole in the
+// artifact store under its pipeline's prefix at SHA256, read-only history until ExpiresAt. ImportedAt is the store
+// clock's instant of the unit.
+type EvidenceImport struct {
+	ID           string
+	Pipeline     string
+	RevisionHash string
+	SHA256       string
+	Size         int64
+	Items        int
+	ExportedAt   time.Time
+	ImportedAt   time.Time
+	ExpiresAt    time.Time
+}
+
+// EvidenceType is the artifact type of a stored evidence bundle.
+const EvidenceType = "application/gzip"

@@ -815,6 +815,62 @@ paths:
             application/json:
               schema: { type: array, items: { type: string } }
         "400": { $ref: "#/components/responses/Error" }
+  /pipelines/{pipeline}/evidence:
+    parameters: [{ $ref: "#/components/parameters/pipeline" }]
+    post:
+      operationId: exportEvidence
+      summary: Export an evidence bundle of the pipeline (spec section 11.2).
+      description: |
+        The bundle is a gzip-compressed tar: a versioned manifest, the open insights (or the one named), a stratified
+        sample of the deliveries created within since (improve.evidence.sample) with every step's inputs and outputs on
+        their lineages, review decisions without reviewer identities, agent transcripts and the production revision's
+        package. Each stream's redact pointers hold a hash keyed per deployment instead of their values. The export is
+        recorded under the request's user with the item keys it holds; the bundle expires after improve.evidence.ttl.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EvidenceExportRequest" }
+      responses:
+        default: { $ref: "#/components/responses/Error" }
+        "415": { $ref: "#/components/responses/Error" }
+        "201":
+          description: The bundle, its id in X-Millstream-Bundle.
+          headers:
+            X-Millstream-Bundle: { schema: { type: string } }
+          content:
+            application/gzip:
+              schema: { type: string, format: binary }
+        "400": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+  /evidence/imports:
+    post:
+      operationId: importEvidence
+      summary: Import an evidence bundle as read-only history, in a development deployment (spec section 11.2).
+      description: |
+        A production deployment, an expired bundle and a bundle this build cannot read are refused. The bundle is kept
+        in the artifact store until it expires, when the engine deletes it; importing it again changes nothing.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EvidenceImportRequest" }
+      responses:
+        default: { $ref: "#/components/responses/Error" }
+        "415": { $ref: "#/components/responses/Error" }
+        "201":
+          description: The bundle, imported by this request.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EvidenceImport" }
+        "200":
+          description: The bundle, imported already.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EvidenceImport" }
+        "400": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
   /purges:
     post:
       operationId: createPurge
@@ -1512,7 +1568,7 @@ components:
         requestId: { type: string }
     Purge:
       type: object
-      required: [id, scope, state, items, erased, pipelines, requestedAt]
+      required: [id, scope, state, items, erased, pipelines, bundles, requestedAt]
       additionalProperties: false
       properties:
         id: { type: string }
@@ -1522,8 +1578,34 @@ components:
         items: { type: integer, description: The items fenced, descendants and copies included. }
         erased: { type: integer }
         pipelines: { type: array, items: { type: string } }
+        bundles: { type: array, items: { type: string }, description: The evidence bundles exported holding a key it erased. }
         requestedAt: { type: string, format: date-time }
         finishedAt: { type: string, format: date-time }
+    EvidenceExportRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        since: { type: string, description: Sample the deliveries created within this duration (30d by default). }
+        insight: { type: string, description: Carry this insight alone and sample its step. }
+    EvidenceImportRequest:
+      type: object
+      required: [bundle]
+      additionalProperties: false
+      properties:
+        bundle: { type: string, format: byte, description: The bundle, base64. }
+    EvidenceImport:
+      type: object
+      required: [id, pipeline, items, exportedAt, expiresAt, productionRevision, localRevision, diverged]
+      additionalProperties: false
+      properties:
+        id: { type: string }
+        pipeline: { type: string }
+        items: { type: integer }
+        exportedAt: { type: string, format: date-time }
+        expiresAt: { type: string, format: date-time }
+        productionRevision: { type: string, description: The package hash of the revision the bundle was exported on. }
+        localRevision: { type: string, description: The package hash of this deployment's active revision, empty when the pipeline is not applied. }
+        diverged: { type: boolean, description: The two revisions differ. }
     ReplayRequest:
       type: object
       description: Exactly one of step (a replay run of the step over past items) and stream (a back-fill of an imported stream from the producer's retained items).

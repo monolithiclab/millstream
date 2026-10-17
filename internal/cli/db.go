@@ -22,6 +22,17 @@ func artifactsDir(rt *Runtime, env *pipeline.Environment) string {
 	return filepath.Join(filepath.Dir(env.Store.Path(rt.DB)), "artifacts")
 }
 
+// localArtifacts reads the environment file and opens its artifact store: what a command writing from its own
+// process needs beside the store.
+func localArtifacts(rt *Runtime) (*pipeline.Environment, artifacts.Store, error) {
+	env, err := environment(rt)
+	if err != nil {
+		return nil, nil, err
+	}
+	arts, err := artifactStore(rt, env)
+	return env, arts, err
+}
+
 // artifactStore is the artifact store the environment file names (spec section 9.2): the S3-compatible bucket of
 // artifacts.s3, its credentials read from their sources (else AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY), or the
 // local directory.

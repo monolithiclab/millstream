@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"regexp"
+	"strings"
 
 	"go.yaml.in/yaml/v3"
 )
@@ -243,13 +244,24 @@ func parseStream(n *yaml.Node, path string) (StreamDecl, error) {
 	for _, err := range []error{
 		optional(f, "schema", &d.Schema, value),
 		optional(f, "retention", &d.Retention, duration),
-		optional(f, "redact", &d.Redact, strSeq),
+		optional(f, "redact", &d.Redact, pointerSeq),
 	} {
 		if err != nil {
 			return d, err
 		}
 	}
 	return d, nil
+}
+
+// pointerSeq reads a list of JSON pointers into a payload, such as /seller/phone.
+func pointerSeq(n *yaml.Node, path string) ([]string, error) {
+	list, err := strSeq(n, path)
+	for i, p := range list {
+		if err == nil && !strings.HasPrefix(p, "/") {
+			err = errAt(deref(n).Content[i], indexPath(path, i), "must be a JSON pointer such as /seller/phone")
+		}
+	}
+	return list, err
 }
 
 func parseBudget(n *yaml.Node, path string) (Budget, error) {

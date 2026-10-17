@@ -114,7 +114,13 @@ earlier designs are in the git history of the spec.
   that grow more slowly (`dedupe_keys` past their window, `skipped_firings`, `eval_results`, resolved `insights`,
   done `purges` and their `purge_items`) are kept for ever. A purge sweeps its files without the periodic sweep's
   grace: a delivery in flight storing the very same content in the same pipeline at that moment could lose the file
-  it references. Evidence bundles (M5) must be found and erased by a purge too (spec section 11.2).
+  it references.
+- Evidence (M5 Task 3): a purge lists the bundles that held an erased key but cannot reach their files; erasing the
+  matching items inside development imports (rewriting the stored bundle) would close it. Bundles leave out the
+  files of the items' own artifacts (photos, pages), the review samples and the deliveries of lineage items created
+  before `--since`; an export reads the transcripts and lineages one delivery at a time, fine for a sample of 500.
+  The redaction of free text (transcripts, error messages) replaces the redacted strings it finds verbatim or
+  JSON-escaped, not other spellings of them.
 - Crash suite on Postgres: the failpoint matrices (run and commands) run on both stores; the seeded random kill
   points, the M2 agent path and the review fixtures still run on SQLite only.
 

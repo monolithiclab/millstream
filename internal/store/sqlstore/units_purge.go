@@ -74,10 +74,14 @@ func (w *wtx) startPurge(req store.PurgeRequest) (store.Purge, bool, error) {
 	if len(lineage) == 0 {
 		p.State, p.FinishedAt = store.PurgeDone, w.now
 	}
+	if p.Bundles, err = w.purgeBundles(req, byPipeline); err != nil {
+		return p, false, err
+	}
 	pipelines, _ := json.Marshal(p.Pipelines)
-	if _, err := w.exec(`INSERT INTO purges (id, scope, pipeline, state, items, pipelines, requested_at, finished_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, p.ID, p.Scope, p.Pipeline, p.State, p.Items, string(pipelines), w.ts(),
-		nullTime(p.FinishedAt)); err != nil {
+	bundles, _ := json.Marshal(p.Bundles)
+	if _, err := w.exec(`INSERT INTO purges (id, scope, pipeline, state, items, pipelines, bundles, requested_at,
+		finished_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, p.ID, p.Scope, p.Pipeline, p.State, p.Items,
+		string(pipelines), string(bundles), w.ts(), nullTime(p.FinishedAt)); err != nil {
 		return p, false, err
 	}
 	runs := map[itemRef]bool{} // the runs whose deliveries or dead letters the fence ended, to settle
@@ -409,20 +413,23 @@ func (w *wtx) purgeCounts(id string) (map[string]int, error) {
 	return counts, err
 }
 
-const purgeColumns = `id, scope, pipeline, state, items, erased, pipelines, requested_at, finished_at`
+const purgeColumns = `id, scope, pipeline, state, items, erased, pipelines, bundles, requested_at, finished_at`
 
 func scanPurge(row interface{ Scan(...any) error }) (store.Purge, error) {
 	var (
 		p                   store.Purge
-		pipelines           string
+		pipelines, bundles  string
 		requested, finished TimeCol
 	)
-	if err := row.Scan(&p.ID, &p.Scope, &p.Pipeline, &p.State, &p.Items, &p.Erased, &pipelines, &requested,
+	if err := row.Scan(&p.ID, &p.Scope, &p.Pipeline, &p.State, &p.Items, &p.Erased, &pipelines, &bundles, &requested,
 		&finished); err != nil {
 		return p, err
 	}
 	if err := json.Unmarshal([]byte(pipelines), &p.Pipelines); err != nil {
 		return p, fmt.Errorf("purge %s pipelines: %w", p.ID, err)
+	}
+	if err := json.Unmarshal([]byte(bundles), &p.Bundles); err != nil {
+		return p, fmt.Errorf("purge %s bundles: %w", p.ID, err)
 	}
 	p.RequestedAt, p.FinishedAt = requested.Time, finished.Time
 	return p, nil

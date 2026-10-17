@@ -63,6 +63,9 @@ func (e *Engine) Retain(ctx context.Context) error {
 	if err := e.retain(ctx); err != nil {
 		errs = append(errs, err)
 	}
+	if err := e.expireEvidence(ctx); err != nil {
+		errs = append(errs, fmt.Errorf("evidence expiry: %w", err))
+	}
 	if err := e.sweepArtifacts(ctx, nil, ArtifactGrace); err != nil {
 		errs = append(errs, fmt.Errorf("artifact sweep: %w", err))
 	}
@@ -107,6 +110,29 @@ func (e *Engine) retain(ctx context.Context) error {
 			"rollups", total.Rollups)
 	}
 	return nil
+}
+
+// expireEvidence deletes the evidence imports that expired (spec section 11.2), then their bundles' files and
+// entries at once: imported evidence is gone once it expires. Only those files: a sweep of their pipelines without
+// the grace would take files a delivery in flight just stored.
+func (e *Engine) expireEvidence(ctx context.Context) error {
+	gone, err := e.st.ExpireEvidence(ctx)
+	if err != nil || len(gone) == 0 {
+		return err
+	}
+	files := e.files()
+	keys := make([]store.ArtifactKey, 0, len(gone))
+	for _, g := range gone {
+		if files != nil {
+			if err := files.Remove(ctx, g.Pipeline, g.SHA256); err != nil {
+				return err
+			}
+		}
+		keys = append(keys, store.ArtifactKey{Pipeline: g.Pipeline, SHA256: g.SHA256})
+		e.log.Info("evidence expired", "bundle", g.ID, "pipeline", g.Pipeline)
+	}
+	_, err = e.st.DeleteArtifacts(ctx, keys)
+	return err
 }
 
 // PurgeRequest asks for a purge (spec section 9.3): of the items with Key, or of the item Item, in Pipeline or in

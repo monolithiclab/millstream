@@ -2,8 +2,11 @@ package cli
 
 import (
 	"encoding/json"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/monolithiclab/millstream/internal/testdir"
 )
 
 // After a run whose scorer fails every item (see newState), the run's metrics, insights and report are in the
@@ -69,9 +72,28 @@ func TestMetricsInsightsAndReport(t *testing.T) {
 		r.Failures[0].Count != 3 {
 		t.Fatalf("report JSON = %+v, %v\n%s", r, err, out)
 	}
+	// The failure cluster's evidence: exported from this process, imported into the same store (a development one
+	// without an environment file), then listed by a purge of one of its keys.
+	bundle := filepath.Join(testdir.New(t), "bundle.tar.gz")
+	for _, c := range []struct {
+		cmd  runner
+		want string
+	}{
+		{EvidenceExportCmd{Pipeline: "listings", Since: "30d", Insight: in.ID, Out: bundle}, "(3 sampled)"},
+		{EvidenceImportCmd{Bundle: bundle}, " of listings imported, expires "},
+		{EvidenceImportCmd{Bundle: bundle}, "(imported already)"},
+		{PurgeCmd{Key: "k0", RequestID: "ev"}, "evidence bundles that held it: evidence_"},
+	} {
+		if out, _, err := s.call(nil, c.cmd); err != nil || !strings.Contains(out, c.want) {
+			t.Fatalf("%T: %q, %v; want %q", c.cmd, out, err, c.want)
+		}
+	}
 	s.checkRefusals(t, nil, []refusal{
 		{MetricsCmd{Since: "soon"}, true, "--since: invalid duration"},
 		{InsightsAckCmd{insightRef{ID: "in_missing"}}, false, "insight in_missing: not found"},
 		{RunReportCmd{Pipeline: "listings", RunID: "run_missing"}, false, "run run_missing: not found"},
+		{EvidenceExportCmd{Pipeline: "listings", Since: "soon"}, true, "--since: invalid duration"},
+		{EvidenceExportCmd{Pipeline: "listings", Since: "1d", Insight: "in_missing"}, false, "in_missing of listings: not found"},
+		{EvidenceImportCmd{Bundle: filepath.Join(testdata, "inbox-patch.json")}, false, "not an evidence bundle"},
 	})
 }

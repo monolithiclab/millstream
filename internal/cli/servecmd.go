@@ -261,7 +261,7 @@ func (s *server) term(ctx context.Context, st store.Store, lead leadership) erro
 		}
 	}
 	h := engineHost{site: s.site, sec: s.sec, embedded: env.NodeEmbedded, slots: s.cmd.Slots, leaseTTL: s.cmd.LeaseTTL,
-		lead: lead, arts: s.arts, nodeToken: s.nodeToken}
+		lead: lead, arts: s.arts, nodeToken: s.nodeToken, mode: env.EffectiveMode(pipeline.ModeProduction)}
 	return h.run(ctx, rt, env, st, e, notes, s.log, wait)
 }
 

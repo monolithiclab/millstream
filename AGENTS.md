@@ -48,6 +48,11 @@ below) for the reasoning, and `make help` for every command.
   `stores` opens the one the environment file names, in one of two modes: `Open` for an engine or a command writing
   from its own process (on Postgres it takes the leadership lock), `OpenReader` for a command that only reads (on
   Postgres read-only, without the lock, its units refused with `store.ErrReadOnly`).
+- Evidence (spec section 11.2): `evidence` builds, encodes and decodes bundles (`Export`, `Import`, `Load`), redacts
+  them with the store's `EvidenceKey`, and gives imported history back in the store's shapes (`Bundle.StoreItems`
+  and the like); imported bundles live whole in the artifact store, recorded in `evidence_imports`, never in the
+  deployment's own items. The API's `exportEvidence`/`importEvidence` and the CLI's `evidence export|import` call it;
+  the retention job deletes expired imports (`engine.expireEvidence`).
 - CLI writes (`internal/cli`): a command that changes state goes through `changeState`, which calls the served
   engine's API when `--server`/`MILLSTREAM_SERVER` names one (`remote.go`), else `withWriter` (SQLite, or Postgres
   with `--direct`); reads use `withStore`, engines (`run`, `serve`) `withStoreMode(engineStore)`. A new command that

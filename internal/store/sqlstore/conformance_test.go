@@ -328,3 +328,11 @@ func TestPurgeAcrossImports(t *testing.T) {
 func TestPurgeResumesAfterCrash(t *testing.T) {
 	storetest.TestPurgeResumesAfterCrash(t, memoryStore)
 }
+
+func TestEvidenceExports(t *testing.T) {
+	storetest.TestEvidenceExports(t, memoryStore)
+}
+
+func TestEvidenceImports(t *testing.T) {
+	storetest.TestEvidenceImports(t, memoryStore)
+}

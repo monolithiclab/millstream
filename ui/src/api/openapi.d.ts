@@ -853,6 +853,53 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/pipelines/{pipeline}/evidence': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        pipeline: components['parameters']['pipeline'];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Export an evidence bundle of the pipeline (spec section 11.2).
+     * @description The bundle is a gzip-compressed tar: a versioned manifest, the open insights (or the one named), a stratified
+     *     sample of the deliveries created within since (improve.evidence.sample) with every step's inputs and outputs on
+     *     their lineages, review decisions without reviewer identities, agent transcripts and the production revision's
+     *     package. Each stream's redact pointers hold a hash keyed per deployment instead of their values. The export is
+     *     recorded under the request's user with the item keys it holds; the bundle expires after improve.evidence.ttl.
+     */
+    post: operations['exportEvidence'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/evidence/imports': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Import an evidence bundle as read-only history, in a development deployment (spec section 11.2).
+     * @description A production deployment, an expired bundle and a bundle this build cannot read are refused. The bundle is kept
+     *     in the artifact store until it expires, when the engine deletes it; importing it again changes nothing.
+     */
+    post: operations['importEvidence'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/purges': {
     parameters: {
       query?: never;
@@ -1465,10 +1512,40 @@ export interface components {
       items: number;
       erased: number;
       pipelines: string[];
+      /** @description The evidence bundles exported holding a key it erased. */
+      bundles: string[];
       /** Format: date-time */
       requestedAt: string;
       /** Format: date-time */
       finishedAt?: string;
+    };
+    EvidenceExportRequest: {
+      /** @description Sample the deliveries created within this duration (30d by default). */
+      since?: string;
+      /** @description Carry this insight alone and sample its step. */
+      insight?: string;
+    };
+    EvidenceImportRequest: {
+      /**
+       * Format: byte
+       * @description The bundle
+       */
+      bundle: string;
+    };
+    EvidenceImport: {
+      id: string;
+      pipeline: string;
+      items: number;
+      /** Format: date-time */
+      exportedAt: string;
+      /** Format: date-time */
+      expiresAt: string;
+      /** @description The package hash of the revision the bundle was exported on. */
+      productionRevision: string;
+      /** @description The package hash of this deployment's active revision */
+      localRevision: string;
+      /** @description The two revisions differ. */
+      diverged: boolean;
     };
     /** @description Exactly one of step (a replay run of the step over past items) and stream (a back-fill of an imported stream from the producer's retained items). */
     ReplayRequest: {
@@ -3125,6 +3202,75 @@ export interface operations {
         };
       };
       400: components['responses']['Error'];
+      default: components['responses']['Error'];
+    };
+  };
+  exportEvidence: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        pipeline: components['parameters']['pipeline'];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['EvidenceExportRequest'];
+      };
+    };
+    responses: {
+      /** @description The bundle, its id in X-Millstream-Bundle. */
+      201: {
+        headers: {
+          'X-Millstream-Bundle'?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          'application/gzip': string;
+        };
+      };
+      400: components['responses']['Error'];
+      404: components['responses']['Error'];
+      415: components['responses']['Error'];
+      default: components['responses']['Error'];
+    };
+  };
+  importEvidence: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['EvidenceImportRequest'];
+      };
+    };
+    responses: {
+      /** @description The bundle, imported already. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['EvidenceImport'];
+        };
+      };
+      /** @description The bundle, imported by this request. */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['EvidenceImport'];
+        };
+      };
+      400: components['responses']['Error'];
+      409: components['responses']['Error'];
+      415: components['responses']['Error'];
+      503: components['responses']['Error'];
       default: components['responses']['Error'];
     };
   };
