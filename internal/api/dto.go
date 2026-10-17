@@ -143,6 +143,34 @@ type Item struct {
 	ParentPipeline string `json:"parentPipeline,omitempty"`
 	// Tombstone says why the item no longer holds its payload (spec section 9.3), empty while it does.
 	Tombstone string `json:"tombstone,omitempty"`
+	// ProducedBy is primary or fallback for an output of a step with a fallback (spec section 11.5).
+	ProducedBy string `json:"producedBy,omitempty"`
+}
+
+// Audit is a fallback audit (spec section 11.5): the step's fallback run on an item its primary covered, beside the
+// run. Primary and Fallback are the outputs of each, as [{"key", "payload"}]; Fallback and Agreement are null until
+// the audit is done.
+type Audit struct {
+	ID         string          `json:"id"`
+	Pipeline   string          `json:"pipeline"`
+	DeliveryID string          `json:"deliveryId"`
+	RunID      string          `json:"runId"`
+	Step       string          `json:"step"`
+	ItemID     string          `json:"itemId"`
+	State      string          `json:"state"`
+	Primary    json.RawMessage `json:"primary"`
+	Fallback   json.RawMessage `json:"fallback"`
+	Agreement  *float64        `json:"agreement"`
+	CostUSD    float64         `json:"costUsd"`
+	Error      string          `json:"error,omitempty"`
+	CreatedAt  time.Time       `json:"createdAt"`
+	FinishedAt *time.Time      `json:"finishedAt,omitempty"`
+}
+
+func toAudit(a store.Audit) Audit {
+	return Audit{ID: a.ID, Pipeline: a.Pipeline, DeliveryID: a.DeliveryID, RunID: a.RunID, Step: a.Step,
+		ItemID: a.ItemID, State: string(a.State), Primary: a.Primary, Fallback: a.Fallback, Agreement: a.Agreement,
+		CostUSD: a.CostUSD, Error: a.Error, CreatedAt: a.CreatedAt, FinishedAt: timePtr(a.FinishedAt)}
 }
 
 // LineageNode is an item of a lineage, without its payload. Pipeline is the item's: another pipeline's for an
@@ -190,7 +218,9 @@ type Delivery struct {
 	FinishedAt     *time.Time `json:"finishedAt,omitempty"`
 	WaitMs         int64      `json:"waitMs"`
 	WorkMs         int64      `json:"workMs"`
-	Attempts       []Attempt  `json:"attempts,omitempty"`
+	// Fallback says the step's fallback action runs the delivery (spec section 11.5).
+	Fallback bool      `json:"fallback,omitempty"`
+	Attempts []Attempt `json:"attempts,omitempty"`
 }
 
 // Attempt is one attempt of a delivery, read from its events, with the artifacts it kept (an agent's transcript).
@@ -425,6 +455,7 @@ func toItem(it store.Item) Item {
 		ID: it.ID, Pipeline: it.Pipeline, RunID: it.RunID, Stream: it.Stream, Step: it.Step, Key: it.Key,
 		Parents: orEmpty(it.Parents), Generation: it.Generation, TS: it.TS, Payload: payload,
 		Artifacts: orEmpty(it.Artifacts), ParentPipeline: it.ParentPipeline, Tombstone: string(it.Tombstone),
+		ProducedBy: it.ProducedBy,
 	}
 }
 
@@ -458,7 +489,7 @@ func toDelivery(d store.Delivery) Delivery {
 		State: string(d.State), Attempt: d.Attempt, LeaseOwner: d.LeaseOwner, ErrorClass: d.ErrorClass,
 		ErrorMessage: d.ErrorMessage, FilterReason: d.FilterReason, CostUSD: d.CostUSD, CreatedAt: d.CreatedAt,
 		LeasedAt: timePtr(d.LeasedAt), FinishedAt: timePtr(d.FinishedAt), WaitMs: d.Wait.Milliseconds(),
-		WorkMs: d.Work.Milliseconds(),
+		WorkMs: d.Work.Milliseconds(), Fallback: d.Fallback,
 	}
 	if d.State == store.DeliveryLeased {
 		out.LeaseExpiresAt = timePtr(d.LeaseExpiresAt)

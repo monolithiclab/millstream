@@ -1,5 +1,6 @@
 import type { operations } from './openapi';
 import type {
+  Audit,
   Count,
   DeadLetterGroup,
   DeadLetterSelection,
@@ -85,6 +86,8 @@ export interface Api {
   getLineage(pipeline: string, item: string, query?: LineageQuery): Promise<Lineage>;
   listItemDeliveries(pipeline: string, item: string, query?: DeliveryQuery): Promise<Delivery[]>;
   getDelivery(pipeline: string, delivery: string): Promise<Delivery>;
+  // The fallback audits of the deliveries that read an item (spec section 11.5), oldest first.
+  listItemAudits(pipeline: string, item: string): Promise<Audit[]>;
   listDeadLetters(pipeline: string, query?: DeadLetterQuery): Promise<DeadLetterGroup[]>;
   listLessons(pipeline: string): Promise<StepLessons[]>;
   getReview(pipeline: string, delivery: string): Promise<Review>;

@@ -1,13 +1,15 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
-import type { ArtifactRef, Item, Lineage, LineageNode, Tombstone } from '../../api/schema';
+import type { ArtifactRef, Audit, AuditOutput, Item, Lineage, LineageNode, Tombstone } from '../../api/schema';
 import { useApi } from '../../api/context';
+import { ErrorText } from '../../common/Copy';
+import { JsonViewer } from '../../common/JsonViewer';
 import { buttons, card } from '../../common/styles';
 import { QueryView } from '../../common/States';
 import { useResource } from '../../common/useResource';
 import { shortId } from '../../common/Id';
-import { StatusBadge } from '../../common/Status';
+import { StatusBadge, Tag } from '../../common/Status';
 import { formatBytes, useFormat } from '../../common/useFormat';
 import { itemPath } from '../../routes';
 
@@ -214,6 +216,76 @@ export function Artifacts({ pipeline, item }: { pipeline: string; item: Item }) 
           ))}
         </div>
       )}
+    </section>
+  );
+}
+
+// One action's outputs in an audit, or a line saying there are none (an audit not done, failed or cancelled).
+function AuditOutputs({ title, outputs }: { title: string; outputs: AuditOutput[] | null }) {
+  const { t } = useTranslation();
+  if (outputs === null || outputs.length === 0) {
+    return (
+      <section aria-label={title} className={`${card} px-3.5 py-2.5`}>
+        <h4 className="m-0 text-ui font-bold">{title}</h4>
+        <p className="m-0 mt-1 text-small text-ink-2">{t('item.audits.noOutputs')}</p>
+      </section>
+    );
+  }
+  return <JsonViewer value={outputs} title={title} level={4} />;
+}
+
+// Whether the fallback agreed with the primary: a word once done, a wait before, nothing for an audit that ended
+// without comparing.
+function Agreement({ audit }: { audit: Audit }) {
+  const { t } = useTranslation();
+  if (audit.agreement === 1) return <Tag tone="ok">{t('item.audits.agrees')}</Tag>;
+  if (audit.agreement === 0) return <Tag tone="bad">{t('item.audits.disagrees')}</Tag>;
+  if (audit.state === 'failed' || audit.state === 'cancelled') return null;
+  return <Tag>{t('item.audits.comparing')}</Tag>;
+}
+
+// The fallback audits of the deliveries that read the item (spec section 11.5): each the step's fallback run beside
+// its primary on this item, its state, whether they agree, its cost, why it ended when it failed, and both actions'
+// outputs side by side.
+export function Audits({ audits }: { audits: Audit[] }) {
+  const { t } = useTranslation();
+  const f = useFormat();
+  return (
+    <section aria-labelledby="audits-title" className={`${card} flex flex-col gap-2.5 px-3.5 py-3`}>
+      <h2 id="audits-title" className="m-0 text-ui font-bold">
+        {t('item.audits.title')}
+      </h2>
+      <p className="m-0 text-small text-ink-2">{t('item.audits.intro')}</p>
+      <ol className="m-0 flex list-none flex-col p-0">
+        {audits.map((a) => (
+          <li key={a.id} className="flex flex-col gap-2.5 border-t border-line py-3 first:border-t-0">
+            <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
+              <h3 className="m-0 font-mono text-small font-bold">{a.step}</h3>
+              {/* An audit is not retried: a failed one has ended. */}
+              <StatusBadge status={a.state} label={a.state === 'failed' ? t('item.audits.failed') : undefined} />
+              <Agreement audit={a} />
+            </div>
+            <p className="m-0 flex flex-wrap gap-x-[18px] gap-y-1 text-small text-ink-2">
+              <span>
+                {t('item.audits.delivery')} <span className="font-mono text-ink">{a.deliveryId}</span>
+              </span>
+              <span>
+                {t('item.audits.cost')} <span className="font-bold text-ink">{f.money(a.costUsd)}</span>
+              </span>
+              <time dateTime={a.createdAt} title={f.dateTime(a.createdAt)}>
+                {t('item.audits.created', { time: f.time(a.createdAt) })}
+              </time>
+            </p>
+            {(a.state === 'failed' || a.state === 'cancelled') && a.error !== undefined && a.error !== '' && (
+              <ErrorText text={a.error} />
+            )}
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+              <AuditOutputs title={t('item.audits.primary')} outputs={a.primary} />
+              <AuditOutputs title={t('item.audits.fallback')} outputs={a.fallback} />
+            </div>
+          </li>
+        ))}
+      </ol>
     </section>
   );
 }

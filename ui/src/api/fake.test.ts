@@ -38,6 +38,7 @@ describe('FakeApi', () => {
       api.listStreams('p'),
       api.listRunDeliveries('p', 'r'),
       api.listItemDeliveries('p', 'i'),
+      api.listItemAudits('p', 'i'),
       api.listDeadLetters('p'),
       api.listInsights({ pipeline: 'p' }),
       api.listLessons('p'),
@@ -195,6 +196,10 @@ describe('FakeApi', () => {
       expect.not.objectContaining({ attempts: expect.anything() }),
     ]);
     expect((await api.getDelivery('listings-daily', 'dl_4b2e')).attempts).toEqual([]);
+    expect(await api.listItemAudits('listings-daily', 'it_score_1')).toMatchObject([
+      { id: 'au_score_1', deliveryId: 'dl_score_1', agreement: 0 },
+    ]);
+    expect(await api.listItemAudits('listings-daily', 'it_7f3a9c21')).toEqual([]);
     expect(await api.listInsights({ pipeline: 'listings-daily', state: 'open' })).toHaveLength(2);
     expect(await api.listDeadLetters('listings-daily', { state: 'all' })).toHaveLength(4);
     const text = await api.readArtifact({ pipeline: 'listings-daily', item: 'it_7f3a9c21', name: 'notes.json' });
@@ -212,6 +217,12 @@ describe('FakeApi', () => {
     for (const id of new Set(ids)) expect((await api.getItem('listings-daily', id)).id).toBe(id);
     for (const review of demoFixtures.inbox) {
       expect(await api.getItem(review.pipeline, review.item.id)).toEqual(review.item);
+    }
+    // An audit is of a delivery its step's primary covered, on the item that delivery read.
+    for (const audit of demoFixtures.audits) {
+      const covered = await api.getDelivery(audit.pipeline, audit.deliveryId);
+      expect(covered).toMatchObject({ itemId: audit.itemId, step: audit.step, state: 'done' });
+      expect(covered.fallback).toBeUndefined();
     }
   });
 

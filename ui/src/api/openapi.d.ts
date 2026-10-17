@@ -509,6 +509,26 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/pipelines/{pipeline}/items/{item}/audits': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        pipeline: components['parameters']['pipeline'];
+        item: components['parameters']['item'];
+      };
+      cookie?: never;
+    };
+    /** The fallback audits of the deliveries that read an item (spec section 11.5), oldest first. */
+    get: operations['listItemAudits'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/pipelines/{pipeline}/items/{item}/artifacts/{name}': {
     parameters: {
       query?: never;
@@ -1280,6 +1300,38 @@ export interface components {
       /** @description The pipeline of the item's parents when it is another one, for a copy published on an imported stream. */
       parentPipeline?: string;
       tombstone?: components['schemas']['Tombstone'];
+      /**
+       * @description For an output of a step with a fallback (spec section 11.5), the action that produced it.
+       * @enum {string}
+       */
+      producedBy?: 'primary' | 'fallback';
+    };
+    /** @description A fallback audit (spec section 11.5): the step's fallback run on an item its primary action covered, a record beside the run. primary and fallback are each action's outputs; fallback and agreement are null until done. */
+    Audit: {
+      id: string;
+      pipeline: string;
+      /** @description The delivery its primary action covered. */
+      deliveryId: string;
+      runId: string;
+      step: string;
+      itemId: string;
+      /** @enum {string} */
+      state: 'pending' | 'leased' | 'done' | 'failed' | 'cancelled';
+      primary: components['schemas']['AuditOutput'][] | null;
+      fallback: components['schemas']['AuditOutput'][] | null;
+      /** @description 1 when the fallback's outputs are the primary's, 0 otherwise; null until done. */
+      agreement: number | null;
+      costUsd: number;
+      /** @description Why a failed or cancelled audit ended. */
+      error?: string;
+      /** Format: date-time */
+      createdAt: string;
+      /** Format: date-time */
+      finishedAt?: string;
+    };
+    AuditOutput: {
+      key: string;
+      payload: unknown;
     };
     /**
      * @description Why the item no longer holds its payload (spec section 9.3); absent while it does. Its payload is then null and it has no artifacts; an erased item has no key either.
@@ -1335,6 +1387,8 @@ export interface components {
       finishedAt?: string;
       waitMs: number;
       workMs: number;
+      /** @description The step's fallback action runs the delivery (spec section 11.5). */
+      fallback?: boolean;
       /** @description On one delivery only. */
       attempts?: components['schemas']['Attempt'][];
     };
@@ -2618,6 +2672,31 @@ export interface operations {
         };
       };
       400: components['responses']['Error'];
+      404: components['responses']['Error'];
+      default: components['responses']['Error'];
+    };
+  };
+  listItemAudits: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        pipeline: components['parameters']['pipeline'];
+        item: components['parameters']['item'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The audits. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Audit'][];
+        };
+      };
       404: components['responses']['Error'];
       default: components['responses']['Error'];
     };

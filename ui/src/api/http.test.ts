@@ -40,6 +40,7 @@ const cases: Case[] = [
   ['getItem', (a) => a.getItem('p', 'it_1'), 'GET', `${P}/items/it_1`],
   ['getLineage', (a) => a.getLineage('p', 'it_1', { depth: 3 }), 'GET', `${P}/items/it_1/lineage?depth=3`],
   ['listItemDeliveries', (a) => a.listItemDeliveries('p', 'it_1'), 'GET', `${P}/items/it_1/deliveries`],
+  ['listItemAudits', (a) => a.listItemAudits('p', 'it_1'), 'GET', `${P}/items/it_1/audits`],
   ['getDelivery', (a) => a.getDelivery('p', 'd'), 'GET', `${P}/deliveries/d`],
   ['listDeadLetters', (a) => a.listDeadLetters('p'), 'GET', `${P}/dead-letters`],
   ['listDeadLetters state', (a) => a.listDeadLetters('p', { state: 'all' }), 'GET', `${P}/dead-letters?state=all`],

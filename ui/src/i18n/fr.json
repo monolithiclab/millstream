@@ -370,7 +370,12 @@
       "cost": "Coût total",
       "created": "Créé à {{time}}",
       "sourcesOne": "{{n}} source",
-      "sourcesOther": "{{n}} sources"
+      "sourcesOther": "{{n}} sources",
+      "producedBy": "Produit par"
+    },
+    "producedBy": {
+      "primary": "action principale",
+      "fallback": "action de repli"
     },
     "tabs": {
       "label": "Vues de l’item",
@@ -408,7 +413,8 @@
       "attempt": "Tentative {{n}}",
       "leaseExpired": "bail expiré",
       "attemptsError": "Les tentatives n’ont pas pu être chargées.",
-      "noAttempts": "Aucune tentative pour l’instant."
+      "noAttempts": "Aucune tentative pour l’instant.",
+      "fallback": "repli"
     },
     "transcript": {
       "tokens": "{{in}} jetons en entrée · {{out}} en sortie",
@@ -439,6 +445,20 @@
       "hide": "Masquer",
       "noPdf": "Ce navigateur n’affiche pas le PDF ici : ouvrez-le plutôt.",
       "error": "L’artefact n’a pas pu être chargé."
+    },
+    "audits": {
+      "title": "Audits",
+      "intro": "L’action de repli de l’étape, exécutée à côté de son action principale sur cet item pour comparer leurs sorties.",
+      "agrees": "Concorde",
+      "disagrees": "Diverge",
+      "comparing": "Pas encore comparé",
+      "delivery": "Livraison",
+      "cost": "Coût",
+      "created": "Créé à {{time}}",
+      "primary": "Sorties de l’action principale",
+      "fallback": "Sorties de l’action de repli",
+      "noOutputs": "Aucune sortie.",
+      "failed": "Échoué"
     }
   },
   "items": {

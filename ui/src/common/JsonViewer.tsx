@@ -66,7 +66,19 @@ const valueClass: Record<Row['kind'], string> = {
 
 // A collapsible JSON viewer (Components board): line numbers, carets that fold objects and arrays, Collapse all,
 // Copy JSON. Long strings wrap rather than clip.
-export function JsonViewer({ value, title, meta }: { value: unknown; title: string; meta?: string }) {
+// level is the heading's, 2 by default: a viewer inside a titled part of a card (an audit's outputs) goes deeper.
+export function JsonViewer({
+  value,
+  title,
+  meta,
+  level = 2,
+}: {
+  value: unknown;
+  title: string;
+  meta?: string;
+  level?: 2 | 4;
+}) {
+  const Heading = level === 2 ? 'h2' : 'h4';
   const { t } = useTranslation();
   const f = useFormat();
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
@@ -89,7 +101,7 @@ export function JsonViewer({ value, title, meta }: { value: unknown; title: stri
   return (
     <section aria-label={title} className={card}>
       <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 border-b border-line px-3.5 py-2.5">
-        <h2 className="m-0 text-ui font-bold">{title}</h2>
+        <Heading className="m-0 text-ui font-bold">{title}</Heading>
         {meta !== undefined && <span className="text-tiny text-ink-3">{meta}</span>}
         <div className="flex-1" />
         {all.length > 0 && (

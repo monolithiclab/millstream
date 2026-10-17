@@ -37,6 +37,8 @@ export type Lineage = Schemas['Lineage'];
 export type LineageNode = Schemas['LineageNode'];
 export type Delivery = Schemas['Delivery'];
 export type Attempt = Schemas['Attempt'];
+export type Audit = Schemas['Audit'];
+export type AuditOutput = Schemas['AuditOutput'];
 
 export type DeadLetterGroup = Schemas['DeadLetterGroup'];
 export type DeadLetter = Schemas['DeadLetter'];

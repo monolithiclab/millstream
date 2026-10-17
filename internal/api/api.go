@@ -194,6 +194,7 @@ var routes = []route{
 	{http.MethodGet, "/pipelines/{pipeline}/items/{item}", (*Server).getItem},
 	{http.MethodGet, "/pipelines/{pipeline}/items/{item}/lineage", (*Server).getLineage},
 	{http.MethodGet, "/pipelines/{pipeline}/items/{item}/deliveries", (*Server).listItemDeliveries},
+	{http.MethodGet, "/pipelines/{pipeline}/items/{item}/audits", (*Server).listItemAudits},
 	{http.MethodGet, "/pipelines/{pipeline}/items/{item}/artifacts/{name}", (*Server).getItemArtifact},
 	{http.MethodGet, "/pipelines/{pipeline}/deliveries/{delivery}", (*Server).getDelivery},
 	{http.MethodGet, "/pipelines/{pipeline}/deliveries/{delivery}/attempts/{attempt}/artifacts/{name}",

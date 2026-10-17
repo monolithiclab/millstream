@@ -180,6 +180,17 @@ export function StatusBadge({ status, label }: { status: StatusKey; label?: Reac
   );
 }
 
+// A pill with a word and no state's shape: what is not a state (which action produced an item).
+export function Tag({ tone = 'mute', children }: { tone?: Tone; children: ReactNode }) {
+  return (
+    <span
+      className={`inline-flex max-w-full items-center rounded-pill px-2.5 py-0.5 text-tiny font-bold ${toneBadge[tone]}`}
+    >
+      {children}
+    </span>
+  );
+}
+
 // A glyph and the word, without the pill: table cells and dense rows.
 export function StatusText({ status, label }: { status: StatusKey; label?: string }) {
   const statusLabel = useStatusLabel();

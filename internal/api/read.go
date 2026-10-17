@@ -631,6 +631,24 @@ func (s *Server) listItemDeliveries(w http.ResponseWriter, r *http.Request) erro
 	return s.writeDeliveries(w, r, store.DeliveryFilter{Pipeline: it.Pipeline, ItemID: it.ID})
 }
 
+// listItemAudits lists the fallback audits of the deliveries that read an item (spec section 11.5).
+func (s *Server) listItemAudits(w http.ResponseWriter, r *http.Request) error {
+	it, err := s.item(r.Context(), r.PathValue("pipeline"), r.PathValue("item"))
+	if err != nil {
+		return err
+	}
+	as, err := s.opts.Store.Audits(r.Context(), store.AuditFilter{Pipeline: it.Pipeline, ItemID: it.ID})
+	if err != nil {
+		return err
+	}
+	out := make([]Audit, len(as))
+	for i, a := range as {
+		out[i] = toAudit(a)
+	}
+	writeJSON(w, http.StatusOK, out)
+	return nil
+}
+
 func (s *Server) getItemArtifact(w http.ResponseWriter, r *http.Request) error {
 	it, err := s.item(r.Context(), r.PathValue("pipeline"), r.PathValue("item"))
 	if err != nil {

@@ -1,6 +1,7 @@
 import { ApiError, type Api, type ArtifactLocation } from './api';
 import { demoFixtures } from './demo';
 import type {
+  Audit,
   DeadLetter,
   DeadLetterGroup,
   DeadLetterSelection,
@@ -49,6 +50,8 @@ export interface Fixtures {
   items: Item[];
   // Every delivery; listRunDeliveries and listItemDeliveries filter them.
   deliveries: Delivery[];
+  // Every fallback audit; listItemAudits filters them by the item the audited delivery read.
+  audits: Audit[];
   deadLetters: FakeDeadLetter[];
   // By pipeline.
   streams: Record<string, Stream[]>;
@@ -269,6 +272,8 @@ export class FakeApi implements Api {
   };
   listItemDeliveries: Api['listItemDeliveries'] = (p, id, { step, state } = {}) =>
     Promise.resolve(this.deliveries((d) => d.itemId === id, p, step, state));
+  listItemAudits: Api['listItemAudits'] = (p, id) =>
+    Promise.resolve(this.fixtures.audits.filter((a) => a.pipeline === p && a.itemId === id));
   getDelivery: Api['getDelivery'] = (p, id) =>
     this.found(
       this.fixtures.deliveries.find((d) => d.pipeline === p && d.id === id),

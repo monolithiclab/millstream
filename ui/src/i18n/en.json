@@ -370,7 +370,12 @@
       "cost": "Total cost",
       "created": "Created {{time}}",
       "sourcesOne": "{{n}} source",
-      "sourcesOther": "{{n}} sources"
+      "sourcesOther": "{{n}} sources",
+      "producedBy": "Produced by"
+    },
+    "producedBy": {
+      "primary": "primary",
+      "fallback": "fallback"
     },
     "tabs": {
       "label": "Item views",
@@ -408,7 +413,8 @@
       "attempt": "Attempt {{n}}",
       "leaseExpired": "lease expired",
       "attemptsError": "The attempts could not be loaded.",
-      "noAttempts": "No attempt yet."
+      "noAttempts": "No attempt yet.",
+      "fallback": "fallback"
     },
     "transcript": {
       "tokens": "in {{in}} tok · out {{out}} tok",
@@ -439,6 +445,20 @@
       "hide": "Hide",
       "noPdf": "This browser shows no PDF here: open it instead.",
       "error": "The artifact could not be loaded."
+    },
+    "audits": {
+      "title": "Audits",
+      "intro": "The step’s fallback action, run beside its primary on this item to compare their outputs.",
+      "agrees": "Agrees",
+      "disagrees": "Disagrees",
+      "comparing": "Not compared yet",
+      "delivery": "Delivery",
+      "cost": "Cost",
+      "created": "Created {{time}}",
+      "primary": "Primary outputs",
+      "fallback": "Fallback outputs",
+      "noOutputs": "No outputs.",
+      "failed": "Failed"
     }
   },
   "items": {

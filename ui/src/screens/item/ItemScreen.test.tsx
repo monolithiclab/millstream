@@ -2,7 +2,7 @@ import { act, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { demoFixtures } from '../../api/demo';
 import { FakeApi } from '../../api/fake';
-import type { Lineage } from '../../api/schema';
+import type { Audit, Lineage } from '../../api/schema';
 import { FakeEventSource } from '../../live/fakeEventSource';
 import { LIVE_REFRESH_MS } from '../../live/useCoalescedRefresh';
 import { mockMatchMedia } from '../../test/flow';
@@ -295,6 +295,65 @@ describe('item detail', () => {
     expect(screen.getByRole('region', { name: 'Données' })).toHaveTextContent(
       /Cet item a été effacé par une purge\. Son enveloppe et sa lignée sont conservées\s; ses données, sa clé/,
     );
+  });
+
+  it('says which action produced the item and marks the delivery its fallback ran, with no audits section', async () => {
+    renderApp({ route });
+    await screen.findByRole('heading', { level: 1, name: 'T3 lumineux, cour calme' });
+    expect(screen.getByText('Produced by').parentElement).toHaveTextContent('Produced by fallback');
+    const journey = screen.getByRole('region', { name: 'Journey' });
+    expect(await within(journey).findByRole('button', { name: /score\s*fallback/ })).toBeInTheDocument();
+    expect(within(journey).getByRole('button', { name: /enrich/ })).not.toHaveTextContent('fallback');
+    expect(screen.queryByRole('heading', { name: 'Audits' })).not.toBeInTheDocument();
+  });
+
+  it('lists an item’s audits: one agreeing, with both actions’ outputs', async () => {
+    renderApp({ route: '/p/listings-daily/items/it_score_0' });
+    const audits = await screen.findByRole('region', { name: 'Audits' });
+    expect(within(audits).getAllByRole('listitem')).toHaveLength(1);
+    expect(within(audits).getByRole('heading', { level: 3, name: 'score' })).toBeInTheDocument();
+    expect(within(audits).getByText('Agrees')).toBeInTheDocument();
+    expect(within(audits).getByText('Done')).toBeInTheDocument();
+    expect(within(audits).getByText('Cost').parentElement).toHaveTextContent('Cost $0.01');
+    expect(within(audits).getByText('dl_score_0')).toBeInTheDocument();
+    // The producedBy badge is only on a step with a fallback's outputs.
+    expect(screen.queryByText('Produced by')).not.toBeInTheDocument();
+  });
+
+  it('shows a disagreeing audit’s two outputs side by side, in French', async () => {
+    renderApp({ route: '/p/listings-daily/items/it_score_1', language: 'fr' });
+    const audits = await screen.findByRole('region', { name: 'Audits' });
+    expect(within(audits).getByText('Diverge')).toBeInTheDocument();
+    const primary = within(audits).getByRole('region', { name: 'Sorties de l’action principale' });
+    const fallback = within(audits).getByRole('region', { name: 'Sorties de l’action de repli' });
+    expect(within(primary).getByRole('heading', { level: 4 })).toBeInTheDocument();
+    expect(primary).toHaveTextContent('"score": 58');
+    expect(fallback).toHaveTextContent('"score": 81');
+    expect(fallback).toHaveTextContent('"key": "montreuil-t4-81"');
+  });
+
+  it('shows a failed audit’s error and no fallback outputs, and a pending one not compared yet', async () => {
+    const base = demoFixtures.audits[0]!;
+    const failed: Audit = {
+      ...base,
+      id: 'au_failed',
+      state: 'failed',
+      fallback: null,
+      agreement: null,
+      error: 'fallback timed out after 120 s',
+    };
+    const pending: Audit = { ...base, id: 'au_pending', state: 'pending', fallback: null, agreement: null };
+    const api = new FakeApi({ ...demoFixtures, audits: [failed, pending] });
+    renderApp({ api, route: '/p/listings-daily/items/it_score_0' });
+    const audits = await screen.findByRole('region', { name: 'Audits' });
+    const [first, second] = within(audits).getAllByRole('listitem');
+    expect(first).toHaveTextContent('Failed');
+    expect(within(first!).getByText('fallback timed out after 120 s')).toBeInTheDocument();
+    expect(within(first!).getByRole('region', { name: 'Fallback outputs' })).toHaveTextContent('No outputs.');
+    expect(within(first!).queryByText('Not compared yet')).not.toBeInTheDocument();
+    expect(within(first!).queryByText(/Agrees|Disagrees/)).not.toBeInTheDocument();
+    expect(within(second!).getByText('Not compared yet')).toBeInTheDocument();
+    expect(within(second!).queryByRole('button', { name: 'Copy error' })).not.toBeInTheDocument();
   });
 
   it('shows an error with Retry for an item that does not exist', async () => {

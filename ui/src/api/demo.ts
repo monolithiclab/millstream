@@ -1,5 +1,6 @@
 import type { FakeArtifact, FakeDeadLetter, Fixtures } from './fake';
 import type {
+  Audit,
   Delivery,
   Insight,
   Item,
@@ -342,8 +343,17 @@ function payloadOf(l: Listing): Record<string, unknown> {
   };
 }
 
+// score's rules cover most listings; its agent fallback (spec section 11.5) takes the ones they abstain on.
 const scoredItem = (l: Listing, ts: string): Item =>
-  item(l.item, { stream: 'scored', step: 'score', key: l.item.slice(3), generation: 1, ts, payload: payloadOf(l) });
+  item(l.item, {
+    stream: 'scored',
+    step: 'score',
+    key: l.item.slice(3),
+    generation: 1,
+    ts,
+    payload: payloadOf(l),
+    producedBy: 'primary',
+  });
 
 // The first listing in full: its journey from the fetched page, its artifacts and its agent transcript.
 const firstPayload = {
@@ -363,6 +373,7 @@ const firstListing: Item = item('it_7f3a9c21', {
   generation: 1,
   ts: at('06:12:00'),
   payload: firstPayload,
+  producedBy: 'fallback',
   artifacts: [
     { name: 'living.svg', sha256: 'a1', size: 412, type: 'image/svg+xml' },
     { name: 'brochure.pdf', sha256: 'b2', size: 498, type: 'application/pdf' },
@@ -581,6 +592,7 @@ const detailed: Delivery[] = [
   delivery('dv_score_51c0', {
     step: 'score',
     itemId: 'it_51c0e8d4',
+    fallback: true,
     attempt: 2,
     costUsd: 0.011,
     createdAt: at('06:09:40'),
@@ -649,6 +661,35 @@ const demoDeliveries: Delivery[] = (() => {
   }
   return all;
 })();
+
+// Fallback audits of score (spec section 11.5): its agent run beside the rules on two listings they covered, one
+// agreeing, one not. Each is listed on the page of the item its delivery read.
+const audit = (n: number, fields: Partial<Audit> & Pick<Audit, 'primary' | 'fallback' | 'agreement'>): Audit => ({
+  id: `au_score_${n}`,
+  pipeline: PIPELINE,
+  deliveryId: `dl_score_${n}`,
+  runId: 'run_0600',
+  step: 'score',
+  itemId: `it_score_${n}`,
+  state: 'done',
+  costUsd: 0.012,
+  createdAt: minute(14 + n),
+  finishedAt: minute(16 + n),
+  ...fields,
+});
+const demoAudits: Audit[] = [
+  audit(0, {
+    primary: [{ key: 'paris-11-t2-44', payload: { score: 74, marginPct: 6.1 } }],
+    fallback: [{ key: 'paris-11-t2-44', payload: { score: 74, marginPct: 6.1 } }],
+    agreement: 1,
+  }),
+  audit(1, {
+    primary: [{ key: 'montreuil-t4-81', payload: { score: 58, marginPct: 3.4 } }],
+    fallback: [{ key: 'montreuil-t4-81', payload: { score: 81, marginPct: 7.9 } }],
+    agreement: 0,
+    costUsd: 0.017,
+  }),
+];
 
 // Every delivery's item exists: the planned ones without a listing get a bare item of the stream the step reads.
 const demoItems: Item[] = [
@@ -1270,6 +1311,7 @@ export const demoFixtures: Fixtures = {
   },
   items: demoItems,
   deliveries: demoDeliveries,
+  audits: demoAudits,
   deadLetters: demoDeadLetters,
   streams: demoStreams,
   snapshots: demoSnapshots,

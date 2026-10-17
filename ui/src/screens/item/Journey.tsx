@@ -4,7 +4,7 @@ import type { Attempt, Delivery } from '../../api/schema';
 import { ErrorText } from '../../common/Copy';
 import { QueryView } from '../../common/States';
 import { useResource } from '../../common/useResource';
-import { StatusGlyph, useStatusLabel, type StatusKey } from '../../common/Status';
+import { StatusGlyph, Tag, useStatusLabel, type StatusKey } from '../../common/Status';
 import { useFormat } from '../../common/useFormat';
 import { AttemptTranscript } from './Transcript';
 
@@ -139,7 +139,14 @@ export function Journey({ pipeline, deliveries, now }: { pipeline: string; deliv
               className="grid w-full grid-cols-[18px_minmax(0,1fr)_auto] items-center gap-x-2.5 gap-y-1 px-4 py-3 text-left md:grid-cols-[22px_minmax(0,150px)_minmax(0,1fr)_72px_64px_72px] md:gap-x-3 md:py-[9px]"
             >
               <StatusGlyph status={status} size={14} />
-              <span className="min-w-0 font-mono text-small font-bold break-words">{d.step}</span>
+              <span className="min-w-0 font-mono text-small font-bold break-words">
+                {d.step}
+                {d.fallback === true && (
+                  <span className="ml-2 font-sans">
+                    <Tag tone="accent">{t('item.journey.fallback')}</Tag>
+                  </span>
+                )}
+              </span>
               <span className="col-start-2 col-end-4 row-start-2 min-w-0 text-small break-words text-ink-2 md:col-auto md:row-auto">
                 <strong className={toneText[status] ?? ''}>{statusLabel(status)}</strong>
                 {note(d) !== '' && ` · ${note(d)}`}

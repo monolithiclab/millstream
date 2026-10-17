@@ -515,6 +515,19 @@ paths:
               schema: { type: array, items: { $ref: "#/components/schemas/Delivery" } }
         "400": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
+  /pipelines/{pipeline}/items/{item}/audits:
+    parameters: [{ $ref: "#/components/parameters/pipeline" }, { $ref: "#/components/parameters/item" }]
+    get:
+      operationId: listItemAudits
+      summary: The fallback audits of the deliveries that read an item (spec section 11.5), oldest first.
+      responses:
+        default: { $ref: "#/components/responses/Error" }
+        "200":
+          description: The audits.
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/Audit" } }
+        "404": { $ref: "#/components/responses/Error" }
   /pipelines/{pipeline}/items/{item}/artifacts/{name}:
     parameters:
       - { $ref: "#/components/parameters/pipeline" }
@@ -1305,6 +1318,49 @@ components:
           type: string
           description: The pipeline of the item's parents when it is another one, for a copy published on an imported stream.
         tombstone: { $ref: "#/components/schemas/Tombstone" }
+        producedBy:
+          type: string
+          enum: [primary, fallback]
+          description: For an output of a step with a fallback (spec section 11.5), the action that produced it.
+    Audit:
+      type: object
+      description: >-
+        A fallback audit (spec section 11.5): the step's fallback run on an item its primary action covered, a record
+        beside the run. primary and fallback are each action's outputs; fallback and agreement are null until done.
+      required: [id, pipeline, deliveryId, runId, step, itemId, state, primary, fallback, agreement, costUsd, createdAt]
+      additionalProperties: false
+      properties:
+        id: { type: string }
+        pipeline: { type: string }
+        deliveryId: { type: string, description: The delivery its primary action covered. }
+        runId: { type: string }
+        step: { type: string }
+        itemId: { type: string }
+        state: { type: string, enum: [pending, leased, done, failed, cancelled] }
+        primary:
+          oneOf:
+            - { type: array, items: { $ref: "#/components/schemas/AuditOutput" } }
+            - { type: "null" }
+        fallback:
+          oneOf:
+            - { type: array, items: { $ref: "#/components/schemas/AuditOutput" } }
+            - { type: "null" }
+        agreement:
+          oneOf:
+            - { type: number, minimum: 0, maximum: 1 }
+            - { type: "null" }
+          description: 1 when the fallback's outputs are the primary's, 0 otherwise; null until done.
+        costUsd: { type: number }
+        error: { type: string, description: Why a failed or cancelled audit ended. }
+        createdAt: { type: string, format: date-time }
+        finishedAt: { type: string, format: date-time }
+    AuditOutput:
+      type: object
+      required: [key, payload]
+      additionalProperties: false
+      properties:
+        key: { type: string }
+        payload: {}
     Tombstone:
       type: string
       enum: [expired, erased]
@@ -1364,6 +1420,7 @@ components:
         finishedAt: { type: string, format: date-time }
         waitMs: { type: integer }
         workMs: { type: integer }
+        fallback: { type: boolean, description: The step's fallback action runs the delivery (spec section 11.5). }
         attempts: { type: array, items: { $ref: "#/components/schemas/Attempt" }, description: On one delivery only. }
     Attempt:
       type: object

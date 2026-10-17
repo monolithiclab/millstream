@@ -11,13 +11,13 @@ import { LogTail } from '../../common/LogTail';
 import { useMediaQuery, WIDE } from '../../common/motion';
 import { ErrorState, Loading } from '../../common/States';
 import { useResource } from '../../common/useResource';
-import { StatusBadge, type StatusKey } from '../../common/Status';
+import { StatusBadge, Tag, type StatusKey } from '../../common/Status';
 import { byteSize, formatBytes, useFormat } from '../../common/useFormat';
 import { useCoalescedRefresh } from '../../live/useCoalescedRefresh';
 import { parseData, useLiveStream } from '../../live/useLiveStream';
 import { pipelinePath, runPath } from '../../routes';
 import { ScreenPage } from '../ScreenPage';
-import { Artifacts, LineageTree, TombstoneNotice } from './ItemParts';
+import { Artifacts, Audits, LineageTree, TombstoneNotice } from './ItemParts';
 import { Journey } from './Journey';
 
 // Raw events kept on the page.
@@ -156,9 +156,13 @@ export function ItemScreen() {
     (api) => Promise.all(ancestors.map((n) => api.listItemDeliveries(n.pipeline, n.id))),
   );
 
+  // The fallback audits of the deliveries that read the item (spec section 11.5): a section only when there are any.
+  const audits = useResource(`audits:${pipeline}:${itemId}`, (api) => api.listItemAudits(pipeline, itemId));
+
   const refresh = () => {
     data.refresh();
     upstream.refresh();
+    audits.refresh();
   };
   // State events come in bursts: one reload per LIVE_REFRESH_MS. Once nothing of the item is waiting, running or
   // in review, it has settled: the stream closes (the logs tab keeps its own).
@@ -280,6 +284,13 @@ export function ItemScreen() {
           <Meta label={t('item.meta.step')}>
             <span className="font-mono font-normal">{item.step}</span>
           </Meta>
+          {item.producedBy !== undefined && (
+            <Meta label={t('item.meta.producedBy')}>
+              <Tag tone={item.producedBy === 'fallback' ? 'accent' : 'mute'}>
+                {item.producedBy === 'fallback' ? t('item.producedBy.fallback') : t('item.producedBy.primary')}
+              </Tag>
+            </Meta>
+          )}
           <Meta label={t('item.meta.cost')}>{f.money(cost)}</Meta>
           <span title={f.dateTime(item.ts)}>
             {t('item.meta.created', { time: f.time(item.ts) })}
@@ -319,6 +330,12 @@ export function ItemScreen() {
           {wide && lineageTree}
         </div>
       </div>
+
+      {audits.status === 'ready' && audits.data.length > 0 && (
+        <div className="mt-6">
+          <Audits audits={audits.data} />
+        </div>
+      )}
     </ScreenPage>
   );
 }

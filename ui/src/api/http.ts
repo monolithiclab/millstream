@@ -70,6 +70,7 @@ export class HttpApi implements Api {
     this.get(`${pipelinePath(p)}/items/${enc(item)}/lineage`, query);
   listItemDeliveries: Api['listItemDeliveries'] = (p, item, query = {}) =>
     this.get(`${pipelinePath(p)}/items/${enc(item)}/deliveries`, query);
+  listItemAudits: Api['listItemAudits'] = (p, item) => this.get(`${pipelinePath(p)}/items/${enc(item)}/audits`);
   getDelivery: Api['getDelivery'] = (p, delivery) => this.get(`${pipelinePath(p)}/deliveries/${enc(delivery)}`);
   listDeadLetters: Api['listDeadLetters'] = (p, query = {}) => this.get(`${pipelinePath(p)}/dead-letters`, query);
   listLessons: Api['listLessons'] = (p) => this.get(`${pipelinePath(p)}/lessons`);
