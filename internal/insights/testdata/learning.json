@@ -1,0 +1,267 @@
+[
+  {
+    "id": "in_138419fe6c5f239b",
+    "kind": "waste",
+    "scope": "score",
+    "severity": "warning",
+    "window": [
+      "2026-10-14T12:00:00Z",
+      "2026-10-15T12:00:00Z"
+    ],
+    "summary": "11 items discarded downstream, $0.11 of $0.2 wasted (55%)",
+    "evidence": {
+      "byStep": [
+        {
+          "step": "keep",
+          "kind": "filter",
+          "items": 6
+        },
+        {
+          "step": "gate",
+          "kind": "review",
+          "items": 5
+        }
+      ],
+      "costUsd": 0.2,
+      "discardedItems": 11,
+      "samples": [
+        "s0",
+        "s1",
+        "s2",
+        "s3",
+        "s4",
+        "s5",
+        "k6",
+        "k7",
+        "k8",
+        "k9",
+        "k10"
+      ],
+      "suggestion": {
+        "before": "score",
+        "kind": "topology",
+        "moveUpstream": "keep"
+      },
+      "wasteShare": 0.55,
+      "wastedCostUsd": 0.11
+    }
+  },
+  {
+    "id": "in_0328ab982c482e5b",
+    "kind": "reviewPattern",
+    "scope": "gate",
+    "severity": "info",
+    "window": [
+      "2026-10-14T12:00:00Z",
+      "2026-10-15T12:00:00Z"
+    ],
+    "summary": "36% rejected, 44% edited, 0% auto-approved, sampled agreement -, intervention 100%, p50 decision 60s",
+    "evidence": {
+      "attribution": [
+        {
+          "pointer": "/score",
+          "step": "score",
+          "edits": 4
+        }
+      ],
+      "autoApprovalRate": 0,
+      "decisions": {
+        "approved": 9,
+        "autoApproved": 0,
+        "rejected": 5,
+        "timedOut": 0
+      },
+      "editHotSpots": [
+        {
+          "pointer": "/score",
+          "edits": 4
+        }
+      ],
+      "editRate": 0.444,
+      "interventionRate": 1,
+      "proposals": [
+        {
+          "after": "crawl",
+          "approvals": 9,
+          "before": "score",
+          "condition": "item.city != \"Lyon\"",
+          "falseDrops": 0,
+          "kind": "topology",
+          "pattern": "predictableRejections",
+          "pointer": "/city",
+          "rejections": 5
+        },
+        {
+          "after": "crawl",
+          "approvals": 9,
+          "before": "score",
+          "condition": "item.price \u003e= 210000.0",
+          "falseDrops": 0,
+          "kind": "topology",
+          "pattern": "predictableRejections",
+          "pointer": "/price",
+          "rejections": 5
+        },
+        {
+          "alternative": "prompt",
+          "edits": 4,
+          "kind": "lessons",
+          "pattern": "recurringEdits",
+          "pointer": "/score",
+          "step": "score"
+        },
+        {
+          "kind": "reasons",
+          "pattern": "uncoveredReasons",
+          "rejections": 3,
+          "step": "gate"
+        }
+      ],
+      "rejectionRate": 0.357,
+      "rejectionsByReason": {
+        "location": 2,
+        "rejected": 3
+      },
+      "sampledAgreement": null,
+      "samples": [
+        "k6",
+        "k7",
+        "k8",
+        "k9",
+        "k10",
+        "k11",
+        "k12",
+        "k13",
+        "k14"
+      ],
+      "samplesReviewed": {},
+      "timeToDecisionP50Seconds": 60,
+      "timeToDecisionP95Seconds": 60,
+      "unattributedEdits": 0
+    }
+  },
+  {
+    "id": "in_f34ed50f35030a2f",
+    "kind": "distillable",
+    "scope": "rate",
+    "severity": "info",
+    "window": [
+      "2026-10-14T12:00:00Z",
+      "2026-10-15T12:00:00Z"
+    ],
+    "summary": "candidate #1 for code: 12 deliveries, 100% bounded output, p95 1 turns, reviewer agreement -; saves about $18 a month",
+    "evidence": {
+      "boundedShare": 1,
+      "costUsd": 0.6,
+      "deliveries": 12,
+      "fields": {
+        "bounded": [
+          "/grade"
+        ],
+        "copied": [],
+        "free": []
+      },
+      "monthlySavingUsd": 18,
+      "rank": 1,
+      "reviewedDecisions": 0,
+      "reviewerAgreement": null,
+      "samples": [],
+      "tools": 0,
+      "turnsP95": 1
+    }
+  },
+  {
+    "id": "in_c0b5d7dbe0dc5344",
+    "kind": "distillable",
+    "scope": "tag",
+    "severity": "info",
+    "window": [
+      "2026-10-14T12:00:00Z",
+      "2026-10-15T12:00:00Z"
+    ],
+    "summary": "candidate #2 for code: 20 deliveries, 100% bounded output, p95 1 turns, reviewer agreement 100%; saves about $1.2 a month",
+    "evidence": {
+      "boundedShare": 1,
+      "costUsd": 0.04,
+      "deliveries": 20,
+      "fields": {
+        "bounded": [
+          "/kind"
+        ],
+        "copied": [
+          "/id"
+        ],
+        "free": []
+      },
+      "monthlySavingUsd": 1.2,
+      "rank": 2,
+      "reviewedDecisions": 20,
+      "reviewerAgreement": 1,
+      "samples": [
+        "g0",
+        "g1",
+        "g10",
+        "g11",
+        "g12",
+        "g13",
+        "g14",
+        "g15",
+        "g16",
+        "g17",
+        "g18",
+        "g19",
+        "g2",
+        "g3",
+        "g4",
+        "g5",
+        "g6",
+        "g7",
+        "g8",
+        "g9"
+      ],
+      "tools": 0,
+      "turnsP95": 1
+    }
+  },
+  {
+    "id": "in_e50d0ccb424eacca",
+    "kind": "reviewPattern",
+    "scope": "gate",
+    "severity": "info",
+    "window": [
+      "2026-10-14T12:00:00Z",
+      "2026-10-15T12:00:00Z"
+    ],
+    "summary": "0% rejected, 0% edited, 0% auto-approved, sampled agreement -, intervention 100%, p50 decision 60s",
+    "evidence": {
+      "attribution": [],
+      "autoApprovalRate": 0,
+      "decisions": {
+        "approved": 20,
+        "autoApproved": 0,
+        "rejected": 0,
+        "timedOut": 0
+      },
+      "editHotSpots": [],
+      "editRate": 0,
+      "interventionRate": 1,
+      "proposals": [
+        {
+          "approvalRate": 1,
+          "decisions": 20,
+          "kind": "config",
+          "pattern": "nearUniversalApproval",
+          "step": "gate"
+        }
+      ],
+      "rejectionRate": 0,
+      "rejectionsByReason": {},
+      "sampledAgreement": null,
+      "samples": [],
+      "samplesReviewed": {},
+      "timeToDecisionP50Seconds": 60,
+      "timeToDecisionP95Seconds": 60,
+      "unattributedEdits": 0
+    }
+  }
+]

@@ -28,11 +28,15 @@ type Decision struct {
 	TS       time.Time
 	Step     string
 	Delivery string
+	// Item is the item decided: the review's input.
+	Item string
 	// Decision is approve or reject; Reviewer is rule, timeout or person (events never name the person).
 	Decision string
 	Reviewer string
 	Reason   string
 	Edited   []string
+	// Text is whether the reviewer wrote a reason text (events never hold it).
+	Text bool
 	// TimeToDecision is from parked to decided.
 	TimeToDecision time.Duration
 }
@@ -62,11 +66,13 @@ func readReviews(ctx context.Context, st store.Store, pipelineName string, since
 	for _, ev := range evs {
 		var d struct {
 			DeliveryID string   `json:"deliveryId"`
+			ItemID     string   `json:"itemId"`
 			Step       string   `json:"step"`
 			Decision   string   `json:"decision"`
 			Reviewer   string   `json:"reviewer"`
 			Reason     string   `json:"reason"`
 			Edited     []string `json:"edited"`
+			Text       bool     `json:"text"`
 			DecisionMS int64    `json:"timeToDecisionMs"`
 		}
 		if err := json.Unmarshal(ev.Data, &d); err != nil {
@@ -74,8 +80,8 @@ func readReviews(ctx context.Context, st store.Store, pipelineName string, since
 		}
 		switch ev.Kind {
 		case store.EventReviewDecided:
-			ds = append(ds, Decision{TS: ev.TS, Step: d.Step, Delivery: d.DeliveryID, Decision: d.Decision,
-				Reviewer: d.Reviewer, Reason: d.Reason, Edited: d.Edited,
+			ds = append(ds, Decision{TS: ev.TS, Step: d.Step, Delivery: d.DeliveryID, Item: d.ItemID,
+				Decision: d.Decision, Reviewer: d.Reviewer, Reason: d.Reason, Edited: d.Edited, Text: d.Text,
 				TimeToDecision: time.Duration(d.DecisionMS) * time.Millisecond})
 		case store.EventSampleDecided:
 			ss = append(ss, SampleOutcome{TS: ev.TS, Step: d.Step, Agreement: d.Decision})
@@ -109,6 +115,8 @@ type reviewStats struct {
 	times                                      []time.Duration
 	agreement                                  map[string]int
 	samples                                    []string
+	// people are the decisions of a person, for attribution and the proposal hints.
+	people []Decision
 }
 
 // reviewPatterns reports, per review step with decisions or samples in the window: decisions by outcome and
@@ -153,6 +161,7 @@ func reviewPatterns(d *Data) []store.Insight {
 			continue
 		}
 		s.times = append(s.times, r.TimeToDecision)
+		s.people = append(s.people, r)
 		if r.Approved() && len(r.Edited) > 0 {
 			s.editedApprovals++
 		}
@@ -180,6 +189,12 @@ func reviewPatterns(d *Data) []store.Insight {
 			"samplesReviewed": s.agreement, "sampledAgreement": nil, "interventionRate": nil,
 			"samples": nonNil(s.samples),
 		}
+		edits, unattributed := d.attribute(s.people)
+		ev["attribution"], ev["unattributedEdits"] = edits[:min(len(edits), maxHotSpots)], unattributed
+		if edits == nil {
+			ev["attribution"] = []attribution{}
+		}
+		ev["proposals"] = d.hints(step, s.people, edits)
 		if decisions > 0 {
 			rejected := 0
 			for _, n := range s.byReason {

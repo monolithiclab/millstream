@@ -102,12 +102,12 @@ func Apply(doc any, ops []Op) (any, error) {
 		case "remove":
 			out, _, err = remove(out, o.Path)
 		case "replace":
-			if _, err = get(out, o.Path); err == nil {
+			if _, err = Get(out, o.Path); err == nil {
 				out, err = set(out, o.Path, clone(o.Value), false)
 			}
 		case "move", "copy":
 			var v any
-			if v, err = get(out, o.From); err != nil {
+			if v, err = Get(out, o.From); err != nil {
 				break
 			}
 			if o.Op == "move" {
@@ -122,7 +122,7 @@ func Apply(doc any, ops []Op) (any, error) {
 			out, err = set(out, o.Path, clone(v), true)
 		case "test":
 			var v any
-			if v, err = get(out, o.Path); err == nil && !reflect.DeepEqual(normal(v), normal(o.Value)) {
+			if v, err = Get(out, o.Path); err == nil && !reflect.DeepEqual(normal(v), normal(o.Value)) {
 				err = fmt.Errorf("%s does not hold the tested value", o.Path)
 			}
 		default:
@@ -192,7 +192,8 @@ func tokens(p string) ([]string, error) {
 	return ts, nil
 }
 
-func get(doc any, p string) (any, error) {
+// Get returns the value at JSON pointer p in doc, an error when it does not exist.
+func Get(doc any, p string) (any, error) {
 	ts, err := tokens(p)
 	if err != nil {
 		return nil, err
@@ -228,7 +229,7 @@ func set(doc any, p string, v any, insert bool) (any, error) {
 	if len(ts) == 0 {
 		return v, nil
 	}
-	parent, err := get(doc, pointer(ts[:len(ts)-1]))
+	parent, err := Get(doc, pointer(ts[:len(ts)-1]))
 	if err != nil {
 		return nil, err
 	}
@@ -261,7 +262,7 @@ func remove(doc any, p string) (any, any, error) {
 	if len(ts) == 0 {
 		return nil, nil, errors.New("cannot remove the whole document")
 	}
-	parent, err := get(doc, pointer(ts[:len(ts)-1]))
+	parent, err := Get(doc, pointer(ts[:len(ts)-1]))
 	if err != nil {
 		return nil, nil, err
 	}

@@ -10,6 +10,18 @@
     ],
     "summary": "38% rejected, 67% edited, 25% auto-approved, sampled agreement 50%, intervention 50%, p50 decision 60s",
     "evidence": {
+      "attribution": [
+        {
+          "pointer": "/notes",
+          "step": null,
+          "edits": 2
+        },
+        {
+          "pointer": "/price",
+          "step": null,
+          "edits": 2
+        }
+      ],
       "autoApprovalRate": 0.25,
       "decisions": {
         "approved": 3,
@@ -29,6 +41,7 @@
       ],
       "editRate": 0.667,
       "interventionRate": 0.5,
+      "proposals": [],
       "rejectionRate": 0.375,
       "rejectionsByReason": {
         "overpriced": 1,
@@ -48,7 +61,8 @@
         "unreviewed": 1
       },
       "timeToDecisionP50Seconds": 60,
-      "timeToDecisionP95Seconds": 600
+      "timeToDecisionP95Seconds": 600,
+      "unattributedEdits": 4
     }
   },
   {

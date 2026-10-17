@@ -1,8 +1,9 @@
 // Package insights is the insights projector and the run reports (spec section 11.1): deterministic analysis of the
 // log store, no LLM involved. The projector reads a pipeline's deliveries (their timings), the events that end
 // attempts (their errors, costs and the actions' metrics), its review decisions and samples, and the critical paths
-// of its recent runs, and finds the kinds this build computes: slowStep, failureCluster, cost, reviewPattern and
-// unschedulable. Each insight's id is a fingerprint
+// of its recent runs, and the lineage of the items its filters and reviewers discarded or decided, and finds the kinds
+// this build computes: slowStep, failureCluster, cost, reviewPattern, waste, distillable and unschedulable. Each
+// insight's id is a fingerprint
 // of what it is about, so the store updates one row for a recurring problem and resolves it once the projector no
 // longer finds it.
 //
@@ -10,6 +11,7 @@
 package insights
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -49,17 +51,18 @@ const (
 
 // Severities.
 const (
-	SeverityInfo    = "info"
-	SeverityWarning = "warning"
-	SeverityError   = "error"
+	SeverityInfo    = pipeline.SeverityInfo
+	SeverityWarning = pipeline.SeverityWarning
+	SeverityError   = pipeline.SeverityError
 )
 
-// Kinds are the insight kinds this build computes; waste, drift and distillable arrive later.
+// Kinds are the insight kinds this build computes.
 var Kinds = []string{pipeline.InsightSlowStep, pipeline.InsightFailureCluster, pipeline.InsightCost,
-	pipeline.InsightReviewPattern, pipeline.InsightUnschedulable}
+	pipeline.InsightReviewPattern, pipeline.InsightWaste, pipeline.InsightDistillable, pipeline.InsightUnschedulable}
 
 // Data is what the projector reads of one pipeline.
 type Data struct {
+	Config
 	Pipeline string
 	Now      time.Time
 	// Deliveries were created in the window or the baseline before it.
@@ -72,9 +75,10 @@ type Data struct {
 	// baseline, in order.
 	Decisions []Decision
 	Samples   []SampleOutcome
-	// Pending are the steps whose pending deliveries no registered node can take now (spec section 5.10), as the
-	// engine finds them.
-	Pending []PendingStep
+	// Items are the items the lineage walks need, by id (loadLineage).
+	Items map[string]store.Item
+	// payloads caches the items' decoded payloads (value).
+	payloads map[string]any
 }
 
 // PendingStep is a step whose pending deliveries no registered node can take: Count of them, waiting for a node
@@ -92,8 +96,10 @@ const ClassNoNode = "noNode"
 func (d *Data) windowStart() time.Time { return d.Now.Add(-Window) }
 
 // Load reads what the projector needs of a pipeline at now.
-func Load(ctx context.Context, st store.Store, pipelineName string, now time.Time) (*Data, error) {
-	d := &Data{Pipeline: pipelineName, Now: now}
+func Load(ctx context.Context, st store.Store, pipelineName string, now time.Time, cfg Config) (*Data, error) {
+	cfg.DistillMinDeliveries = cmp.Or(cfg.DistillMinDeliveries, DefaultDistillMinDeliveries)
+	cfg.FilterMaxFalseDrop = cmp.Or(cfg.FilterMaxFalseDrop, DefaultFilterMaxFalseDrop)
+	d := &Data{Config: cfg, Pipeline: pipelineName, Now: now}
 	since := now.Add(-Window - Baseline)
 	var err error
 	if d.Deliveries, err = st.Deliveries(ctx, store.DeliveryFilter{Pipeline: pipelineName, Since: since}); err != nil {
@@ -120,6 +126,9 @@ func Load(ctx context.Context, st store.Store, pipelineName string, now time.Tim
 		}
 		d.Paths = append(d.Paths, p)
 	}
+	if err := d.loadLineage(ctx, st); err != nil {
+		return nil, fmt.Errorf("insights of %s: %w", pipelineName, err)
+	}
 	return d, nil
 }
 
@@ -137,22 +146,23 @@ func runPath(ctx context.Context, st store.Store, r store.Run, now time.Time) (P
 }
 
 // Project runs the projector for a pipeline at now and records what it finds for the kinds its insights key leaves
-// on, with the pipeline's steps no registered node can take now (pending). With insights off it records nothing, and
-// the insights already recorded keep their state.
-func Project(ctx context.Context, st store.Store, p *pipeline.Pipeline, now time.Time, pending []PendingStep) error {
-	cfg, err := p.InsightsConfig()
+// on. With insights off it records nothing, and the insights already recorded keep their state.
+func Project(ctx context.Context, st store.Store, p *pipeline.Pipeline, now time.Time, cfg Config) error {
+	keys, err := p.InsightsConfig()
 	if err != nil {
 		return fmt.Errorf("insights of %s: %w", p.Name, err)
 	}
-	kinds := cfg.Kinds(Kinds)
+	kinds := keys.Kinds(Kinds)
 	if len(kinds) == 0 {
 		return nil
 	}
-	d, err := Load(ctx, st, p.Name, now)
+	if cfg.Steps == nil {
+		cfg.Steps = StepsOf(p, nil)
+	}
+	d, err := Load(ctx, st, p.Name, now, cfg)
 	if err != nil {
 		return err
 	}
-	d.Pending = pending
 	return st.RecordInsights(ctx, store.InsightReport{Pipeline: p.Name, Kinds: kinds, Insights: Compute(d, kinds)})
 }
 
@@ -170,6 +180,10 @@ func Compute(d *Data, kinds []string) []store.Insight {
 			found = costs(d)
 		case pipeline.InsightReviewPattern:
 			found = reviewPatterns(d)
+		case pipeline.InsightWaste:
+			found = wastes(d)
+		case pipeline.InsightDistillable:
+			found = distillables(d)
 		case pipeline.InsightUnschedulable:
 			found = unschedulable(d)
 		}
@@ -527,7 +541,7 @@ func costs(d *Data) []store.Insight {
 }
 
 // Percentile returns the p-th percentile of ds (nearest rank); ds must not be empty.
-func Percentile(ds []time.Duration, p float64) time.Duration {
+func Percentile[T cmp.Ordered](ds []T, p float64) T {
 	s := slices.Clone(ds)
 	slices.Sort(s)
 	rank := int(math.Ceil(p*float64(len(s)))) - 1
@@ -602,6 +616,13 @@ func Summary(in store.Insight) string {
 			return fmt.Sprintf("%s deliveries waiting: %s", f("count"), f("example"))
 		}
 		return fmt.Sprintf("%s attempts no runtime can take: %s: %s", f("count"), f("class"), f("example"))
+	case pipeline.InsightWaste:
+		return fmt.Sprintf("%s items discarded downstream, $%s of $%s wasted (%s)", f("discardedItems"),
+			f("wastedCostUsd"), f("costUsd"), p("wasteShare"))
+	case pipeline.InsightDistillable:
+		return fmt.Sprintf("candidate #%s for code: %s deliveries, %s bounded output, p95 %s turns, reviewer "+
+			"agreement %s; saves about $%s a month", f("rank"), f("deliveries"), p("boundedShare"), f("turnsP95"),
+			p("reviewerAgreement"), f("monthlySavingUsd"))
 	case pipeline.InsightReviewPattern:
 		return fmt.Sprintf("%s rejected, %s edited, %s auto-approved, sampled agreement %s, intervention %s, p50 "+
 			"decision %ss", p("rejectionRate"), p("editRate"), p("autoApprovalRate"), p("sampledAgreement"),

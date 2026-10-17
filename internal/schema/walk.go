@@ -69,6 +69,12 @@ func pointerOrRoot(ptr string) string {
 	return ptr
 }
 
+// Resolve follows a same-document $ref ("#" or "#/...") from root to its target.
+func Resolve(root any, ref string) (any, error) {
+	target, _, err := resolve(root, ref)
+	return target, err
+}
+
 // resolve follows a same-document $ref ("#" or "#/...") from root, returning the target and its JSON pointer.
 func resolve(root any, ref string) (any, string, error) {
 	if !isLocalRef(ref) {
