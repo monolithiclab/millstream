@@ -29,6 +29,7 @@ import (
 	"net/http"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/monolithiclab/millstream/internal/artifacts"
@@ -149,9 +150,8 @@ type Options struct {
 type Server struct {
 	opts     Options
 	log      *slog.Logger
-	mux      *http.ServeMux
-	hooks    *http.ServeMux // the webhook triggers, served by Handler outside the browser guards
-	tokenSum [32]byte       // the SHA-256 of Auth.Token
+	hooks    http.Handler // the webhook triggers, served by Handler outside the browser guards
+	tokenSum [32]byte     // the SHA-256 of Auth.Token
 }
 
 // handler is a route's handler: an error is answered by writeError.
@@ -263,11 +263,52 @@ func New(opts Options) (*Server, error) {
 		}
 		opts.Auth = &a
 	}
-	s := &Server{opts: opts, log: opts.Logger, mux: http.NewServeMux()}
+	s := &Server{opts: opts, log: opts.Logger}
 	if opts.Auth != nil {
 		s.tokenSum = sha256.Sum256([]byte(opts.Auth.Token))
 	}
-	s.mux.HandleFunc("GET "+MetricsPath, func(w http.ResponseWriter, r *http.Request) {
+	s.hooks = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { s.serve(hooksMux(), w, r) })
+	return s, nil
+}
+
+// ServeHTTP serves the API's paths and /metrics, and answers any other path under /api/ notFound. A state-changing
+// request from another origin is forbidden; with Auth, a request without the token is unauthorized.
+func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	cred := noCredential
+	if s.opts.Auth != nil {
+		cred = s.credential(r)
+	}
+	if !s.sameOrigin(r, cred) {
+		writeErrorBody(w, http.StatusForbidden, codeForbidden, r.Method+" from another origin: "+
+			strings.Join(r.Header.Values("Origin"), ", "))
+		return
+	}
+	if s.opts.Auth != nil && cred == noCredential && !s.public(r) {
+		writeUnauthorized(w, "sign in: send the token as Authorization: Bearer <token>, or sign in through the UI")
+		return
+	}
+	s.serve(apiMux(), w, r)
+}
+
+// serverKey carries the Server a request is for to the handlers of the process's muxes.
+type serverKey struct{}
+
+func serverOf(r *http.Request) *Server { return r.Context().Value(serverKey{}).(*Server) }
+
+// serve serves r for s through mux, the pattern it matched set on r as the mux would set it.
+func (s *Server) serve(mux *http.ServeMux, w http.ResponseWriter, r *http.Request) {
+	rs := r.WithContext(context.WithValue(r.Context(), serverKey{}, s))
+	mux.ServeHTTP(w, rs)
+	r.Pattern = rs.Pattern
+}
+
+// apiMux routes the API's paths and /metrics, built once per process: registering the routes costs more than most
+// requests, and every Server shares them, its own handlers found from the request (serverOf).
+var apiMux = sync.OnceValue(func() *http.ServeMux {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET "+MetricsPath, func(w http.ResponseWriter, r *http.Request) {
+		s := serverOf(r)
 		if err := s.prometheus(w, r); err != nil {
 			s.writeError(w, r, err)
 		}
@@ -275,7 +316,8 @@ func New(opts Options) (*Server, error) {
 	var paths []string
 	for _, rt := range routes {
 		h := rt.h
-		s.mux.HandleFunc(rt.method+" "+Prefix+rt.path, func(w http.ResponseWriter, r *http.Request) {
+		mux.HandleFunc(rt.method+" "+Prefix+rt.path, func(w http.ResponseWriter, r *http.Request) {
+			s := serverOf(r)
 			if r.Method == http.MethodPost && !jsonContent(r) {
 				writeErrorBody(w, http.StatusUnsupportedMediaType, codeUnsupportedMediaType,
 					"a POST carries Content-Type: application/json, an empty object when it has nothing to say")
@@ -302,47 +344,33 @@ func New(opts Options) (*Server, error) {
 				allow = append(allow, rt.method)
 			}
 		}
-		s.mux.HandleFunc(Prefix+p, func(w http.ResponseWriter, r *http.Request) {
+		mux.HandleFunc(Prefix+p, func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Allow", strings.Join(allow, ", "))
 			writeErrorBody(w, http.StatusMethodNotAllowed, codeMethodNotAllowed,
 				fmt.Sprintf("%s %s: allowed %s", r.Method, r.URL.Path, strings.Join(allow, ", ")))
 		})
 	}
-	s.mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeErrorBody(w, http.StatusNotFound, codeNotFound, "no such API path: "+r.URL.Path)
 	})
-	s.hooks = http.NewServeMux()
-	s.hooks.HandleFunc(hookRoute, func(w http.ResponseWriter, r *http.Request) {
+	return mux
+})
+
+// hooksMux routes the webhook triggers, built once per process as apiMux.
+var hooksMux = sync.OnceValue(func() *http.ServeMux {
+	mux := http.NewServeMux()
+	mux.HandleFunc(hookRoute, func(w http.ResponseWriter, r *http.Request) {
+		s := serverOf(r)
 		if err := s.hook(w, r); err != nil {
 			s.writeError(w, r, err)
 		}
 	})
-	s.hooks.HandleFunc(HooksPrefix, func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc(HooksPrefix, func(w http.ResponseWriter, r *http.Request) {
 		writeErrorBody(w, http.StatusNotFound, codeNotFound, "no such webhook path: "+r.URL.Path+
 			": webhooks are POST "+hookRoute)
 	})
-	return s, nil
-}
-
-// ServeHTTP serves the API's paths and /metrics, and answers any other path under /api/ notFound. A state-changing
-// request from another origin is forbidden; with Auth, a request without the token is unauthorized.
-func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("X-Content-Type-Options", "nosniff")
-	cred := noCredential
-	if s.opts.Auth != nil {
-		cred = s.credential(r)
-	}
-	if !s.sameOrigin(r, cred) {
-		writeErrorBody(w, http.StatusForbidden, codeForbidden, r.Method+" from another origin: "+
-			strings.Join(r.Header.Values("Origin"), ", "))
-		return
-	}
-	if s.opts.Auth != nil && cred == noCredential && !s.public(r) {
-		writeUnauthorized(w, "sign in: send the token as Authorization: Bearer <token>, or sign in through the UI")
-		return
-	}
-	s.mux.ServeHTTP(w, r)
-}
+	return mux
+})
 
 // jsonContent reports whether a request's body is declared JSON. A browser sends a cross-site POST without asking
 // first only with a form's content types: requiring JSON makes it ask (a CORS preflight), which the API never

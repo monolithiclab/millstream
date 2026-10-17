@@ -24,6 +24,8 @@ import (
 	"github.com/monolithiclab/millstream/internal/schema"
 	"github.com/monolithiclab/millstream/internal/store"
 	"github.com/monolithiclab/millstream/internal/store/sqlite"
+
+	"github.com/monolithiclab/millstream/internal/testdir"
 )
 
 // The package's tests run serially: they share stores on the transpiled SQLite, whose allocator is one process-wide
@@ -42,14 +44,18 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 	artifactDir = dir
-	// Built once per process, before the tests: the seeded store the others clone and the OpenAPI document.
+	// Built once per process, before the tests: the seeded store the others clone, the OpenAPI document and the
+	// routes.
 	sharedFixture()
 	theContract()
+	apiMux()
+	hooksMux()
 	code := m.Run()
 	if code == 0 && flag.Lookup("test.run").Value.String() == "" {
 		code = checkEveryRouteCalled()
 	}
 	_ = os.RemoveAll(dir)
+	testdir.Remove()
 	os.Exit(code)
 }
 
