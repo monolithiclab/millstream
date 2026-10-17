@@ -169,19 +169,22 @@ func (s *Store) Items(ctx context.Context, f store.ItemFilter) ([]store.Item, er
 	w.eq("run_id", f.RunID)
 	w.in("id", f.IDs)
 	if len(f.Parents) > 0 {
-		w.conds = append(w.conds, "EXISTS (SELECT 1 FROM "+s.d.JSONEach("parents")+" WHERE value IN (?"+
+		// The lineage's edges (item_parents): with ParentPipeline, the children in that pipeline and the copies in
+		// the pipelines importing from it; without, the children in the item's own pipeline, never a copy matched
+		// by its producer's ids.
+		parentPipeline := "items.pipeline"
+		if f.ParentPipeline != "" {
+			parentPipeline = "?"
+			w.args = append(w.args, f.ParentPipeline)
+		}
+		w.conds = append(w.conds, "EXISTS (SELECT 1 FROM item_parents p WHERE p.pipeline = "+parentPipeline+
+			" AND p.child_pipeline = items.pipeline AND p.child_id = items.id AND p.parent_id IN (?"+
 			strings.Repeat(", ?", len(f.Parents)-1)+"))")
 		for _, id := range f.Parents {
 			w.args = append(w.args, id)
 		}
 		if f.ParentPipeline == "" {
-			// Parents of a copy are the producer's items: a same-pipeline lookup must not match them by id.
 			w.conds = append(w.conds, "parent_pipeline = ''")
-		} else {
-			// The children in the parents' pipeline, and the copies in the pipelines importing from it; the second
-			// term repeats the partial index's condition, so the index serves it.
-			w.conds = append(w.conds, "((pipeline = ? AND parent_pipeline = '') OR (parent_pipeline <> '' AND parent_pipeline = ?))")
-			w.args = append(w.args, f.ParentPipeline, f.ParentPipeline)
 		}
 	}
 	w.since("ts", f.Since)

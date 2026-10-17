@@ -1,6 +1,7 @@
 package sqlstore
 
 import (
+	"cmp"
 	"encoding/json"
 	"fmt"
 
@@ -52,6 +53,9 @@ func (w *wtx) publish(rev *revision, run *runRow, it newItem) error {
 	}
 	if n == 1 {
 		if err := w.countArtifacts(run.pipeline, artifacts); err != nil {
+			return err
+		}
+		if err := w.linkParents(run.pipeline, it); err != nil {
 			return err
 		}
 		err = w.event(run.pipeline, run.id, store.EventItemPublished,
@@ -266,4 +270,17 @@ func (w *wtx) addCost(d *deliveryRow, cost float64) error {
 		ON CONFLICT (pipeline, day) DO UPDATE SET spent_usd = budget_days.spent_usd + excluded.spent_usd`,
 		d.pipeline, w.day(), cost)
 	return err
+}
+
+// linkParents records the lineage's edges of an item just inserted in pipelineName (item_parents), its parents in its
+// own pipeline, or a copy's in the producer's.
+func (w *wtx) linkParents(pipelineName string, it newItem) error {
+	from := cmp.Or(it.parentPipeline, pipelineName)
+	for _, p := range it.parents {
+		if _, err := w.exec(`INSERT INTO item_parents (pipeline, parent_id, child_pipeline, child_id)
+			VALUES (?, ?, ?, ?) ON CONFLICT DO NOTHING`, from, p, pipelineName, it.id); err != nil {
+			return fmt.Errorf("link item %s to its parent %s: %w", it.id, p, err)
+		}
+	}
+	return nil
 }

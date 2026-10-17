@@ -151,10 +151,17 @@ func scanPair(rows *sql.Rows) ([2]string, error) {
 	return p, rows.Scan(&p[0], &p[1])
 }
 
-// lineage returns roots and every descendant of theirs, breadth first: the items whose parents hold one of them in
-// the same pipeline, and the copies imports published of them in other pipelines (spec section 4.12), whose
-// parents are in the pipeline named by parent_pipeline. Dead letters are descendants too: a dead letter's parent is
-// its item.
+// childrenQuery reads the children of a pipeline's items, given as a JSON list, from the lineage's edges: in that
+// pipeline, and the copies imports published of them in others. It reads the edges of those items only.
+func (s *Store) childrenQuery() string {
+	return `SELECT DISTINCT child_pipeline, child_id FROM item_parents
+		WHERE pipeline = ? AND parent_id IN (` + s.d.JSONParam(false) + `) ORDER BY child_pipeline, child_id`
+}
+
+// lineage returns roots and every descendant of theirs, breadth first, along item_parents: the items whose parents
+// hold one of them in the same pipeline, and the copies imports published of them in other pipelines (spec section
+// 4.12). Dead letters are descendants too: a dead letter's parent is its item. Each level reads the edges of the
+// level above only, so a purge's first unit stays bounded by its lineage, not by the store's size.
 func (w *wtx) lineage(roots []itemRef) ([]itemRef, error) {
 	seen := map[itemRef]bool{}
 	var out []itemRef
@@ -171,10 +178,7 @@ func (w *wtx) lineage(roots []itemRef) ([]itemRef, error) {
 		frontier = nil
 		for _, name := range slices.Sorted(maps.Keys(byPipeline)) {
 			for chunk := range slices.Chunk(byPipeline[name], lineageChunk) {
-				children, err := queryAll(w, scanRef, `SELECT pipeline, id FROM items
-					WHERE ((pipeline = ? AND parent_pipeline = '') OR (parent_pipeline <> '' AND parent_pipeline = ?))
-					AND EXISTS (SELECT 1 FROM `+w.s.d.JSONEach("parents")+` WHERE value IN (`+w.s.d.JSONParam(false)+`))
-					ORDER BY pipeline, id`, name, name, jsonList(chunk))
+				children, err := queryAll(w, scanRef, w.s.childrenQuery(), name, jsonList(chunk))
 				if err != nil {
 					return nil, err
 				}
