@@ -2,9 +2,11 @@ package engine
 
 import (
 	"encoding/json"
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/monolithiclab/millstream/internal/node"
 	"github.com/monolithiclab/millstream/internal/store"
@@ -93,6 +95,42 @@ func TestBuiltinsRunInTheEngine(t *testing.T) {
 	}
 	if logs := v.logs.String(); !strings.Contains(logs, `"state":"filtered"`) {
 		t.Fatalf("no filtered delivery logged:\n%s", logs)
+	}
+}
+
+// A backlog of builtins runs inside Pull, a lease at a time, while the leases already resolved for the node wait
+// unrenewed for Pull to return, and so do its deliveries in flight (a node heartbeats between pulls). Pull returns
+// what it has once a third of the lease has passed, so no lease it hands out has expired meanwhile: with a 1 s lease
+// under load, a backlog left a lease to expire before its delivery started, each such expiry consuming an attempt
+// (the failover suite saw one delivery lose all three, spec section 5.3).
+func TestPullReturnsBeforeItsLeasesExpire(t *testing.T) {
+	v := newEnv(t, Options{LeaseTTL: time.Second})
+	v.apply(newPackage(t, builtinPipeline, "a"))
+	v.fire("p", "adhoc", "r1")
+	var outs []store.Output
+	for n := range 30 {
+		outs = append(outs, output(fmt.Sprint("k", n), fmt.Sprintf(`{"n":%d}`, 5+n)))
+	}
+	v.emit(outs...) // p's backlog: 30 filters, then 30 dedupes
+	v.apply(newPackage(t, "pipeline: s\ntriggers: { adhoc: { manual: {} } }\nsteps:\n  job: { action: ./actions/a, in: trigger.adhoc }\n", "a"))
+	v.fire("s", "adhoc", "r1")
+	// Each look at the engine's clock takes 20 ms, the store's included: time passes as builtins run. The round-robin
+	// leases s's job with p's first filter, then only p's builtins.
+	now := v.e.opts.Now
+	v.e.opts.Now = func() time.Time { v.clock.Advance(20 * time.Millisecond); return now() }
+	as, err := v.e.Pull(v.ctx, "node-a", 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if expired, err := v.st.ExpireLeases(v.ctx); err != nil || len(expired) != 0 {
+		t.Fatalf("expired after the pull: %+v, %v; Pull held a lease past its expiry", expired, err)
+	}
+	if len(as) != 1 || as[0].Lease.Step != "job" {
+		t.Fatalf("pulled %d assignments; want s's job alone", len(as))
+	}
+	if pending, err := v.st.Deliveries(v.ctx, store.DeliveryFilter{Pipeline: "p", State: store.DeliveryPending}); err != nil ||
+		len(pending) == 0 {
+		t.Fatalf("p's pending deliveries = %d, %v: Pull ran the whole backlog", len(pending), err)
 	}
 }
 

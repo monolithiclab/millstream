@@ -35,8 +35,13 @@ func (e *Engine) Pull(ctx context.Context, owner string, maxN int) ([]node.Assig
 			cancel()
 		}
 	})()
+	// Builtins run here, a lease at a time, and a backlog of them keeps the loop going while the leases already in
+	// out wait unrenewed for Pull to return, and so do the caller's deliveries in flight: a node heartbeats between
+	// pulls. Past a third of the lease, the nodes' heartbeat interval, Pull returns what it has; the next pull takes
+	// the rest.
 	var out []node.Assignment
-	for len(out) < maxN && ctx.Err() == nil {
+	start := e.opts.Now()
+	for len(out) < maxN && ctx.Err() == nil && e.opts.Now().Sub(start) < e.opts.LeaseTTL/3 {
 		leases, err := e.lease(ctx, owner, maxN-len(out))
 		if err != nil {
 			if len(out) > 0 {
