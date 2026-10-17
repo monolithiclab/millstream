@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -122,9 +123,10 @@ var templateTables = sync.OnceValues(func() ([]string, error) {
 
 // emptyMemory deletes every row but schema_version's, in one transaction, once it checked the schema did not change
 // since the template was restored: any change to it, a table renamed and renamed back included, moves the schema
-// version on.
+// version on. One query names the tables that hold a row, and only those are emptied: a store's tests write a
+// few of the template's tables, and a DELETE costs more than an EXISTS on an empty table.
 func emptyMemory(m *memoryDB) error {
-	tables, err := templateTables()
+	q, err := emptyQueries()
 	if err != nil {
 		return err
 	}
@@ -135,10 +137,30 @@ func emptyMemory(m *memoryDB) error {
 	if version != m.cookie {
 		return errors.New("empty memory store: the schema changed")
 	}
-	deletes := make([]*sql.Stmt, len(tables))
-	for i, t := range tables { // before the transaction, which holds the only connection
-		q := `DELETE FROM "` + strings.ReplaceAll(t, `"`, `""`) + `"`
-		if deletes[i], err = m.prepare(q); err != nil {
+	// Before the transaction, which holds the only connection.
+	nonEmpty, err := m.prepare(q.nonEmpty)
+	if err != nil {
+		return fmt.Errorf("empty memory store: %w", err)
+	}
+	rows, err := nonEmpty.Query()
+	if err != nil {
+		return err
+	}
+	var full []int // the tables to empty, by index: in deletion order once sorted
+	for rows.Next() {
+		var i int
+		if rows.Scan(&i) == nil { // an index column: Scan has nothing to fail on that Err does not report
+			full = append(full, i)
+		}
+	}
+	// Closed before the transaction, which needs the only connection.
+	if err := errors.Join(rows.Err(), rows.Close()); err != nil || len(full) == 0 {
+		return err
+	}
+	slices.Sort(full)
+	deletes := make([]*sql.Stmt, len(full))
+	for j, i := range full {
+		if deletes[j], err = m.prepare(q.deletes[i]); err != nil {
 			return fmt.Errorf("empty memory store: %w", err)
 		}
 	}
@@ -154,6 +176,30 @@ func emptyMemory(m *memoryDB) error {
 	}
 	return tx.Commit()
 }
+
+// emptyStatements are emptyMemory's queries: nonEmpty names, by index, the tables holding a row, and deletes[i]
+// empties table i.
+type emptyStatements struct {
+	nonEmpty string
+	deletes  []string
+}
+
+// emptyQueries builds emptyMemory's queries for the template's tables, once per process.
+var emptyQueries = sync.OnceValues(func() (emptyStatements, error) {
+	tables, err := templateTables()
+	if err != nil {
+		return emptyStatements{}, err
+	}
+	var q emptyStatements
+	exists := make([]string, len(tables))
+	for i, t := range tables {
+		quoted := `"` + strings.ReplaceAll(t, `"`, `""`) + `"`
+		exists[i] = `SELECT ` + strconv.Itoa(i) + ` WHERE EXISTS (SELECT 1 FROM ` + quoted + `)`
+		q.deletes = append(q.deletes, `DELETE FROM `+quoted)
+	}
+	q.nonEmpty = strings.Join(exists, ` UNION ALL `)
+	return q, nil
+})
 
 // prepare returns query prepared on m, from the writer's statements.
 func (m *memoryDB) prepare(query string) (*sql.Stmt, error) {
