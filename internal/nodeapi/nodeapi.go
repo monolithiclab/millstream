@@ -321,7 +321,7 @@ func (h *Handler) done(w http.ResponseWriter, r *http.Request) error {
 	if err := h.report(req.Node, ref); err != nil {
 		return err
 	}
-	if err := h.opts.Engine.Done(r.Context(), store.DoneRequest{LeaseRef: ref, Attempt: req.Attempt,
+	if err := h.opts.Engine.Done(r.Context(), store.DoneRequest{LeaseRef: ref, Owner: req.Node, Attempt: req.Attempt,
 		Outputs: nodewire.ToOutputs(req.Outputs), CostUSD: req.CostUSD, Artifacts: req.Artifacts,
 		Metrics: req.Metrics}); err != nil {
 		return err
@@ -339,9 +339,9 @@ func (h *Handler) fail(w http.ResponseWriter, r *http.Request) error {
 	if err := h.report(req.Node, ref); err != nil {
 		return err
 	}
-	if err := h.opts.Engine.Fail(r.Context(), store.FailRequest{LeaseRef: ref, Attempt: req.Attempt, Class: req.Class,
-		Message: req.Message, Retryable: req.Retryable, CostUSD: req.CostUSD, Unreported: req.Unreported,
-		Artifacts: req.Artifacts, Metrics: req.Metrics}); err != nil {
+	if err := h.opts.Engine.Fail(r.Context(), store.FailRequest{LeaseRef: ref, Owner: req.Node, Attempt: req.Attempt,
+		Class: req.Class, Message: req.Message, Retryable: req.Retryable, CostUSD: req.CostUSD,
+		Unreported: req.Unreported, Artifacts: req.Artifacts, Metrics: req.Metrics}); err != nil {
 		return err
 	}
 	writeJSON(w, http.StatusOK, nodewire.Ack{Accepted: true})
@@ -508,17 +508,18 @@ func stored(ctx context.Context, arts artifacts.Store, pipeline, sha string) (bo
 }
 
 // blobURL is the proxy's signed URL for one artifact move: what the signature covers is the operation, the pipeline,
-// the hash, the name and the expiry.
+// the hash, the name, the size and the expiry.
 func (h *Handler) blobURL(op, pipeline string, a store.ArtifactRef) string {
 	exp := strconv.FormatInt(h.opts.Now().Add(URLTTL).Unix(), 10)
-	q := url.Values{"op": {op}, "pipeline": {pipeline}, "sha256": {a.SHA256}, "name": {a.Name}, "exp": {exp}}
+	q := url.Values{"op": {op}, "pipeline": {pipeline}, "sha256": {a.SHA256}, "name": {a.Name}, "exp": {exp},
+		"size": {strconv.FormatInt(a.Size, 10)}}
 	q.Set("sig", h.sign(q))
 	return nodewire.PathBlob + "?" + q.Encode()
 }
 
 func (h *Handler) sign(q url.Values) string {
 	mac := hmac.New(sha256.New, h.opts.Key)
-	for _, k := range []string{"op", "pipeline", "sha256", "name", "exp"} {
+	for _, k := range []string{"op", "pipeline", "sha256", "name", "size", "exp"} {
 		mac.Write([]byte(q.Get(k)))
 		mac.Write([]byte{0})
 	}
@@ -563,7 +564,13 @@ func (h *Handler) putBlob(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	ref, err := h.opts.Artifacts.Put(r.Context(), q.Get("pipeline"), q.Get("name"), r.Body)
+	// The body must be the size the URL was issued for, checked before anything is written.
+	if size, err := strconv.ParseInt(q.Get("size"), 10, 64); err != nil || r.ContentLength != size {
+		return errAnswer(http.StatusBadRequest, nodewire.CodeInvalid, "a body of %d bytes, not the %s declared",
+			r.ContentLength, q.Get("size"))
+	}
+	ref, err := h.opts.Artifacts.Put(r.Context(), q.Get("pipeline"), q.Get("name"),
+		http.MaxBytesReader(w, r.Body, r.ContentLength))
 	if err != nil {
 		return err
 	}

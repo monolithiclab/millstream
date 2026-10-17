@@ -407,6 +407,8 @@ func ValidMetrics(ms []Metric) error {
 // already in the artifact store, and Metrics the ones the action reported.
 type DoneRequest struct {
 	LeaseRef
+	// Owner, when set, must be the lease's owner: a remote node's report (spec section 15.7).
+	Owner     string
 	Attempt   int
 	Outputs   []Output
 	CostUSD   float64
@@ -417,6 +419,8 @@ type DoneRequest struct {
 // FailRequest fails a leased delivery. Artifacts are the failed attempt's own, kept as on done.
 type FailRequest struct {
 	LeaseRef
+	// Owner, when set, must be the lease's owner, as DoneRequest's.
+	Owner     string
 	Attempt   int
 	Class     string
 	Message   string

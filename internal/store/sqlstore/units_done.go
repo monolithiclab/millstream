@@ -44,7 +44,7 @@ func (s *Store) Done(ctx context.Context, d store.DoneRequest) (store.DeliverySt
 }
 
 func (w *wtx) done(req store.DoneRequest, outputs []payload) (store.DeliveryState, error) {
-	d, err := w.leased(req.LeaseRef, req.Attempt)
+	d, err := w.leasedBy(req.LeaseRef, req.Attempt, req.Owner)
 	if err != nil {
 		return "", err
 	}

@@ -279,7 +279,14 @@ func TestLeaseScopedHandlers(t *testing.T) {
 	}
 	wantCode(t, request(h, http.MethodPut, strings.Replace(u.URL, "name=r.txt", "name=x.txt", 1), "report"),
 		http.StatusForbidden, nodewire.CodeNotHeld)
-	wantCode(t, request(h, http.MethodPut, u.URL, "other"), http.StatusBadRequest, nodewire.CodeInvalid)
+	wantCode(t, request(h, http.MethodPut, u.URL, "other!"), http.StatusBadRequest, nodewire.CodeInvalid)
+	// A body of another size than the one signed is refused before anything is written; the size is signed.
+	if rec := request(h, http.MethodPut, u.URL, "report, longer"); rec.Code != http.StatusBadRequest ||
+		!strings.Contains(rec.Body.String(), "not the 6 declared") {
+		t.Fatalf("a longer body: %d %s", rec.Code, rec.Body.String())
+	}
+	wantCode(t, request(h, http.MethodPut, strings.Replace(u.URL, "size=6", "size=14", 1), "report, longer"),
+		http.StatusForbidden, nodewire.CodeNotHeld)
 	wantCode(t, request(h, http.MethodGet, u.URL, ""), http.StatusForbidden, nodewire.CodeNotHeld) // a put URL
 	if rec := request(h, http.MethodPut, u.URL, "report"); rec.Code != http.StatusOK {
 		t.Fatalf("put through the proxy: %d %s", rec.Code, rec.Body.String())

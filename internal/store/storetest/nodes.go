@@ -66,6 +66,12 @@ func TestNodes(t *testing.T, open Opener) {
 		t.Fatalf("registered again = %+v", ns[0])
 	}
 
+	// A report naming another owner than the lease's is stale, whatever its token.
+	_, err = e.s.Done(e.ctx, store.DoneRequest{LeaseRef: ls[0].Ref(), Owner: "node2", Attempt: 1})
+	wantErr(t, err, store.ErrStaleLease)
+	_, err = e.s.Fail(e.ctx, store.FailRequest{LeaseRef: ls[0].Ref(), Owner: "node2", Attempt: 1, Class: "action"})
+	wantErr(t, err, store.ErrStaleLease)
+
 	// Revoking ends its leases at once, each attempt consumed as an expiry's; the id is refused from then on.
 	ended, err := e.s.SetNodeState(e.ctx, "node1", store.NodeRevoked, true)
 	if err != nil || len(ended) != 2 || ended[0] != ls[0].Ref() || ended[1] != ls[1].Ref() {
