@@ -182,14 +182,15 @@ type running struct {
 	cancel context.CancelFunc
 }
 
-// loop is the state of one Run. Run's goroutine adds and removes held deliveries, which report back on finished;
-// the heartbeat's goroutine reads them, under mu.
+// loop is the state of one Run. Run's goroutine adds held deliveries; each delivery's goroutine removes its own once
+// reported, then signals finished without waiting (a wake-up already pending covers it); the heartbeat's goroutine
+// reads them, under mu, and so never renews a lease already reported.
 type loop struct {
 	*Node
 	base     context.Context // outlives Run's ctx, so in-flight work and its reports survive the drain
 	mu       sync.Mutex
 	held     map[store.DeliveryKey]*running
-	finished chan store.DeliveryKey
+	finished chan struct{}
 }
 
 // holding returns how many deliveries are held.
@@ -220,7 +221,7 @@ func (l *loop) cancelAll() int {
 // heartbeat runs on its own goroutine, through the drain, so that a long pull never delays it.
 func (n *Node) Run(ctx context.Context) error {
 	l := &loop{Node: n, base: context.WithoutCancel(ctx), held: map[store.DeliveryKey]*running{},
-		finished: make(chan store.DeliveryKey)}
+		finished: make(chan struct{}, 1)}
 	beatCtx, stopBeats := context.WithCancel(l.base)
 	var beats sync.WaitGroup
 	beats.Go(func() { l.beat(beatCtx) })
@@ -236,8 +237,7 @@ func (n *Node) Run(ctx context.Context) error {
 		case <-ctx.Done():
 		case <-pull:
 			l.pull(ctx)
-		case id := <-l.finished:
-			l.release(id)
+		case <-l.finished:
 			l.pull(ctx)
 		}
 	}
@@ -279,7 +279,7 @@ func (l *loop) abandon() {
 	}
 	l.log.Warn("abandoning deliveries in flight", "inFlight", n)
 	for l.holding() > 0 {
-		l.release(<-l.finished)
+		<-l.finished
 	}
 }
 
@@ -313,7 +313,11 @@ func (l *loop) start(a Assignment) {
 	go func() {
 		defer cancel()
 		l.execute(ctx, log, a)
-		l.finished <- ref.Key()
+		l.release(ref.Key())
+		select { // a wake-up already pending covers this one
+		case l.finished <- struct{}{}:
+		default:
+		}
 	}()
 }
 
@@ -441,8 +445,7 @@ func (l *loop) drain() error {
 	abandoned := 0
 	for l.holding() > 0 {
 		select {
-		case id := <-l.finished:
-			l.release(id)
+		case <-l.finished:
 		case <-timeout:
 			abandoned = l.cancelAll()
 		}
