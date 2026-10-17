@@ -5,11 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math"
 	"net/http"
 	"net/url"
 	"slices"
-	"strconv"
 	"strings"
 
 	"github.com/monolithiclab/millstream/internal/engine"
@@ -87,8 +85,7 @@ func (s *Server) hook(w http.ResponseWriter, r *http.Request) error {
 	}
 	id, created, err := s.opts.Engine.FireWebhook(r.Context(), name, trigger, r.Header.Get(IdempotencyHeader), body)
 	if limited := (*engine.RateLimitError)(nil); errors.As(err, &limited) {
-		w.Header().Set("Retry-After", strconv.Itoa(int(math.Ceil(limited.Wait.Seconds()))))
-		writeErrorBody(w, http.StatusTooManyRequests, codeTooManyRequests, limited.Error())
+		writeTooManyRequests(w, limited.Wait, limited.Error())
 		return nil
 	}
 	if err != nil {

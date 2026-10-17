@@ -283,18 +283,8 @@ func (e *Engine) Heartbeat(ctx context.Context, owner string, refs []store.Lease
 	return lost, nil
 }
 
-// Done implements node.Transport: a node's report, whose artifacts must be stored in the lease's pipeline
-// (checkReported). The delivery stops counting in flight once its lease ended (see ended).
+// Done implements node.Transport. The delivery stops counting in flight once its lease ended (see ended).
 func (e *Engine) Done(ctx context.Context, req store.DoneRequest) error {
-	if err := e.checkReported(ctx, req.Pipeline, req.Outputs, req.Artifacts); err != nil {
-		return fmt.Errorf("done %s: %w", req.DeliveryID, err)
-	}
-	return e.done(ctx, req)
-}
-
-// done completes a delivery as Done does, for the engine's own outcomes (stubs, builtins), whose artifacts it
-// does not check.
-func (e *Engine) done(ctx context.Context, req store.DoneRequest) error {
 	state, err := e.st.Done(ctx, req)
 	f := e.settleFlight(req.LeaseRef, err)
 	if err != nil {
@@ -308,9 +298,6 @@ func (e *Engine) done(ctx context.Context, req store.DoneRequest) error {
 // before it is stored, so neither the delivery's error nor its dead letter holds them.
 func (e *Engine) Fail(ctx context.Context, req store.FailRequest) error {
 	req.Message = e.lookup(req.LeaseRef).redact.String(req.Message)
-	if err := e.checkReported(ctx, req.Pipeline, nil, req.Artifacts); err != nil {
-		return fmt.Errorf("fail %s: %w", req.DeliveryID, err)
-	}
 	state, err := e.st.Fail(ctx, req)
 	f := e.settleFlight(req.LeaseRef, err)
 	if err != nil {
@@ -345,7 +332,7 @@ func (e *Engine) completeStub(ctx context.Context, l store.Lease, s Stub) {
 			Retryable: s.Err.Retryable,
 		})
 	} else {
-		err = e.done(ctx, store.DoneRequest{LeaseRef: l.Ref(), Attempt: l.Attempt, Outputs: s.Outputs})
+		err = e.Done(ctx, store.DoneRequest{LeaseRef: l.Ref(), Attempt: l.Attempt, Outputs: s.Outputs})
 	}
 	if err != nil {
 		e.leaseLog(l).Error("complete stubbed delivery", "error", err.Error())

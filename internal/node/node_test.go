@@ -45,6 +45,12 @@ func TestNewValidates(t *testing.T) {
 		n.opts.PullInterval != DefaultPullInterval || n.opts.DrainTimeout != DefaultDrainTimeout {
 		t.Errorf("defaults not applied: %+v", n.opts)
 	}
+	if n, _ := New(tr, Options{Owner: "n", Pool: pool, Heartbeat: func() time.Duration { return time.Second }}); n.opts.HeartbeatInterval != time.Second {
+		t.Errorf("first interval %s, want the one Heartbeat gives", n.opts.HeartbeatInterval)
+	}
+	if HeartbeatFor(0) != DefaultHeartbeatInterval || HeartbeatFor(3*time.Second) != time.Second {
+		t.Error("HeartbeatFor: want a third of the lease, at most the default")
+	}
 }
 
 func TestRunCompletesAssignments(t *testing.T) {
@@ -317,9 +323,13 @@ func TestPullAndHeartbeatErrorsAreRetried(t *testing.T) {
 	tr := newFakeTransport(assignment("dl_1", "echo", nil))
 	tr.pullErr = errors.New("engine busy")
 	tr.hbErr = errors.New("engine busy")
-	stop, clk := startNodeClock(t, tr, Options{Pool: pool, Logger: newJSONLogger(&logs)})
+	beaten := make(chan struct{}, 8) // each heartbeat's end, before the node takes its next interval
+	stop, clk := startNodeClock(t, tr, Options{Pool: pool, Logger: newJSONLogger(&logs),
+		HeartbeatInterval: DefaultHeartbeatInterval,
+		Heartbeat:         func() time.Duration { beaten <- struct{}{}; return DefaultHeartbeatInterval }})
 	clk.fire(DefaultHeartbeatInterval) // nothing held: no heartbeat call
-	clk.fire(DefaultPullInterval)      // the first pull failed: the next tick pulls again
+	await(t, beaten, 1)
+	clk.fire(DefaultPullInterval) // the first pull failed: the next tick pulls again
 	await(t, tr.pulled, 1)
 	await(t, started, 1)
 	clk.fire(DefaultHeartbeatInterval) // fails
@@ -508,7 +518,7 @@ func TestHeartbeatBesidePull(t *testing.T) {
 	pool, release, started := heldPool(t)
 	tr := &blockingPull{fakeTransport: newFakeTransport(assignment("dl_1", "echo", nil)), waiting: make(chan struct{}),
 		release: make(chan struct{})}
-	stop, clk := startNodeClock(t, tr, Options{Pool: pool, Slots: 2,
+	stop, clk := startNodeClock(t, tr, Options{Pool: pool, Slots: 2, HeartbeatInterval: DefaultHeartbeatInterval,
 		Heartbeat: func() time.Duration { return 2 * time.Second }})
 	await(t, tr.pulled, 1)
 	await(t, started, 1)

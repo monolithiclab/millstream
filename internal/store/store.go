@@ -40,6 +40,19 @@ var (
 	ErrUnavailable = errors.New("store unavailable")
 )
 
+// Retryable reports whether err means the store cannot serve now, rather than that the request failed: closed,
+// read-only, its write connection lost, the database unavailable, or the caller's context ended. The HTTP API and
+// the node protocol answer it 503 unavailable.
+func Retryable(err error) bool {
+	for _, e := range []error{ErrClosed, ErrReadOnly, ErrWriteLost, ErrUnavailable, context.Canceled,
+		context.DeadlineExceeded} {
+		if errors.Is(err, e) {
+			return true
+		}
+	}
+	return false
+}
+
 // RollupBatch is the most events one Rollup pass reads.
 const RollupBatch = 5000
 

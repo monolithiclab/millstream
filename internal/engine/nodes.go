@@ -148,7 +148,7 @@ func (e *Engine) NodeHeartbeat(ctx context.Context, id string, refs []store.Leas
 // before it registered).
 func Health(heard, now time.Time, leaseTTL time.Duration) string {
 	age := now.Sub(heard)
-	switch beat := min(node.DefaultHeartbeatInterval, leaseTTL/3); {
+	switch beat := node.HeartbeatFor(leaseTTL); {
 	case heard.IsZero():
 		return HealthLost
 	case age <= 3*beat:

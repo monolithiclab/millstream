@@ -39,6 +39,15 @@ const (
 	DefaultReportTimeout = 30 * time.Second
 )
 
+// HeartbeatFor is a node's heartbeat interval under leases of ttl: a third of the lease, at most
+// DefaultHeartbeatInterval; DefaultHeartbeatInterval when ttl is not set.
+func HeartbeatFor(ttl time.Duration) time.Duration {
+	if ttl <= 0 {
+		return DefaultHeartbeatInterval
+	}
+	return min(DefaultHeartbeatInterval, ttl/3)
+}
+
 // ErrAbandon, as the cause of Run's context cancellation (context.WithCancelCause), makes the node abandon its
 // deliveries in flight rather than drain them.
 var ErrAbandon = errors.New("abandon deliveries in flight")
@@ -95,8 +104,9 @@ type Options struct {
 	Slots             int
 	PullInterval      time.Duration
 	HeartbeatInterval time.Duration
-	// Heartbeat, when set, is read after each heartbeat for the next interval: a remote node adopts the interval of
-	// the engine it registered with last (after a failover, the new active engine's). Nil keeps HeartbeatInterval.
+	// Heartbeat, when set, gives the first interval when HeartbeatInterval is zero, and is read again after each
+	// heartbeat for the next one: a remote node adopts the interval of the engine it registered with last (after a
+	// failover, the new active engine's). Nil keeps HeartbeatInterval.
 	Heartbeat    func() time.Duration
 	DrainTimeout time.Duration
 	// ReportTimeout bounds each heartbeat, Done and Fail call: a remote node's transport resends a Done or Fail
@@ -146,6 +156,9 @@ func New(t Transport, opts Options) (*Node, error) {
 	}
 	if opts.PullInterval <= 0 {
 		opts.PullInterval = DefaultPullInterval
+	}
+	if opts.HeartbeatInterval <= 0 && opts.Heartbeat != nil {
+		opts.HeartbeatInterval = opts.Heartbeat()
 	}
 	if opts.HeartbeatInterval <= 0 {
 		opts.HeartbeatInterval = DefaultHeartbeatInterval

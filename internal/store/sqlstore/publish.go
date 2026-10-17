@@ -275,12 +275,14 @@ func (w *wtx) addCost(d *deliveryRow, cost float64) error {
 // linkParents records the lineage's edges of an item just inserted in pipelineName (item_parents), its parents in its
 // own pipeline, or a copy's in the producer's.
 func (w *wtx) linkParents(pipelineName string, it newItem) error {
-	from := cmp.Or(it.parentPipeline, pipelineName)
-	for _, p := range it.parents {
-		if _, err := w.exec(`INSERT INTO item_parents (pipeline, parent_id, child_pipeline, child_id)
-			VALUES (?, ?, ?, ?) ON CONFLICT DO NOTHING`, from, p, pipelineName, it.id); err != nil {
-			return fmt.Errorf("link item %s to its parent %s: %w", it.id, p, err)
-		}
+	if len(it.parents) == 0 {
+		return nil
+	}
+	if _, err := w.exec(`INSERT INTO item_parents (pipeline, parent_id, child_pipeline, child_id)
+		SELECT CAST(? AS TEXT), value, CAST(? AS TEXT), CAST(? AS TEXT) FROM (`+w.s.d.JSONParam(false)+`) l
+		WHERE true ON CONFLICT DO NOTHING`, cmp.Or(it.parentPipeline, pipelineName), pipelineName, it.id,
+		jsonList(it.parents)); err != nil {
+		return fmt.Errorf("link item %s to its parents: %w", it.id, err)
 	}
 	return nil
 }

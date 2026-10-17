@@ -75,7 +75,7 @@ func (e *Engine) runBuiltin(ctx context.Context, l store.Lease) bool {
 		case evalErr != nil:
 			e.failDispatch(ctx, l, dispatchErr(ClassExpr, false, "filter of step %s: %w", l.Step, evalErr))
 		case pass:
-			err = e.done(ctx, store.DoneRequest{LeaseRef: ref, Attempt: l.Attempt,
+			err = e.Done(ctx, store.DoneRequest{LeaseRef: ref, Attempt: l.Attempt,
 				Outputs: []store.Output{{Key: l.Item.Key, Payload: l.Item.Payload}}})
 		default:
 			err = e.complete(ref, func() (store.DeliveryState, error) {

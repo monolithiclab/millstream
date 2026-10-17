@@ -93,10 +93,14 @@ func (s *Server) refuseFailing(w http.ResponseWriter, r *http.Request) bool {
 	if wait <= 0 {
 		return false
 	}
-	w.Header().Set("Retry-After", strconv.Itoa(int(math.Ceil(wait.Seconds()))))
-	writeErrorBody(w, http.StatusTooManyRequests, codeTooManyRequests,
-		"too many failed attempts from this address: retry after the Retry-After seconds")
+	writeTooManyRequests(w, wait, "too many failed attempts from this address: retry after the Retry-After seconds")
 	return true
+}
+
+// writeTooManyRequests answers tooManyRequests, Retry-After saying in how many seconds, wait rounded up.
+func writeTooManyRequests(w http.ResponseWriter, wait time.Duration, msg string) {
+	w.Header().Set("Retry-After", strconv.Itoa(int(math.Ceil(wait.Seconds()))))
+	writeErrorBody(w, http.StatusTooManyRequests, codeTooManyRequests, msg)
 }
 
 // failed counts a failed attempt from the request's address.

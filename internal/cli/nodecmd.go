@@ -136,7 +136,7 @@ func (c NodeRunCmd) Run(rt *Runtime) error {
 	defer func() { _ = pool.Close() }()
 	n, err := node.New(t, node.Options{
 		Owner: id, Slots: c.Slots, Pool: pool, Logger: log, DrainTimeout: c.DrainTimeout, IdleHeartbeat: true,
-		HeartbeatInterval: t.HeartbeatInterval(), Heartbeat: t.HeartbeatInterval, ReportTimeout: max(2*ttl, time.Minute),
+		Heartbeat: t.HeartbeatInterval, ReportTimeout: max(2*ttl, time.Minute),
 	})
 	if err != nil {
 		return err

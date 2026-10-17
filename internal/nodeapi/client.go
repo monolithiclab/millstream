@@ -183,18 +183,9 @@ func (t *Client) die(err error) error {
 }
 
 // HeartbeatInterval is the heartbeat interval under the lease duration of the engine the node registered with last
-// (node.Options.Heartbeat): a third of the lease, at most node.DefaultHeartbeatInterval.
+// (node.Options.Heartbeat, node.HeartbeatFor).
 func (t *Client) HeartbeatInterval() time.Duration {
-	ttl := time.Duration(t.Registered().LeaseTTLMs) * time.Millisecond
-	return HeartbeatInterval(ttl)
-}
-
-// HeartbeatInterval is a node's heartbeat interval under leases of ttl.
-func HeartbeatInterval(ttl time.Duration) time.Duration {
-	if ttl <= 0 {
-		return node.DefaultHeartbeatInterval
-	}
-	return min(node.DefaultHeartbeatInterval, ttl/3)
+	return node.HeartbeatFor(time.Duration(t.Registered().LeaseTTLMs) * time.Millisecond)
 }
 
 // Registered is what the engine answered the last registration.

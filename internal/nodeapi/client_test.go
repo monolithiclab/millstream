@@ -227,7 +227,7 @@ func TestAnswersAndURLs(t *testing.T) {
 	if got := n.HeartbeatInterval(); got != node.DefaultHeartbeatInterval {
 		t.Errorf("heartbeat interval under the engine's lease: %s", got)
 	}
-	if got := nodeapi.HeartbeatInterval(3 * time.Second); got != time.Second {
+	if got := node.HeartbeatFor(3 * time.Second); got != time.Second {
 		t.Errorf("heartbeat interval under a 3 s lease: %s", got)
 	}
 	if _, err := n.Heartbeat(d.ctx, "n1", nil); err != nil {

@@ -3,10 +3,8 @@ package engine
 import (
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"io/fs"
-	"slices"
 
 	"github.com/monolithiclab/millstream/internal/artifacts"
 	"github.com/monolithiclab/millstream/internal/store"
@@ -41,7 +39,10 @@ func (e *Engine) OpenArtifact(ctx context.Context, lease store.LeaseRef, ref sto
 	if err != nil {
 		return nil, err
 	}
-	return OpenArtifact(ctx, e.opts.Artifacts, lease.Pipeline, from, ref)
+	if err := copyArtifact(ctx, e.opts.Artifacts, lease.Pipeline, from, ref); err != nil {
+		return nil, err
+	}
+	return e.opts.Artifacts.Open(ctx, lease.Pipeline, ref.SHA256)
 }
 
 // copiedFrom is the pipeline the item of the delivery in flight under lease was copied from (store.Item's
@@ -67,7 +68,7 @@ func OpenArtifact(ctx context.Context, arts artifacts.Store, pipeline, from stri
 	if !errors.Is(err, fs.ErrNotExist) {
 		return r, err
 	}
-	if err := EnsureArtifact(ctx, arts, pipeline, from, ref); err != nil {
+	if err := copyArtifact(ctx, arts, pipeline, from, ref); err != nil {
 		return nil, err
 	}
 	return arts.Open(ctx, pipeline, ref.SHA256)
@@ -82,6 +83,11 @@ func EnsureArtifact(ctx context.Context, arts artifacts.Store, pipeline, from st
 	if ok, err := arts.Exists(ctx, pipeline, ref.SHA256); err != nil || ok {
 		return err
 	}
+	return copyArtifact(ctx, arts, pipeline, from, ref)
+}
+
+// copyArtifact copies an artifact missing from pipeline's prefix from the producer's, from (EnsureArtifact).
+func copyArtifact(ctx context.Context, arts artifacts.Store, pipeline, from string, ref store.ArtifactRef) error {
 	if from == "" || from == pipeline {
 		return errNotExist(pipeline, ref)
 	}
@@ -90,33 +96,6 @@ func EnsureArtifact(ctx context.Context, arts artifacts.Store, pipeline, from st
 		return errors.Join(err, errNotExist(pipeline, ref))
 	}
 	return err
-}
-
-// checkReported refuses the artifacts a delivery's report names whose content is not in the lease's pipeline: a node
-// references only what it stored there for its lease, never another pipeline's content (spec section 15.7).
-func (e *Engine) checkReported(ctx context.Context, pipeline string, outputs []store.Output, kept []store.ArtifactRef,
-) error {
-	refs := slices.Clone(kept)
-	for _, o := range outputs {
-		refs = append(refs, o.Artifacts...)
-	}
-	if len(refs) == 0 {
-		return nil
-	}
-	if e.opts.Artifacts == nil {
-		return fmt.Errorf("%w: %w", errNoArtifactStore, store.ErrInvalid)
-	}
-	for _, a := range refs {
-		ok, err := e.opts.Artifacts.Exists(ctx, pipeline, a.SHA256)
-		if err != nil {
-			return err
-		}
-		if !ok {
-			return fmt.Errorf("artifact %s (%s) is not stored in pipeline %s: %w", a.Name, a.SHA256, pipeline,
-				store.ErrInvalid)
-		}
-	}
-	return nil
 }
 
 // errNotExist is the error of an artifact found nowhere.
