@@ -1,7 +1,8 @@
 import { forwardRef, type ReactNode } from 'react';
 
 // A named region that scrolls (a wide table at 375 px, a log tail): focusable, so a keyboard scrolls it too (axe
-// scrollable-region-focusable). role overrides region, for a log.
+// scrollable-region-focusable). role overrides region, for a log. It is positioned, so it contains and clips what
+// is absolutely positioned inside it (an sr-only label in a far column) instead of letting it widen the page.
 export const ScrollRegion = forwardRef<
   HTMLDivElement,
   { label: string; className: string; role?: 'region' | 'log'; live?: 'off'; children: ReactNode }
@@ -14,7 +15,7 @@ export const ScrollRegion = forwardRef<
       aria-live={live}
       // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex
       tabIndex={0}
-      className={className}
+      className={`relative ${className}`}
     >
       {children}
     </div>
