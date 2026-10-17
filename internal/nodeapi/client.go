@@ -283,7 +283,13 @@ func (t *Client) once(ctx context.Context, method string, base *url.URL, path st
 		*raw, err = io.ReadAll(resp.Body)
 		return err
 	}
-	return json.NewDecoder(resp.Body).Decode(out)
+	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
+		return fmt.Errorf("engine answered %d with an unreadable body: %w", resp.StatusCode, err)
+	}
+	if c, ok := out.(interface{ Check() error }); ok {
+		return c.Check()
+	}
+	return nil
 }
 
 func readAnswer(resp *http.Response) error {
@@ -529,14 +535,15 @@ func (t *Client) Heartbeat(ctx context.Context, owner string, refs []store.Lease
 	return nodewire.ToRefs(res.Lost), nil
 }
 
-// Done implements node.Transport, resending until the engine answers or ctx ends: a result buffered across a
-// reconnection or a failover, refused as stale when the lease ended meanwhile.
+// Done implements node.Transport, resending until the engine accepts it (nodewire.Ack: an empty answer, as a server
+// cut off mid-request may give, is no acceptance) or ctx ends: a result buffered across a reconnection or a
+// failover, refused as stale when the lease ended meanwhile.
 func (t *Client) Done(ctx context.Context, req store.DoneRequest) error {
 	return t.call(ctx, http.MethodPost, nodewire.PathDone, nil, nodewire.Done{
 		Node: t.opts.Node.Node, Lease: nodewire.FromRef(req.LeaseRef), Attempt: req.Attempt,
 		Outputs: nodewire.FromOutputs(req.Outputs), CostUSD: req.CostUSD, Artifacts: req.Artifacts,
 		Metrics: req.Metrics,
-	}, nil, true, attemptTimeout)
+	}, &nodewire.Ack{}, true, attemptTimeout)
 }
 
 // Fail implements node.Transport, resending as Done does.
@@ -545,12 +552,12 @@ func (t *Client) Fail(ctx context.Context, req store.FailRequest) error {
 		Node: t.opts.Node.Node, Lease: nodewire.FromRef(req.LeaseRef), Attempt: req.Attempt, Class: req.Class,
 		Message: req.Message, Retryable: req.Retryable, CostUSD: req.CostUSD, Unreported: req.Unreported,
 		Artifacts: req.Artifacts, Metrics: req.Metrics,
-	}, nil, true, attemptTimeout)
+	}, &nodewire.Ack{}, true, attemptTimeout)
 }
 
 // Leave tells the engine the node is leaving: the leases it still holds end at once.
 func (t *Client) Leave(ctx context.Context) error {
-	return t.call(ctx, http.MethodPost, nodewire.PathLeave, nil, nodewire.Leave{Node: t.opts.Node.Node}, nil, false,
+	return t.call(ctx, http.MethodPost, nodewire.PathLeave, nil, nodewire.Leave{Node: t.opts.Node.Node}, &nodewire.Ack{}, false,
 		attemptTimeout)
 }
 

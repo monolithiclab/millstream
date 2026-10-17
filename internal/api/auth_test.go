@@ -123,8 +123,11 @@ func TestNoTokenSession(t *testing.T) {
 	if got := get[Session](t, f.srv, "/api/v1/session"); got.Auth || got.User != "tester" {
 		t.Fatalf("session %+v", got)
 	}
-	wantError(t, do(t, f.srv, request{method: http.MethodPost, target: "/api/v1/session", body: `{"token":"x"}`}),
-		http.StatusServiceUnavailable, codeUnavailable)
+	rec := do(t, f.srv, request{method: http.MethodPost, target: "/api/v1/session", body: `{"token":"x"}`})
+	wantError(t, rec, http.StatusServiceUnavailable, codeUnavailable)
+	if rec.Header().Get("Retry-After") == "" {
+		t.Error("a 503 without Retry-After")
+	}
 	if rec := do(t, f.srv, request{method: http.MethodDelete, target: "/api/v1/session"}); rec.Code != http.StatusNoContent {
 		t.Fatalf("sign out: %d", rec.Code)
 	}

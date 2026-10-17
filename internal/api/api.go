@@ -555,6 +555,9 @@ func (s *Server) refuseStandby(w http.ResponseWriter, r *http.Request) {
 // writeError answers err. An internal error's message is logged, not sent: it may name the store's internals.
 func (s *Server) writeError(w http.ResponseWriter, r *http.Request, err error) {
 	status, code := errorCode(err)
+	if status == http.StatusServiceUnavailable {
+		w.Header().Set("Retry-After", "1")
+	}
 	msg := err.Error()
 	if code == codeInternal {
 		s.log.Error("api", "method", r.Method, "path", r.URL.Path, "error", msg)

@@ -153,12 +153,21 @@ func (h *Handler) fail500(w http.ResponseWriter, r *http.Request, err error) {
 		writeError(w, http.StatusBadRequest, nodewire.CodeInvalid, err.Error())
 	case errors.Is(err, store.ErrNotFound):
 		writeError(w, http.StatusNotFound, nodewire.CodeNotFound, err.Error())
-	case r.Context().Err() != nil:
-		// the node went away, or the engine's term ended: nothing to tell it
+	case unavailable(r, err):
+		// The engine's term ended, its store is gone or read-only, or the node went away: never an implicit success,
+		// which a node would take for an acceptance. It sends the request again, to this engine or the next.
+		w.Header().Set("Retry-After", "1")
+		writeError(w, http.StatusServiceUnavailable, nodewire.CodeUnavailable, "the engine cannot answer now: retry")
 	default:
 		h.opts.Logger.Error("node protocol", "path", r.URL.Path, "error", err.Error())
 		writeError(w, http.StatusInternalServerError, nodewire.CodeInternal, "internal error")
 	}
+}
+
+// unavailable reports whether err, or r's context, means the engine cannot answer now rather than a failure.
+func unavailable(r *http.Request, err error) bool {
+	return r.Context().Err() != nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) ||
+		errors.Is(err, store.ErrClosed) || errors.Is(err, store.ErrWriteLost) || errors.Is(err, store.ErrReadOnly)
 }
 
 // authorized reports whether r carries the node token whose SHA-256 is sum, compared in constant time, and answers
@@ -313,7 +322,7 @@ func (h *Handler) done(w http.ResponseWriter, r *http.Request) error {
 		Metrics: req.Metrics}); err != nil {
 		return err
 	}
-	w.WriteHeader(http.StatusNoContent)
+	writeJSON(w, http.StatusOK, nodewire.Ack{Accepted: true})
 	return nil
 }
 
@@ -331,7 +340,7 @@ func (h *Handler) fail(w http.ResponseWriter, r *http.Request) error {
 		Artifacts: req.Artifacts, Metrics: req.Metrics}); err != nil {
 		return err
 	}
-	w.WriteHeader(http.StatusNoContent)
+	writeJSON(w, http.StatusOK, nodewire.Ack{Accepted: true})
 	return nil
 }
 
@@ -346,7 +355,7 @@ func (h *Handler) leave(w http.ResponseWriter, r *http.Request) error {
 	if err := h.opts.Engine.SetNodeState(r.Context(), req.Node, store.NodeDraining, true); err != nil {
 		return err
 	}
-	w.WriteHeader(http.StatusNoContent)
+	writeJSON(w, http.StatusOK, nodewire.Ack{Accepted: true})
 	return nil
 }
 

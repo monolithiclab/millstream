@@ -3,13 +3,21 @@
 package e2e
 
 import (
+	"bytes"
+	"encoding/json"
+	"io"
 	"net"
+	"net/http"
 	"os"
 	osexec "os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/monolithiclab/millstream/internal/nodewire"
+	"github.com/monolithiclab/millstream/internal/store"
 )
 
 // The node chaos suite (spec sections 5.10 and 16): serve processes on one Postgres database without an embedded
@@ -225,13 +233,51 @@ func TestNodesFollowFailover(t *testing.T) {
 	a.kill()
 	tk := measureTakeover(t, b, a.end, 30*time.Second)
 	f.waitSettled()
+	refuseStaleDone(t, f, b, n1.id)
 	b.stop(t)
 	for _, n := range []*nodeProc{n1, n2} {
 		if c := n.log.count(`"msg":"registered"`); c < 2 {
 			t.Errorf("%s registered %d times, want again with the new active engine", n.name, c)
 		}
+		// Their leases outlive the takeover: every result held across it reaches the store, none is dropped.
+		if c := n.log.count("result dropped"); c > 0 {
+			t.Errorf("%s dropped %d results across the takeover", n.name, c)
+		}
 	}
 	t.Logf("failover with remote nodes: standby took the lock after %s, dispatched after %s",
 		tk.lead.Round(time.Millisecond), tk.dispatch.Round(time.Millisecond))
 	wantSame(t, readSnapshot(t, f.db), want)
+}
+
+// refuseStaleDone sends the active engine e, after a takeover, a Done from node under the lease of a delivery it
+// completed: it is refused stale, never applied twice.
+func refuseStaleDone(t *testing.T, f *failover, e *engineProc, node string) {
+	t.Helper()
+	st := openStore(t, f.db)
+	defer func() { _ = st.Close() }()
+	ds, err := st.Deliveries(t.Context(), store.DeliveryFilter{Pipeline: pipelineName, State: store.DeliveryDone})
+	if err != nil {
+		t.Fatal(err)
+	}
+	i := slices.IndexFunc(ds, func(d store.Delivery) bool { return d.LeaseOwner == node })
+	if i < 0 {
+		t.Fatalf("node %s completed no delivery", node)
+	}
+	d := ds[i]
+	body, _ := json.Marshal(nodewire.Done{Node: node, Attempt: d.Attempt, Lease: nodewire.FromRef(store.LeaseRef{
+		Pipeline: d.Pipeline, DeliveryID: d.ID, Step: d.Step, FencingToken: d.FencingToken})})
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, e.url+nodewire.PathDone, bytes.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer "+nodeToken)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	got, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusConflict || !strings.Contains(string(got), nodewire.CodeStale) {
+		t.Fatalf("a stale done across the takeover: %d %s", resp.StatusCode, got)
+	}
 }

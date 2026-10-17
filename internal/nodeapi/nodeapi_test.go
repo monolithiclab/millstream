@@ -318,7 +318,7 @@ func TestLeaseScopedHandlers(t *testing.T) {
 	// refused.
 	done, _ := json.Marshal(nodewire.Done{Node: "n1", Lease: lease, Attempt: l.Attempt,
 		Outputs: []nodewire.Output{{Key: "p", Payload: json.RawMessage(`{}`), Artifacts: []store.ArtifactRef{ref}}}})
-	if rec := request(h, http.MethodPost, nodewire.PathDone, string(done)); rec.Code != http.StatusNoContent {
+	if rec := request(h, http.MethodPost, nodewire.PathDone, string(done)); rec.Code != http.StatusOK {
 		t.Fatalf("done: %d %s", rec.Code, rec.Body.String())
 	}
 	as, err = n1.Pull(d.ctx, "n1", 1)
@@ -383,7 +383,8 @@ func mustJSON(v any) string {
 	return string(b)
 }
 
-// A failure is applied under the lease; an unknown node leaving must register; a store that fails answers internal.
+// A failure is applied under the lease; an unknown node leaving must register; a request cut off, or a closed store,
+// answers unavailable, and a node never takes an empty answer for an acceptance.
 func TestFailLeaveAndStoreErrors(t *testing.T) {
 	d := newDeployment(t)
 	h := d.hosts.h["a:7070"]
@@ -397,7 +398,7 @@ func TestFailLeaveAndStoreErrors(t *testing.T) {
 	}
 	fail, _ := json.Marshal(nodewire.Fail{Node: "n1", Lease: nodewire.FromRef(as[0].Lease.Ref()), Attempt: 1,
 		Class: "action", Message: "down", Retryable: true})
-	if rec := request(h, http.MethodPost, nodewire.PathFail, string(fail)); rec.Code != http.StatusNoContent {
+	if rec := request(h, http.MethodPost, nodewire.PathFail, string(fail)); rec.Code != http.StatusOK {
 		t.Fatalf("fail: %d %s", rec.Code, rec.Body.String())
 	}
 	wantCode(t, request(h, http.MethodPost, nodewire.PathFail, `{`), http.StatusBadRequest, nodewire.CodeInvalid)
@@ -408,9 +409,56 @@ func TestFailLeaveAndStoreErrors(t *testing.T) {
 		http.StatusBadRequest, nodewire.CodeInvalid)
 	wantCode(t, request(h, http.MethodPost, nodewire.PathLogs, `{"node":"ghost","lines":[]}`), http.StatusConflict,
 		nodewire.CodeUnregistered)
+
+	// A request cut off (its engine's term ended, its node went away) is never answered as a success, which a node
+	// would take for an acceptance: 503, retried.
+	if _, _, err := d.e.Fire(d.ctx, "remote", "go", "k2", json.RawMessage(`{}`)); err != nil {
+		t.Fatal(err)
+	}
+	as, err = n1.Pull(d.ctx, "n1", 1)
+	if err != nil || len(as) != 1 {
+		t.Fatalf("pull = %v, %v", as, err)
+	}
+	lease := mustJSON(nodewire.FromRef(as[0].Lease.Ref()))
+	cut, cancel := context.WithCancel(d.ctx)
+	cancel()
+	for path, body := range map[string]string{
+		nodewire.PathDone:      `{"node":"n1","attempt":1,"lease":` + lease + `}`,
+		nodewire.PathFail:      `{"node":"n1","attempt":1,"class":"action","lease":` + lease + `}`,
+		nodewire.PathHeartbeat: `{"node":"n1","leases":[` + lease + `]}`,
+		nodewire.PathLeave:     `{"node":"n1"}`,
+	} {
+		req := httptest.NewRequestWithContext(cut, http.MethodPost, path, strings.NewReader(body))
+		req.Header.Set("Authorization", "Bearer "+token)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		if rec.Code != http.StatusServiceUnavailable || rec.Header().Get("Retry-After") == "" {
+			t.Errorf("%s cut off: %d %v %s", path, rec.Code, rec.Header(), rec.Body.String())
+		}
+	}
+	// And a node takes an empty 2xx answer for no acceptance: it sends the report again.
+	var empties int
+	both := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == nodewire.PathDone && empties == 0 {
+			empties++
+			return // an implicit, empty 200
+		}
+		h.ServeHTTP(w, r)
+	})
+	d.hosts.set("a:7070", both)
+	d.hosts.set("b:7070", both)
+	n2 := d.transport("n1", "https://a:7070", "https://b:7070")
+	if err := n2.Done(d.ctx, store.DoneRequest{LeaseRef: as[0].Lease.Ref(), Attempt: 1}); err != nil || empties != 1 {
+		t.Fatalf("done after an empty answer: %v, %d empty", err, empties)
+	}
+	ds, err := d.st.Deliveries(d.ctx, store.DeliveryFilter{Pipeline: "remote", ID: as[0].Lease.DeliveryID})
+	if err != nil || len(ds) != 1 || ds[0].State != store.DeliveryDone {
+		t.Fatalf("delivery after the resent done: %+v, %v", ds, err)
+	}
+
 	_ = d.st.Close()
 	wantCode(t, request(h, http.MethodPost, nodewire.PathHeartbeat, `{"node":"n1","leases":[]}`),
-		http.StatusInternalServerError, nodewire.CodeInternal)
+		http.StatusServiceUnavailable, nodewire.CodeUnavailable)
 }
 
 // presigning is an artifact store nodes reach through presigned URLs, as the S3 store.
