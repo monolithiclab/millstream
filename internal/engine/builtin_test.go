@@ -99,7 +99,7 @@ func TestBuiltinsRunInTheEngine(t *testing.T) {
 }
 
 // A backlog of builtins runs inside Pull, a lease at a time, while the leases already resolved for the node wait
-// unrenewed for Pull to return, and so do its deliveries in flight (a node heartbeats between pulls). Pull returns
+// unrenewed for Pull to return. Pull returns
 // what it has once a third of the lease has passed, so no lease it hands out has expired meanwhile: with a 1 s lease
 // under load, a backlog left a lease to expire before its delivery started, each such expiry consuming an attempt
 // (the failover suite saw one delivery lose all three, spec section 5.3).
@@ -131,6 +131,17 @@ func TestPullReturnsBeforeItsLeasesExpire(t *testing.T) {
 	if pending, err := v.st.Deliveries(v.ctx, store.DeliveryFilter{Pipeline: "p", State: store.DeliveryPending}); err != nil ||
 		len(pending) == 0 {
 		t.Fatalf("p's pending deliveries = %d, %v: Pull ran the whole backlog", len(pending), err)
+	}
+	// A remote node's pull leases within what is left of its wait: with none left, one pass of the loop.
+	before, _ := v.st.Deliveries(v.ctx, store.DeliveryFilter{Pipeline: "p", State: store.DeliveryPending})
+	v.e.opts.Now = now
+	if as, err := v.e.PullWithin(v.ctx, "node-a", 2, 0); err != nil || len(as) != 0 {
+		t.Fatalf("PullWithin = %v, %v", as, err)
+	}
+	after, _ := v.st.Deliveries(v.ctx, store.DeliveryFilter{Pipeline: "p", State: store.DeliveryPending})
+	if len(before)-len(after) > 2 {
+		t.Fatalf("PullWithin with no time left ran %d builtins, want one pass of at most 2",
+			len(before)-len(after))
 	}
 }
 

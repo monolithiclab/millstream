@@ -24,6 +24,16 @@ const resolveTimeout = 30 * time.Second
 // and a fully stubbed pipeline runs to the end in one call; deliveries that cannot be dispatched (an unsupported
 // action kind, a config that fails to interpolate) are failed instead of returned.
 func (e *Engine) Pull(ctx context.Context, owner string, maxN int) ([]node.Assignment, error) {
+	return e.PullWithin(ctx, owner, maxN, e.opts.LeaseTTL/3)
+}
+
+// PullWithin is Pull, leasing for at most within (and never past a third of the lease): a remote node's pull
+// returns within the wait it asked for, before its request times out. A node registered with slots takes no more
+// than that many deliveries at once.
+func (e *Engine) PullWithin(ctx context.Context, owner string, maxN int, within time.Duration) ([]node.Assignment,
+	error,
+) {
+	maxN = e.capSlots(owner, maxN)
 	// A lease taken is resolved into an assignment, or failed, even when the caller goes away meanwhile (a node's
 	// request cancelled, a drain): never left to expire, consuming an attempt, for a pull cancelled half-way. Leasing
 	// itself still ends with ctx, and resolving is bounded, so a store that stops answering cannot hold the caller.
@@ -36,12 +46,11 @@ func (e *Engine) Pull(ctx context.Context, owner string, maxN int) ([]node.Assig
 		}
 	})()
 	// Builtins run here, a lease at a time, and a backlog of them keeps the loop going while the leases already in
-	// out wait unrenewed for Pull to return, and so do the caller's deliveries in flight: a node heartbeats between
-	// pulls. Past a third of the lease, the nodes' heartbeat interval, Pull returns what it has; the next pull takes
-	// the rest.
+	// out wait unrenewed for Pull to return. Past a third of the lease, or within, Pull returns what it has; the next
+	// pull takes the rest. The first pass always runs.
 	var out []node.Assignment
-	start := e.opts.Now()
-	for len(out) < maxN && ctx.Err() == nil && e.opts.Now().Sub(start) < e.opts.LeaseTTL/3 {
+	start, bound := e.opts.Now(), min(within, e.opts.LeaseTTL/3)
+	for first := true; len(out) < maxN && ctx.Err() == nil && (first || e.opts.Now().Sub(start) < bound); first = false {
 		leases, err := e.lease(ctx, owner, maxN-len(out))
 		if err != nil {
 			if len(out) > 0 {

@@ -79,8 +79,7 @@ type ClientOptions struct {
 	// Env, Agents: the machine a delivery's action process is built on (node.Host).
 	Env    func(string) (string, bool)
 	Agents node.Agents
-	// PullWait is a pull's long poll; zero means DefaultPullWait. The node's loop waits for it, heartbeats included,
-	// so it stays well within the heartbeat interval.
+	// PullWait is a pull's long poll; zero means DefaultPullWait. The node heartbeats beside it.
 	PullWait time.Duration
 	// Logger receives the transport's own logs; nil discards them.
 	Logger *slog.Logger
@@ -179,12 +178,19 @@ func (t *Client) die(err error) error {
 	return err
 }
 
-// SetPullWait sets a pull's long poll, once the lease duration the engine registered the node with is known: it must
-// stay well within the node's heartbeat interval, since the node's loop waits for it.
-func (t *Client) SetPullWait(d time.Duration) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	t.opts.PullWait = max(d, 10*time.Millisecond)
+// HeartbeatInterval is the heartbeat interval under the lease duration of the engine the node registered with last
+// (node.Options.Heartbeat): a third of the lease, at most node.DefaultHeartbeatInterval.
+func (t *Client) HeartbeatInterval() time.Duration {
+	ttl := time.Duration(t.Registered().LeaseTTLMs) * time.Millisecond
+	return HeartbeatInterval(ttl)
+}
+
+// HeartbeatInterval is a node's heartbeat interval under leases of ttl.
+func HeartbeatInterval(ttl time.Duration) time.Duration {
+	if ttl <= 0 {
+		return node.DefaultHeartbeatInterval
+	}
+	return min(node.DefaultHeartbeatInterval, ttl/3)
 }
 
 // Registered is what the engine answered the last registration.
@@ -463,9 +469,9 @@ func (t *Client) registerLocked(ctx context.Context) (nodewire.Registered, error
 // cannot run here (its action does not resolve on this node, its agent has no sandbox) is failed at once with its
 // class, and one whose package does not arrive as retryable.
 func (t *Client) Pull(ctx context.Context, owner string, maxN int) ([]node.Assignment, error) {
-	t.mu.Lock()
+	// The engine leases within what is left of the wait (Handler.pull): attemptTimeout above it is a hung
+	// connection's.
 	wait := t.opts.PullWait
-	t.mu.Unlock()
 	var res nodewire.Assignments
 	if err := t.call(ctx, http.MethodPost, nodewire.PathPull, nil,
 		nodewire.Pull{Node: owner, Max: maxN, WaitMs: wait.Milliseconds()}, &res, false,

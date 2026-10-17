@@ -240,7 +240,8 @@ func (h *Handler) register(w http.ResponseWriter, r *http.Request) error {
 }
 
 // pull leases deliveries for the node, waiting for some up to the request's wait: whenever a lease in flight ends,
-// and every second, for what else made work due (a firing, a retry's backoff ending).
+// and every second, for what else made work due (a firing, a retry's backoff ending). Leasing itself stays within
+// what is left of the wait, so the answer comes before the node's request times out (Client.Pull).
 func (h *Handler) pull(w http.ResponseWriter, r *http.Request) error {
 	var req nodewire.Pull
 	if err := decode(r, &req); err != nil {
@@ -250,13 +251,15 @@ func (h *Handler) pull(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	e, ctx := h.opts.Engine, r.Context()
-	deadline := time.NewTimer(min(time.Duration(req.WaitMs)*time.Millisecond, MaxPullWait))
+	wait := min(time.Duration(req.WaitMs)*time.Millisecond, MaxPullWait)
+	end := time.Now().Add(wait)
+	deadline := time.NewTimer(wait)
 	defer deadline.Stop()
 	tick := time.NewTicker(time.Second)
 	defer tick.Stop()
 	for {
 		changed := e.Changes()
-		as, err := e.Pull(ctx, req.Node, max(req.Max, 0))
+		as, err := e.PullWithin(ctx, req.Node, max(req.Max, 0), time.Until(end))
 		if err != nil {
 			return err
 		}

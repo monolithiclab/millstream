@@ -16,6 +16,7 @@ import (
 	"io"
 	"log/slog"
 	"math"
+	"sync"
 	"time"
 
 	"github.com/monolithiclab/millstream/internal/protocol"
@@ -94,7 +95,10 @@ type Options struct {
 	Slots             int
 	PullInterval      time.Duration
 	HeartbeatInterval time.Duration
-	DrainTimeout      time.Duration
+	// Heartbeat, when set, is read after each heartbeat for the next interval: a remote node adopts the interval of
+	// the engine it registered with last (after a failover, the new active engine's). Nil keeps HeartbeatInterval.
+	Heartbeat    func() time.Duration
+	DrainTimeout time.Duration
 	// ReportTimeout bounds each heartbeat, Done and Fail call: a remote node's transport resends a Done or Fail
 	// until the engine answers within it, across a reconnection.
 	ReportTimeout time.Duration
@@ -165,32 +169,62 @@ type running struct {
 	cancel context.CancelFunc
 }
 
-// loop is the state of one Run. Only Run's goroutine touches it; deliveries report back on finished.
+// loop is the state of one Run. Run's goroutine adds and removes held deliveries, which report back on finished;
+// the heartbeat's goroutine reads them, under mu.
 type loop struct {
 	*Node
 	base     context.Context // outlives Run's ctx, so in-flight work and its reports survive the drain
+	mu       sync.Mutex
 	held     map[store.DeliveryKey]*running
 	finished chan store.DeliveryKey
 }
 
-// Run pulls and runs deliveries until ctx is cancelled, then drains. It returns nil after a clean drain.
+// holding returns how many deliveries are held.
+func (l *loop) holding() int {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return len(l.held)
+}
+
+// release forgets a delivery that finished.
+func (l *loop) release(id store.DeliveryKey) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	delete(l.held, id)
+}
+
+// cancelAll cancels every held delivery and returns how many there were.
+func (l *loop) cancelAll() int {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	for _, r := range l.held {
+		r.cancel()
+	}
+	return len(l.held)
+}
+
+// Run pulls and runs deliveries until ctx is cancelled, then drains. It returns nil after a clean drain. The
+// heartbeat runs on its own goroutine, through the drain, so that a long pull never delays it.
 func (n *Node) Run(ctx context.Context) error {
 	l := &loop{Node: n, base: context.WithoutCancel(ctx), held: map[store.DeliveryKey]*running{},
 		finished: make(chan store.DeliveryKey)}
+	beatCtx, stopBeats := context.WithCancel(l.base)
+	var beats sync.WaitGroup
+	beats.Go(func() { l.beat(beatCtx) })
+	defer func() {
+		stopBeats()
+		beats.Wait()
+	}()
 	pull, stopPull := n.newTimer(n.opts.PullInterval, true)
 	defer stopPull()
-	heartbeat, stopHeartbeat := n.newTimer(n.opts.HeartbeatInterval, true)
-	defer stopHeartbeat()
 	l.pull(ctx)
 	for ctx.Err() == nil {
 		select {
 		case <-ctx.Done():
 		case <-pull:
 			l.pull(ctx)
-		case <-heartbeat:
-			l.heartbeat()
 		case id := <-l.finished:
-			delete(l.held, id)
+			l.release(id)
 			l.pull(ctx)
 		}
 	}
@@ -198,25 +232,46 @@ func (n *Node) Run(ctx context.Context) error {
 		l.abandon()
 		return nil
 	}
-	return l.drain(heartbeat)
+	return l.drain()
+}
+
+// beat heartbeats every interval until ctx ends, taking the interval anew after each one (Options.Heartbeat).
+func (l *loop) beat(ctx context.Context) {
+	every := l.opts.HeartbeatInterval
+	tick, stop := l.newTimer(every, true)
+	defer func() { stop() }()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-tick:
+			l.heartbeat()
+		}
+		if l.opts.Heartbeat == nil {
+			continue
+		}
+		if next := l.opts.Heartbeat(); next > 0 && next != every {
+			stop()
+			every = next
+			tick, stop = l.newTimer(every, true)
+		}
+	}
 }
 
 // abandon cancels every delivery in flight and waits for their goroutines, which drop their results.
 func (l *loop) abandon() {
-	if len(l.held) == 0 {
+	n := l.cancelAll()
+	if n == 0 {
 		return
 	}
-	l.log.Warn("abandoning deliveries in flight", "inFlight", len(l.held))
-	for _, r := range l.held {
-		r.cancel()
-	}
-	for len(l.held) > 0 {
-		delete(l.held, <-l.finished)
+	l.log.Warn("abandoning deliveries in flight", "inFlight", n)
+	for l.holding() > 0 {
+		l.release(<-l.finished)
 	}
 }
 
 func (l *loop) pull(ctx context.Context) {
-	free := l.opts.Slots - len(l.held)
+	free := l.opts.Slots - l.holding()
 	if free <= 0 || ctx.Err() != nil {
 		return
 	}
@@ -238,7 +293,9 @@ func (l *loop) start(a Assignment) {
 		"itemId", ls.Item.ID, "deliveryId", ls.DeliveryID, "attempt", ls.Attempt))
 	ctx, cancel := context.WithCancel(l.base)
 	ref := ls.Ref()
+	l.mu.Lock()
 	l.held[ref.Key()] = &running{ref: ref, log: log, cancel: cancel}
+	l.mu.Unlock()
 	log.Info("delivery started")
 	go func() {
 		defer cancel()
@@ -332,12 +389,14 @@ func (p leaseArtifacts) Put(ctx context.Context, name string, r io.Reader) (stor
 
 // heartbeat renews every held lease and cancels the deliveries whose lease is lost.
 func (l *loop) heartbeat() {
-	if len(l.held) == 0 && !l.opts.IdleHeartbeat {
-		return
-	}
+	l.mu.Lock()
 	refs := make([]store.LeaseRef, 0, len(l.held))
 	for _, r := range l.held {
 		refs = append(refs, r.ref)
+	}
+	l.mu.Unlock()
+	if len(refs) == 0 && !l.opts.IdleHeartbeat {
+		return
 	}
 	ctx, cancel := context.WithTimeout(l.base, l.opts.ReportTimeout)
 	defer cancel()
@@ -346,6 +405,8 @@ func (l *loop) heartbeat() {
 		l.log.Warn("heartbeat", "error", err.Error())
 		return
 	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
 	for _, ref := range lost {
 		if r, ok := l.held[ref.Key()]; ok && r.ref == ref {
 			r.log.Warn("lease lost, cancelling delivery")
@@ -354,27 +415,23 @@ func (l *loop) heartbeat() {
 	}
 }
 
-// drain waits for in-flight deliveries, renewing their leases, and cancels those still running at the drain
-// timeout.
-func (l *loop) drain(heartbeat <-chan time.Time) error {
-	if len(l.held) == 0 {
+// drain waits for in-flight deliveries, their leases renewed by the heartbeat meanwhile, and cancels those still
+// running at the drain timeout.
+func (l *loop) drain() error {
+	n := l.holding()
+	if n == 0 {
 		return nil
 	}
-	l.log.Info("draining", "inFlight", len(l.held))
+	l.log.Info("draining", "inFlight", n)
 	timeout, stop := l.newTimer(l.opts.DrainTimeout, false)
 	defer stop()
 	abandoned := 0
-	for len(l.held) > 0 {
+	for l.holding() > 0 {
 		select {
 		case id := <-l.finished:
-			delete(l.held, id)
-		case <-heartbeat:
-			l.heartbeat()
+			l.release(id)
 		case <-timeout:
-			abandoned = len(l.held)
-			for _, r := range l.held {
-				r.cancel()
-			}
+			abandoned = l.cancelAll()
 		}
 	}
 	if abandoned > 0 {

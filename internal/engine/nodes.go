@@ -156,6 +156,16 @@ func Health(heard, now time.Time, leaseTTL time.Duration) string {
 	return HealthLost
 }
 
+// capSlots caps maxN at the slots a remote node registered with.
+func (e *Engine) capSlots(owner string, maxN int) int {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if n := e.nodes[owner]; n != nil && !n.info.Embedded && n.info.Slots > 0 {
+		return min(maxN, n.info.Slots)
+	}
+	return maxN
+}
+
 // remote reports whether owner is a remote node, which builds its deliveries' process specs itself.
 func (e *Engine) remote(owner string) bool {
 	e.mu.Lock()

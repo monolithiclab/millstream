@@ -212,7 +212,12 @@ func TestAnswersAndURLs(t *testing.T) {
 	})
 	d.hosts.set("b:7070", between)
 	n := d.transport("n1", "https://b:7070", "https://a:7070")
-	n.SetPullWait(0)
+	if got := n.HeartbeatInterval(); got != node.DefaultHeartbeatInterval {
+		t.Errorf("heartbeat interval under the engine's lease: %s", got)
+	}
+	if got := nodeapi.HeartbeatInterval(3 * time.Second); got != time.Second {
+		t.Errorf("heartbeat interval under a 3 s lease: %s", got)
+	}
 	if _, err := n.Heartbeat(d.ctx, "n1", nil); err != nil {
 		t.Fatalf("heartbeat after a 503: %v", err)
 	}

@@ -129,14 +129,11 @@ func (c NodeRunCmd) Run(rt *Runtime) error {
 		return err
 	}
 	ttl := time.Duration(reg.LeaseTTLMs) * time.Millisecond
-	beat := min(node.DefaultHeartbeatInterval, ttl/3)
-	// The node's loop waits for a pull, heartbeats included: its long poll stays within half a heartbeat interval.
-	t.SetPullWait(min(nodeapi.DefaultPullWait, beat/2))
 	pool := exec.NewPool(exec.PoolOptions{Options: exec.Options{Logger: log, Launchers: launch, WorkRoot: workRoot}})
 	defer func() { _ = pool.Close() }()
 	n, err := node.New(t, node.Options{
 		Owner: id, Slots: c.Slots, Pool: pool, Logger: log, DrainTimeout: c.DrainTimeout, IdleHeartbeat: true,
-		HeartbeatInterval: beat, ReportTimeout: max(2*ttl, time.Minute),
+		HeartbeatInterval: t.HeartbeatInterval(), Heartbeat: t.HeartbeatInterval, ReportTimeout: max(2*ttl, time.Minute),
 	})
 	if err != nil {
 		return err

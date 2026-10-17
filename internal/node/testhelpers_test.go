@@ -334,11 +334,14 @@ func (c *fakeClock) draining() {
 }
 
 // heldPool runs the fake action in-process, in both builds, and holds every delivery before the action starts
-// until release is called (or the delivery is cancelled, which kills the action).
-func heldPool(t *testing.T) (pool *exec.Pool, release func()) {
+// until release is called (or the delivery is cancelled, which kills the action). started receives once per
+// delivery held: the node holds its lease by then.
+func heldPool(t *testing.T) (pool *exec.Pool, release func(), started <-chan struct{}) {
 	t.Helper()
 	gate := make(chan struct{})
+	starts := make(chan struct{}, 64)
 	held := func(ctx context.Context, args, env []string, stdin io.Reader, stdout, stderr io.Writer) int {
+		starts <- struct{}{}
 		select {
 		case <-gate:
 		case <-ctx.Done():
@@ -351,5 +354,5 @@ func heldPool(t *testing.T) (pool *exec.Pool, release func()) {
 	}})
 	t.Cleanup(func() { _ = pool.Close() })
 	var once sync.Once
-	return pool, func() { once.Do(func() { close(gate) }) }
+	return pool, func() { once.Do(func() { close(gate) }) }, starts
 }

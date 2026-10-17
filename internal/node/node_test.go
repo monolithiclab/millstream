@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"math"
 	"slices"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -254,10 +255,11 @@ func TestRunRespectsSlots(t *testing.T) {
 
 func TestHeartbeatRenewsHeldLeases(t *testing.T) {
 	t.Parallel()
-	pool, release := heldPool(t)
+	pool, release, started := heldPool(t)
 	tr := newFakeTransport(assignment("dl_1", "echo", nil))
 	stop, clk := startNodeClock(t, tr, Options{Pool: pool})
 	await(t, tr.pulled, 1)
+	await(t, started, 1)
 	clk.fire(DefaultPullInterval) // the one slot is busy: no pull
 	clk.fire(DefaultHeartbeatInterval)
 	clk.fire(DefaultHeartbeatInterval)
@@ -286,12 +288,13 @@ func TestHeartbeatRenewsHeldLeases(t *testing.T) {
 func TestLostLeaseDropsResult(t *testing.T) {
 	t.Parallel()
 	var logs syncBuffer
-	pool, _ := heldPool(t) // never released: only the lost lease ends the delivery
+	pool, _, started := heldPool(t) // never released: only the lost lease ends the delivery
 	a := assignment("dl_1", "echo", nil)
 	tr := newFakeTransport(a)
 	tr.lose[a.Lease.Ref()] = true
 	stop, clk := startNodeClock(t, tr, Options{Pool: pool, Logger: newJSONLogger(&logs)})
 	await(t, tr.pulled, 1)
+	await(t, started, 1)
 	clk.fire(DefaultHeartbeatInterval)
 	await(t, tr.lost, 1)
 	if err := stop(); err != nil { // drains: returns once the cancelled delivery is gone
@@ -310,7 +313,7 @@ func TestLostLeaseDropsResult(t *testing.T) {
 func TestPullAndHeartbeatErrorsAreRetried(t *testing.T) {
 	t.Parallel()
 	var logs syncBuffer
-	pool, release := heldPool(t)
+	pool, release, started := heldPool(t)
 	tr := newFakeTransport(assignment("dl_1", "echo", nil))
 	tr.pullErr = errors.New("engine busy")
 	tr.hbErr = errors.New("engine busy")
@@ -318,6 +321,7 @@ func TestPullAndHeartbeatErrorsAreRetried(t *testing.T) {
 	clk.fire(DefaultHeartbeatInterval) // nothing held: no heartbeat call
 	clk.fire(DefaultPullInterval)      // the first pull failed: the next tick pulls again
 	await(t, tr.pulled, 1)
+	await(t, started, 1)
 	clk.fire(DefaultHeartbeatInterval) // fails
 	clk.fire(DefaultHeartbeatInterval) // renews
 	await(t, tr.beats, 2)
@@ -350,7 +354,7 @@ func stopAsync(stop func() error) <-chan error {
 
 func TestDrainWaitsForInFlight(t *testing.T) {
 	t.Parallel()
-	pool, release := heldPool(t)
+	pool, release, _ := heldPool(t)
 	tr := newFakeTransport(assignment("dl_1", "echo", nil), assignment("dl_2", "echo", nil))
 	stop, clk := startNodeClock(t, tr, Options{Slots: 1, Pool: pool})
 	await(t, tr.pulled, 1)
@@ -374,7 +378,7 @@ func TestDrainWaitsForInFlight(t *testing.T) {
 
 func TestDrainTimeoutAbandons(t *testing.T) {
 	t.Parallel()
-	pool, _ := heldPool(t) // never released
+	pool, _, _ := heldPool(t) // never released
 	tr := newFakeTransport(assignment("dl_1", "echo", nil))
 	stop, clk := startNodeClock(t, tr, Options{Pool: pool})
 	await(t, tr.pulled, 1)
@@ -394,7 +398,7 @@ func TestDrainTimeoutAbandons(t *testing.T) {
 // Cancelled with ErrAbandon, the node does not drain: it cancels its deliveries at once and reports none.
 func TestAbandonCancelsWithoutReporting(t *testing.T) {
 	t.Parallel()
-	pool, _ := heldPool(t) // never released: only the cancellation ends the delivery
+	pool, _, _ := heldPool(t) // never released: only the cancellation ends the delivery
 	tr := newFakeTransport(assignment("dl_1", "echo", nil))
 	n, err := New(tr, Options{Owner: "node-a", Pool: pool})
 	if err != nil {
@@ -453,13 +457,14 @@ func TestRealTimer(t *testing.T) {
 // are both renewed, and a heartbeat that reports one lost cancels that one alone.
 func TestSameDeliveryIDInTwoPipelines(t *testing.T) {
 	t.Parallel()
-	pool, release := heldPool(t)
+	pool, release, started := heldPool(t)
 	kept, lost := assignment("dl_1", "echo", nil), assignment("dl_1", "echo", nil)
 	lost.Lease.Pipeline = "other"
 	tr := newFakeTransport(kept, lost)
 	tr.lose[lost.Lease.Ref()] = true
 	stop, clk := startNodeClock(t, tr, Options{Slots: 2, Pool: pool})
 	await(t, tr.pulled, 2)
+	await(t, started, 2)
 	clk.fire(DefaultHeartbeatInterval)
 	if n := await(t, tr.beats, 1)[0]; n != 2 {
 		t.Fatalf("heartbeat renewed %d leases, want both", n)
@@ -474,5 +479,51 @@ func TestSameDeliveryIDInTwoPipelines(t *testing.T) {
 	defer tr.mu.Unlock()
 	if len(tr.dones) != 1 || tr.dones[0].Pipeline != "listings" || len(tr.fails) != 0 {
 		t.Fatalf("dones %+v, fails %+v; want the kept lease done, the lost one dropped", tr.dones, tr.fails)
+	}
+}
+
+// blockingPull is a transport whose pulls after the first block until released: a long poll.
+type blockingPull struct {
+	*fakeTransport
+	pulls   atomic.Int32
+	waiting chan struct{} // closed once a pull blocks
+	release chan struct{}
+}
+
+func (b *blockingPull) Pull(ctx context.Context, owner string, maxN int) ([]Assignment, error) {
+	if b.pulls.Add(1) == 2 {
+		close(b.waiting)
+		select {
+		case <-b.release:
+		case <-ctx.Done():
+		}
+	}
+	return b.fakeTransport.Pull(ctx, owner, maxN)
+}
+
+// The heartbeat runs on its own goroutine: a pull waiting on the engine never delays it. After each heartbeat the
+// node takes its interval anew, as a remote node adopts the one of the engine it registered with last.
+func TestHeartbeatBesidePull(t *testing.T) {
+	t.Parallel()
+	pool, release, started := heldPool(t)
+	tr := &blockingPull{fakeTransport: newFakeTransport(assignment("dl_1", "echo", nil)), waiting: make(chan struct{}),
+		release: make(chan struct{})}
+	stop, clk := startNodeClock(t, tr, Options{Pool: pool, Slots: 2,
+		Heartbeat: func() time.Duration { return 2 * time.Second }})
+	await(t, tr.pulled, 1)
+	await(t, started, 1)
+	clk.fire(DefaultPullInterval)
+	<-tr.waiting                       // the loop now waits in a pull that does not return
+	clk.fire(DefaultHeartbeatInterval) // renews, then takes the engine's interval
+	clk.fire(2 * time.Second)
+	clk.fire(2 * time.Second)
+	if got := await(t, tr.beats, 3); got[2] != 1 {
+		t.Errorf("leases per heartbeat = %v", got)
+	}
+	close(tr.release)
+	release()
+	await(t, tr.reported, 1)
+	if err := stop(); err != nil {
+		t.Fatalf("Run: %v", err)
 	}
 }
