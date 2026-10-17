@@ -603,6 +603,7 @@ func Test_errorCode(t *testing.T) {
 		{errUnavailable, 503, codeUnavailable},
 		{fmt.Errorf("pause: %w", store.ErrReadOnly), 503, codeUnavailable},
 		{fmt.Errorf("pause: %w", store.ErrWriteLost), 503, codeUnavailable},
+		{fmt.Errorf("pause: %w", store.ErrUnavailable), 503, codeUnavailable},
 		{&http.MaxBytesError{Limit: 1}, 413, codeTooLarge},
 		{json.Unmarshal([]byte("x"), new(int)), 500, codeInternal},
 	} {
@@ -718,7 +719,7 @@ func TestLineageAcrossPipelines(t *testing.T) {
 func TestNodeActions(t *testing.T) {
 	f := scratchFixture(t)
 	srv := f.server()
-	if err := f.st.RegisterNode(f.ctx, store.Node{ID: "gpu-1", Version: "v-old", Labels: map[string]string{"gpu": "true"},
+	if _, err := f.st.RegisterNode(f.ctx, store.Node{ID: "gpu-1", Version: "v-old", Labels: map[string]string{"gpu": "true"},
 		Runtimes: []string{"exec"}, Slots: 2}); err != nil {
 		t.Fatal(err)
 	}

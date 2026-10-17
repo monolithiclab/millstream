@@ -11,11 +11,13 @@ package nodeapi
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"net"
 	"net/http"
 	"net/url"
@@ -78,8 +80,7 @@ type ClientOptions struct {
 	// Env, Agents: the machine a delivery's action process is built on (node.Host).
 	Env    func(string) (string, bool)
 	Agents node.Agents
-	// PullWait is a pull's long poll; zero means DefaultPullWait. The node's loop waits for it, heartbeats included,
-	// so it stays well within the heartbeat interval.
+	// PullWait is a pull's long poll; zero means DefaultPullWait. The node heartbeats beside it.
 	PullWait time.Duration
 	// Logger receives the transport's own logs; nil discards them.
 	Logger *slog.Logger
@@ -131,6 +132,9 @@ func NewClient(opts ClientOptions) (*Client, error) {
 	if opts.Logger == nil {
 		opts.Logger = slog.New(slog.DiscardHandler)
 	}
+	if opts.Node.Nonce == "" {
+		opts.Node.Nonce = rand.Text() // this process's: a drain holds across a failover (nodewire.Register)
+	}
 	t := &Client{opts: opts, log: opts.Logger, fatal: make(chan struct{}),
 		pkgs: newPackages(opts.StateDir)}
 	for _, raw := range opts.Join {
@@ -178,12 +182,10 @@ func (t *Client) die(err error) error {
 	return err
 }
 
-// SetPullWait sets a pull's long poll, once the lease duration the engine registered the node with is known: it must
-// stay well within the node's heartbeat interval, since the node's loop waits for it.
-func (t *Client) SetPullWait(d time.Duration) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	t.opts.PullWait = max(d, 10*time.Millisecond)
+// HeartbeatInterval is the heartbeat interval under the lease duration of the engine the node registered with last
+// (node.Options.Heartbeat, node.HeartbeatFor).
+func (t *Client) HeartbeatInterval() time.Duration {
+	return node.HeartbeatFor(time.Duration(t.Registered().LeaseTTLMs) * time.Millisecond)
 }
 
 // Registered is what the engine answered the last registration.
@@ -283,7 +285,13 @@ func (t *Client) once(ctx context.Context, method string, base *url.URL, path st
 		*raw, err = io.ReadAll(resp.Body)
 		return err
 	}
-	return json.NewDecoder(resp.Body).Decode(out)
+	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
+		return fmt.Errorf("engine answered %d with an unreadable body: %w", resp.StatusCode, err)
+	}
+	if c, ok := out.(interface{ Check() error }); ok {
+		return c.Check()
+	}
+	return nil
 }
 
 func readAnswer(resp *http.Response) error {
@@ -456,9 +464,9 @@ func (t *Client) registerLocked(ctx context.Context) (nodewire.Registered, error
 // cannot run here (its action does not resolve on this node, its agent has no sandbox) is failed at once with its
 // class, and one whose package does not arrive as retryable.
 func (t *Client) Pull(ctx context.Context, owner string, maxN int) ([]node.Assignment, error) {
-	t.mu.Lock()
+	// The engine leases within what is left of the wait (Handler.pull): attemptTimeout above it is a hung
+	// connection's.
 	wait := t.opts.PullWait
-	t.mu.Unlock()
 	var res nodewire.Assignments
 	if err := t.call(ctx, http.MethodPost, nodewire.PathPull, nil,
 		nodewire.Pull{Node: owner, Max: maxN, WaitMs: wait.Milliseconds()}, &res, false,
@@ -529,14 +537,15 @@ func (t *Client) Heartbeat(ctx context.Context, owner string, refs []store.Lease
 	return nodewire.ToRefs(res.Lost), nil
 }
 
-// Done implements node.Transport, resending until the engine answers or ctx ends: a result buffered across a
-// reconnection or a failover, refused as stale when the lease ended meanwhile.
+// Done implements node.Transport, resending until the engine accepts it (nodewire.Ack: an empty answer, as a server
+// cut off mid-request may give, is no acceptance) or ctx ends: a result buffered across a reconnection or a
+// failover, refused as stale when the lease ended meanwhile.
 func (t *Client) Done(ctx context.Context, req store.DoneRequest) error {
 	return t.call(ctx, http.MethodPost, nodewire.PathDone, nil, nodewire.Done{
 		Node: t.opts.Node.Node, Lease: nodewire.FromRef(req.LeaseRef), Attempt: req.Attempt,
 		Outputs: nodewire.FromOutputs(req.Outputs), CostUSD: req.CostUSD, Artifacts: req.Artifacts,
 		Metrics: req.Metrics,
-	}, nil, true, attemptTimeout)
+	}, &nodewire.Ack{}, true, attemptTimeout)
 }
 
 // Fail implements node.Transport, resending as Done does.
@@ -545,12 +554,12 @@ func (t *Client) Fail(ctx context.Context, req store.FailRequest) error {
 		Node: t.opts.Node.Node, Lease: nodewire.FromRef(req.LeaseRef), Attempt: req.Attempt, Class: req.Class,
 		Message: req.Message, Retryable: req.Retryable, CostUSD: req.CostUSD, Unreported: req.Unreported,
 		Artifacts: req.Artifacts, Metrics: req.Metrics,
-	}, nil, true, attemptTimeout)
+	}, &nodewire.Ack{}, true, attemptTimeout)
 }
 
 // Leave tells the engine the node is leaving: the leases it still holds end at once.
 func (t *Client) Leave(ctx context.Context) error {
-	return t.call(ctx, http.MethodPost, nodewire.PathLeave, nil, nodewire.Leave{Node: t.opts.Node.Node}, nil, false,
+	return t.call(ctx, http.MethodPost, nodewire.PathLeave, nil, nodewire.Leave{Node: t.opts.Node.Node}, &nodewire.Ack{}, false,
 		attemptTimeout)
 }
 
@@ -568,7 +577,7 @@ func (t *Client) artifactURL(ctx context.Context, lease store.LeaseRef, op strin
 // transfer makes the request that moves an artifact: to the presigned URL as is, or to the engine's proxy with the
 // node token.
 func (t *Client) transfer(ctx context.Context, method string, u nodewire.URL, body io.Reader, size int64,
-	contentType string,
+	contentType string, header http.Header,
 ) (*http.Response, error) {
 	target := u.URL
 	if !u.Direct {
@@ -589,6 +598,7 @@ func (t *Client) transfer(ctx context.Context, method string, u nodewire.URL, bo
 		req.ContentLength = size
 		req.Header.Set("Content-Type", contentType)
 	}
+	maps.Copy(req.Header, header)
 	resp, err := t.opts.HTTP.Do(req)
 	if err != nil {
 		return nil, err
@@ -609,7 +619,7 @@ func (t *Client) OpenArtifact(ctx context.Context, lease store.LeaseRef, ref sto
 	if err != nil {
 		return nil, fmt.Errorf("open artifact %s: %w", ref.Name, err)
 	}
-	resp, err := t.transfer(ctx, http.MethodGet, u, nil, 0, "")
+	resp, err := t.transfer(ctx, http.MethodGet, u, nil, 0, "", nil)
 	if err != nil {
 		return nil, fmt.Errorf("open artifact %s: %w", ref.Name, err)
 	}
@@ -639,7 +649,11 @@ func (t *Client) PutArtifact(ctx context.Context, lease store.LeaseRef, name str
 	if u.Exists {
 		return ref, nil
 	}
-	resp, err := t.transfer(ctx, http.MethodPut, u, f, ref.Size, ref.Type)
+	var header http.Header
+	if u.Direct { // the presigned URL signs the content's checksum (artifacts.Presigner)
+		header = http.Header{artifacts.ChecksumHeader: {artifacts.ChecksumSHA256(ref.SHA256)}}
+	}
+	resp, err := t.transfer(ctx, http.MethodPut, u, f, ref.Size, ref.Type, header)
 	if err != nil {
 		return store.ArtifactRef{}, fmt.Errorf("put artifact %s: %w", name, err)
 	}

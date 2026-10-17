@@ -5,6 +5,8 @@ package s3
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"io"
 	"io/fs"
@@ -15,6 +17,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/monolithiclab/millstream/internal/artifacts"
 )
 
 // The store against a real S3-compatible server, so that the signatures are checked by someone else than their
@@ -131,20 +135,38 @@ func TestAgainstS3Server(t *testing.T) {
 	if resp.StatusCode != http.StatusOK || !bytes.Equal(got, content) {
 		t.Fatalf("presigned GET: %s, %d bytes", resp.Status, len(got))
 	}
-	sha := strings.Repeat("ab", 32)
-	put, err := st.PresignPut("outputs", sha, time.Minute)
+	// A presigned PUT writes the content it was issued for only: another body of the same length, or another
+	// length, is refused.
+	output := []byte("an output")
+	sum := sha256.Sum256(output)
+	sha := hex.EncodeToString(sum[:])
+	put, err := st.PresignPut("outputs", sha, int64(len(output)), time.Minute)
 	if err != nil {
 		t.Fatal(err)
 	}
-	req, _ := http.NewRequestWithContext(ctx, http.MethodPut, put, strings.NewReader("an output"))
-	req.Header.Set("Content-Type", "text/plain")
-	resp, err = http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatal(err)
+	presignedPut := func(body []byte) int {
+		t.Helper()
+		req, _ := http.NewRequestWithContext(ctx, http.MethodPut, put, bytes.NewReader(body))
+		req.Header.Set("Content-Type", "text/plain")
+		req.Header.Set(artifacts.ChecksumHeader, artifacts.ChecksumSHA256(sha))
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = resp.Body.Close()
+		return resp.StatusCode
 	}
-	_ = resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("presigned PUT: %s", resp.Status)
+	if code := presignedPut([]byte("an outpuT")); code < 400 {
+		t.Fatalf("presigned PUT of another body of the same length: %d", code)
+	}
+	if code := presignedPut([]byte("an output, longer")); code < 400 {
+		t.Fatalf("presigned PUT of another length: %d", code)
+	}
+	if ok, _ := st.Exists(ctx, "outputs", sha); ok {
+		t.Fatal("a refused presigned PUT stored something")
+	}
+	if code := presignedPut(output); code != http.StatusOK {
+		t.Fatalf("presigned PUT: %d", code)
 	}
 	if ok, _ := st.Exists(ctx, "outputs", sha); !ok {
 		t.Fatal("the presigned PUT stored nothing")

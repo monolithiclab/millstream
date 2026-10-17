@@ -69,9 +69,9 @@ func TestImports(t *testing.T) {
 		t.Fatalf("import run vars = %v from %v", run.Vars, run.VarSources)
 	}
 
-	// The copy's artifact is the producer's file, copied into the consumer's directory on first open; a pipeline
-	// that holds no reference to it gets nothing.
-	r, err := v.e.OpenArtifact(v.ctx, store.LeaseRef{Pipeline: "deal"}, ref)
+	// The copy's artifact is the producer's file, copied into the consumer's directory on first open, from the
+	// pipeline the copy came from only.
+	r, err := OpenArtifact(v.ctx, v.e.opts.Artifacts, "deal", "src", ref)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -81,7 +81,10 @@ func TestImports(t *testing.T) {
 		t.Fatalf("artifact content %q", b)
 	}
 	if _, err := v.e.OpenArtifact(v.ctx, store.LeaseRef{Pipeline: "other"}, ref); !errors.Is(err, fs.ErrNotExist) {
-		t.Fatalf("an artifact of a pipeline without a reference: %v", err)
+		t.Fatalf("an artifact of another pipeline: %v", err)
+	}
+	if _, err := OpenArtifact(v.ctx, v.e.opts.Artifacts, "other", "", ref); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("an artifact of another pipeline, no copy: %v", err)
 	}
 
 	// The back-fill selects the producer's items on the stream, leaving the expired out.

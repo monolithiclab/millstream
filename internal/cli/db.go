@@ -61,7 +61,7 @@ type storeMode int
 const (
 	// readStore only reads: on Postgres without the leadership lock, its units refused.
 	readStore storeMode = iota
-	// writeStore changes state from this process: on Postgres only with --direct, taking the lock.
+	// writeStore changes state from this process: on Postgres only with --direct, taking the lock if it is free.
 	writeStore
 	// engineStore runs an engine (run, serve): on Postgres it takes the lock, waiting while another engine has it.
 	engineStore
@@ -86,6 +86,7 @@ func openStore(ctx context.Context, rt *Runtime, env *pipeline.Environment, mode
 			ServerEnv + ") to go through its API, or --direct to take the leadership lock while no engine runs")
 	}
 	pg.CheckEvery, pg.Keepalive = env.Engine.LockCheck, env.Engine.Keepalive
+	pg.TryLock = mode == writeStore // --direct: fail naming the active engine rather than wait for it
 	return stores.OpenLeader(ctx, env.Store, rt.DB, rt.Env, pg)
 }
 

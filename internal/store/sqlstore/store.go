@@ -94,6 +94,9 @@ type Dialect struct {
 	// statement once per connection, which costs more than running most of them. Postgres's driver caches the
 	// statements it prepares itself.
 	Prepare bool
+	// Unavailable reports a driver error that means the database cannot serve now (store.ErrUnavailable): units
+	// and reads failing with one wrap it. Nil classifies nothing.
+	Unavailable func(error) bool
 }
 
 // Conn is the write connection: a *sql.DB holding one connection (SQLite), or a *sql.Conn, one session that

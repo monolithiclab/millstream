@@ -537,7 +537,7 @@ func (s *Store) deadlinesDue(ctx context.Context) (bool, error) {
 		now, args = "?", []any{store.ReviewOpen, formatTime(s.opts.Now()), store.SampleOpen, formatTime(s.opts.Now())}
 	}
 	var due bool
-	err := s.read.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM reviews WHERE state = ? AND deadline <= `+now+`)
+	err := s.read.Row(ctx, `SELECT EXISTS (SELECT 1 FROM reviews WHERE state = ? AND deadline <= `+now+`)
 		OR EXISTS (SELECT 1 FROM review_samples WHERE state = ? AND deadline <= `+now+`)`, args...).Scan(&due)
 	if err != nil {
 		return false, fmt.Errorf("review timeouts: %w", err)

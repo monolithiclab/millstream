@@ -147,7 +147,7 @@ func TestPrometheus(t *testing.T) {
 		{Pipeline: "q", Name: DeliveryWork, Minute: m0, Count: 1, Sum: 0.25, Min: 0.25, Max: 0.25},
 	}
 	var buf bytes.Buffer
-	if err := Prometheus(&buf, rollups); err != nil {
+	if err := Prometheus(&buf, rollups, nil); err != nil {
 		t.Fatal(err)
 	}
 	golden := filepath.Join("testdata", "prometheus.txt")

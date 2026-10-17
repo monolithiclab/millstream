@@ -641,7 +641,7 @@ func (s *Server) getItemArtifact(w http.ResponseWriter, r *http.Request) error {
 	if i < 0 {
 		return fmt.Errorf("artifact %s of item %s: %w", name, it.ID, store.ErrNotFound)
 	}
-	return s.serveArtifact(w, r, it.Pipeline, it.Artifacts[i])
+	return s.serveArtifact(w, r, it.Pipeline, it.ParentPipeline, it.Artifacts[i])
 }
 
 // delivery returns the delivery the request names.
@@ -763,7 +763,7 @@ func (s *Server) getAttemptArtifact(w http.ResponseWriter, r *http.Request) erro
 	}
 	for _, a := range arts {
 		if a.Attempt == attempt && a.Name == r.PathValue("name") {
-			return s.serveArtifact(w, r, name, a.ArtifactRef)
+			return s.serveArtifact(w, r, name, "", a.ArtifactRef)
 		}
 	}
 	return fmt.Errorf("artifact %s of attempt %d of delivery %s: %w", r.PathValue("name"), attempt, d.ID,
@@ -777,12 +777,13 @@ var inlineTypes = []string{"application/json", "application/pdf", "image/gif", "
 
 // serveArtifact answers an artifact's content with its media type. Artifacts are what actions wrote: they are
 // served under a sandbox policy, without sniffing, and as an attachment unless their type is a passive one.
-func (s *Server) serveArtifact(w http.ResponseWriter, r *http.Request, pipelineName string, ref store.ArtifactRef,
+func (s *Server) serveArtifact(w http.ResponseWriter, r *http.Request, pipelineName, from string,
+	ref store.ArtifactRef,
 ) error {
 	if s.opts.Artifacts == nil {
 		return fmt.Errorf("artifacts: no artifact store: %w", errUnavailable)
 	}
-	f, err := engine.OpenArtifact(r.Context(), s.opts.Store, s.opts.Artifacts, pipelineName, ref)
+	f, err := engine.OpenArtifact(r.Context(), s.opts.Artifacts, pipelineName, from, ref)
 	if errors.Is(err, fs.ErrNotExist) {
 		return fmt.Errorf("artifact %s: %w: %w", ref.Name, err, store.ErrNotFound)
 	}

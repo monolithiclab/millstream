@@ -104,6 +104,9 @@ runtime their action needs; a step no node can take is listed as unschedulable o
   `POST /api/v1/nodes/{id}/drain` and `/revoke` do. `millstream nodes revoke <id>` refuses an id for good and ends
   its leases at once. To rotate the node token, restart the engines with the new one: every node is refused and
   exits until it is restarted with it.
+- **A compromised node.** Revoking it is not enough: the node token is the deployment's, and whoever holds the
+  host holds it, so they can register again under a new id. Revoke the node, then rotate the node token and give
+  the new one to every other node.
 
 ## Signing in and monitoring
 
@@ -134,7 +137,8 @@ millstream disable deal-flow                   # until: millstream resume deal-f
 `apply` checks each package and every other pipeline of the deployment before it uploads anything; the server keeps
 each package by content hash and writes it under `packages/`, beside the local artifact store, when a delivery first
 needs it. On Postgres, a command that changes state goes through `--server` (the active engine is the only writer)
-unless `--direct` takes the leadership lock itself while no engine runs; `status`, `tail`, `inbox list`, `metrics`
+unless `--direct` takes the leadership lock itself while no engine runs (with one running, it fails at once, naming
+the active engine); `status`, `tail`, `inbox list`, `metrics`
 and the other commands that only read open the database read-only, beside the running engine, with the same
 environment file.
 
@@ -233,13 +237,20 @@ A second `millstream serve` on the same Postgres database, with the same environ
   to its https address: the API answers requests naming that host or a loopback one, takes state-changing requests
   from that origin, and marks the session cookie `Secure`. Or let the engine serve HTTPS itself with
   `tls: { cert, key }` (PEM files, relative to the environment file). Never expose it as plain HTTP. Tokens are
-  compared in constant time and never logged.
+  compared in constant time and never logged. `auth.token` and `node.token` hold at least 32 characters: the
+  engines and nodes refuse to start with a shorter one, and `millstream check` reports it. Generate each with
+  `openssl rand -hex 32`.
 - **Webhook tokens.** Each webhook trigger has its own token, stored as a hash and compared in constant time; it
   admits that trigger's requests only, never the API. Rotate it with `millstream trigger token --rotate` or the UI
   when it may have leaked.
+- **Failed attempts.** Ten failed sign-ins or webhook token checks from one address within a minute refuse that
+  address (`429`, with `Retry-After`) for the rest of the minute. Behind a reverse proxy every client shares the
+  proxy's address, so a flood of wrong tokens briefly refuses everyone's sign-ins and webhooks; rate limit at the
+  proxy as well.
 - **Node token and TLS.** Nodes present the deployment's node token, over TLS except on loopback (spec section 15.7).
   A node can fetch packages and artifacts only for the deliveries it holds. `millstream nodes revoke <id>` refuses
-  a node; rotating the token disconnects every node until it has the new one (see Remote nodes).
+  a node; rotating the token disconnects every node until it has the new one (see Remote nodes). A compromised
+  node requires both: revoke it, then rotate the node token, since its host holds the token any new id joins with.
 - **Secrets** live in `.env` or `/etc/millstream/*.env`, mode 0600, never in `millstream.yaml`, an image or Git.
 - **Supply chain.** Base images are pinned by digest (`make lint-pins` checks every `FROM`), the release build runs
   `go mod verify`, each archive has an SBOM, and checksums and images are signed with cosign (spec section 15.5).

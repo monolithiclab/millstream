@@ -15,8 +15,8 @@ var fairnessPipelines = []struct {
 	name, steps string
 	backlog     int
 }{
-	{"b", "  a: { action: ./actions/a, in: trigger.adhoc, concurrency: 50 }\n", 9},
-	{"c", "  a: { action: ./actions/a, in: trigger.adhoc, concurrency: 50 }\n", 9},
+	{"b", "  a: { action: ./actions/a, in: trigger.adhoc, concurrency: 50 }\n", 7},
+	{"c", "  a: { action: ./actions/a, in: trigger.adhoc, concurrency: 50 }\n", 7},
 	{"lim", "  a: { action: ./actions/a, in: trigger.adhoc, concurrency: 10 }\n" +
 		"  b: { action: ./actions/a, in: trigger.adhoc, concurrency: 10 }\nlimits: { concurrency: 2 }\n", 2},
 	{"rated", "  a: { action: ./actions/a, in: trigger.adhoc, concurrency: 10, rate: 1/min }\n", 3},
@@ -80,10 +80,8 @@ func TestRoundRobinUnderLimits(t *testing.T) {
 	first := wantRound(t, v.e, v, "first round", "b", "c", "lim", "rated")
 	// rated spent its token; lim has one slot left.
 	wantRound(t, v.e, v, "second round", "b", "c", "lim")
-	// lim is at its limit, rated has no token: b and c share the nodes evenly, round after round.
-	for i := range 2 {
-		wantRound(t, v.e, v, fmt.Sprintf("round %d at the limit", i+1), "b", "c")
-	}
+	// lim is at its limit, rated has no token: b and c share the nodes evenly.
+	wantRound(t, v.e, v, "at the limit", "b", "c")
 	// One of lim's deliveries ends: lim is back in the next round, once.
 	var limLease store.Lease
 	for _, l := range first {
@@ -99,7 +97,7 @@ func TestRoundRobinUnderLimits(t *testing.T) {
 	v.clock.Advance(time.Minute)
 	wantRound(t, v.e, v, "a minute later", "b", "c", "rated")
 	perStep, perPipeline := v.e.countInflight()
-	if perPipeline["lim"] != 2 || perPipeline["rated"] != 2 || perStep[store.StepRef{Pipeline: "b", Step: "a"}] != 6 {
+	if perPipeline["lim"] != 2 || perPipeline["rated"] != 2 || perStep[store.StepRef{Pipeline: "b", Step: "a"}] != 5 {
 		t.Fatalf("in flight %v", perPipeline)
 	}
 

@@ -152,6 +152,7 @@ type Server struct {
 	log      *slog.Logger
 	hooks    http.Handler // the webhook triggers, served by Handler outside the browser guards
 	tokenSum [32]byte     // the SHA-256 of Auth.Token
+	failures *failures    // failed sign-ins and webhook token checks, by remote address
 }
 
 // handler is a route's handler: an error is answered by writeError.
@@ -263,7 +264,7 @@ func New(opts Options) (*Server, error) {
 		}
 		opts.Auth = &a
 	}
-	s := &Server{opts: opts, log: opts.Logger}
+	s := &Server{opts: opts, log: opts.Logger, failures: newFailures()}
 	if opts.Auth != nil {
 		s.tokenSum = sha256.Sum256([]byte(opts.Auth.Token))
 	}
@@ -394,6 +395,10 @@ func Handler(s *Server, ui http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h := w.Header()
 		h.Set("X-Frame-Options", "DENY")
+		if dotSegments(r.URL.Path) {
+			writeErrorBody(w, http.StatusNotFound, codeNotFound, "a path with . or .. segments names nothing")
+			return
+		}
 		if mount := s.serviceMount(r.URL.Path); mount != nil { // not a browser: no Host guard, no auth.token
 			h.Set("Content-Security-Policy", apiPolicy)
 			h.Set("X-Content-Type-Options", "nosniff")
@@ -413,6 +418,18 @@ func Handler(s *Server, ui http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// dotSegments reports whether a path, decoded, holds a . or .. segment. A browser resolves them before it sends a
+// request; sent as such (or escaped, %2e%2e), a path under one mount would resolve to another path once a mux cleans
+// it, so Handler refuses it before choosing where it goes.
+func dotSegments(path string) bool {
+	for seg := range strings.SplitSeq(path, "/") {
+		if seg == "." || seg == ".." {
+			return true
+		}
+	}
+	return false
 }
 
 // serviceMount returns what serves path when a service rather than a browser calls it, nil otherwise: the node
@@ -502,6 +519,7 @@ const (
 	codeForbidden            = "forbidden"
 	codeUnauthorized         = "unauthorized"
 	codeUnsupportedMediaType = "unsupportedMediaType"
+	codeTooManyRequests      = "tooManyRequests"
 	codeInternal             = "internal"
 )
 
@@ -526,8 +544,7 @@ func errorCode(err error) (int, string) {
 		return http.StatusRequestEntityTooLarge, codeTooLarge
 	case errors.Is(err, store.ErrInvalid), errors.Is(err, engine.ErrFiringConfig):
 		return http.StatusBadRequest, codeInvalid
-	case errors.Is(err, errUnavailable), errors.Is(err, store.ErrClosed), errors.Is(err, context.Canceled),
-		errors.Is(err, context.DeadlineExceeded), errors.Is(err, store.ErrReadOnly), errors.Is(err, store.ErrWriteLost):
+	case errors.Is(err, errUnavailable), store.Retryable(err):
 		return http.StatusServiceUnavailable, codeUnavailable
 	}
 	return http.StatusInternalServerError, codeInternal
@@ -555,6 +572,9 @@ func (s *Server) refuseStandby(w http.ResponseWriter, r *http.Request) {
 // writeError answers err. An internal error's message is logged, not sent: it may name the store's internals.
 func (s *Server) writeError(w http.ResponseWriter, r *http.Request, err error) {
 	status, code := errorCode(err)
+	if status == http.StatusServiceUnavailable {
+		w.Header().Set("Retry-After", "1")
+	}
 	msg := err.Error()
 	if code == codeInternal {
 		s.log.Error("api", "method", r.Method, "path", r.URL.Path, "error", msg)

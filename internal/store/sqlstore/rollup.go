@@ -97,6 +97,21 @@ func (w *wtx) rollup() (int, error) {
 			k.pipeline, k.name, k.labels, k.minute, a.count, a.sum, a.min, a.max); err != nil {
 			return 0, fmt.Errorf("roll up %s: %w", k.name, err)
 		}
+		// The running totals: a later minute replaces the latest one, the same minute adds to it.
+		if _, err := w.exec(`INSERT INTO metric_totals (pipeline, name, labels_json, count, sum, last_minute,
+			last_count, last_sum) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (pipeline, name, labels_json) DO UPDATE SET
+			count = metric_totals.count + excluded.count, sum = metric_totals.sum + excluded.sum,
+			last_minute = CASE WHEN excluded.last_minute > metric_totals.last_minute THEN excluded.last_minute
+				ELSE metric_totals.last_minute END,
+			last_count = CASE WHEN excluded.last_minute > metric_totals.last_minute THEN excluded.last_count
+				WHEN excluded.last_minute = metric_totals.last_minute THEN metric_totals.last_count + excluded.last_count
+				ELSE metric_totals.last_count END,
+			last_sum = CASE WHEN excluded.last_minute > metric_totals.last_minute THEN excluded.last_sum
+				WHEN excluded.last_minute = metric_totals.last_minute THEN metric_totals.last_sum + excluded.last_sum
+				ELSE metric_totals.last_sum END`,
+			k.pipeline, k.name, k.labels, a.count, a.sum, k.minute, a.count, a.sum); err != nil {
+			return 0, fmt.Errorf("total %s: %w", k.name, err)
+		}
 	}
 	_, err = w.exec(`INSERT INTO projections (name, seq) VALUES (?, ?) ON CONFLICT (name) DO UPDATE SET seq = excluded.seq`,
 		rollupCursor, cursor)
@@ -226,15 +241,11 @@ func (s *Store) MetricRollups(ctx context.Context, f store.MetricFilter) ([]stor
 	return out, nil
 }
 
-// MetricTotals returns every series of the rollups over every minute: their sums, and their latest minute's.
+// MetricTotals returns every series' running totals, which the rollup keeps beside its minutes and retention
+// leaves: their sums over every minute rolled up, and their latest minute's.
 func (s *Store) MetricTotals(ctx context.Context) ([]store.MetricTotal, error) {
-	out, err := scan(ctx, s.read, `SELECT t.pipeline, t.name, t.labels_json, t.c, t.s, r.minute, r.count, r.sum
-		FROM (SELECT pipeline, name, labels_json, CAST(SUM(count) AS bigint) AS c, SUM(sum) AS s,
-			MAX(minute) AS m
-			FROM metric_rollups GROUP BY pipeline, name, labels_json) t
-		JOIN metric_rollups r ON r.pipeline = t.pipeline AND r.name = t.name AND r.labels_json = t.labels_json
-			AND r.minute = t.m
-		ORDER BY t.pipeline, t.name, t.labels_json`, nil,
+	out, err := scan(ctx, s.read, `SELECT pipeline, name, labels_json, count, sum, last_minute, last_count, last_sum
+		FROM metric_totals ORDER BY pipeline, name, labels_json`, nil,
 		func(rows *sql.Rows) (store.MetricTotal, error) {
 			var m store.MetricTotal
 			var labels string

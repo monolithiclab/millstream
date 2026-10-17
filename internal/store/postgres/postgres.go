@@ -40,6 +40,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jackc/pgx/v5/stdlib"
 
@@ -69,7 +70,13 @@ type Options struct {
 	// Waiting, when set, is called once when Open finds the leadership lock held by another engine, before it waits
 	// for it: the moment a standby starts waiting.
 	Waiting func()
+	// TryLock makes Open fail with ErrLocked, naming the engine that holds the leadership lock, instead of waiting
+	// for it: a command writing from its own process (--direct) while an engine runs.
+	TryLock bool
 }
+
+// ErrLocked means another engine holds the leadership lock (Options.TryLock).
+var ErrLocked = errors.New("the leadership lock is held")
 
 // Defaults for zero Options.
 const (
@@ -122,6 +129,20 @@ var dialect = sqlstore.Dialect{
 		}
 		return "SELECT " + value + " FROM " + jsonEach("CAST(? AS jsonb)")
 	},
+	Unavailable: unavailable,
+}
+
+// unavailable reports an error meaning the server cannot serve now (store.ErrUnavailable): insufficient resources
+// (SQLSTATE class 53, too many connections among them), a connection exception (class 08), an administrator
+// shutdown (57P01) or a server still starting (57P03), or no connection made at all.
+func unavailable(err error) bool {
+	var pe *pgconn.PgError
+	if errors.As(err, &pe) {
+		return strings.HasPrefix(pe.Code, "53") || strings.HasPrefix(pe.Code, "08") || pe.Code == "57P01" ||
+			pe.Code == "57P03"
+	}
+	var ce *pgconn.ConnectError
+	return errors.As(err, &ce)
 }
 
 func jsonEach(expr string) string { return "jsonb_array_elements_text(" + expr + ") AS je(value)" }
@@ -215,6 +236,9 @@ func (s *Store) open(ctx context.Context, dsn string, opts Options) error {
 	var took bool
 	if err := s.conn.QueryRowContext(ctx, `SELECT pg_try_advisory_lock($1)`, s.key).Scan(&took); err != nil {
 		return fmt.Errorf("take the leadership lock: %w", redact(err, secrets...))
+	}
+	if !took && opts.TryLock {
+		return s.locked(ctx)
 	}
 	if !took {
 		if opts.Waiting != nil {
@@ -343,4 +367,20 @@ func Rebind(query string) string {
 		b.WriteByte(c)
 	}
 	return b.String()
+}
+
+// locked is the error of a TryLock Open that found the lock held, naming the active engine as the leadership table
+// records it.
+func (s *Store) locked(ctx context.Context) error {
+	var id, addr string
+	err := s.conn.QueryRowContext(ctx, `SELECT engine_id, address FROM leadership WHERE lock_key = $1`, s.key).
+		Scan(&id, &addr)
+	switch {
+	case err == nil && addr != "":
+		return fmt.Errorf("%w by engine %s at %s: go through its API (--server), or stop it first", ErrLocked, id, addr)
+	case err == nil:
+		return fmt.Errorf("%w by engine %s: go through its API (--server), or stop it first", ErrLocked, id)
+	}
+	return fmt.Errorf("%w by another session: go through the active engine's API (--server), or stop it first",
+		ErrLocked)
 }

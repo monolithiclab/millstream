@@ -118,6 +118,17 @@ CREATE INDEX items_run ON items (pipeline, run_id);
 CREATE INDEX items_expiry ON items (pipeline, stream, ts) WHERE tombstone = '';
 CREATE INDEX items_key ON items (key) WHERE key <> '';
 
+-- The lineage's edges, written when an item is inserted: one per parent, the parent's pipeline first (a copy's
+-- parents are in the producer's pipeline). A purge walks them down from the items it names, reading the rows of its
+-- lineage only (spec section 9.3).
+CREATE TABLE item_parents (
+    pipeline       TEXT NOT NULL,
+    parent_id      TEXT NOT NULL,
+    child_pipeline TEXT NOT NULL,
+    child_id       TEXT NOT NULL,
+    PRIMARY KEY (pipeline, parent_id, child_pipeline, child_id)
+);
+
 -- attempt_base is the attempt number before a dead-letter replay: attempt numbers are never reused (attempt
 -- artifacts are keyed by them), and the retry budget counts attempt - attempt_base. reserved_usd is the budget
 -- reservation of a leased agent delivery (spec section 5.9). Timings: created_at (reset by a dead-letter replay),
@@ -267,6 +278,20 @@ CREATE TABLE metric_rollups (
 );
 CREATE INDEX metric_rollups_minute ON metric_rollups (minute); -- rollup retention
 
+-- Each series' running totals over every minute it was rolled up, written with its rollups: retention deletes old
+-- minutes, never these, so a Prometheus counter never falls back.
+CREATE TABLE metric_totals (
+    pipeline    TEXT NOT NULL,
+    name        TEXT NOT NULL,
+    labels_json TEXT NOT NULL,
+    count       INTEGER NOT NULL,
+    sum         REAL NOT NULL,
+    last_minute TEXT NOT NULL,    -- the latest minute rolled up, UTC
+    last_count  INTEGER NOT NULL, -- and its count and sum: a gauge shows their mean
+    last_sum    REAL NOT NULL,
+    PRIMARY KEY (pipeline, name, labels_json)
+);
+
 -- id is the insight's fingerprint (spec section 11.1), so a recurring problem updates its row.
 CREATE TABLE insights (
     pipeline      TEXT NOT NULL,
@@ -335,6 +360,7 @@ CREATE TABLE review_samples (
 );
 CREATE INDEX review_samples_open ON review_samples (state, inbox);
 CREATE INDEX review_samples_deadline ON review_samples (state, deadline);
+CREATE INDEX review_samples_item ON review_samples (pipeline, item_id);
 
 -- Remote nodes (spec section 5.10): what each registered with, its state and when the engine last heard from it
 -- (registration, heartbeats). A revoked id is refused from then on (spec section 15.7), so its row outlives it.
@@ -346,7 +372,8 @@ CREATE TABLE nodes (
     slots          INTEGER NOT NULL DEFAULT 0,
     state          TEXT NOT NULL,              -- active | draining | revoked
     registered_at  TEXT,                       -- NULL for an id revoked before it registered
-    last_heartbeat TEXT
+    last_heartbeat TEXT,
+    nonce          TEXT NOT NULL DEFAULT '' -- the registering process's: a drain holds while it registers again
 );
 
 -- Webhook trigger tokens (spec section 4.6): the SHA-256 of each token, hex, never the token. A token outlives the

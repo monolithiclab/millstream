@@ -71,18 +71,35 @@ func (s signer) sign(req *http.Request, payloadHash string, t time.Time) {
 		", Signature="+sig)
 }
 
-// presign returns u with the query that authorizes method on it, for expires from t, its host the only signed
-// header and its payload unsigned.
-func (s signer) presign(method string, u *url.URL, expires time.Duration, t time.Time) string {
+// presign returns u with the query that authorizes method on it, for expires from t, its payload unsigned. The
+// signed headers are its host and those of header (lower-case names), which the request must then send with the
+// same values: a PUT signing its Content-Length and x-amz-checksum-sha256 writes that content only.
+func (s signer) presign(method string, u *url.URL, header map[string]string, expires time.Duration,
+	t time.Time,
+) string {
 	t = t.UTC()
+	names := []string{"host"}
+	for n := range header {
+		names = append(names, n)
+	}
+	slices.Sort(names)
+	var canon strings.Builder
+	for _, n := range names {
+		v, ok := header[n]
+		if !ok {
+			v = u.Host
+		}
+		canon.WriteString(n + ":" + strings.TrimSpace(v) + "\n")
+	}
+	signed := strings.Join(names, ";")
 	q := u.Query()
 	q.Set("X-Amz-Algorithm", algorithm)
 	q.Set("X-Amz-Credential", s.accessKey+"/"+s.scope(t))
 	q.Set("X-Amz-Date", t.UTC().Format(amzDateLayout))
 	q.Set("X-Amz-Expires", strconv.FormatInt(int64(expires/time.Second), 10))
-	q.Set("X-Amz-SignedHeaders", "host")
-	cr := strings.Join([]string{method, encodePath(u.EscapedPath()), canonicalQuery(q), "host:" + u.Host + "\n",
-		"host", unsignedPayload}, "\n")
+	q.Set("X-Amz-SignedHeaders", signed)
+	cr := strings.Join([]string{method, encodePath(u.EscapedPath()), canonicalQuery(q), canon.String(), signed,
+		unsignedPayload}, "\n")
 	out := *u
 	out.RawQuery = canonicalQuery(q) + "&X-Amz-Signature=" + s.signature(cr, t)
 	return out.String()

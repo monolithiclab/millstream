@@ -317,6 +317,10 @@ func TestRetainEventsTranscriptsRollups(t *testing.T) {
 	storetest.TestRetainEventsTranscriptsRollups(t, memoryStore)
 }
 
+func TestMetricTotalsSurviveRetention(t *testing.T) {
+	storetest.TestMetricTotalsSurviveRetention(t, memoryStore)
+}
+
 func TestPurgeAcrossImports(t *testing.T) {
 	storetest.TestPurgeAcrossImports(t, memoryStore)
 }

@@ -49,13 +49,40 @@ func TestSignHeaderExamples(t *testing.T) {
 
 func TestPresignExample(t *testing.T) {
 	u, _ := url.Parse("https://examplebucket.s3.amazonaws.com/test.txt")
-	got := example.presign(http.MethodGet, u, 24*time.Hour, exampleTime)
+	got := example.presign(http.MethodGet, u, nil, 24*time.Hour, exampleTime)
 	want := "https://examplebucket.s3.amazonaws.com/test.txt?X-Amz-Algorithm=AWS4-HMAC-SHA256" +
 		"&X-Amz-Credential=AKIAIOSFODNN7EXAMPLE%2F20130524%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Date=20130524T000000Z" +
 		"&X-Amz-Expires=86400&X-Amz-SignedHeaders=host" +
 		"&X-Amz-Signature=aeeed9bbccd4d02ee5c0109b86d86835f995330da4c265957d157751f604d404"
 	if got != want {
 		t.Fatalf("presigned URL\n got %s\nwant %s", got, want)
+	}
+}
+
+// A presigned PUT signs the headers it is given beside the host: the canonical request is the documented one, its
+// headers sorted by name, and a request sending another value of one of them no longer matches the signature.
+func TestPresignSignedHeaders(t *testing.T) {
+	u, _ := url.Parse("https://examplebucket.s3.amazonaws.com/test.txt")
+	header := map[string]string{"x-amz-checksum-sha256": "47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=",
+		"content-length": "0"}
+	got, _ := url.Parse(example.presign(http.MethodPut, u, header, time.Hour, exampleTime))
+	q := got.Query()
+	if q.Get("X-Amz-SignedHeaders") != "content-length;host;x-amz-checksum-sha256" {
+		t.Fatalf("X-Amz-SignedHeaders = %q", q.Get("X-Amz-SignedHeaders"))
+	}
+	cr := "PUT\n/test.txt\nX-Amz-Algorithm=AWS4-HMAC-SHA256" +
+		"&X-Amz-Credential=AKIAIOSFODNN7EXAMPLE%2F20130524%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Date=20130524T000000Z" +
+		"&X-Amz-Expires=3600&X-Amz-SignedHeaders=content-length%3Bhost%3Bx-amz-checksum-sha256\n" +
+		"content-length:0\nhost:examplebucket.s3.amazonaws.com\n" +
+		"x-amz-checksum-sha256:47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=\n\n" +
+		"content-length;host;x-amz-checksum-sha256\nUNSIGNED-PAYLOAD"
+	if want := example.signature(cr, exampleTime); q.Get("X-Amz-Signature") != want {
+		t.Fatalf("X-Amz-Signature = %s, want %s", q.Get("X-Amz-Signature"), want)
+	}
+	header["content-length"] = "1"
+	if other, _ := url.Parse(example.presign(http.MethodPut, u, header, time.Hour, exampleTime)); other.Query().Get(
+		"X-Amz-Signature") == q.Get("X-Amz-Signature") {
+		t.Fatal("the signature does not cover the signed headers' values")
 	}
 }
 
@@ -72,7 +99,7 @@ func TestURIEncode(t *testing.T) {
 func TestSignInAnotherZone(t *testing.T) {
 	u, _ := url.Parse("https://examplebucket.s3.amazonaws.com/test.txt")
 	paris := exampleTime.In(time.FixedZone("CEST", 2*3600))
-	if example.presign(http.MethodGet, u, 24*time.Hour, paris) != example.presign(http.MethodGet, u, 24*time.Hour, exampleTime) {
+	if example.presign(http.MethodGet, u, nil, 24*time.Hour, paris) != example.presign(http.MethodGet, u, nil, 24*time.Hour, exampleTime) {
 		t.Fatal("the signature depends on the clock's zone")
 	}
 }

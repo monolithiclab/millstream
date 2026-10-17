@@ -124,6 +124,17 @@ CREATE INDEX items_run ON items (pipeline, run_id);
 -- Retention scans a stream's items by age; purge finds the items of a key.
 CREATE INDEX items_expiry ON items (pipeline, stream, ts) WHERE tombstone = '';
 CREATE INDEX items_key ON items (key) WHERE key <> '';
+
+-- The lineage's edges, written when an item is inserted: one per parent, the parent's pipeline first (a copy's
+-- parents are in the producer's pipeline). A purge walks them down from the items it names, reading the rows of its
+-- lineage only (spec section 9.3).
+CREATE TABLE item_parents (
+    pipeline       TEXT NOT NULL,
+    parent_id      TEXT NOT NULL,
+    child_pipeline TEXT NOT NULL,
+    child_id       TEXT NOT NULL,
+    PRIMARY KEY (pipeline, parent_id, child_pipeline, child_id)
+);
 CREATE INDEX items_rowid ON items (rowid);
 
 -- attempt_base is the attempt number before a dead-letter replay: attempt numbers are never reused (attempt
@@ -278,6 +289,20 @@ CREATE TABLE metric_rollups (
 );
 CREATE INDEX metric_rollups_minute ON metric_rollups (minute); -- rollup retention
 
+-- Each series' running totals over every minute it was rolled up, written with its rollups: retention deletes old
+-- minutes, never these, so a Prometheus counter never falls back.
+CREATE TABLE metric_totals (
+    pipeline    text NOT NULL,
+    name        text NOT NULL,
+    labels_json text NOT NULL,
+    count       bigint NOT NULL,
+    sum         double precision NOT NULL,
+    last_minute timestamptz NOT NULL, -- the latest minute rolled up
+    last_count  bigint NOT NULL,      -- and its count and sum: a gauge shows their mean
+    last_sum    double precision NOT NULL,
+    PRIMARY KEY (pipeline, name, labels_json)
+);
+
 -- id is the insight's fingerprint (spec section 11.1), so a recurring problem updates its row.
 CREATE TABLE insights (
     pipeline      text NOT NULL,
@@ -345,6 +370,7 @@ CREATE TABLE review_samples (
 );
 CREATE INDEX review_samples_open ON review_samples (state, inbox);
 CREATE INDEX review_samples_deadline ON review_samples (state, deadline);
+CREATE INDEX review_samples_item ON review_samples (pipeline, item_id);
 
 -- The deployment's leadership (spec section 5.9), Postgres's alone: SQLite has no standby. Each engine that takes
 -- the leadership lock writes its row on its write connection, under the lock, before it writes anything else: who
@@ -369,7 +395,8 @@ CREATE TABLE nodes (
     slots          integer NOT NULL DEFAULT 0,
     state          text NOT NULL,              -- active | draining | revoked
     registered_at  timestamptz,                -- NULL for an id revoked before it registered
-    last_heartbeat timestamptz
+    last_heartbeat timestamptz,
+    nonce          text NOT NULL DEFAULT '' -- the registering process's: a drain holds while it registers again
 );
 
 -- Webhook trigger tokens (spec section 4.6): the SHA-256 of each token, hex, never the token. A token outlives the

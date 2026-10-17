@@ -35,11 +35,6 @@ earlier designs are in the git history of the spec.
 - The agent adapter reads its action (manifest, prompt, schemas) from the package directory on disk, like an exec
   action's command: an edit there while a run is open changes what later deliveries of that revision run. Serving
   the revision's files from the engine would close this for both.
-- Shared streams (M4 Task 5): a copy's artifact file is copied into the consumer's prefix on first open, and by the
-  artifact sweep before the producer's file goes, from the local artifact directory; the S3 store (Task 4) needs the
-  same copy, server side, and must implement `artifacts.Files` (list, modification time, copy, remove) for the sweep.
-  An S3 object's modification time cannot be touched in place: storing existing content again must copy it onto
-  itself, or the sweep's grace must come from elsewhere.
 - Shared streams: `millstream test pipeline` needs a trigger to fire, so a package whose only entry is an imported
   stream cannot be tested on its own yet; a test could name an imported stream and the items to copy onto it.
 - Shared streams: the UI's demo dataset has no importing pipeline (the Vitest tests add one), so `?demo` and the
@@ -83,21 +78,19 @@ earlier designs are in the git history of the spec.
 - Web UI: the inbox reads its queue again every 15 seconds because the API has no inbox stream (a `/live/inbox` of
   review events would make it live); the item list's filtered pages read on only when asked (no automatic scan to the
   next match).
-- Token auth (M4 Task 7): sign-in attempts are not rate limited (the token is long and random, and compared in
-  constant time; a lockout or backoff per client would slow a guessing attack further); sessions live in the
-  engine process's memory, kept across its own terms (standby, then active again), so a restart or a failover to
-  another engine signs the UI out (shared sessions in the store would survive it); `/metrics` reads every rollup
-  series on each scrape, aggregated in SQL (an incremental total would serve a store holding many months of rollups
-  more cheaply).
-- Remote nodes (M4 Task 4): the node token is rotated by restarting the engines (a token read again from its file
-  source would rotate it live); a node's package cache is never pruned (Task 8's bounded caches); a presigned PUT
-  signs no payload hash, so S3 does not check what a node sends (nodes are trusted, D25); placement reads a step's
-  action kind from the newest revision defining the step, so a delivery of an older revision whose step changed kind
-  may land on a node lacking its runtime and fail `unsupported`; agents on a remote node read the `agents` and
-  `runtime` keys of an environment file beside the node. The Compose smoke test (Postgres, engines and nodes from
-  `deploy/compose` on `millstream:dev`) is not written: the e2e node chaos suite covers the same processes; the
-  standby names the active engine by its bound `listen` address, so engines on `0.0.0.0` need every engine listed in
-  `--join` (an advertised address key would fix it).
+- Token auth (M4 Task 7): failed sign-ins are limited per remote address in memory (ten a minute), which behind a
+  reverse proxy is the proxy's for every client; a wrong bearer token on the API is not counted; sessions live in the
+  engine process's memory, kept across its own terms (standby, then active again), so a restart or a failover to another
+  engine signs the UI out (shared sessions in the store would survive it); `/metrics` reads every rollup series on each
+  scrape, aggregated in SQL (an incremental total would serve a store holding many months of rollups more cheaply).
+- Remote nodes (M4 Task 4): the node token is rotated by restarting the engines (a token read again from its file source
+  would rotate it live); a node's package cache is never pruned (Task 8's bounded caches); placement reads a step's
+  action kind from the newest revision defining the step, so a delivery of an older revision whose step changed kind may
+  land on a node lacking its runtime and fail `unsupported`; agents on a remote node read the `agents` and `runtime`
+  keys of an environment file beside the node. The Compose smoke test (Postgres, engines and nodes from `deploy/compose`
+  on `millstream:dev`) is not written: the e2e node chaos suite covers the same processes; the standby names the active
+  engine by its bound `listen` address, so engines on `0.0.0.0` need every engine listed in `--join` (an advertised
+  address key would fix it).
 - Live events: the broker wakes on this process's commits and polls every 15 seconds for other processes' writes on
   the same SQLite file; Postgres (M4) can wake it with `LISTEN`/`NOTIFY` instead. The live log tail relays the
   embedded node's lines and those remote nodes relay every second.

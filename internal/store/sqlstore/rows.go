@@ -94,11 +94,14 @@ func (w *wtx) endAttempt(d *deliveryRow, terminal bool, a attemptEnd) (map[strin
 }
 
 // leased returns the delivery a Done or Fail names, refusing it unless it is still leased under the same fencing
-// token and attempt.
-func (w *wtx) leased(ref store.LeaseRef, attempt int) (*deliveryRow, error) {
+// token and attempt, and held by owner when it is set (a remote node's report).
+func (w *wtx) leased(ref store.LeaseRef, attempt int, owner string) (*deliveryRow, error) {
 	d, err := w.delivery(ref.Pipeline, ref.DeliveryID)
 	if err != nil {
 		return nil, err
+	}
+	if owner != "" && d.owner != owner {
+		return nil, fmt.Errorf("delivery %s is not leased to %s: %w", d.id, owner, store.ErrStaleLease)
 	}
 	if d.state != store.DeliveryLeased || d.token != ref.FencingToken || d.attempt != attempt {
 		return nil, fmt.Errorf("delivery %s is %s with token %d attempt %d, not token %d attempt %d: %w",

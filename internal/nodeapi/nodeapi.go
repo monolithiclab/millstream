@@ -153,12 +153,20 @@ func (h *Handler) fail500(w http.ResponseWriter, r *http.Request, err error) {
 		writeError(w, http.StatusBadRequest, nodewire.CodeInvalid, err.Error())
 	case errors.Is(err, store.ErrNotFound):
 		writeError(w, http.StatusNotFound, nodewire.CodeNotFound, err.Error())
-	case r.Context().Err() != nil:
-		// the node went away, or the engine's term ended: nothing to tell it
+	case unavailable(r, err):
+		// The engine's term ended, its store is gone or read-only, or the node went away: never an implicit success,
+		// which a node would take for an acceptance. It sends the request again, to this engine or the next.
+		w.Header().Set("Retry-After", "1")
+		writeError(w, http.StatusServiceUnavailable, nodewire.CodeUnavailable, "the engine cannot answer now: retry")
 	default:
 		h.opts.Logger.Error("node protocol", "path", r.URL.Path, "error", err.Error())
 		writeError(w, http.StatusInternalServerError, nodewire.CodeInternal, "internal error")
 	}
+}
+
+// unavailable reports whether err, or r's context, means the engine cannot answer now rather than a failure.
+func unavailable(r *http.Request, err error) bool {
+	return r.Context().Err() != nil || store.Retryable(err)
 }
 
 // authorized reports whether r carries the node token whose SHA-256 is sum, compared in constant time, and answers
@@ -221,7 +229,7 @@ func (h *Handler) register(w http.ResponseWriter, r *http.Request) error {
 	}
 	e := h.opts.Engine
 	if err := e.RegisterNode(r.Context(), engine.NodeInfo{ID: req.Node, Version: req.Version, Labels: req.Labels,
-		Runtimes: req.Runtimes, Slots: req.Slots}); err != nil {
+		Runtimes: req.Runtimes, Slots: req.Slots, Nonce: req.Nonce}); err != nil {
 		return err
 	}
 	lead := e.Leadership()
@@ -231,7 +239,8 @@ func (h *Handler) register(w http.ResponseWriter, r *http.Request) error {
 }
 
 // pull leases deliveries for the node, waiting for some up to the request's wait: whenever a lease in flight ends,
-// and every second, for what else made work due (a firing, a retry's backoff ending).
+// and every second, for what else made work due (a firing, a retry's backoff ending). Leasing itself stays within
+// what is left of the wait, so the answer comes before the node's request times out (Client.Pull).
 func (h *Handler) pull(w http.ResponseWriter, r *http.Request) error {
 	var req nodewire.Pull
 	if err := decode(r, &req); err != nil {
@@ -241,13 +250,15 @@ func (h *Handler) pull(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	e, ctx := h.opts.Engine, r.Context()
-	deadline := time.NewTimer(min(time.Duration(req.WaitMs)*time.Millisecond, MaxPullWait))
+	wait := min(time.Duration(req.WaitMs)*time.Millisecond, MaxPullWait)
+	end := time.Now().Add(wait)
+	deadline := time.NewTimer(wait)
 	defer deadline.Stop()
 	tick := time.NewTicker(time.Second)
 	defer tick.Stop()
 	for {
 		changed := e.Changes()
-		as, err := e.Pull(ctx, req.Node, max(req.Max, 0))
+		as, err := e.PullWithin(ctx, req.Node, max(req.Max, 0), time.Until(end))
 		if err != nil {
 			return err
 		}
@@ -288,15 +299,48 @@ func (h *Handler) heartbeat(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-// report checks a Done or Fail before the engine applies it: from a known node, under a lease no other node holds.
-func (h *Handler) report(id string, ref store.LeaseRef) error {
+// report checks a Done or Fail before the engine applies it: from a known node, under a lease no other node holds,
+// naming only artifacts stored in the lease's pipeline: a node references what it stored there for its lease, never
+// another pipeline's content (spec section 15.7).
+func (h *Handler) report(ctx context.Context, id string, ref store.LeaseRef, outputs []store.Output,
+	kept []store.ArtifactRef,
+) error {
 	if err := h.known(id); err != nil {
 		return err
 	}
 	if h.opts.Engine.HeldElsewhere(id, ref) {
 		return fmt.Errorf("delivery %s is leased to another node: %w", ref.DeliveryID, store.ErrStaleLease)
 	}
+	seen := map[string]bool{}
+	for _, refs := range append([][]store.ArtifactRef{kept}, outputArtifacts(outputs)...) {
+		for _, a := range refs {
+			if seen[a.SHA256] {
+				continue
+			}
+			seen[a.SHA256] = true
+			if h.opts.Artifacts == nil {
+				return errAnswer(http.StatusBadRequest, nodewire.CodeInvalid, "the engine has no artifact store")
+			}
+			ok, err := h.opts.Artifacts.Exists(ctx, ref.Pipeline, a.SHA256)
+			if err != nil {
+				return err
+			}
+			if !ok {
+				return fmt.Errorf("artifact %s (%s) is not stored in pipeline %s: %w", a.Name, a.SHA256,
+					ref.Pipeline, store.ErrInvalid)
+			}
+		}
+	}
 	return nil
+}
+
+// outputArtifacts are the artifact references of each output.
+func outputArtifacts(outputs []store.Output) [][]store.ArtifactRef {
+	out := make([][]store.ArtifactRef, 0, len(outputs))
+	for _, o := range outputs {
+		out = append(out, o.Artifacts)
+	}
+	return out
 }
 
 func (h *Handler) done(w http.ResponseWriter, r *http.Request) error {
@@ -304,16 +348,15 @@ func (h *Handler) done(w http.ResponseWriter, r *http.Request) error {
 	if err := decode(r, &req); err != nil {
 		return err
 	}
-	ref := req.Lease.ToRef()
-	if err := h.report(req.Node, ref); err != nil {
+	ref, outputs := req.Lease.ToRef(), nodewire.ToOutputs(req.Outputs)
+	if err := h.report(r.Context(), req.Node, ref, outputs, req.Artifacts); err != nil {
 		return err
 	}
-	if err := h.opts.Engine.Done(r.Context(), store.DoneRequest{LeaseRef: ref, Attempt: req.Attempt,
-		Outputs: nodewire.ToOutputs(req.Outputs), CostUSD: req.CostUSD, Artifacts: req.Artifacts,
-		Metrics: req.Metrics}); err != nil {
+	if err := h.opts.Engine.Done(r.Context(), store.DoneRequest{LeaseRef: ref, Owner: req.Node, Attempt: req.Attempt,
+		Outputs: outputs, CostUSD: req.CostUSD, Artifacts: req.Artifacts, Metrics: req.Metrics}); err != nil {
 		return err
 	}
-	w.WriteHeader(http.StatusNoContent)
+	writeJSON(w, http.StatusOK, nodewire.Ack{Accepted: true})
 	return nil
 }
 
@@ -323,15 +366,15 @@ func (h *Handler) fail(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	ref := req.Lease.ToRef()
-	if err := h.report(req.Node, ref); err != nil {
+	if err := h.report(r.Context(), req.Node, ref, nil, req.Artifacts); err != nil {
 		return err
 	}
-	if err := h.opts.Engine.Fail(r.Context(), store.FailRequest{LeaseRef: ref, Attempt: req.Attempt, Class: req.Class,
-		Message: req.Message, Retryable: req.Retryable, CostUSD: req.CostUSD, Unreported: req.Unreported,
-		Artifacts: req.Artifacts, Metrics: req.Metrics}); err != nil {
+	if err := h.opts.Engine.Fail(r.Context(), store.FailRequest{LeaseRef: ref, Owner: req.Node, Attempt: req.Attempt,
+		Class: req.Class, Message: req.Message, Retryable: req.Retryable, CostUSD: req.CostUSD,
+		Unreported: req.Unreported, Artifacts: req.Artifacts, Metrics: req.Metrics}); err != nil {
 		return err
 	}
-	w.WriteHeader(http.StatusNoContent)
+	writeJSON(w, http.StatusOK, nodewire.Ack{Accepted: true})
 	return nil
 }
 
@@ -346,7 +389,7 @@ func (h *Handler) leave(w http.ResponseWriter, r *http.Request) error {
 	if err := h.opts.Engine.SetNodeState(r.Context(), req.Node, store.NodeDraining, true); err != nil {
 		return err
 	}
-	w.WriteHeader(http.StatusNoContent)
+	writeJSON(w, http.StatusOK, nodewire.Ack{Accepted: true})
 	return nil
 }
 
@@ -464,7 +507,7 @@ func (h *Handler) artifactURL(w http.ResponseWriter, r *http.Request) error {
 		if req.Op == nodewire.OpGet {
 			u, err = p.PresignGet(ref.Pipeline, a.SHA256, URLTTL)
 		} else {
-			u, err = p.PresignPut(ref.Pipeline, a.SHA256, URLTTL)
+			u, err = p.PresignPut(ref.Pipeline, a.SHA256, a.Size, URLTTL)
 		}
 		if err != nil {
 			return err
@@ -495,17 +538,18 @@ func stored(ctx context.Context, arts artifacts.Store, pipeline, sha string) (bo
 }
 
 // blobURL is the proxy's signed URL for one artifact move: what the signature covers is the operation, the pipeline,
-// the hash, the name and the expiry.
+// the hash, the name, the size and the expiry.
 func (h *Handler) blobURL(op, pipeline string, a store.ArtifactRef) string {
 	exp := strconv.FormatInt(h.opts.Now().Add(URLTTL).Unix(), 10)
-	q := url.Values{"op": {op}, "pipeline": {pipeline}, "sha256": {a.SHA256}, "name": {a.Name}, "exp": {exp}}
+	q := url.Values{"op": {op}, "pipeline": {pipeline}, "sha256": {a.SHA256}, "name": {a.Name}, "exp": {exp},
+		"size": {strconv.FormatInt(a.Size, 10)}}
 	q.Set("sig", h.sign(q))
 	return nodewire.PathBlob + "?" + q.Encode()
 }
 
 func (h *Handler) sign(q url.Values) string {
 	mac := hmac.New(sha256.New, h.opts.Key)
-	for _, k := range []string{"op", "pipeline", "sha256", "name", "exp"} {
+	for _, k := range []string{"op", "pipeline", "sha256", "name", "size", "exp"} {
 		mac.Write([]byte(q.Get(k)))
 		mac.Write([]byte{0})
 	}
@@ -550,7 +594,13 @@ func (h *Handler) putBlob(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	ref, err := h.opts.Artifacts.Put(r.Context(), q.Get("pipeline"), q.Get("name"), r.Body)
+	// The body must be the size the URL was issued for, checked before anything is written.
+	if size, err := strconv.ParseInt(q.Get("size"), 10, 64); err != nil || r.ContentLength != size {
+		return errAnswer(http.StatusBadRequest, nodewire.CodeInvalid, "a body of %d bytes, not the %s declared",
+			r.ContentLength, q.Get("size"))
+	}
+	ref, err := h.opts.Artifacts.Put(r.Context(), q.Get("pipeline"), q.Get("name"),
+		http.MaxBytesReader(w, r.Body, r.ContentLength))
 	if err != nil {
 		return err
 	}

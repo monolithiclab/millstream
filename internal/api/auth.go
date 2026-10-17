@@ -214,17 +214,22 @@ func (s *Server) getSession(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-// createSession signs the UI in: the deployment's token for a session cookie.
+// createSession signs the UI in: the deployment's token for a session cookie. A wrong token counts as a failed
+// attempt from the request's address, refused for a while past too many (failures.go).
 func (s *Server) createSession(w http.ResponseWriter, r *http.Request) error {
 	if s.opts.Auth == nil {
 		return fmt.Errorf("session: this server has no token, it serves loopback clients without signing in: %w",
 			errUnavailable)
+	}
+	if s.refuseFailing(w, r) {
+		return nil
 	}
 	var body sessionLogin
 	if err := s.decodeBody(w, r, &body); err != nil {
 		return err
 	}
 	if !s.tokenMatches(body.Token) {
+		s.failed(r)
 		writeUnauthorized(w, "the token does not match this server's")
 		return nil
 	}

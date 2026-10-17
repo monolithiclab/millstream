@@ -3,6 +3,7 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"maps"
 	"slices"
 	"strconv"
@@ -41,7 +42,7 @@ func (c MetricsCmd) Run(rt *Runtime) error {
 			return err
 		}
 		if c.Prometheus {
-			return metrics.Prometheus(rt.IO.Out, rollups)
+			return metrics.Prometheus(rt.IO.Out, rollups, slog.New(slog.NewTextHandler(rt.IO.Err, nil)))
 		}
 		tw := tabwriter.NewWriter(rt.IO.Out, 0, 0, 2, ' ', 0)
 		fmt.Fprintln(tw, "PIPELINE\tNAME\tLABELS\tMINUTE\tCOUNT\tSUM\tMIN\tMAX")

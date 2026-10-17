@@ -28,7 +28,8 @@ steps: { pass: { action: filter, in: [trigger.hook, trigger.slow, trigger.adhoc]
 `
 
 // Webhook triggers through the API on a store of their own: the tokens an apply shows once, the hooks endpoint's
-// authentication, validation, idempotency, rate, size limit and lifecycle rules, rotation, and a standby's refusal.
+// authentication, validation, idempotency, rate, size limit and lifecycle rules, rotation, a standby's refusal, and
+// the limit on failed token checks.
 func TestWebhooks(t *testing.T) {
 	clock := &fakeClock{t: t0}
 	st, err := sqlite.Open(sqlite.Memory, sqlite.Options{Now: clock.Now})
@@ -198,6 +199,20 @@ func TestWebhooks(t *testing.T) {
 	if rec.Header().Get(ActiveAddressHeader) != "https://a.example" {
 		t.Errorf("standby headers %v", rec.Header())
 	}
+
+	// Ten failed token checks from one address within a minute refuse it, the right token included, until the
+	// minute is up.
+	clock.Advance(time.Minute) // the failures above are a minute old
+	for range maxFailures {
+		wantError(t, fire(hook.Path, "wrong", `{"city":"Lyon"}`, nil), 401, codeUnauthorized)
+	}
+	rec = fire(hook.Path, rotated.Token, `{"city":"Lyon"}`, nil)
+	wantError(t, rec, 429, codeTooManyRequests)
+	if got := rec.Header().Get("Retry-After"); got != "60" {
+		t.Errorf("Retry-After = %q", got)
+	}
+	clock.Advance(time.Minute)
+	wantRun(fire(hook.Path, rotated.Token, `{"city":"Lyon"}`, nil), http.StatusAccepted, true)
 	if strings.Contains(logs.String(), "mswh_") {
 		t.Errorf("a token was logged:\n%s", logs.String())
 	}

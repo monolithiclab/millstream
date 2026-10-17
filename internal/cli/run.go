@@ -181,7 +181,7 @@ func (h engineHost) run(ctx context.Context, rt *Runtime, env *pipeline.Environm
 		var err error
 		n, err = node.New(e, node.Options{
 			Owner: owner, Slots: h.slots, Pool: pool, Logger: slog.New(logs.Handler(log.Handler())),
-			HeartbeatInterval: min(node.DefaultHeartbeatInterval, h.leaseTTL/3),
+			HeartbeatInterval: node.HeartbeatFor(h.leaseTTL),
 		})
 		if err != nil {
 			return err

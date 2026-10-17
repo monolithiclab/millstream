@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -241,5 +242,51 @@ func TestBatchTimeout(t *testing.T) {
 	<-s.Lost()
 	if !checkDeadline {
 		t.Error("the check had no deadline")
+	}
+}
+
+// A purge's lineage reads the edges of the items it walks, through item_parents' key, never every item: StartPurge
+// runs in the writer, and a scan of a large store would hold every other unit past its batch timeout.
+func TestLineageSearchesItsEdges(t *testing.T) {
+	s := OpenForTest(t, Options{})
+	rows, err := s.read.QueryContext(t.Context(), "EXPLAIN QUERY PLAN "+s.childrenQuery(), "p", `["a","b"]`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = rows.Close() }()
+	var plan []string
+	for rows.Next() {
+		var id, parent, unused int
+		var detail string
+		if err := rows.Scan(&id, &parent, &unused, &detail); err != nil {
+			t.Fatal(err)
+		}
+		plan = append(plan, detail)
+	}
+	got := strings.Join(plan, "; ")
+	if !strings.Contains(got, "SEARCH item_parents USING") || strings.Contains(got, "SCAN item_parents") ||
+		strings.Contains(got, "items ") {
+		t.Fatalf("lineage query plan: %s", got)
+	}
+}
+
+// A dialect's unavailable errors (store.ErrUnavailable) are wrapped as such by the units and the reads.
+func TestUnavailableErrors(t *testing.T) {
+	s := OpenForTest(t, Options{})
+	s.d.Unavailable = func(err error) bool { return !errors.Is(err, sql.ErrNoRows) }
+	s.read.unavailable = s.d.Unavailable
+	if err := s.Exec(t.Context(), `INSERT INTO nowhere VALUES (1)`); !errors.Is(err, store.ErrUnavailable) {
+		t.Errorf("a unit: %v", err)
+	}
+	if _, err := scan(t.Context(), s.read, `SELECT nothing FROM nowhere`, nil, scanRef); !errors.Is(err, store.ErrUnavailable) {
+		t.Errorf("a read: %v", err)
+	}
+	var n int
+	if err := s.read.Row(t.Context(), `SELECT nothing FROM nowhere`).Scan(&n); !errors.Is(err, store.ErrUnavailable) {
+		t.Errorf("a row: %v", err)
+	}
+	if err := s.read.Row(t.Context(), `SELECT 1 WHERE 1 = 0`).Scan(&n); !errors.Is(err, sql.ErrNoRows) ||
+		errors.Is(err, store.ErrUnavailable) {
+		t.Errorf("no row: %v", err)
 	}
 }

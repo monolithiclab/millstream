@@ -8,11 +8,17 @@ import (
 	"github.com/monolithiclab/millstream/internal/store"
 )
 
+// register registers a node, its state left aside.
+func (e *env) register(n store.Node) error {
+	_, err := e.s.RegisterNode(e.ctx, n)
+	return err
+}
+
 func TestNodes(t *testing.T, open Opener) {
 	e := newEnv(t, open, fixture)
 	reg := store.Node{ID: "node1", Version: "1.0", Labels: map[string]string{"gpu": "true"},
 		Runtimes: []string{"exec", "container"}, Slots: 4}
-	if err := e.s.RegisterNode(e.ctx, reg); err != nil {
+	if err := e.register(reg); err != nil {
 		t.Fatal(err)
 	}
 	e.fire("r1")
@@ -40,13 +46,31 @@ func TestNodes(t *testing.T, open Opener) {
 	if ns, _ := e.s.Nodes(e.ctx); ns[0].State != store.NodeDraining {
 		t.Fatalf("drained node = %+v", ns[0])
 	}
-	if err := e.s.RegisterNode(e.ctx, store.Node{ID: "node1", Version: "1.1"}); err != nil {
+	// The same process registering again, as after a failover, finds it draining still (its nonce).
+	if err := e.register(store.Node{ID: "node1", Version: "1.0", Nonce: "p1"}); err != nil {
 		t.Fatal(err)
+	}
+	if ended, err := e.s.SetNodeState(e.ctx, "node1", store.NodeDraining, false); err != nil || len(ended) != 0 {
+		t.Fatalf("drain = %v, %v", ended, err)
+	}
+	if state, err := e.s.RegisterNode(e.ctx, store.Node{ID: "node1", Version: "1.0", Nonce: "p1"}); err != nil ||
+		state != store.NodeDraining {
+		t.Fatalf("the draining process registering again: %s, %v", state, err)
+	}
+	if state, err := e.s.RegisterNode(e.ctx, store.Node{ID: "node1", Version: "1.1", Nonce: "p2"}); err != nil ||
+		state != store.NodeActive {
+		t.Fatalf("a new process registering: %s, %v", state, err)
 	}
 	if ns, _ := e.s.Nodes(e.ctx); ns[0].State != store.NodeActive || ns[0].Version != "1.1" ||
 		len(ns[0].Labels) != 0 || ns[0].Runtimes == nil {
 		t.Fatalf("registered again = %+v", ns[0])
 	}
+
+	// A report naming another owner than the lease's is stale, whatever its token.
+	_, err = e.s.Done(e.ctx, store.DoneRequest{LeaseRef: ls[0].Ref(), Owner: "node2", Attempt: 1})
+	wantErr(t, err, store.ErrStaleLease)
+	_, err = e.s.Fail(e.ctx, store.FailRequest{LeaseRef: ls[0].Ref(), Owner: "node2", Attempt: 1, Class: "action"})
+	wantErr(t, err, store.ErrStaleLease)
 
 	// Revoking ends its leases at once, each attempt consumed as an expiry's; the id is refused from then on.
 	ended, err := e.s.SetNodeState(e.ctx, "node1", store.NodeRevoked, true)
@@ -61,7 +85,7 @@ func TestNodes(t *testing.T, open Opener) {
 	}
 	_, err = e.s.Done(e.ctx, store.DoneRequest{LeaseRef: ls[0].Ref(), Attempt: 1})
 	wantErr(t, err, store.ErrStaleLease)
-	wantErr(t, e.s.RegisterNode(e.ctx, reg), store.ErrRevoked)
+	wantErr(t, e.register(reg), store.ErrRevoked)
 	_, err = e.s.Renew(e.ctx, "node1", nil, time.Minute)
 	wantErr(t, err, store.ErrRevoked)
 	if _, err := e.s.SetNodeState(e.ctx, "node1", store.NodeDraining, false); err != nil {
@@ -75,10 +99,10 @@ func TestNodes(t *testing.T, open Opener) {
 	if _, err := e.s.SetNodeState(e.ctx, "ghost", store.NodeRevoked, true); err != nil {
 		t.Fatal(err)
 	}
-	wantErr(t, e.s.RegisterNode(e.ctx, store.Node{ID: "ghost"}), store.ErrRevoked)
+	wantErr(t, e.register(store.Node{ID: "ghost"}), store.ErrRevoked)
 	_, err = e.s.SetNodeState(e.ctx, "nobody", store.NodeDraining, false)
 	wantErr(t, err, store.ErrNotFound)
-	if err := e.s.RegisterNode(e.ctx, store.Node{ID: "node2"}); err != nil {
+	if err := e.register(store.Node{ID: "node2"}); err != nil {
 		t.Fatal(err)
 	}
 	e.clock.Advance(time.Minute) // past the retry backoff
@@ -96,7 +120,7 @@ func TestNodes(t *testing.T, open Opener) {
 	}
 
 	for _, n := range []store.Node{{}, {ID: "x", Slots: -1}} {
-		wantErr(t, e.s.RegisterNode(e.ctx, n), store.ErrInvalid)
+		wantErr(t, e.register(n), store.ErrInvalid)
 	}
 	_, err = e.s.SetNodeState(e.ctx, "node2", store.NodeActive, false)
 	wantErr(t, err, store.ErrInvalid)

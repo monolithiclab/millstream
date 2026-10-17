@@ -117,7 +117,7 @@ func Test_commandsThroughTheServer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	srv, err := api.New(api.Options{Store: st, Engine: eng, User: "server", Auth: &api.Auth{Token: "s3cret"}})
+	srv, err := api.New(api.Options{Store: st, Engine: eng, User: "server", Auth: &api.Auth{Token: testToken}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -126,7 +126,7 @@ func Test_commandsThroughTheServer(t *testing.T) {
 		auth = append(auth, r.Header.Get("Authorization"))
 		srv.ServeHTTP(w, r)
 	})
-	env := map[string]string{ServerEnv: "http://127.0.0.1:7070", TokenEnv: "s3cret"}
+	env := map[string]string{ServerEnv: "http://127.0.0.1:7070", TokenEnv: testToken}
 	run := func(want int, argv ...string) (string, string) {
 		t.Helper()
 		var out, errb bytes.Buffer
@@ -206,7 +206,7 @@ func Test_commandsThroughTheServer(t *testing.T) {
 		}
 	}
 	for _, a := range auth {
-		if a != "Bearer s3cret" {
+		if a != "Bearer "+testToken {
 			t.Fatalf("Authorization %q", a)
 		}
 	}
@@ -252,7 +252,7 @@ func TestServeRefusals(t *testing.T) {
 // auth.token turns the API's token authentication on: a non-loopback listener is allowed, the server answers the
 // listen address's host and ui.baseUrl's, and the session cookie is Secure when the UI is reached over HTTPS.
 func TestAPIAuth(t *testing.T) {
-	rt := &Runtime{Env: func(k string) (string, bool) { return "s3cret", k == "T" }}
+	rt := &Runtime{Env: func(k string) (string, bool) { return testToken, k == "T" }}
 	if a, err := apiAuth(rt, &pipeline.Environment{}, "0.0.0.0:7070"); a != nil || err != nil {
 		t.Fatalf("without a token: %+v, %v", a, err)
 	}
@@ -260,22 +260,27 @@ func TestAPIAuth(t *testing.T) {
 	if _, err := apiAuth(rt, &pipeline.Environment{AuthToken: &pipeline.SecretSource{Env: "U"}}, ""); err == nil {
 		t.Fatal("an unset token: no error")
 	}
+	short := &Runtime{Env: func(string) (string, bool) { return "s3cret", true }}
+	if _, err := apiAuth(short, &pipeline.Environment{AuthToken: token}, ""); err == nil ||
+		err.Error() != "auth.token: must be at least 32 characters long, not 6" {
+		t.Fatalf("a short token: %v", err)
+	}
 	for _, tt := range []struct {
 		env    pipeline.Environment
 		listen string
 		want   api.Auth
 	}{
 		{pipeline.Environment{AuthToken: token}, "127.0.0.1:7070",
-			api.Auth{Token: "s3cret", Hosts: []string{"127.0.0.1"}}},
+			api.Auth{Token: testToken, Hosts: []string{"127.0.0.1"}}},
 		{pipeline.Environment{AuthToken: token, AuthUser: "ana", MetricsPublic: true,
 			UIBaseURL: "https://millstream.example"}, "0.0.0.0:7070",
-			api.Auth{Token: "s3cret", User: "ana", MetricsPublic: true, Hosts: []string{"millstream.example"},
+			api.Auth{Token: testToken, User: "ana", MetricsPublic: true, Hosts: []string{"millstream.example"},
 				Origins: []string{"https://millstream.example"}, SecureCookie: true}},
 		{pipeline.Environment{AuthToken: token, UIBaseURL: "http://10.0.0.5:7070"}, "10.0.0.5:7070",
-			api.Auth{Token: "s3cret", Hosts: []string{"10.0.0.5", "10.0.0.5:7070"},
+			api.Auth{Token: testToken, Hosts: []string{"10.0.0.5", "10.0.0.5:7070"},
 				Origins: []string{"http://10.0.0.5:7070"}, SecureCookie: true}},
 		{pipeline.Environment{AuthToken: token, TLS: &pipeline.TLSConfig{}}, "localhost:7070",
-			api.Auth{Token: "s3cret", Hosts: []string{"localhost"}, SecureCookie: true}},
+			api.Auth{Token: testToken, Hosts: []string{"localhost"}, SecureCookie: true}},
 	} {
 		got, err := apiAuth(rt, &tt.env, tt.listen)
 		if err == nil && got.Sessions == nil {

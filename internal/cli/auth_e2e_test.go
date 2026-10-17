@@ -36,7 +36,7 @@ func Test_serveWithTokenAndTLS(t *testing.T) {
 		"auth: { token: { env: MILLSTREAM_TOKEN }, user: ana }\ntls: { cert: cert.pem, key: key.pem }\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	environ := map[string]string{"MILLSTREAM_TOKEN": "s3cret"} // no $USER: the reviewer is auth.user
+	environ := map[string]string{"MILLSTREAM_TOKEN": testToken} // no $USER: the reviewer is auth.user
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 	serving := regexp.MustCompile(`serving the UI and the API on https://(127\.0\.0\.1:\d+)/`)
@@ -82,10 +82,10 @@ func Test_serveWithTokenAndTLS(t *testing.T) {
 	if resp := call(http.MethodGet, "/api/v1/pipelines", ""); resp.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("without the token: %d", resp.StatusCode)
 	}
-	if resp := call(http.MethodGet, "/api/v1/pipelines", "", "Authorization", "Bearer s3cret"); resp.StatusCode != 200 {
+	if resp := call(http.MethodGet, "/api/v1/pipelines", "", "Authorization", "Bearer "+testToken); resp.StatusCode != 200 {
 		t.Fatalf("bearer: %d", resp.StatusCode)
 	}
-	resp := call(http.MethodGet, "/metrics", "", "Authorization", "Bearer s3cret")
+	resp := call(http.MethodGet, "/metrics", "", "Authorization", "Bearer "+testToken)
 	if b, _ := io.ReadAll(resp.Body); resp.StatusCode != 200 || !bytes.Contains(b, []byte("millstream_writer_batch_size")) {
 		t.Fatalf("metrics: %d %s", resp.StatusCode, b)
 	}
@@ -96,7 +96,7 @@ func Test_serveWithTokenAndTLS(t *testing.T) {
 	pkg := runPackage(t, "run")
 	code := Run(ctx, []string{"apply", pkg}, IO{In: strings.NewReader(""), Out: &cliOut, Err: &cliErr}, "dev",
 		func(rt *Runtime) {
-			env := map[string]string{ServerEnv: base, TokenEnv: "s3cret"}
+			env := map[string]string{ServerEnv: base, TokenEnv: testToken}
 			rt.Env = func(k string) (string, bool) { v, ok := env[k]; return v, ok }
 			rt.HTTPClient = client
 		})
@@ -105,7 +105,7 @@ func Test_serveWithTokenAndTLS(t *testing.T) {
 	}
 
 	// The UI's session: the cookie reaches the API and the live streams; signing out ends it.
-	resp = call(http.MethodPost, "/api/v1/session", `{"token":"s3cret"}`, "Origin", base)
+	resp = call(http.MethodPost, "/api/v1/session", `{"token":"`+testToken+`"}`, "Origin", base)
 	cookies := resp.Cookies()
 	if resp.StatusCode != 200 || len(cookies) != 1 || !cookies[0].Secure || !cookies[0].HttpOnly {
 		t.Fatalf("sign in: %d %v", resp.StatusCode, cookies)

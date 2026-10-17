@@ -22,7 +22,7 @@ func (s *Store) Fail(ctx context.Context, f store.FailRequest) (store.DeliverySt
 	}
 	var state store.DeliveryState
 	err := s.submit(ctx, unitFail, func(w *wtx) error {
-		d, err := w.leased(f.LeaseRef, f.Attempt)
+		d, err := w.leased(f.LeaseRef, f.Attempt, f.Owner)
 		if err != nil {
 			return err
 		}

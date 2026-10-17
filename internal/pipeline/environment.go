@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"go.yaml.in/yaml/v3"
 )
@@ -304,6 +305,30 @@ func (s SecretSource) Value(lookup func(string) (string, bool)) (string, error) 
 	v := strings.TrimRight(string(b), "\r\n")
 	if v == "" {
 		return "", fmt.Errorf("secret file %s is empty", s.File)
+	}
+	return v, nil
+}
+
+// MinTokenLength is the fewest characters auth.token and node.token may hold (spec section 15.2): a deployment's
+// tokens are long random strings, such as openssl rand -hex 32 prints.
+const MinTokenLength = 32
+
+// CheckToken refuses a token shorter than MinTokenLength; key names it in the error, never its value.
+func CheckToken(key, token string) error {
+	if n := utf8.RuneCountInString(token); n < MinTokenLength {
+		return fmt.Errorf("%s: must be at least %d characters long, not %d", key, MinTokenLength, n)
+	}
+	return nil
+}
+
+// Token reads a token through Value and checks its length (CheckToken); errors are prefixed with key.
+func (s SecretSource) Token(key string, lookup func(string) (string, bool)) (string, error) {
+	v, err := s.Value(lookup)
+	if err != nil {
+		return "", fmt.Errorf("%s: %w", key, err)
+	}
+	if err := CheckToken(key, v); err != nil {
+		return "", err
 	}
 	return v, nil
 }

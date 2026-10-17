@@ -293,8 +293,9 @@ func TestStore(t *testing.T) {
 	fake.copyBody = ""
 
 	// Presigned URLs.
+	presignPut := func(p, sha string, ttl time.Duration) (string, error) { return s.PresignPut(p, sha, 3, ttl) }
 	for name, presign := range map[string]func(string, string, time.Duration) (string, error){
-		"PresignGet": s.PresignGet, "PresignPut": s.PresignPut,
+		"PresignGet": s.PresignGet, "PresignPut": presignPut,
 	} {
 		u, err := presign("listings", sha, time.Hour)
 		if err != nil || !strings.Contains(u, "X-Amz-Signature=") || !strings.HasPrefix(u, "http://s3.test/bucket/"+key+"?") {
@@ -303,6 +304,11 @@ func TestStore(t *testing.T) {
 		if _, err := presign("a/b", sha, time.Hour); err == nil {
 			t.Errorf("%s of an invalid pipeline: no error", name)
 		}
+	}
+	// A presigned PUT is bound to the content's length and hash.
+	if u, _ := presignPut("listings", sha, time.Hour); !strings.Contains(u,
+		"X-Amz-SignedHeaders=content-length%3Bhost%3Bx-amz-checksum-sha256&") {
+		t.Errorf("PresignPut signs %q", u)
 	}
 
 	// Invalid names and digests.
@@ -314,7 +320,7 @@ func TestStore(t *testing.T) {
 		"Open sha":        func() error { _, err := s.Open(ctx, "listings", "nothex"); return err },
 		"Copy from":       func() error { return s.Copy(ctx, ".x", "importer", sha) },
 		"Copy to":         func() error { return s.Copy(ctx, "listings", ".x", sha) },
-		"PresignPut sha":  func() error { _, err := s.PresignPut("listings", strings.ToUpper(sha), time.Hour); return err },
+		"PresignPut sha":  func() error { _, err := s.PresignPut("listings", strings.ToUpper(sha), 1, time.Hour); return err },
 	}
 	for name, call := range invalid {
 		if err := call(); err == nil {

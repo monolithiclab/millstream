@@ -136,6 +136,7 @@ func TestRetainAndPurge(t *testing.T) {
 	v.e.mu.Lock()
 	v.e.revs[99] = &revision{id: 99, hash: "gone"}
 	v.e.actions[actionKey{"gone", "./actions/a"}] = &resolvedAction{}
+	v.e.triggerSchemas[actionKey{"gone", "trigger.go"}] = nil
 	v.e.mu.Unlock()
 
 	if err := v.e.Retain(v.ctx); err != nil {
@@ -164,9 +165,10 @@ func TestRetainAndPurge(t *testing.T) {
 	v.e.mu.Lock()
 	_, rev := v.e.revs[99]
 	_, act := v.e.actions[actionKey{"gone", "./actions/a"}]
+	_, sch := v.e.triggerSchemas[actionKey{"gone", "trigger.go"}]
 	v.e.mu.Unlock()
-	if rev || act {
-		t.Fatalf("caches kept a revision nothing uses: revision %v, action %v", rev, act)
+	if rev || act || sch {
+		t.Fatalf("caches kept a revision nothing uses: revision %v, action %v, trigger schema %v", rev, act, sch)
 	}
 
 	// A purge of b runs to its end: both copies erased, its file deleted without waiting for the grace.

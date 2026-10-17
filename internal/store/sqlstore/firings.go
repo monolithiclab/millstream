@@ -51,7 +51,7 @@ func (s *Store) SkipFirings(ctx context.Context, pipelineName, trigger string, t
 // LastFiring returns the latest scheduled time among the trigger's cron runs and skipped firings.
 func (s *Store) LastFiring(ctx context.Context, pipelineName, trigger string) (time.Time, error) {
 	var at TimeCol
-	err := s.read.QueryRowContext(ctx, `SELECT MAX(t) FROM (
+	err := s.read.Row(ctx, `SELECT MAX(t) FROM (
 		SELECT scheduled_at AS t FROM runs WHERE pipeline = ? AND trigger = ? AND trigger_source = ?
 		UNION ALL
 		SELECT scheduled_at FROM skipped_firings WHERE pipeline = ? AND trigger = ?) AS f`,

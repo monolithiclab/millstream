@@ -5,11 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math"
 	"net/http"
 	"net/url"
 	"slices"
-	"strconv"
 	"strings"
 
 	"github.com/monolithiclab/millstream/internal/engine"
@@ -33,9 +31,6 @@ const (
 // with the same id fires nothing new.
 const IdempotencyHeader = "Idempotency-Key"
 
-// codeTooManyRequests answers a webhook request over its trigger's rate.
-const codeTooManyRequests = "tooManyRequests"
-
 // HookPath is the path of a pipeline's webhook trigger.
 func HookPath(pipelineName, trigger string) string {
 	return HooksPrefix + url.PathEscape(pipelineName) + "/" + url.PathEscape(trigger)
@@ -51,17 +46,22 @@ type WebhookRun struct {
 
 // hook fires a webhook trigger. It answers 202 with the run, 200 when the request id had already fired it; 401
 // without the trigger's token, 404 for a trigger the active revision does not have as a webhook trigger, 429 over the
-// trigger's rate, 413 over the body limit, 400 for a body that is not JSON or does not match the input schema, 409
-// for a disabled pipeline (a paused one fires: its deliveries wait), and 503 on a standby. The token is checked
-// first, so a caller without it learns nothing of the pipeline, the trigger or the deployment.
+// trigger's rate or past the address's failed token checks (failures.go), 413 over the body limit, 400 for a body
+// that is not JSON or does not match the input schema, 409 for a disabled pipeline (a paused one fires: its
+// deliveries wait), and 503 on a standby. The token is checked first, so a caller without it learns nothing of the
+// pipeline, the trigger or the deployment.
 func (s *Server) hook(w http.ResponseWriter, r *http.Request) error {
 	if r.Method != http.MethodPost {
 		w.Header().Set("Allow", http.MethodPost)
 		writeErrorBody(w, http.StatusMethodNotAllowed, codeMethodNotAllowed, r.Method+" "+r.URL.Path+": allowed POST")
 		return nil
 	}
+	if s.refuseFailing(w, r) {
+		return nil
+	}
 	name, trigger := r.PathValue("pipeline"), r.PathValue("trigger")
 	if !s.hookCredential(r, name, trigger) {
+		s.failed(r)
 		w.Header().Set("WWW-Authenticate", `Bearer realm="millstream-hooks"`)
 		writeErrorBody(w, http.StatusUnauthorized, codeUnauthorized,
 			"send the trigger's token as Authorization: Bearer <token>, or as the token query parameter")
@@ -85,8 +85,7 @@ func (s *Server) hook(w http.ResponseWriter, r *http.Request) error {
 	}
 	id, created, err := s.opts.Engine.FireWebhook(r.Context(), name, trigger, r.Header.Get(IdempotencyHeader), body)
 	if limited := (*engine.RateLimitError)(nil); errors.As(err, &limited) {
-		w.Header().Set("Retry-After", strconv.Itoa(int(math.Ceil(limited.Wait.Seconds()))))
-		writeErrorBody(w, http.StatusTooManyRequests, codeTooManyRequests, limited.Error())
+		writeTooManyRequests(w, limited.Wait, limited.Error())
 		return nil
 	}
 	if err != nil {

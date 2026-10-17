@@ -3,6 +3,7 @@ package api
 import (
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -123,8 +124,11 @@ func TestNoTokenSession(t *testing.T) {
 	if got := get[Session](t, f.srv, "/api/v1/session"); got.Auth || got.User != "tester" {
 		t.Fatalf("session %+v", got)
 	}
-	wantError(t, do(t, f.srv, request{method: http.MethodPost, target: "/api/v1/session", body: `{"token":"x"}`}),
-		http.StatusServiceUnavailable, codeUnavailable)
+	rec := do(t, f.srv, request{method: http.MethodPost, target: "/api/v1/session", body: `{"token":"x"}`})
+	wantError(t, rec, http.StatusServiceUnavailable, codeUnavailable)
+	if rec.Header().Get("Retry-After") == "" {
+		t.Error("a 503 without Retry-After")
+	}
 	if rec := do(t, f.srv, request{method: http.MethodDelete, target: "/api/v1/session"}); rec.Code != http.StatusNoContent {
 		t.Fatalf("sign out: %d", rec.Code)
 	}
@@ -149,6 +153,61 @@ func TestSessionsBounded(t *testing.T) {
 	ss.create(t0.Add(90*time.Minute), t0.Add(3*time.Hour)) // every session of the first hour has expired
 	if len(ss.byID) != 2 {
 		t.Fatalf("after expiry: %d sessions", len(ss.byID))
+	}
+}
+
+// Ten failed sign-ins from one address within a minute refuse it, the right token included, until the minute is up;
+// successful ones do not count, and another address is heard. The table is bounded, an IPv6 address counted by its
+// /64.
+func TestFailedSignInsLimited(t *testing.T) {
+	srv, clock := authServer(t, false)
+	signIn := func(token string) *httptest.ResponseRecorder {
+		return do(t, srv, request{method: http.MethodPost, target: "/api/v1/session", body: `{"token":"` + token + `"}`})
+	}
+	for range maxFailures {
+		if rec := signIn("s3cret"); rec.Code != http.StatusOK {
+			t.Fatalf("sign in: %d", rec.Code)
+		}
+	}
+	for range maxFailures {
+		wantError(t, signIn("wrong"), http.StatusUnauthorized, codeUnauthorized)
+	}
+	clock.Advance(15 * time.Second)
+	rec := signIn("s3cret")
+	wantError(t, rec, http.StatusTooManyRequests, codeTooManyRequests)
+	if got := rec.Header().Get("Retry-After"); got != "45" {
+		t.Errorf("Retry-After = %q", got)
+	}
+	r := httptest.NewRequest(http.MethodPost, "/api/v1/session", strings.NewReader(`{"token":"s3cret"}`))
+	r.Header.Set("Content-Type", "application/json")
+	r.RemoteAddr = "198.51.100.7:4242"
+	other := httptest.NewRecorder()
+	srv.ServeHTTP(other, r)
+	if other.Code != http.StatusOK {
+		t.Errorf("another address: %d", other.Code)
+	}
+	clock.Advance(45 * time.Second)
+	if rec := signIn("s3cret"); rec.Code != http.StatusOK {
+		t.Fatalf("after the window: %d", rec.Code)
+	}
+
+	for addr, want := range map[string]string{"192.0.2.1:80": "192.0.2.1", "[2001:db8:0:1:aa::1]:443": "2001:db8:0:1::/64",
+		"pipe": "pipe"} {
+		if got := remoteAddr(&http.Request{RemoteAddr: addr}); got != want {
+			t.Errorf("remoteAddr(%s) = %s, want %s", addr, got, want)
+		}
+	}
+	f := newFailures()
+	for i := range maxFailureAddrs {
+		f.fail(strconv.Itoa(i), t0.Add(time.Duration(i)))
+	}
+	f.fail("late", t0.Add(time.Second))
+	if _, ok := f.byAddr["0"]; ok || len(f.byAddr) != maxFailureAddrs {
+		t.Fatalf("over the bound: oldest kept %v, %d addresses", ok, len(f.byAddr))
+	}
+	f.fail("later", t0.Add(time.Minute+time.Millisecond)) // every window but late's has ended
+	if len(f.byAddr) != 2 {
+		t.Fatalf("after expiry: %d addresses", len(f.byAddr))
 	}
 }
 
@@ -181,7 +240,8 @@ func TestStandbyAuth(t *testing.T) {
 }
 
 // Remote nodes' prefix bypasses the browser guards and auth.token: the node API, which checks the node token itself,
-// answers a node naming any host; without one the prefix is not found, never the UI.
+// answers a node naming any host; without one the prefix is not found, never the UI. A path with dot segments,
+// escaped or not, reaches neither a service mount nor the API: it would name one mount and resolve to another.
 func TestNodePrefixSeam(t *testing.T) {
 	f := readFixture(t)
 	nodes := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusTeapot) })
@@ -196,7 +256,15 @@ func TestNodePrefixSeam(t *testing.T) {
 		{with, NodePrefix + "/pull", http.StatusTeapot},
 		{with, NodePrefix, http.StatusTeapot},
 		{with, "/node/v10", http.StatusForbidden}, // not the prefix: the Host guard applies
+		{with, "/node/v1x/register", http.StatusForbidden},
 		{without, NodePrefix + "/pull", http.StatusNotFound},
+		{with, NodePrefix + "/../api/v1/pipelines", http.StatusNotFound},
+		{with, NodePrefix + "/%2e%2e/api/v1/pipelines", http.StatusNotFound},
+		{with, NodePrefix + "/pull/./../pull", http.StatusNotFound},
+		{with, "/hooks/%2e%2e/api/v1/pipelines", http.StatusNotFound},
+		{with, "/hooks/x/%2e%2e/%2e%2e/api/v1/pipelines", http.StatusNotFound},
+		{with, "/hooks/x%2f..%2f..%2fapi/v1/pipelines", http.StatusNotFound},
+		{with, "/api/v1/../v1/pipelines", http.StatusNotFound},
 	} {
 		rec := httptest.NewRecorder()
 		r := httptest.NewRequest(http.MethodPost, tt.path, nil)
@@ -205,5 +273,13 @@ func TestNodePrefixSeam(t *testing.T) {
 		if rec.Code != tt.want {
 			t.Errorf("%s: %d, want %d", tt.path, rec.Code, tt.want)
 		}
+	}
+	// On a loopback host the Host guard passes: a path beside the prefix is the UI's, never the node API's.
+	rec := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodPost, "/node/v1x/register", nil)
+	r.Host = "127.0.0.1:7070"
+	Handler(with, ui).ServeHTTP(rec, r)
+	if rec.Code != http.StatusOK || rec.Body.String() != "ui" {
+		t.Errorf("/node/v1x/register on loopback: %d %s", rec.Code, rec.Body)
 	}
 }

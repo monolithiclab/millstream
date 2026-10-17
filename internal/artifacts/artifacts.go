@@ -12,6 +12,7 @@ import (
 	"compress/gzip"
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -49,8 +50,19 @@ type Store interface {
 type Presigner interface {
 	// PresignGet returns a URL that reads pipeline's artifact sha until ttl passes.
 	PresignGet(pipeline, sha string, ttl time.Duration) (string, error)
-	// PresignPut returns a URL that writes pipeline's artifact sha with a PUT until ttl passes.
-	PresignPut(pipeline, sha string, ttl time.Duration) (string, error)
+	// PresignPut returns a URL that writes pipeline's artifact sha, of size bytes, with a PUT until ttl passes. The
+	// URL is bound to the content: the PUT sends a Content-Length of size and ChecksumHeader at ChecksumSHA256(sha),
+	// and the store refuses any other length or body.
+	PresignPut(pipeline, sha string, size int64, ttl time.Duration) (string, error)
+}
+
+// ChecksumHeader is the header a PUT to a presigned URL carries the content's SHA-256 in, which the URL signs.
+const ChecksumHeader = "X-Amz-Checksum-Sha256"
+
+// ChecksumSHA256 is ChecksumHeader's value for the valid hex SHA-256 sha: the base64 of its 32 bytes.
+func ChecksumSHA256(sha string) string {
+	b, _ := hex.DecodeString(sha)
+	return base64.StdEncoding.EncodeToString(b)
 }
 
 // sniffLen is how many leading bytes http.DetectContentType looks at.

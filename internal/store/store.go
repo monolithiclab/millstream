@@ -34,7 +34,24 @@ var (
 	// ErrRevoked means a node id was revoked (millstream nodes revoke): the engine refuses it from then on (spec
 	// section 15.7).
 	ErrRevoked = errors.New("node revoked")
+	// ErrUnavailable means the database cannot serve the request now: out of resources or connections, shutting
+	// down or starting, or unreachable (Postgres SQLSTATE classes 53 and 08, 57P01, 57P03). Retrying later may
+	// succeed.
+	ErrUnavailable = errors.New("store unavailable")
 )
+
+// Retryable reports whether err means the store cannot serve now, rather than that the request failed: closed,
+// read-only, its write connection lost, the database unavailable, or the caller's context ended. The HTTP API and
+// the node protocol answer it 503 unavailable.
+func Retryable(err error) bool {
+	for _, e := range []error{ErrClosed, ErrReadOnly, ErrWriteLost, ErrUnavailable, context.Canceled,
+		context.DeadlineExceeded} {
+		if errors.Is(err, e) {
+			return true
+		}
+	}
+	return false
+}
 
 // RollupBatch is the most events one Rollup pass reads.
 const RollupBatch = 5000
@@ -143,7 +160,7 @@ type Store interface {
 	SetInsightState(ctx context.Context, pipeline, id string, state InsightState) error
 	// RegisterNode records a remote node joining, or joining again from a new process: its version, labels,
 	// runtimes and slots, active, heard from now. A revoked id is ErrRevoked.
-	RegisterNode(ctx context.Context, n Node) error
+	RegisterNode(ctx context.Context, n Node) (NodeState, error)
 	// SetNodeState drains or revokes a node (spec sections 5.10 and 15.7). With expireLeases, every lease the node
 	// holds ends at once, as an expired lease does (its attempt consumed), and those leases are returned. Revoking
 	// an id never registered records it, so it is refused from then on; draining one is ErrNotFound. Renew updates
@@ -186,7 +203,8 @@ type Store interface {
 	PipelineEvents(ctx context.Context, f EventFilter) ([]Event, error)
 	// MetricRollups returns the rollups f selects.
 	MetricRollups(ctx context.Context, f MetricFilter) ([]MetricRollup, error)
-	// MetricTotals returns every series of the rollups over every minute, by pipeline, name and labels.
+	// MetricTotals returns every series' running totals over every minute ever rolled up, retained or not, by
+	// pipeline, name and labels.
 	MetricTotals(ctx context.Context) ([]MetricTotal, error)
 	// Insights returns the insights f selects.
 	Insights(ctx context.Context, f InsightFilter) ([]Insight, error)

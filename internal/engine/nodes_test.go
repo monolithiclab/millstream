@@ -46,6 +46,9 @@ func TestNodePlacement(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	if a, b, c := v.e.capSlots("cpu", 4), v.e.capSlots("gpu", 4), v.e.capSlots("unknown", 4); a != 2 || b != 4 || c != 4 {
+		t.Fatalf("pulls capped at %d, %d, %d; want the registered slots, else what was asked", a, b, c)
+	}
 	un, err := v.e.Unschedulable(v.ctx)
 	if err != nil || len(un) != 1 || un[0].Step != "crawl" || un[0].Pending != 1 ||
 		un[0].Placement.String() != "runtime exec, labels zone=eu" {

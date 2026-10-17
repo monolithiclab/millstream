@@ -102,7 +102,7 @@ func TestRemoteNode(t *testing.T) {
 	}
 
 	// Revoked, the node is refused for good.
-	if err := d.st.RegisterNode(d.ctx, store.Node{ID: "n3"}); err != nil {
+	if _, err := d.st.RegisterNode(d.ctx, store.Node{ID: "n3"}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := d.st.SetNodeState(d.ctx, "n2", store.NodeRevoked, true); err != nil {
@@ -198,6 +198,18 @@ func TestRelayFailAndLeave(t *testing.T) {
 	if ns, _ := d.st.Nodes(d.ctx); len(ns) != 1 || ns[0].State != store.NodeDraining {
 		t.Fatalf("nodes after leaving = %+v", ns)
 	}
+	// The same process registering again, as with a new active engine after a failover, stays draining: it is
+	// leased nothing; a new process for the id is active again.
+	if _, err := n.Register(d.ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := d.e.Fire(d.ctx, "remote", "go", "k2", json.RawMessage(`{}`)); err != nil {
+		t.Fatal(err)
+	}
+	if as, err := n.Pull(d.ctx, "n1", 1); err != nil || len(as) != 0 {
+		t.Fatalf("the draining node registered again pulled %d, %v", len(as), err)
+	}
+	d.pull(d.transport("n1", "https://a:7070"), "n1") // a new process for the id: active, it leases k2
 	if dir, _ := nodeapi.WorkRoot(func(string) (string, bool) { return shared(t, "tmp"), true }); dir == "" {
 		t.Fatal("no work root")
 	}
@@ -212,7 +224,12 @@ func TestAnswersAndURLs(t *testing.T) {
 	})
 	d.hosts.set("b:7070", between)
 	n := d.transport("n1", "https://b:7070", "https://a:7070")
-	n.SetPullWait(0)
+	if got := n.HeartbeatInterval(); got != node.DefaultHeartbeatInterval {
+		t.Errorf("heartbeat interval under the engine's lease: %s", got)
+	}
+	if got := node.HeartbeatFor(3 * time.Second); got != time.Second {
+		t.Errorf("heartbeat interval under a 3 s lease: %s", got)
+	}
 	if _, err := n.Heartbeat(d.ctx, "n1", nil); err != nil {
 		t.Fatalf("heartbeat after a 503: %v", err)
 	}

@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/monolithiclab/millstream/internal/api"
+	"github.com/monolithiclab/millstream/internal/artifacts"
 	"github.com/monolithiclab/millstream/internal/engine"
 	"github.com/monolithiclab/millstream/internal/nodeapi"
 	"github.com/monolithiclab/millstream/internal/nodewire"
@@ -278,7 +279,14 @@ func TestLeaseScopedHandlers(t *testing.T) {
 	}
 	wantCode(t, request(h, http.MethodPut, strings.Replace(u.URL, "name=r.txt", "name=x.txt", 1), "report"),
 		http.StatusForbidden, nodewire.CodeNotHeld)
-	wantCode(t, request(h, http.MethodPut, u.URL, "other"), http.StatusBadRequest, nodewire.CodeInvalid)
+	wantCode(t, request(h, http.MethodPut, u.URL, "other!"), http.StatusBadRequest, nodewire.CodeInvalid)
+	// A body of another size than the one signed is refused before anything is written; the size is signed.
+	if rec := request(h, http.MethodPut, u.URL, "report, longer"); rec.Code != http.StatusBadRequest ||
+		!strings.Contains(rec.Body.String(), "not the 6 declared") {
+		t.Fatalf("a longer body: %d %s", rec.Code, rec.Body.String())
+	}
+	wantCode(t, request(h, http.MethodPut, strings.Replace(u.URL, "size=6", "size=14", 1), "report, longer"),
+		http.StatusForbidden, nodewire.CodeNotHeld)
 	wantCode(t, request(h, http.MethodGet, u.URL, ""), http.StatusForbidden, nodewire.CodeNotHeld) // a put URL
 	if rec := request(h, http.MethodPut, u.URL, "report"); rec.Code != http.StatusOK {
 		t.Fatalf("put through the proxy: %d %s", rec.Code, rec.Body.String())
@@ -318,7 +326,7 @@ func TestLeaseScopedHandlers(t *testing.T) {
 	// refused.
 	done, _ := json.Marshal(nodewire.Done{Node: "n1", Lease: lease, Attempt: l.Attempt,
 		Outputs: []nodewire.Output{{Key: "p", Payload: json.RawMessage(`{}`), Artifacts: []store.ArtifactRef{ref}}}})
-	if rec := request(h, http.MethodPost, nodewire.PathDone, string(done)); rec.Code != http.StatusNoContent {
+	if rec := request(h, http.MethodPost, nodewire.PathDone, string(done)); rec.Code != http.StatusOK {
 		t.Fatalf("done: %d %s", rec.Code, rec.Body.String())
 	}
 	as, err = n1.Pull(d.ctx, "n1", 1)
@@ -383,7 +391,8 @@ func mustJSON(v any) string {
 	return string(b)
 }
 
-// A failure is applied under the lease; an unknown node leaving must register; a store that fails answers internal.
+// A failure is applied under the lease; an unknown node leaving must register; a request cut off, or a closed store,
+// answers unavailable, and a node never takes an empty answer for an acceptance.
 func TestFailLeaveAndStoreErrors(t *testing.T) {
 	d := newDeployment(t)
 	h := d.hosts.h["a:7070"]
@@ -397,7 +406,7 @@ func TestFailLeaveAndStoreErrors(t *testing.T) {
 	}
 	fail, _ := json.Marshal(nodewire.Fail{Node: "n1", Lease: nodewire.FromRef(as[0].Lease.Ref()), Attempt: 1,
 		Class: "action", Message: "down", Retryable: true})
-	if rec := request(h, http.MethodPost, nodewire.PathFail, string(fail)); rec.Code != http.StatusNoContent {
+	if rec := request(h, http.MethodPost, nodewire.PathFail, string(fail)); rec.Code != http.StatusOK {
 		t.Fatalf("fail: %d %s", rec.Code, rec.Body.String())
 	}
 	wantCode(t, request(h, http.MethodPost, nodewire.PathFail, `{`), http.StatusBadRequest, nodewire.CodeInvalid)
@@ -408,9 +417,74 @@ func TestFailLeaveAndStoreErrors(t *testing.T) {
 		http.StatusBadRequest, nodewire.CodeInvalid)
 	wantCode(t, request(h, http.MethodPost, nodewire.PathLogs, `{"node":"ghost","lines":[]}`), http.StatusConflict,
 		nodewire.CodeUnregistered)
+
+	// A request cut off (its engine's term ended, its node went away) is never answered as a success, which a node
+	// would take for an acceptance: 503, retried.
+	if _, _, err := d.e.Fire(d.ctx, "remote", "go", "k2", json.RawMessage(`{}`)); err != nil {
+		t.Fatal(err)
+	}
+	as, err = n1.Pull(d.ctx, "n1", 1)
+	if err != nil || len(as) != 1 {
+		t.Fatalf("pull = %v, %v", as, err)
+	}
+	lease := mustJSON(nodewire.FromRef(as[0].Lease.Ref()))
+	// A node reporting another pipeline's content, to read it through its own pipeline later, is refused: a report
+	// names only what is stored in the lease's pipeline (spec section 15.7).
+	secret, err := d.arts.Put(d.ctx, "secrets", "key.pem", strings.NewReader("another pipeline's"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for path, body := range map[string]string{
+		nodewire.PathDone: `{"node":"n1","attempt":1,"lease":` + lease + `,"outputs":[{"key":"x","payload":{},` +
+			`"artifacts":[` + mustJSON(secret) + `]}]}`,
+		nodewire.PathFail: `{"node":"n1","attempt":1,"class":"action","lease":` + lease + `,"artifacts":[` +
+			mustJSON(secret) + `]}`,
+	} {
+		rec := request(h, http.MethodPost, path, body)
+		wantCode(t, rec, http.StatusBadRequest, nodewire.CodeInvalid)
+		if !strings.Contains(rec.Body.String(), "is not stored in pipeline remote") {
+			t.Errorf("%s with another pipeline's artifact: %s", path, rec.Body.String())
+		}
+	}
+	cut, cancel := context.WithCancel(d.ctx)
+	cancel()
+	for path, body := range map[string]string{
+		nodewire.PathDone:      `{"node":"n1","attempt":1,"lease":` + lease + `}`,
+		nodewire.PathFail:      `{"node":"n1","attempt":1,"class":"action","lease":` + lease + `}`,
+		nodewire.PathHeartbeat: `{"node":"n1","leases":[` + lease + `]}`,
+		nodewire.PathLeave:     `{"node":"n1"}`,
+	} {
+		req := httptest.NewRequestWithContext(cut, http.MethodPost, path, strings.NewReader(body))
+		req.Header.Set("Authorization", "Bearer "+token)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		if rec.Code != http.StatusServiceUnavailable || rec.Header().Get("Retry-After") == "" {
+			t.Errorf("%s cut off: %d %v %s", path, rec.Code, rec.Header(), rec.Body.String())
+		}
+	}
+	// And a node takes an empty 2xx answer for no acceptance: it sends the report again.
+	var empties int
+	both := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == nodewire.PathDone && empties == 0 {
+			empties++
+			return // an implicit, empty 200
+		}
+		h.ServeHTTP(w, r)
+	})
+	d.hosts.set("a:7070", both)
+	d.hosts.set("b:7070", both)
+	n2 := d.transport("n1", "https://a:7070", "https://b:7070")
+	if err := n2.Done(d.ctx, store.DoneRequest{LeaseRef: as[0].Lease.Ref(), Attempt: 1}); err != nil || empties != 1 {
+		t.Fatalf("done after an empty answer: %v, %d empty", err, empties)
+	}
+	ds, err := d.st.Deliveries(d.ctx, store.DeliveryFilter{Pipeline: "remote", ID: as[0].Lease.DeliveryID})
+	if err != nil || len(ds) != 1 || ds[0].State != store.DeliveryDone {
+		t.Fatalf("delivery after the resent done: %+v, %v", ds, err)
+	}
+
 	_ = d.st.Close()
 	wantCode(t, request(h, http.MethodPost, nodewire.PathHeartbeat, `{"node":"n1","leases":[]}`),
-		http.StatusInternalServerError, nodewire.CodeInternal)
+		http.StatusServiceUnavailable, nodewire.CodeUnavailable)
 }
 
 // presigning is an artifact store nodes reach through presigned URLs, as the S3 store.
@@ -420,8 +494,8 @@ func (presigning) PresignGet(p, sha string, _ time.Duration) (string, error) {
 	return "https://s3.test/get/" + p + "/" + sha, nil
 }
 
-func (presigning) PresignPut(p, sha string, _ time.Duration) (string, error) {
-	return "https://s3.test/put/" + p + "/" + sha, nil
+func (presigning) PresignPut(p, sha string, size int64, _ time.Duration) (string, error) {
+	return "https://s3.test/put/" + p + "/" + sha + "?size=" + strconv.FormatInt(size, 10), nil
 }
 
 // With a presigning store, a node gets presigned URLs, direct, for an input it holds and an output.
@@ -444,11 +518,24 @@ func TestPresignedURLs(t *testing.T) {
 	body := mustJSON(nodewire.ArtifactURL{Node: "n1", Lease: nodewire.FromRef(as[0].Lease.Ref()), Op: nodewire.OpPut,
 		Artifact: store.ArtifactRef{Name: "o.txt", SHA256: sha, Size: 1, Type: "text/plain"}})
 	rec := request(h, http.MethodPost, nodewire.PathArtifactURL, body)
-	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"url":"https://s3.test/put/remote/`+sha+`","direct":true`) {
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"url":"https://s3.test/put/remote/`+sha+`?size=1","direct":true`) {
 		t.Fatalf("presigned put: %d %s", rec.Code, rec.Body.String())
 	}
 	bad := strings.Replace(body, `"size":1`, `"size":-1`, 1)
 	wantCode(t, request(h, http.MethodPost, nodewire.PathArtifactURL, bad), http.StatusBadRequest, nodewire.CodeInvalid)
+
+	// The node's direct PUT sends the length and the checksum the presigned URL signs, without the node token.
+	var got *http.Request
+	d.hosts.set("s3.test", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { got = r }))
+	ref, err := n1.PutArtifact(d.ctx, as[0].Lease.Ref(), "margin.txt", strings.NewReader("margin 18%"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got == nil || got.URL.Query().Get("size") != "10" || got.ContentLength != 10 ||
+		got.Header.Get(artifacts.ChecksumHeader) != artifacts.ChecksumSHA256(ref.SHA256) ||
+		got.Header.Get("Authorization") != "" {
+		t.Fatalf("direct PUT = %+v", got)
+	}
 }
 
 // The tests write into one directory per process, removed when the tests end: a temporary directory per test costs

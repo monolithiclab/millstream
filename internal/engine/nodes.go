@@ -38,6 +38,8 @@ type NodeInfo struct {
 	Labels   map[string]string
 	Runtimes []string
 	Slots    int
+	// Nonce is the registering process's (store.Node).
+	Nonce string
 	// Embedded marks the engine's own node, kept in memory only.
 	Embedded bool
 	// AnyPlacement makes the node take every delivery whatever its placement and runtime.
@@ -67,17 +69,18 @@ func (e *Engine) AddNode(info NodeInfo) {
 }
 
 // RegisterNode registers a remote node with the engine and records it in the store: active, unless its id was
-// revoked (store.ErrRevoked).
+// revoked (store.ErrRevoked), or it was draining and registers again from the same process (a failover).
 func (e *Engine) RegisterNode(ctx context.Context, info NodeInfo) error {
-	if err := e.st.RegisterNode(ctx, store.Node{ID: info.ID, Version: info.Version, Labels: info.Labels,
-		Runtimes: info.Runtimes, Slots: info.Slots}); err != nil {
+	state, err := e.st.RegisterNode(ctx, store.Node{ID: info.ID, Version: info.Version, Labels: info.Labels,
+		Runtimes: info.Runtimes, Slots: info.Slots, Nonce: info.Nonce})
+	if err != nil {
 		return fmt.Errorf("register node %s: %w", info.ID, err)
 	}
 	e.mu.Lock()
-	e.nodes[info.ID] = &nodeEntry{info: info, state: store.NodeActive, heard: e.opts.Now()}
+	e.nodes[info.ID] = &nodeEntry{info: info, state: state, heard: e.opts.Now()}
 	e.mu.Unlock()
 	e.log.Info("node registered", "nodeId", info.ID, "version", info.Version, "runtimes", info.Runtimes,
-		"labels", info.Labels, "slots", info.Slots)
+		"labels", info.Labels, "slots", info.Slots, "state", string(state))
 	return nil
 }
 
@@ -145,7 +148,7 @@ func (e *Engine) NodeHeartbeat(ctx context.Context, id string, refs []store.Leas
 // before it registered).
 func Health(heard, now time.Time, leaseTTL time.Duration) string {
 	age := now.Sub(heard)
-	switch beat := min(node.DefaultHeartbeatInterval, leaseTTL/3); {
+	switch beat := node.HeartbeatFor(leaseTTL); {
 	case heard.IsZero():
 		return HealthLost
 	case age <= 3*beat:
@@ -154,6 +157,16 @@ func Health(heard, now time.Time, leaseTTL time.Duration) string {
 		return HealthLate
 	}
 	return HealthLost
+}
+
+// capSlots caps maxN at the slots a remote node registered with.
+func (e *Engine) capSlots(owner string, maxN int) int {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if n := e.nodes[owner]; n != nil && !n.info.Embedded && n.info.Slots > 0 {
+		return min(maxN, n.info.Slots)
+	}
+	return maxN
 }
 
 // remote reports whether owner is a remote node, which builds its deliveries' process specs itself.
@@ -289,7 +302,7 @@ func (e *Engine) HeldPackage(ctx context.Context, owner string, ref store.LeaseR
 }
 
 // HeldInput returns the input artifact sha of a delivery owner holds, its file made present in the delivery's
-// pipeline (an artifact of a copy on an imported stream is copied into the importer's on first use, spec section
+// pipeline (an artifact of a copy on an imported stream is copied from the producer's on first use, spec section
 // 9.2).
 func (e *Engine) HeldInput(ctx context.Context, owner string, ref store.LeaseRef, sha string) (store.ArtifactRef,
 	error,
@@ -308,7 +321,7 @@ func (e *Engine) HeldInput(ctx context.Context, owner string, ref store.LeaseRef
 				if e.opts.Artifacts == nil {
 					return store.ArtifactRef{}, errNoArtifactStore
 				}
-				return a, EnsureArtifact(ctx, e.st, e.opts.Artifacts, ref.Pipeline, a)
+				return a, EnsureArtifact(ctx, e.opts.Artifacts, ref.Pipeline, it.ParentPipeline, a)
 			}
 		}
 	}

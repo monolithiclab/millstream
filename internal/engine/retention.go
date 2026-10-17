@@ -16,6 +16,7 @@ import (
 	"github.com/monolithiclab/millstream/internal/artifacts"
 	"github.com/monolithiclab/millstream/internal/ids"
 	"github.com/monolithiclab/millstream/internal/pipeline"
+	"github.com/monolithiclab/millstream/internal/schema"
 	"github.com/monolithiclab/millstream/internal/store"
 )
 
@@ -257,7 +258,7 @@ func keepReferenced(ctx context.Context, files artifacts.Files, a store.Artifact
 }
 
 // prune forgets what the engine holds of the revisions that are neither a pipeline's active one nor that of a run
-// not yet settled: their decoded revisions, resolved actions, lessons and compiled builtins and, when the engine
+// not yet settled: their decoded revisions, resolved actions, lessons, compiled builtins and trigger input schemas and, when the engine
 // loads packages from the store, their packages and the directories it wrote them to. They come back from the store
 // if a rollback or a replay needs them again.
 func (e *Engine) prune(ctx context.Context) error {
@@ -274,6 +275,7 @@ func (e *Engine) prune(ctx context.Context) error {
 	maps.DeleteFunc(e.actions, func(k actionKey, _ *resolvedAction) bool { return !hashes[k.hash] })
 	maps.DeleteFunc(e.lessonsC, func(k actionKey, _ lessonsEntry) bool { return !hashes[k.hash] })
 	maps.DeleteFunc(e.builtins, func(k builtinKey, _ *builtin) bool { return !hashes[k.hash] })
+	maps.DeleteFunc(e.triggerSchemas, func(k actionKey, _ *schema.Schema) bool { return !hashes[k.hash] })
 	if e.opts.PackageDir != "" { // without it, a package evicted could not be loaded again
 		maps.DeleteFunc(e.packages, func(h string, _ *pipeline.Package) bool { return !hashes[h] })
 	}

@@ -10,6 +10,7 @@ package nodewire
 
 import (
 	"encoding/json"
+	"errors"
 	"time"
 
 	"github.com/monolithiclab/millstream/internal/node"
@@ -23,7 +24,8 @@ const Protocol = 1
 // Prefix is where the engine serves the node protocol (api.NodePrefix).
 const Prefix = "/node/v1"
 
-// The protocol's operations, each a POST of a JSON body answered with JSON, but Package (a GET answering the
+// The protocol's operations, each a POST of a JSON body answered with JSON (Done, Fail and Leave with an Ack), but
+// Package (a GET answering the
 // package's bundle) and Blob (the engine's artifact proxy: a GET of the content, or a PUT of it answering its
 // reference).
 const (
@@ -69,6 +71,9 @@ type Register struct {
 	Labels   map[string]string `json:"labels"`
 	Runtimes []string          `json:"runtimes"`
 	Slots    int               `json:"slots"`
+	// Nonce is drawn by the node process, sent again when it registers again: a draining node stays draining
+	// across a failover, until a new process registers.
+	Nonce string `json:"nonce,omitempty"`
 }
 
 // Registered is the engine accepting a registration: who it is, and the lease duration nodes heartbeat within.
@@ -84,6 +89,20 @@ type Pull struct {
 	Node   string `json:"node"`
 	Max    int    `json:"max"`
 	WaitMs int64  `json:"waitMs"`
+}
+
+// Ack is the engine accepting a Done, a Fail or a Leave. A node takes nothing else for an acceptance, an empty
+// answer included: it sends the report again.
+type Ack struct {
+	Accepted bool `json:"accepted"`
+}
+
+// Check reports an answer that does not accept.
+func (a *Ack) Check() error {
+	if !a.Accepted {
+		return errors.New("the engine's answer accepts nothing")
+	}
+	return nil
 }
 
 // Assignments are the deliveries a pull leased.

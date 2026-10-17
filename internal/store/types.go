@@ -407,6 +407,8 @@ func ValidMetrics(ms []Metric) error {
 // already in the artifact store, and Metrics the ones the action reported.
 type DoneRequest struct {
 	LeaseRef
+	// Owner, when set, must be the lease's owner: a remote node's report (spec section 15.7).
+	Owner     string
 	Attempt   int
 	Outputs   []Output
 	CostUSD   float64
@@ -417,6 +419,8 @@ type DoneRequest struct {
 // FailRequest fails a leased delivery. Artifacts are the failed attempt's own, kept as on done.
 type FailRequest struct {
 	LeaseRef
+	// Owner, when set, must be the lease's owner, as DoneRequest's.
+	Owner     string
 	Attempt   int
 	Class     string
 	Message   string
@@ -543,7 +547,10 @@ type Node struct {
 	Labels   map[string]string
 	Runtimes []string
 	Slots    int
-	State    NodeState
+	// Nonce is drawn by each node process: a node registering again from the process that registered last (after a
+	// failover) stays draining when it was; another process makes it active.
+	Nonce string
+	State NodeState
 	// RegisteredAt is zero for an id revoked before it ever registered.
 	RegisteredAt  time.Time
 	LastHeartbeat time.Time
@@ -719,14 +726,14 @@ type MetricRollup struct {
 	Max    float64
 }
 
-// MetricTotal is one series of the rollups, a pipeline's metric and label set, over every minute the store holds:
-// what the Prometheus exposition shows.
+// MetricTotal is one series of the rollups, a pipeline's metric and label set, over every minute ever rolled up,
+// those retention deleted included: what the Prometheus exposition shows.
 type MetricTotal struct {
 	Pipeline string
 	Name     string
 	// Labels are the label set, by name; nil when it has none.
 	Labels map[string]string
-	// Count and Sum add up every minute.
+	// Count and Sum add up every minute, so they never decrease.
 	Count int64
 	Sum   float64
 	// Last is the latest minute, and LastCount and LastSum its count and sum: a gauge shows their mean.

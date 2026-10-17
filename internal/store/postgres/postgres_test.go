@@ -2,12 +2,15 @@ package postgres
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 func TestRebind(t *testing.T) {
@@ -143,5 +146,23 @@ func TestEngineStatuses(t *testing.T) {
 	}
 	if got := engineStatuses([]lockSession{{name: "millstream", granted: true}}, nil); len(got) != 0 {
 		t.Fatalf("a command's session listed: %+v", got)
+	}
+}
+
+// Resource, connection and startup or shutdown errors are the database being unavailable (store.ErrUnavailable,
+// 503); any other error is not.
+func Test_unavailable(t *testing.T) {
+	for code, want := range map[string]bool{"53300": true, "53100": true, "08006": true, "08001": true,
+		"57P01": true, "57P03": true, "57014": false, "23505": false, "40001": false} {
+		if got := unavailable(fmt.Errorf("unit: %w", &pgconn.PgError{Code: code})); got != want {
+			t.Errorf("unavailable(%s) = %v", code, got)
+		}
+	}
+	_, err := pgconn.Connect(t.Context(), "postgres://u@127.0.0.1:1/db?connect_timeout=1&sslmode=disable")
+	if err == nil || !unavailable(err) {
+		t.Errorf("a connection refused: %v", err)
+	}
+	if unavailable(errors.New("other")) {
+		t.Error("an unrelated error is unavailable")
 	}
 }
