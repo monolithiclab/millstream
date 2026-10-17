@@ -18,6 +18,7 @@ import (
 
 	"github.com/monolithiclab/millstream/internal/nodewire"
 	"github.com/monolithiclab/millstream/internal/store"
+	"github.com/monolithiclab/millstream/internal/store/postgres"
 )
 
 // The node chaos suite (spec sections 5.10 and 16): serve processes on one Postgres database without an embedded
@@ -253,7 +254,10 @@ func TestNodesFollowFailover(t *testing.T) {
 // completed: it is refused stale, never applied twice.
 func refuseStaleDone(t *testing.T, f *failover, e *engineProc, node string) {
 	t.Helper()
-	st := openStore(t, f.db)
+	st, err := postgres.OpenReadOnly(t.Context(), f.db, postgres.Options{}) // e holds the lock
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer func() { _ = st.Close() }()
 	ds, err := st.Deliveries(t.Context(), store.DeliveryFilter{Pipeline: pipelineName, State: store.DeliveryDone})
 	if err != nil {
