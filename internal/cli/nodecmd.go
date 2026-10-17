@@ -63,10 +63,13 @@ func (c NodeRunCmd) Run(rt *Runtime) error {
 		return err
 	}
 	token, _ := rt.Env(NodeTokenEnv)
-	switch {
-	case token == "":
+	if token == "" {
 		return usageError("node: set " + NodeTokenEnv + " to the deployment's node token (node.token)")
-	case c.Slots <= 0 || c.DrainTimeout <= 0:
+	}
+	if err := pipeline.CheckToken(NodeTokenEnv, token); err != nil {
+		return usageError(err.Error())
+	}
+	if c.Slots <= 0 || c.DrainTimeout <= 0 {
 		return usageError("--slots and --drain-timeout must be positive")
 	}
 	for k := range c.Labels {

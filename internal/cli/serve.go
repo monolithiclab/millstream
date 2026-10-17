@@ -106,9 +106,9 @@ func apiAuth(rt *Runtime, env *pipeline.Environment, listen string) (*api.Auth, 
 	if env.AuthToken == nil {
 		return nil, nil
 	}
-	token, err := env.AuthToken.Value(rt.Env)
+	token, err := env.AuthToken.Token("auth.token", rt.Env)
 	if err != nil {
-		return nil, fmt.Errorf("auth.token: %w", err)
+		return nil, err
 	}
 	a := &api.Auth{Token: token, User: env.AuthUser, MetricsPublic: env.MetricsPublic,
 		SecureCookie: env.TLS != nil || api.CheckLoopback(listen) != nil, Sessions: api.NewSessions()}

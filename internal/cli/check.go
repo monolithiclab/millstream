@@ -31,6 +31,9 @@ func (c CheckCmd) Run(rt *Runtime) error {
 	if err != nil {
 		return err
 	}
+	if err := checkTokens(rt, env); err != nil {
+		return err
+	}
 	diags := checkPackages(rt, pkgs, resolver(rt, env, false), checkOptions(rt, env))
 	failed := false
 	for _, pkg := range pkgs {
@@ -52,6 +55,25 @@ func (c CheckCmd) Run(rt *Runtime) error {
 	}
 	if failed {
 		return errFailed
+	}
+	return nil
+}
+
+// checkTokens refuses an auth.token or node.token shorter than serve accepts, when its value can be read here: on a
+// development machine the variable is often unset, and serve reports that itself.
+func checkTokens(rt *Runtime, env *pipeline.Environment) error {
+	for _, t := range []struct {
+		key string
+		src *pipeline.SecretSource
+	}{{"auth.token", env.AuthToken}, {"node.token", env.NodeToken}} {
+		if t.src == nil {
+			continue
+		}
+		if v, err := t.src.Value(rt.Env); err == nil {
+			if err := pipeline.CheckToken(t.key, v); err != nil {
+				return err
+			}
+		}
 	}
 	return nil
 }

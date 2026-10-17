@@ -47,7 +47,7 @@ const failoverLeaseTTL = "1s"
 const failoverEngine = "engine: { lockCheck: 500ms, keepalive: 1s }\n"
 
 // failoverToken is the deployment's auth.token: the suite runs with token auth on, the standby's API included.
-const failoverToken = "failover-s3cret"
+const failoverToken = "failover-token-0123456789abcdef-0"
 
 // settleTimeout bounds how long a failover test waits for the run to settle.
 const settleTimeout = 2 * time.Minute

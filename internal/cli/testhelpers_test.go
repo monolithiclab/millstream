@@ -22,6 +22,9 @@ import (
 	"github.com/monolithiclab/millstream/internal/testdir"
 )
 
+// testToken is a token as long as auth.token and node.token must be (pipeline.MinTokenLength).
+const testToken = "test-token-0123456789abcdef-0123" // #nosec G101 -- a test fixture
+
 // testDir is TestMain's temporary directory, for what tests build once and share; testdata is the absolute path
 // of the testdata directory.
 var testDir, testdata string

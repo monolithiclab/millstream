@@ -31,8 +31,9 @@ import (
 const withNodeToken = "MILLSTREAM_NODE_TOKEN=" + nodeToken
 
 const (
-	nodeToken    = "node-s3cret"
+	nodeToken    = "node-token-0123456789abcdef-01234"
 	slowCrawlVar = "MILLSTREAM_VAR_CRAWL_DELAY_MS=3000"
+	rotatedToken = "rotated-token-0123456789abcdef-01"
 	nodeJoined   = `"msg":"node joined"`
 )
 
@@ -205,12 +206,12 @@ func TestNodeTokenRotated(t *testing.T) {
 	f.fireRun([]*engineProc{a})
 	a.waitDone(t, 5)
 	a.stop(t)
-	b := f.startEngine("b", f.db, "MILLSTREAM_NODE_TOKEN=rotated")
+	b := f.startEngine("b", f.db, "MILLSTREAM_NODE_TOKEN="+rotatedToken)
 	b.waitLine(t, `"msg":"leading the deployment"`, time.Minute)
 	if code := n1.waitExit(t, time.Minute); code == 0 || n1.log.count("refused the node token") == 0 {
 		t.Errorf("the node with the old token exited with %d", code)
 	}
-	f.startNode("2", "rotated", b.url)
+	f.startNode("2", rotatedToken, b.url)
 	f.waitSettled()
 	b.stop(t)
 	wantSame(t, readSnapshot(t, f.db), want)

@@ -34,7 +34,7 @@ func Test_webhookOnPostgres(t *testing.T) {
 		0o600); err != nil {
 		t.Fatal(err)
 	}
-	environ := map[string]string{"MILLSTREAM_DSN": dsn, "MILLSTREAM_TOKEN": "s3cret"}
+	environ := map[string]string{"MILLSTREAM_DSN": dsn, "MILLSTREAM_TOKEN": testToken}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 	serving := regexp.MustCompile(`serving the UI and the API on https://(127\.0\.0\.1:\d+)/`)
@@ -62,7 +62,7 @@ func Test_webhookOnPostgres(t *testing.T) {
 		t.Helper()
 		var cliOut, cliErr bytes.Buffer
 		code := Run(ctx, argv, IO{In: strings.NewReader(""), Out: &cliOut, Err: &cliErr}, "dev", func(rt *Runtime) {
-			env := map[string]string{ServerEnv: base, TokenEnv: "s3cret"}
+			env := map[string]string{ServerEnv: base, TokenEnv: testToken}
 			rt.Env = func(k string) (string, bool) { v, ok := env[k]; return v, ok }
 			rt.HTTPClient = client
 		})
@@ -102,7 +102,7 @@ func Test_webhookOnPostgres(t *testing.T) {
 		_ = json.NewDecoder(resp.Body).Decode(&run)
 		return resp.StatusCode, run
 	}
-	for _, tok := range []string{"", "s3cret"} {
+	for _, tok := range []string{"", testToken} {
 		if code, _ := call(tok, "", `{"n":2}`); code != http.StatusUnauthorized {
 			t.Fatalf("with token %q: %d", tok, code)
 		}
@@ -116,7 +116,7 @@ func Test_webhookOnPostgres(t *testing.T) {
 	}
 	waitFor(t, func() bool {
 		req, _ := http.NewRequestWithContext(ctx, http.MethodGet, base+"/api/v1/pipelines/extra/runs/"+run.RunID, nil)
-		req.Header.Set("Authorization", "Bearer s3cret")
+		req.Header.Set("Authorization", "Bearer "+testToken)
 		resp, err := client.Do(req)
 		if err != nil {
 			return false

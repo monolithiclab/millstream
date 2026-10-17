@@ -42,7 +42,11 @@ func Test_nodesCommands(t *testing.T) {
 	if _, errOut := s.must(1, "node", "drain", "--state-dir", dir); !strings.Contains(errOut, "no node runs from") {
 		t.Fatalf("drain without a node: %q", errOut)
 	}
-	s.checkRefusals(t, map[string]string{NodeTokenEnv: "t"}, []refusal{
+	s.checkRefusals(t, map[string]string{NodeTokenEnv: "short"}, []refusal{
+		{NodeRunCmd{Join: []string{"https://e:7070"}, Slots: 1, DrainTimeout: 1, StateDir: dir}, true,
+			NodeTokenEnv + ": must be at least 32 characters long, not 5"},
+	})
+	s.checkRefusals(t, map[string]string{NodeTokenEnv: testToken}, []refusal{
 		{NodeRunCmd{Join: []string{"http://engine:7070"}, Slots: 1, DrainTimeout: 1, StateDir: dir}, true,
 			"over TLS only"},
 		{NodeRunCmd{Join: []string{"https://e:7070"}, Slots: 0, DrainTimeout: 1, StateDir: dir}, true,
@@ -62,7 +66,7 @@ func Test_nodeJoinsAndDrains(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	h, err := nodeapi.New(nodeapi.Options{Engine: eng, Token: "tok", Version: "dev"})
+	h, err := nodeapi.New(nodeapi.Options{Engine: eng, Token: testToken, Version: "dev"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -80,7 +84,7 @@ func Test_nodeJoinsAndDrains(t *testing.T) {
 	code := Run(ctx, []string{"--db", unusedDB(), "node", "--join", "https://engine:7070", "--state-dir", dir,
 		"--labels", "gpu=true", "--slots", "2"}, IO{In: strings.NewReader(""), Out: &out, Err: &errb}, "dev",
 		func(rt *Runtime) {
-			rt.Env = func(k string) (string, bool) { v, ok := map[string]string{NodeTokenEnv: "tok"}[k]; return v, ok }
+			rt.Env = func(k string) (string, bool) { v, ok := map[string]string{NodeTokenEnv: testToken}[k]; return v, ok }
 			rt.HTTPClient = &http.Client{Transport: handlerTransport{hf}}
 			rt.Launchers = testLaunchers()
 		})
@@ -103,7 +107,7 @@ func Test_nodeJoinsAndDrains(t *testing.T) {
 }
 
 // artifacts.s3 builds the S3 store with its credentials' sources, else the AWS variables; node.token is read from
-// its source.
+// its source, and refused, as check refuses it, when too short.
 func Test_artifactStoreAndNodeToken(t *testing.T) {
 	parse := func(src string) *pipeline.Environment {
 		env, err := pipeline.ParseEnvironment([]byte(src))
@@ -136,14 +140,27 @@ func Test_artifactStoreAndNodeToken(t *testing.T) {
 		t.Errorf("default store = %T, %v", a, err)
 	}
 	tokenEnv := parse("node: { token: { env: NT } }\n")
-	if tok, err := readNodeToken(rt(map[string]string{"NT": "x"}), tokenEnv); err != nil || tok != "x" {
+	if tok, err := readNodeToken(rt(map[string]string{"NT": testToken}), tokenEnv); err != nil || tok != testToken {
 		t.Errorf("node token = %q, %v", tok, err)
+	}
+	if _, err := readNodeToken(rt(map[string]string{"NT": "x"}), tokenEnv); err == nil ||
+		err.Error() != "node.token: must be at least 32 characters long, not 1" {
+		t.Errorf("a short node token: %v", err)
 	}
 	if _, err := readNodeToken(rt(nil), tokenEnv); err == nil {
 		t.Error("an unset node token")
 	}
 	if tok, err := readNodeToken(rt(nil), parse("")); err != nil || tok != "" {
 		t.Errorf("no node.token = %q, %v", tok, err)
+	}
+	// check refuses a short token it can read, and skips one it cannot.
+	both := parse("auth: { token: { env: AT } }\nnode: { token: { env: NT } }\n")
+	if err := checkTokens(rt(map[string]string{"AT": testToken}), both); err != nil {
+		t.Errorf("check with node.token unset: %v", err)
+	}
+	if err := checkTokens(rt(map[string]string{"AT": testToken, "NT": "x"}), both); err == nil ||
+		!strings.HasPrefix(err.Error(), "node.token: must be at least 32") {
+		t.Errorf("check with a short node.token: %v", err)
 	}
 }
 

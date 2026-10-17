@@ -314,11 +314,7 @@ func readNodeToken(rt *Runtime, env *pipeline.Environment) (string, error) {
 	if env.NodeToken == nil {
 		return "", nil
 	}
-	token, err := env.NodeToken.Value(rt.Env)
-	if err != nil {
-		return "", fmt.Errorf("node.token: %w", err)
-	}
-	return token, nil
+	return env.NodeToken.Token("node.token", rt.Env)
 }
 
 // checkListen refuses a listen address that is not a loopback one without auth.token: exposed, the API requires the

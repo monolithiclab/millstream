@@ -232,7 +232,9 @@ A second `millstream serve` on the same Postgres database, with the same environ
   to its https address: the API answers requests naming that host or a loopback one, takes state-changing requests
   from that origin, and marks the session cookie `Secure`. Or let the engine serve HTTPS itself with
   `tls: { cert, key }` (PEM files, relative to the environment file). Never expose it as plain HTTP. Tokens are
-  compared in constant time and never logged.
+  compared in constant time and never logged. `auth.token` and `node.token` hold at least 32 characters: the
+  engines and nodes refuse to start with a shorter one, and `millstream check` reports it. Generate each with
+  `openssl rand -hex 32`.
 - **Webhook tokens.** Each webhook trigger has its own token, stored as a hash and compared in constant time; it
   admits that trigger's requests only, never the API. Rotate it with `millstream trigger token --rotate` or the UI
   when it may have leaked.
