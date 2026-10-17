@@ -116,7 +116,10 @@ func (f *fakeTransport) Heartbeat(_ context.Context, _ string, refs []store.Leas
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.heartbeats = append(f.heartbeats, refs)
-	f.beats <- len(refs)
+	select {
+	case f.beats <- len(refs):
+	default: // a real-time test heartbeating faster than it reads, under load: never block the transport
+	}
 	if f.hbErr != nil {
 		err := f.hbErr
 		f.hbErr = nil
