@@ -12,7 +12,6 @@ import (
 	osexec "os/exec"
 	"os/signal"
 	"slices"
-	"strconv"
 	"syscall"
 	"time"
 
@@ -172,7 +171,9 @@ func (h engineHost) run(ctx context.Context, rt *Runtime, env *pipeline.Environm
 	run := launchers(rt, env)
 	pool := exec.NewPool(exec.PoolOptions{Options: exec.Options{Logger: log, Launchers: run}})
 	defer func() { _ = pool.Close() }()
-	owner := "embedded-" + strconv.Itoa(os.Getpid())
+	// The embedded node is named after the engine's id, a host name and a random suffix: a process id would name
+	// the embedded nodes of two engines in containers alike, embedded-1 both.
+	owner := "embedded-" + h.lead.identity.ID
 	// The node's lines about its deliveries, the actions' stderr among them, feed the live log tail too.
 	logs := api.NewLogRing(0, time.Now())
 	var n *node.Node

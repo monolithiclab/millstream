@@ -594,7 +594,10 @@ func wantNoWritesBetween(t *testing.T, db string, loser, winner *engineProc) {
 	if !ok {
 		t.Fatalf("%T has no QueryRow", st)
 	}
-	owner := func(p *engineProc) string { return fmt.Sprintf(`%%"owner":"embedded-%d"%%`, p.cmd.Process.Pid) }
+	owner := func(p *engineProc) string {
+		id := logField(t, p.waitLine(t, `"msg":"leading the deployment"`, time.Minute), "engine")
+		return `%"owner":"embedded-` + id + `"%`
+	}
 	var n, term int
 	if err := q.QueryRow(t.Context(), `SELECT COUNT(*) FROM events WHERE kind = ?1 AND data LIKE ?2`,
 		store.EventDeliveryLeased, owner(winner)).Scan(&term); err != nil {

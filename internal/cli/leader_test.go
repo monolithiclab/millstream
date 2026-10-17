@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -130,6 +131,42 @@ func TestTermStepsDown(t *testing.T) {
 	s.site.serveHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/nodes", nil))
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("the site after the term: %d", rec.Code)
+	}
+}
+
+// readyStore is a lostStore that closes ready once the term waits on it: the engine is ready, its site set.
+type readyStore struct {
+	lostStore
+	ready chan struct{}
+	once  sync.Once
+}
+
+func (r *readyStore) Lost() <-chan struct{} {
+	r.once.Do(func() { close(r.ready) })
+	return r.lose
+}
+
+// The embedded node is named after the engine's id, not its process id: two engines in containers, both pid 1,
+// would otherwise run two nodes named embedded-1.
+func TestTermNamesEmbeddedNodeAfterEngine(t *testing.T) {
+	s := testServer(t)
+	st := &readyStore{lostStore: lostStore{Store: memoryStore(t), lose: make(chan struct{})}, ready: make(chan struct{})}
+	done := make(chan error, 1)
+	go func() { done <- s.term(t.Context(), st, leadership{identity: api.Identity{ID: s.id}}) }()
+	select {
+	case <-st.ready:
+	case err := <-done:
+		t.Fatalf("term ended before it was ready: %v", err)
+	}
+	rec, req := httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/api/v1/nodes", nil)
+	req.Host = "localhost" // the API answers its own hosts only
+	s.site.serveHTTP(rec, req)
+	close(st.lose)
+	if err := <-done; !errors.Is(err, errSteppedDown) {
+		t.Fatalf("term = %v", err)
+	}
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"id":"embedded-engine-1"`) {
+		t.Fatalf("nodes: %d %s", rec.Code, rec.Body)
 	}
 }
 
