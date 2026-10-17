@@ -5,6 +5,7 @@ package postgres_test
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -265,6 +266,11 @@ func TestLeadershipAndEngines(t *testing.T) {
 	defer func() { _ = ro.Close() }()
 	if es, err := ro.Engines(ctx); err != nil || len(es) != 1 || es[0].ID != "mill-b" || es[0].Epoch != 2 {
 		t.Fatalf("engines read-only: %+v, %v", es, err)
+	}
+	// A command writing from its own process (--direct) does not wait for an engine's lock: it is refused, naming it.
+	if _, err := postgres.Open(ctx, dsn, postgres.Options{TryLock: true}); !errors.Is(err, postgres.ErrLocked) ||
+		!strings.Contains(err.Error(), "engine mill-b") {
+		t.Fatalf("a try-lock open while an engine leads: %v", err)
 	}
 	// A command's store takes the lock without an epoch, and is no engine.
 	if err := o.s.Close(); err != nil {

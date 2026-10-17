@@ -134,7 +134,8 @@ millstream disable deal-flow                   # until: millstream resume deal-f
 `apply` checks each package and every other pipeline of the deployment before it uploads anything; the server keeps
 each package by content hash and writes it under `packages/`, beside the local artifact store, when a delivery first
 needs it. On Postgres, a command that changes state goes through `--server` (the active engine is the only writer)
-unless `--direct` takes the leadership lock itself while no engine runs; `status`, `tail`, `inbox list`, `metrics`
+unless `--direct` takes the leadership lock itself while no engine runs (with one running, it fails at once, naming
+the active engine); `status`, `tail`, `inbox list`, `metrics`
 and the other commands that only read open the database read-only, beside the running engine, with the same
 environment file.
 

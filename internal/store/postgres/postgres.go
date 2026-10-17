@@ -70,7 +70,13 @@ type Options struct {
 	// Waiting, when set, is called once when Open finds the leadership lock held by another engine, before it waits
 	// for it: the moment a standby starts waiting.
 	Waiting func()
+	// TryLock makes Open fail with ErrLocked, naming the engine that holds the leadership lock, instead of waiting
+	// for it: a command writing from its own process (--direct) while an engine runs.
+	TryLock bool
 }
+
+// ErrLocked means another engine holds the leadership lock (Options.TryLock).
+var ErrLocked = errors.New("the leadership lock is held")
 
 // Defaults for zero Options.
 const (
@@ -231,6 +237,9 @@ func (s *Store) open(ctx context.Context, dsn string, opts Options) error {
 	if err := s.conn.QueryRowContext(ctx, `SELECT pg_try_advisory_lock($1)`, s.key).Scan(&took); err != nil {
 		return fmt.Errorf("take the leadership lock: %w", redact(err, secrets...))
 	}
+	if !took && opts.TryLock {
+		return s.locked(ctx)
+	}
 	if !took {
 		if opts.Waiting != nil {
 			opts.Waiting()
@@ -358,4 +367,20 @@ func Rebind(query string) string {
 		b.WriteByte(c)
 	}
 	return b.String()
+}
+
+// locked is the error of a TryLock Open that found the lock held, naming the active engine as the leadership table
+// records it.
+func (s *Store) locked(ctx context.Context) error {
+	var id, addr string
+	err := s.conn.QueryRowContext(ctx, `SELECT engine_id, address FROM leadership WHERE lock_key = $1`, s.key).
+		Scan(&id, &addr)
+	switch {
+	case err == nil && addr != "":
+		return fmt.Errorf("%w by engine %s at %s: go through its API (--server), or stop it first", ErrLocked, id, addr)
+	case err == nil:
+		return fmt.Errorf("%w by engine %s: go through its API (--server), or stop it first", ErrLocked, id)
+	}
+	return fmt.Errorf("%w by another session: go through the active engine's API (--server), or stop it first",
+		ErrLocked)
 }
