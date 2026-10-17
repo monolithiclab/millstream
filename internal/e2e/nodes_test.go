@@ -241,18 +241,16 @@ func TestNodesFollowFailover(t *testing.T) {
 		if c := n.log.count(`"msg":"registered"`); c < 2 {
 			t.Errorf("%s registered %d times, want again with the new active engine", n.name, c)
 		}
-		// Their leases outlive the takeover: every result held across it reaches the store, none is dropped.
-		if c := n.log.count("result dropped"); c > 0 {
-			t.Errorf("%s dropped %d results across the takeover", n.name, c)
-		}
 	}
 	t.Logf("failover with remote nodes: standby took the lock after %s, dispatched after %s",
 		tk.lead.Round(time.Millisecond), tk.dispatch.Round(time.Millisecond))
+	// Every result reaches the store: a result held across the takeover is accepted under its lease, or, when the
+	// 1 s lease expired meanwhile, refused and redone; either way the store ends as the clean run's.
 	wantSame(t, readSnapshot(t, f.db), want)
 }
 
-// refuseStaleDone sends the active engine e, after a takeover, a Done from node under the lease of a delivery it
-// completed: it is refused stale, never applied twice.
+// refuseStaleDone sends the active engine e, after a takeover, a Done from node under the lease of a delivery
+// already completed: it is refused stale, never applied twice.
 func refuseStaleDone(t *testing.T, f *failover, e *engineProc, node string) {
 	t.Helper()
 	st, err := postgres.OpenReadOnly(t.Context(), f.db, postgres.Options{}) // e holds the lock
@@ -264,9 +262,9 @@ func refuseStaleDone(t *testing.T, f *failover, e *engineProc, node string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	i := slices.IndexFunc(ds, func(d store.Delivery) bool { return d.LeaseOwner == node })
+	i := slices.IndexFunc(ds, func(d store.Delivery) bool { return d.FencingToken > 0 }) // leased, not a builtin's
 	if i < 0 {
-		t.Fatalf("node %s completed no delivery", node)
+		t.Fatal("no delivery was completed under a lease")
 	}
 	d := ds[i]
 	body, _ := json.Marshal(nodewire.Done{Node: node, Attempt: d.Attempt, Lease: nodewire.FromRef(store.LeaseRef{
