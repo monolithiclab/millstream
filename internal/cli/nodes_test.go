@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -145,6 +146,20 @@ func Test_artifactStoreAndNodeToken(t *testing.T) {
 	if tok, err := readNodeToken(rt(nil), parse("")); err != nil || tok != "" {
 		t.Errorf("no node.token = %q, %v", tok, err)
 	}
+}
+
+// A pid file no process holds is stale whatever pid it names, this one's included: a node killed in a container
+// left it, and the container started again runs the new node under the same pid, which must start.
+func Test_lockStateDirOwnPid(t *testing.T) {
+	dir := testdir.New(t)
+	if err := os.WriteFile(filepath.Join(dir, nodePIDFile), []byte(strconv.Itoa(os.Getpid())+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	release, err := lockStateDir(dir)
+	if err != nil {
+		t.Fatalf("a node refused its own stale pid file: %v", err)
+	}
+	release()
 }
 
 // node drain signals the node running from the state directory and waits until it is gone; a second one refuses

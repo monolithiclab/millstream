@@ -218,17 +218,47 @@ func nodeID(dir string) (string, error) {
 	return id, nil
 }
 
-// lockStateDir records this process's pid in the state directory, refusing to start while another live node runs
-// from it, and returns what removes the record.
+// lockStateDir holds an exclusive lock on the state directory's pid file for the life of the process, refusing to
+// start while another node holds it, records its pid there for node drain, and returns what removes the file. The
+// kernel drops the lock when the process ends, however it ends: the file a killed node leaves is stale whatever pid
+// it names (a container started again runs its new node under the same one).
 func lockStateDir(dir string) (func(), error) {
 	path := filepath.Join(dir, nodePIDFile)
-	if pid, ok := runningNode(dir); ok {
-		return nil, fmt.Errorf("node: another node (pid %d) runs from %s", pid, dir)
-	}
-	if err := os.WriteFile(path, []byte(strconv.Itoa(os.Getpid())+"\n"), 0o600); err != nil {
+	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0o600) // #nosec G304 -- the operator's state directory
+	if err != nil {
 		return nil, err
 	}
-	return func() { _ = os.Remove(path) }, nil
+	if err := flock(f, syscall.LOCK_EX); err != nil {
+		_ = f.Close()
+		return nil, fmt.Errorf("node: another node (pid %d) runs from %s", readPID(path), dir)
+	}
+	if err := f.Truncate(0); err != nil {
+		_ = f.Close()
+		return nil, err
+	}
+	if _, err := f.WriteAt([]byte(strconv.Itoa(os.Getpid())+"\n"), 0); err != nil {
+		_ = f.Close()
+		return nil, err
+	}
+	return func() {
+		_ = os.Remove(path)
+		_ = f.Close()
+	}, nil
+}
+
+// flock takes how (LOCK_EX or LOCK_SH) on f without waiting.
+func flock(f *os.File, how int) error {
+	return syscall.Flock(int(f.Fd()), how|syscall.LOCK_NB) // #nosec G115 -- a file descriptor fits an int
+}
+
+// readPID returns the pid recorded in a pid file, 0 when there is none.
+func readPID(path string) int {
+	b, err := os.ReadFile(path) // #nosec G304 -- the operator's state directory
+	if err != nil {
+		return 0
+	}
+	pid, _ := strconv.Atoi(strings.TrimSpace(string(b)))
+	return pid
 }
 
 // signalProcess sends sig to the process pid: tests replace it.
@@ -240,20 +270,20 @@ var signalProcess = func(pid int, sig os.Signal) error {
 	return p.Signal(sig)
 }
 
-// runningNode returns the pid of the node running from the state directory, if one does.
+// runningNode returns the pid of the node running from the state directory, if one does: one holds its pid file's
+// lock.
 func runningNode(dir string) (int, bool) {
-	b, err := os.ReadFile(filepath.Join(dir, nodePIDFile)) // #nosec G304 -- the operator's state directory
+	path := filepath.Join(dir, nodePIDFile)
+	f, err := os.Open(path) // #nosec G304 -- the operator's state directory
 	if err != nil {
 		return 0, false
 	}
-	pid, err := strconv.Atoi(strings.TrimSpace(string(b)))
-	if err != nil || pid <= 0 {
-		return 0, false
+	defer func() { _ = f.Close() }()
+	if flock(f, syscall.LOCK_SH) == nil {
+		return 0, false // nobody holds it: a stale file
 	}
-	if signalProcess(pid, syscall.Signal(0)) != nil {
-		return 0, false
-	}
-	return pid, true
+	pid := readPID(path)
+	return pid, pid > 0
 }
 
 // NodeDrainCmd is "millstream node drain".
