@@ -28,6 +28,7 @@ import (
 	"github.com/monolithiclab/millstream/internal/pipeline"
 	"github.com/monolithiclab/millstream/internal/store"
 	"github.com/monolithiclab/millstream/internal/store/sqlite"
+	"github.com/monolithiclab/millstream/internal/store/sqlite/sqlitetest"
 )
 
 // The node protocol end to end in memory: a remote.Transport whose HTTP client calls the engines' handlers
@@ -460,6 +461,7 @@ func TestMain(m *testing.M) {
 	if testRoot, err = os.MkdirTemp("", "millstream-node-test-"); err != nil {
 		panic(err)
 	}
+	sqlitetest.Warm()
 	code := m.Run()
 	_ = os.RemoveAll(testRoot)
 	os.Exit(code)

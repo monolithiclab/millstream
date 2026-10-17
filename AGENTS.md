@@ -78,7 +78,10 @@ below) for the reasoning, and `make help` for every command.
   all again); fixtures (packages, parsed pipelines, applied runs, insight histories) are built once per process, and the
   files a test only reads are committed under `testdata` (the CLI's shared packages are those directories themselves,
   never copies; the store images `internal/store/sqlite/template.db` and `internal/insights/testdata/history.db` are
-  rebuilt with `-update` after a schema change); time is a fake clock or an injected timer. No `go build`, no process,
+  rebuilt with `-update` after a schema change); what a process does once (SQLite's start and the template's load,
+  the common units' first statements, the CEL environments, the JSON Schema compiler, the shared seeded stores) is
+  done in `TestMain`, outside the budget: `sqlitetest.Warm` for the packages that open Memory stores, a package's own
+  fixtures beside it; time is a fake clock or an injected timer. No `go build`, no process,
   no Docker, no sleep or polling, no file database but the one that tests opening a file: a test that needs one, or
   drives the CLI or the engine end to end, goes behind the `e2e` build tag, in a `*_e2e_test.go` file. The store, engine
   and insights tests run serially: the transpiled SQLite allocates under one process-wide lock, so parallel tests

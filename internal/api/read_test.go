@@ -18,6 +18,8 @@ import (
 	"github.com/monolithiclab/millstream/internal/artifacts"
 	"github.com/monolithiclab/millstream/internal/ids"
 	"github.com/monolithiclab/millstream/internal/store"
+
+	"github.com/monolithiclab/millstream/internal/testdir"
 )
 
 func TestPipelines(t *testing.T) {
@@ -312,7 +314,7 @@ func TestArtifacts(t *testing.T) {
 		wantError(t, do(t, tt.h, request{target: tt.target}), tt.status, tt.code)
 	}
 	// An artifact the item names whose content is gone from the store.
-	gone := must(New(Options{Store: f.st, Artifacts: artifacts.New(t.TempDir())}))
+	gone := must(New(Options{Store: f.st, Artifacts: artifacts.New(testdir.New(t))}))
 	wantError(t, do(t, gone, request{target: photo}), http.StatusNotFound, codeNotFound)
 }
 

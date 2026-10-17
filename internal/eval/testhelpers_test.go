@@ -16,12 +16,15 @@ import (
 	"github.com/monolithiclab/millstream/internal/agent/agenttest"
 	"github.com/monolithiclab/millstream/internal/pipeline"
 	"github.com/monolithiclab/millstream/internal/runtime/exec/exectest/fakeexec"
+
+	"github.com/monolithiclab/millstream/internal/testdir"
 )
 
 func TestMain(m *testing.M) {
 	// The tests allocate heavily: a higher collector target trades memory for test time, as in the store tests.
 	debug.SetGCPercent(400)
 	code := m.Run()
+	testdir.Remove()
 	fakeexec.Cleanup()
 	os.Exit(code)
 }
@@ -41,7 +44,7 @@ runtime: { agent: { harness: api, model: claude-sonnet-5-5, apiKeySecret: apiTok
 // ./actions/score calling baseURL, plus files, and returns its directory.
 func writePackage(t *testing.T, baseURL string, files map[string]string) string {
 	t.Helper()
-	dir := t.TempDir()
+	dir := testdir.New(t)
 	all := map[string]string{
 		"pipeline.yaml": testPipeline, "actions/echo/action.yaml": echoManifest,
 		"actions/score/action.yaml": fmt.Sprintf(agentManifest, baseURL),

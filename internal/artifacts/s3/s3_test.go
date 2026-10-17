@@ -17,6 +17,8 @@ import (
 	"time"
 
 	"github.com/monolithiclab/millstream/internal/artifacts"
+
+	"github.com/monolithiclab/millstream/internal/testdir"
 )
 
 // fakeS3 is an S3-compatible bucket in memory, path-style: /<bucket>/<key>.
@@ -185,7 +187,7 @@ func TestStore(t *testing.T) {
 	now := time.Date(2026, 10, 17, 12, 0, 0, 0, time.UTC)
 	cfg := Config{
 		Bucket: "bucket", Endpoint: "http://s3.test", AccessKeyID: "AK", SecretAccessKey: "SK", Prefix: "pre",
-		HTTP: &http.Client{Transport: rt}, Now: func() time.Time { return now }, TmpDir: t.TempDir(),
+		HTTP: &http.Client{Transport: rt}, Now: func() time.Time { return now }, TmpDir: testdir.New(t),
 	}
 	s, err := New(cfg)
 	if err != nil {
@@ -359,7 +361,7 @@ func TestFiles(t *testing.T) {
 	fake := &fakeS3{t: t, bucket: "bucket", objects: map[string][]byte{}, clock: t0}
 	rt := &handlerTransport{h: fake}
 	s, err := New(Config{Bucket: "bucket", Endpoint: "http://s3.test", AccessKeyID: "AK", SecretAccessKey: "SK",
-		Prefix: "pre", HTTP: &http.Client{Transport: rt}, TmpDir: t.TempDir()})
+		Prefix: "pre", HTTP: &http.Client{Transport: rt}, TmpDir: testdir.New(t)})
 	if err != nil {
 		t.Fatal(err)
 	}

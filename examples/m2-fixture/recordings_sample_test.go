@@ -2,5 +2,5 @@
 
 package m2fixture
 
-// fullRecordings: the default build records a sample of the pool; see TestRecordings.
+// fullRecordings: the default build skips TestRecordings unless -update; see TestRecordings.
 const fullRecordings = false

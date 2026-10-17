@@ -12,17 +12,19 @@ import (
 	"testing"
 
 	"github.com/monolithiclab/millstream/internal/protocol"
+
+	"github.com/monolithiclab/millstream/internal/testdir"
 )
 
 // TestPlace: Place puts a file at its destination, creating the directory and replacing a file already there, and
 // fails under a file or for a missing binary.
 func TestPlace(t *testing.T) {
 	t.Parallel()
-	bin := filepath.Join(t.TempDir(), "fakeaction")
+	bin := filepath.Join(testdir.New(t), "fakeaction")
 	if err := os.WriteFile(bin, []byte("#!/bin/sh\n"), 0o700); err != nil { // #nosec G306 -- a test executable
 		t.Fatal(err)
 	}
-	dst := filepath.Join(t.TempDir(), "actions", "fake", "fakeaction")
+	dst := filepath.Join(testdir.New(t), "actions", "fake", "fakeaction")
 	if err := Place(bin, dst); err != nil {
 		t.Fatalf("Place: %v", err)
 	}
@@ -35,7 +37,7 @@ func TestPlace(t *testing.T) {
 	if err := Place(bin, filepath.Join(dst, "under-a-file")); err == nil {
 		t.Fatal("Place under a file succeeded")
 	}
-	if err := Place(filepath.Join(t.TempDir(), "missing"), filepath.Join(t.TempDir(), "x")); err == nil {
+	if err := Place(filepath.Join(testdir.New(t), "missing"), filepath.Join(testdir.New(t), "x")); err == nil {
 		t.Fatal("Place of a missing binary succeeded")
 	}
 }
@@ -173,7 +175,7 @@ func TestServe(t *testing.T) {
 			stderr: "malformed line"},
 		{name: "stdout fails", config: `{}`, stdout: failWriter{}, status: 1, stderr: "broken pipe"},
 	}
-	dir := t.TempDir() // the artifact cases' working directories, under one temporary directory
+	dir := testdir.New(t) // the artifact cases' working directories, under one temporary directory
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			tt.run(t, dir)

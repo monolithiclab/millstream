@@ -15,6 +15,8 @@ import (
 	"github.com/monolithiclab/millstream/internal/agent/agenttest"
 	"github.com/monolithiclab/millstream/internal/pipeline"
 	"github.com/monolithiclab/millstream/internal/protocol"
+
+	"github.com/monolithiclab/millstream/internal/testdir"
 )
 
 func TestExtract(t *testing.T) {
@@ -70,7 +72,7 @@ func TestRender(t *testing.T) {
 // them misses, with a non-retryable error naming the key; record stores what the harness answered.
 func TestRecorder(t *testing.T) {
 	t.Parallel()
-	dir := t.TempDir()
+	dir := testdir.New(t)
 	calls := 0
 	live := &fakeHarness{fn: func(req Request) (Response, error) {
 		calls++
@@ -246,7 +248,7 @@ func TestAPIErrors(t *testing.T) {
 // status.
 func fakeClaude(t *testing.T, out string, status int) (bin, dir string) {
 	t.Helper()
-	dir = t.TempDir()
+	dir = testdir.New(t)
 	bin = filepath.Join(dir, "claude")
 	script := "#!/bin/sh\nfor a in \"$@\"; do printf '%s\\n' \"$a\"; done > " + dir + "/args\ncat > " + dir + "/stdin\n" +
 		"cat <<'EOF'\n" + out + "\nEOF\nexit " + string(rune('0'+status)) + "\n"

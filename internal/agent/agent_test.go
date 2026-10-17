@@ -18,6 +18,8 @@ import (
 
 	"github.com/monolithiclab/millstream/internal/pipeline"
 	"github.com/monolithiclab/millstream/internal/protocol"
+
+	"github.com/monolithiclab/millstream/internal/testdir"
 )
 
 const (
@@ -33,7 +35,9 @@ runtime: { agent: { harness: api, model: claude-sonnet-5-5, apiKeySecret: apiTok
 func TestMain(m *testing.M) {
 	// The tests allocate heavily: a higher collector target trades memory for test time, as in the store tests.
 	debug.SetGCPercent(400)
-	os.Exit(m.Run())
+	code := m.Run()
+	testdir.Remove()
+	os.Exit(code)
 }
 
 // memPackage builds, in memory, a package with the agent action ./actions/score of manifest and prompt.
@@ -104,7 +108,7 @@ func dirSession(t *testing.T, pkg string, h Harness) *session {
 // transcripts and artifacts need one.
 func (s *session) withWorkdir() *session {
 	s.t.Helper()
-	return s.inWorkdir(s.t.TempDir())
+	return s.inWorkdir(testdir.New(s.t))
 }
 
 // inWorkdir gives the session the working directory dir, which sessions run one after the other may share.
@@ -280,7 +284,7 @@ func TestRunFailures(t *testing.T) {
 		}, true, "connection reset", true},
 		{"template fails", "{{ .Nope }}", answer("", 0, 0), false, "render prompt", false},
 	}
-	workdir := t.TempDir() // the cases run in turn, each writing its transcript over the last
+	workdir := testdir.New(t) // the cases run in turn, each writing its transcript over the last
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			s := newSession(t, memPackage(t, testManifest, tt.prompt), &fakeHarness{fn: tt.fn}).inWorkdir(workdir)
@@ -339,7 +343,7 @@ func TestRunSetupErrors(t *testing.T) {
 			}
 		})
 	}
-	s := dirSession(t, filepath.Join(t.TempDir(), "missing"), nil)
+	s := dirSession(t, filepath.Join(testdir.New(t), "missing"), nil)
 	if msgs := s.run(`{}`); len(msgs) != 1 || msgs[0].(protocol.Error).Retryable {
 		t.Fatalf("missing package: %+v", msgs)
 	}
@@ -382,7 +386,7 @@ func TestRunRedactsSecretsFromRecordings(t *testing.T) {
 			{Role: "user", Text: req.Prompt}, {Role: "assistant", Text: "token " + secret, Data: data},
 		}}, nil
 	}}
-	dir := t.TempDir()
+	dir := testdir.New(t)
 	s := newSession(t, memPackage(t, testManifest, "Use {{ .Config.token }} on {{ .Payload.url }}."), h)
 	s.env["MILLSTREAM_SECRET_API_TOKEN"] = secret
 	s.env[EnvHarnessMode], s.env[EnvHarnessDir] = ModeRecord, dir

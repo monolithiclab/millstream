@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/monolithiclab/millstream/internal/testdir"
 )
 
 // A bundle decodes back to its files, refusing paths that leave the package; Materialize writes a package once,
@@ -24,7 +26,7 @@ func TestBundleAndMaterialize(t *testing.T) {
 	if err != nil || string(back["docs/notes.md"]) != "x" {
 		t.Fatalf("round trip = %v, %v", back, err)
 	}
-	parent := t.TempDir()
+	parent := testdir.New(t)
 	p, err := Materialize(parent, files)
 	if err != nil || p.Dir != filepath.Join(parent, p.Hash) {
 		t.Fatalf("Materialize = %+v, %v", p, err)
@@ -38,7 +40,7 @@ func TestBundleAndMaterialize(t *testing.T) {
 	if _, err := Materialize(parent, map[string][]byte{"other.yaml": nil}); err == nil {
 		t.Fatal("no pipeline file: no error")
 	}
-	blocked := filepath.Join(t.TempDir(), "file")
+	blocked := filepath.Join(testdir.New(t), "file")
 	if err := os.WriteFile(blocked, nil, 0o600); err != nil {
 		t.Fatal(err)
 	}

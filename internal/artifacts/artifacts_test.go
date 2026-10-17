@@ -14,6 +14,8 @@ import (
 	"testing"
 	"testing/iotest"
 	"time"
+
+	"github.com/monolithiclab/millstream/internal/testdir"
 )
 
 func sum(b []byte) string {
@@ -32,7 +34,7 @@ func TestPutAndOpen(t *testing.T) {
 		{"photo.png", string(png), "image/png"},
 		{"empty", "", "text/plain; charset=utf-8"},
 	}
-	s := New(t.TempDir()) // one store: the contents differ, so do their files
+	s := New(testdir.New(t)) // one store: the contents differ, so do their files
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ref, err := s.Put(t.Context(), "listings", tt.name, strings.NewReader(tt.content))
@@ -58,7 +60,7 @@ func TestPutAndOpen(t *testing.T) {
 // TestPutDedupes: the same content stored twice, under two names, is one file, and no temporary file is left.
 func TestPutDedupes(t *testing.T) {
 	t.Parallel()
-	dir := t.TempDir()
+	dir := testdir.New(t)
 	s := New(dir)
 	a, err := s.Put(t.Context(), "listings", "a.txt", strings.NewReader("same"))
 	if err != nil {
@@ -89,7 +91,7 @@ func TestPutDedupes(t *testing.T) {
 
 func TestPutAndOpenErrors(t *testing.T) {
 	t.Parallel()
-	dir := t.TempDir()
+	dir := testdir.New(t)
 	s := New(dir)
 	for _, name := range []string{"", "..", "out/a.txt", `a\b`} {
 		if _, err := s.Put(t.Context(), "listings", name, strings.NewReader("x")); err == nil {
@@ -131,7 +133,7 @@ func TestPutAndOpenErrors(t *testing.T) {
 func TestDirExistsCopyAndSpool(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()
-	dir := t.TempDir()
+	dir := testdir.New(t)
 	s := New(dir)
 	ref, err := s.Put(ctx, "listings", "a.txt", strings.NewReader("content"))
 	if err != nil {
@@ -181,7 +183,7 @@ func TestDirExistsCopyAndSpool(t *testing.T) {
 		}
 	}
 
-	spooled, f, err := Spool(t.TempDir(), "page.html", strings.NewReader("<html><body>x</body></html>"))
+	spooled, f, err := Spool(testdir.New(t), "page.html", strings.NewReader("<html><body>x</body></html>"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -204,7 +206,7 @@ func TestDirExistsCopyAndSpool(t *testing.T) {
 func TestFiles(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()
-	s := New(t.TempDir())
+	s := New(testdir.New(t))
 	if files, err := s.List(ctx); err != nil || len(files) != 0 {
 		t.Fatalf("List of a store never written = %v, %v", files, err)
 	}
@@ -273,7 +275,7 @@ func TestCompressed(t *testing.T) {
 	zw := gzip.NewWriter(&buf)
 	_, _ = zw.Write([]byte(`{"turns":[]}`))
 	_ = zw.Close()
-	ctx, s := t.Context(), New(t.TempDir())
+	ctx, s := t.Context(), New(testdir.New(t))
 	ref, err := s.Put(ctx, "p", "transcript.json", bytes.NewReader(buf.Bytes()))
 	if err != nil || !Compressed(ref) || Compressed(Ref{Name: "logs.gz", Type: ref.Type}) ||
 		Compressed(Ref{Name: "a.json", Type: "text/plain"}) {

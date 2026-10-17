@@ -17,6 +17,9 @@ import (
 	"github.com/monolithiclab/millstream/internal/store"
 	"github.com/monolithiclab/millstream/internal/store/postgres/pgtest"
 	"github.com/monolithiclab/millstream/internal/store/sqlite"
+	"github.com/monolithiclab/millstream/internal/store/sqlite/sqlitetest"
+
+	"github.com/monolithiclab/millstream/internal/testdir"
 )
 
 // testDir is TestMain's temporary directory, for what tests build once and share; testdata is the absolute path
@@ -36,6 +39,7 @@ func runTests(m *testing.M) int {
 	// Building the Kong parser, which every command run through Run does, allocates enough for the collector to cost
 	// a fifth of it at the default target: the tests trade memory for time (the parse benchmark: 0.85 ms to 0.7 ms).
 	debug.SetGCPercent(400)
+	sqlitetest.Warm()
 	dir, err := os.MkdirTemp("", "cli-test-")
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -49,6 +53,11 @@ func runTests(m *testing.M) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
+	if err := prepareStates(); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	defer testdir.Remove()
 	return m.Run()
 }
 
@@ -57,7 +66,7 @@ func runTests(m *testing.M) int {
 // path.
 func runPackage(t *testing.T, name string) string {
 	t.Helper()
-	dst := t.TempDir()
+	dst := testdir.New(t)
 	if err := copyPackage(dst, name); err != nil {
 		t.Fatal(err)
 	}
@@ -101,7 +110,7 @@ func copyTree(dst, name string) error { return os.CopyFS(dst, os.DirFS(fixture(n
 // dbPath returns a fresh database path under a temporary directory that does not exist yet.
 func dbPath(t *testing.T) string {
 	t.Helper()
-	return filepath.Join(t.TempDir(), "state", "millstream.db")
+	return filepath.Join(testdir.New(t), "state", "millstream.db")
 }
 
 // runCLICtx runs the CLI under ctx with env as the whole environment.

@@ -19,6 +19,8 @@ import (
 	"github.com/monolithiclab/millstream/internal/engine"
 	"github.com/monolithiclab/millstream/internal/pipeline"
 	"github.com/monolithiclab/millstream/internal/store"
+
+	"github.com/monolithiclab/millstream/internal/testdir"
 )
 
 // The lifecycle fixtures: a package of builtins in two revisions, and one whose check fails.
@@ -111,7 +113,7 @@ func (t handlerTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 // reviewer.
 func Test_commandsThroughTheServer(t *testing.T) {
 	st := memoryStore(t)
-	eng, err := engine.New(engine.Options{Store: st, PackageDir: t.TempDir()})
+	eng, err := engine.New(engine.Options{Store: st, PackageDir: testdir.New(t)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -213,7 +215,7 @@ func Test_commandsThroughTheServer(t *testing.T) {
 // serve refuses what it cannot serve before it opens anything: a non-loopback listener without auth.token, a token
 // or a certificate it cannot read, what production forbids, and bad flags.
 func TestServeRefusals(t *testing.T) {
-	dir := t.TempDir()
+	dir := testdir.New(t)
 	write := func(name, src string) string {
 		p := filepath.Join(dir, name)
 		if err := os.WriteFile(p, []byte(src), 0o600); err != nil {

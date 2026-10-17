@@ -10,6 +10,8 @@ import (
 
 	"github.com/monolithiclab/millstream/internal/engine"
 	"github.com/monolithiclab/millstream/internal/store/sqlite"
+
+	"github.com/monolithiclab/millstream/internal/testdir"
 )
 
 // extraSrc is a pipeline of builtins, which check passes without any action.
@@ -37,7 +39,7 @@ func TestLifecycleActions(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = st.Close() })
-	eng, err := engine.New(engine.Options{Store: st, PackageDir: t.TempDir()})
+	eng, err := engine.New(engine.Options{Store: st, PackageDir: testdir.New(t)})
 	if err != nil {
 		t.Fatal(err)
 	}

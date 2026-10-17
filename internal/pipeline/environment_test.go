@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/monolithiclab/millstream/internal/testdir"
 )
 
 func TestParseEnvironment(t *testing.T) {
@@ -269,11 +271,11 @@ func TestSecretSourceValue(t *testing.T) {
 		v, ok := map[string]string{"SET": "postgres://x", "EMPTY": ""}[name]
 		return v, ok
 	}
-	file := filepath.Join(t.TempDir(), "dsn")
+	file := filepath.Join(testdir.New(t), "dsn")
 	if err := os.WriteFile(file, []byte("postgres://from-file\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	empty := filepath.Join(t.TempDir(), "empty")
+	empty := filepath.Join(testdir.New(t), "empty")
 	if err := os.WriteFile(empty, []byte("\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -286,7 +288,7 @@ func TestSecretSourceValue(t *testing.T) {
 		{SecretSource{Env: "UNSET"}, ""},
 		{SecretSource{File: file}, "postgres://from-file"},
 		{SecretSource{File: empty}, ""},
-		{SecretSource{File: filepath.Join(t.TempDir(), "absent")}, ""},
+		{SecretSource{File: filepath.Join(testdir.New(t), "absent")}, ""},
 	} {
 		got, err := tt.src.Value(lookup)
 		if got != tt.want || (err == nil) != (tt.want != "") {
@@ -297,7 +299,7 @@ func TestSecretSourceValue(t *testing.T) {
 
 func TestLoadEnvironment(t *testing.T) {
 	t.Parallel()
-	dir := t.TempDir()
+	dir := testdir.New(t)
 	missing := filepath.Join(dir, "absent.yaml")
 	if env, err := LoadEnvironment(missing, false); err != nil || env.ContainerRuntime != RuntimeDocker {
 		t.Fatalf("an optional missing file: %+v, %v", env, err)
@@ -343,7 +345,7 @@ func TestLoadEnvironment(t *testing.T) {
 // hash.
 func TestEnvironmentFileIsNotPartOfThePackage(t *testing.T) {
 	t.Parallel()
-	dir := t.TempDir()
+	dir := testdir.New(t)
 	if err := os.WriteFile(filepath.Join(dir, FileName), []byte(minimalPipeline), 0o600); err != nil {
 		t.Fatal(err)
 	}

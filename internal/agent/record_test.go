@@ -13,6 +13,8 @@ import (
 
 	"github.com/monolithiclab/millstream/internal/pipeline"
 	"github.com/monolithiclab/millstream/internal/protocol"
+
+	"github.com/monolithiclab/millstream/internal/testdir"
 )
 
 // update rewrites testdata/recordings: go test ./internal/agent -run TestRecordings -update (make recordings).
@@ -41,7 +43,7 @@ func recordingSession(t *testing.T, mode, dir string) *session {
 // network.
 func TestRecordings(t *testing.T) {
 	t.Parallel()
-	dir := t.TempDir()
+	dir := testdir.New(t)
 	if *update {
 		dir = recordingsDir
 		if err := os.RemoveAll(dir); err != nil {

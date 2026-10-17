@@ -20,6 +20,8 @@ import (
 	"github.com/monolithiclab/millstream/internal/store"
 	"github.com/monolithiclab/millstream/internal/store/postgres"
 	"github.com/monolithiclab/millstream/internal/store/sqlite"
+
+	"github.com/monolithiclab/millstream/internal/testdir"
 )
 
 // Between terms the site answers unavailable; a term's handler serves until its context ends, and a later term's
@@ -233,11 +235,11 @@ func TestHostDefaults(t *testing.T) {
 
 // withStoreMode reports an environment file it cannot read, and a store named twice, before it opens anything.
 func TestWithStoreModeRefusals(t *testing.T) {
-	rt := &Runtime{Ctx: t.Context(), EnvFile: filepath.Join(t.TempDir(), "missing.yaml"), DB: unusedDB()}
+	rt := &Runtime{Ctx: t.Context(), EnvFile: filepath.Join(testdir.New(t), "missing.yaml"), DB: unusedDB()}
 	if err := withStore(rt, func(store.Store) error { return nil }); err == nil {
 		t.Fatal("a missing environment file was read")
 	}
-	dir := t.TempDir()
+	dir := testdir.New(t)
 	rt.EnvFile, rt.DBSet = filepath.Join(dir, "millstream.yaml"), true
 	if err := os.WriteFile(rt.EnvFile, []byte("store: { sqlite: { path: a.db } }\n"), 0o600); err != nil {
 		t.Fatal(err)

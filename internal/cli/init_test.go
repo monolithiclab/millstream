@@ -7,13 +7,15 @@ import (
 	"testing"
 
 	"github.com/monolithiclab/millstream/internal/pipeline"
+
+	"github.com/monolithiclab/millstream/internal/testdir"
 )
 
 // Test_initPipeline: the scaffolded package passes check and test pipeline as generated (e2e build), and init
 // refuses to write over it or under a name that is not an identifier.
 func Test_initPipeline(t *testing.T) {
 	t.Parallel()
-	parent := t.TempDir()
+	parent := testdir.New(t)
 	out, _ := mustRun(t, 0, "init", "pipeline", "greetings", "--dir", parent)
 	pkg := filepath.Join(parent, "greetings")
 	if !strings.HasPrefix(out, "created "+pkg+"\n") {
@@ -64,7 +66,7 @@ func Test_initAction(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.lang, func(t *testing.T) {
 			t.Parallel()
-			parent := t.TempDir()
+			parent := testdir.New(t)
 			mustRun(t, 0, "init", "action", "scorer", "--lang", tt.lang, "--dir", parent)
 			dir := filepath.Join(parent, "scorer")
 			for _, f := range tt.files {

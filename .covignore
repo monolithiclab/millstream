@@ -3,7 +3,9 @@
 /cmd/millstream/
 # The M1 fixture's actions run as child processes of the e2e suite, outside the coverage profile.
 /examples/
-# The store conformance suite and the Postgres test server are test code: the stores' tests run them, and they cover
-# the stores' code, not their own.
+# The store conformance suite, the Postgres test server, the SQLite warm-up and the test directories are test code:
+# the tests run them, and they cover the code under test, not their own.
 /internal/store/storetest/
 /internal/store/postgres/pgtest/
+/internal/store/sqlite/sqlitetest/
+/internal/testdir/

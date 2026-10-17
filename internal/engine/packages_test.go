@@ -9,6 +9,8 @@ import (
 
 	"github.com/monolithiclab/millstream/internal/pipeline"
 	"github.com/monolithiclab/millstream/internal/store"
+
+	"github.com/monolithiclab/millstream/internal/testdir"
 )
 
 // ApplyPackages checks, applies with the message, and says when the package was active already; another engine of
@@ -28,7 +30,7 @@ func TestApplyPackagesAndLoadFromStore(t *testing.T) {
 		t.Fatalf("applying the active package again = %+v, %v", again, err)
 	}
 
-	dir := t.TempDir()
+	dir := testdir.New(t)
 	served, err := New(Options{Store: v.st, PackageDir: dir})
 	if err != nil {
 		t.Fatal(err)
@@ -86,7 +88,7 @@ func TestPackageFromFiles(t *testing.T) {
 	if _, err := v.e.PackageFromFiles(files); err == nil {
 		t.Fatal("no package directory: no error")
 	}
-	e, err := New(Options{Store: v.st, PackageDir: t.TempDir()})
+	e, err := New(Options{Store: v.st, PackageDir: testdir.New(t)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -128,7 +130,7 @@ func TestApplyPackagesChecksImports(t *testing.T) {
 	if _, _, err := v.e.ApplyPackages(v.ctx, []*pipeline.Package{deal, src}, ApplyOptions{}); err != nil {
 		t.Fatalf("applying a producer and its importer together: %v", err)
 	}
-	served, err := New(Options{Store: v.st, PackageDir: t.TempDir(), Env: v.e.opts.Env})
+	served, err := New(Options{Store: v.st, PackageDir: testdir.New(t), Env: v.e.opts.Env})
 	if err != nil {
 		t.Fatal(err)
 	}

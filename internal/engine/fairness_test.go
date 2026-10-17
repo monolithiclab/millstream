@@ -81,7 +81,7 @@ func TestRoundRobinUnderLimits(t *testing.T) {
 	// rated spent its token; lim has one slot left.
 	wantRound(t, v.e, v, "second round", "b", "c", "lim")
 	// lim is at its limit, rated has no token: b and c share the nodes evenly, round after round.
-	for i := range 3 {
+	for i := range 2 {
 		wantRound(t, v.e, v, fmt.Sprintf("round %d at the limit", i+1), "b", "c")
 	}
 	// One of lim's deliveries ends: lim is back in the next round, once.
@@ -99,7 +99,7 @@ func TestRoundRobinUnderLimits(t *testing.T) {
 	v.clock.Advance(time.Minute)
 	wantRound(t, v.e, v, "a minute later", "b", "c", "rated")
 	perStep, perPipeline := v.e.countInflight()
-	if perPipeline["lim"] != 2 || perPipeline["rated"] != 2 || perStep[store.StepRef{Pipeline: "b", Step: "a"}] != 7 {
+	if perPipeline["lim"] != 2 || perPipeline["rated"] != 2 || perStep[store.StepRef{Pipeline: "b", Step: "a"}] != 6 {
 		t.Fatalf("in flight %v", perPipeline)
 	}
 

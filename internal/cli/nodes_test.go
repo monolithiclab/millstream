@@ -19,6 +19,8 @@ import (
 	"github.com/monolithiclab/millstream/internal/nodewire"
 	"github.com/monolithiclab/millstream/internal/pipeline"
 	"github.com/monolithiclab/millstream/internal/store"
+
+	"github.com/monolithiclab/millstream/internal/testdir"
 )
 
 // nodes revoke records the id revoked on the store; nodes list shows it; node refuses what it cannot join with.
@@ -32,7 +34,7 @@ func Test_nodesCommands(t *testing.T) {
 	if !regexp.MustCompile(`(?m)^ID\s+STATE\s+HEALTH.*\ngpu-1\s+revoked\s+lost\s+-\s+0\s+0\s+-\s+-\s+-\s*$`).MatchString(out) {
 		t.Fatalf("nodes:\n%s", out)
 	}
-	dir := t.TempDir()
+	dir := testdir.New(t)
 	if _, errOut := s.must(2, "node", "--join", "https://engine:7070", "--state-dir", dir); !strings.Contains(errOut,
 		"set MILLSTREAM_NODE_TOKEN") {
 		t.Fatalf("node without a token: %q", errOut)
@@ -73,7 +75,7 @@ func Test_nodeJoinsAndDrains(t *testing.T) {
 		}
 		h.ServeHTTP(w, r)
 	})
-	dir := t.TempDir()
+	dir := testdir.New(t)
 	var out, errb bytes.Buffer
 	code := Run(ctx, []string{"--db", unusedDB(), "node", "--join", "https://engine:7070", "--state-dir", dir,
 		"--labels", "gpu=true", "--slots", "2"}, IO{In: strings.NewReader(""), Out: &out, Err: &errb}, "dev",
@@ -148,7 +150,7 @@ func Test_artifactStoreAndNodeToken(t *testing.T) {
 // node drain signals the node running from the state directory and waits until it is gone; a second one refuses
 // to start meanwhile.
 func Test_nodeDrain(t *testing.T) {
-	dir := t.TempDir()
+	dir := testdir.New(t)
 	release, err := lockStateDir(dir) // this test process stands for the node
 	if err != nil {
 		t.Fatal(err)

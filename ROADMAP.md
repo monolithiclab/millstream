@@ -101,6 +101,12 @@ earlier designs are in the git history of the spec.
 - Live events: the broker wakes on this process's commits and polls every 15 seconds for other processes' writes on
   the same SQLite file; Postgres (M4) can wake it with `LISTEN`/`NOTIFY` instead. The live log tail relays the
   embedded node's lines and those remote nodes relay every second.
+- Lease renewal: a pull returns once a third of the lease has passed (engine.Pull), because the node heartbeats
+  between pulls and builtins run inside them. Heartbeats on a goroutine of their own in the node, or builtins on an
+  engine worker rather than in Pull, would remove the bound and its tie to the heartbeat interval.
+- Test budget (M4): `make test-times` is at 485 ms against the 400 ms working target. Unit execution in the store
+  (about 100 µs a unit through the writer goroutine) dominates; running a unit inline when the connection is free
+  would help every store-backed package, and would let the store tests drop their one-processor setting.
 - Failover (M4 Task 3): the leadership row records the engine's bound `listen` address, which a standby names to
   clients; a deployment whose engines listen on `0.0.0.0` behind a proxy needs an advertised address key (with
   remote nodes, Task 4). `run` on Postgres takes the lock but has no standby loop: it exits when its store is lost.

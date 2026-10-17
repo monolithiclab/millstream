@@ -8,6 +8,8 @@ import (
 
 	"github.com/monolithiclab/millstream/internal/artifacts"
 	"github.com/monolithiclab/millstream/internal/store"
+
+	"github.com/monolithiclab/millstream/internal/testdir"
 )
 
 const placedPipeline = `
@@ -136,7 +138,7 @@ func TestNodePlacement(t *testing.T) {
 
 // A node holding a delivery gets the delivery's input artifacts, and may put outputs; another node neither.
 func TestHeldInput(t *testing.T) {
-	v := newEnv(t, Options{Artifacts: artifacts.New(t.TempDir())})
+	v := newEnv(t, Options{Artifacts: artifacts.New(testdir.New(t))})
 	v.apply(newPackage(t, placedPipeline, "crawl", "score"))
 	v.fire("placed", "go", "k1")
 	for _, n := range []NodeInfo{

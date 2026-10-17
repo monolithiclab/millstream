@@ -144,11 +144,14 @@ func record(t *testing.T, model http.Handler, lessonsFile, dir string, listings 
 }
 
 // TestRecordings records the score action with each lessons version against the fake model, and checks the
-// recordings are reproducible: recordings/ holds the same file for each. In the e2e build (and with -update, which
-// rewrites recordings/) it records the whole pool and checks recordings/ holds exactly those recordings; the default
-// build records a sample, a listing in good condition and one in poor condition, which the lessons versions score
-// differently. Nothing reaches the network.
+// recordings are reproducible: recordings/ holds exactly the files a fresh recording of the whole pool writes. It
+// runs in the e2e build, and with -update, which rewrites recordings/ (make recordings); the default build used to
+// record a sample of the pool, a duplicate of the e2e run that covered nothing more, and skips. Nothing reaches the
+// network.
 func TestRecordings(t *testing.T) {
+	if !fullRecordings && !*update {
+		t.Skip("the e2e build records the whole pool and checks recordings/")
+	}
 	t.Parallel()
 	dir := t.TempDir()
 	if *update {
@@ -158,10 +161,6 @@ func TestRecordings(t *testing.T) {
 		}
 	}
 	listings := pool.All()
-	full := fullRecordings || *update
-	if !full {
-		listings = recordingsSample(t, listings)
-	}
 	model := fakeModel(t)
 	t.Run("record", func(t *testing.T) {
 		for _, f := range lessonsVersions {
@@ -187,24 +186,6 @@ func TestRecordings(t *testing.T) {
 			t.Fatalf("%s differs from a fresh recording (%v): run make recordings", wf, err)
 		}
 	}
-}
-
-// recordingsSample is the first listing in good condition and the first in poor condition.
-func recordingsSample(t *testing.T, all []listing.Listing) []listing.Listing {
-	t.Helper()
-	var good, poor *listing.Listing
-	for i := range all {
-		switch {
-		case all[i].Condition == listing.ConditionPoor && poor == nil:
-			poor = &all[i]
-		case all[i].Condition != listing.ConditionPoor && good == nil:
-			good = &all[i]
-		}
-	}
-	if good == nil || poor == nil {
-		t.Fatal("the pool lacks a listing in good or in poor condition")
-	}
-	return []listing.Listing{*good, *poor}
 }
 
 // scoreFiles are the files of this package the score action needs: its pipeline, manifest and prompt.

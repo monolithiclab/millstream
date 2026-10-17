@@ -2,12 +2,14 @@ package sqlstore_test
 
 import (
 	"os"
+	"runtime"
 	"runtime/debug"
 	"slices"
 	"strings"
 	"testing"
 
 	"github.com/monolithiclab/millstream/internal/store/sqlite"
+	"github.com/monolithiclab/millstream/internal/store/sqlite/sqlitetest"
 	"github.com/monolithiclab/millstream/internal/store/sqlstore"
 	"github.com/monolithiclab/millstream/internal/store/storetest"
 )
@@ -18,11 +20,12 @@ import (
 // TestMain raises the collector's target: the transpiled SQLite allocates heavily, and the tests trade memory for time.
 func TestMain(m *testing.M) {
 	debug.SetGCPercent(400)
-	// SQLite's initialisation and the template's load are the process's, not its first test's: a Memory store
-	// opened and closed here leaves the template loaded and its connection in the pool.
-	if s, err := sqlite.Open(sqlite.Memory, sqlite.Options{}); err == nil {
-		_ = s.Close()
+	// The tests run one at a time, and every unit hands off to the store's writer goroutine and back: with one
+	// processor the hand-off is a goroutine switch, not an idle thread to wake (the package took 107 ms instead of 93).
+	if !raceEnabled {
+		runtime.GOMAXPROCS(1)
 	}
+	sqlitetest.Warm()
 	os.Exit(m.Run())
 }
 

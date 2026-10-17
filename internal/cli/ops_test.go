@@ -12,6 +12,8 @@ import (
 
 	"github.com/monolithiclab/millstream/internal/store"
 	"github.com/monolithiclab/millstream/internal/store/sqlite"
+
+	"github.com/monolithiclab/millstream/internal/testdir"
 )
 
 func Test_triggerCommand(t *testing.T) {
@@ -266,7 +268,7 @@ func Test_tailCommand(t *testing.T) {
 
 func Test_storeCommandsFailOnUnopenableDB(t *testing.T) {
 	t.Parallel()
-	dir := t.TempDir()
+	dir := testdir.New(t)
 	mustRun(t, 1, "--db", dir, "status") // a directory is not a database
 	file := filepath.Join(dir, "file")
 	if err := os.WriteFile(file, nil, 0o600); err != nil {

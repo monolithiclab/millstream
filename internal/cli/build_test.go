@@ -46,6 +46,16 @@ func newState(t *testing.T, scoreErrors bool) *state {
 	return &state{t: t, db: unusedDB(), st: st}
 }
 
+// prepareStates builds newState's two histories before the tests (TestMain): they are the process's fixtures.
+func prepareStates() error {
+	for _, s := range seeded {
+		if _, err := s(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // seeded holds newState's two histories, scoreErrors false then true, each built once; their stores stay open for
 // the process, as the source of the clones.
 var seeded = [2]func() (*sqlite.Store, error){

@@ -16,6 +16,8 @@ import (
 	"github.com/monolithiclab/millstream/internal/artifacts"
 	"github.com/monolithiclab/millstream/internal/ids"
 	"github.com/monolithiclab/millstream/internal/store"
+
+	"github.com/monolithiclab/millstream/internal/testdir"
 )
 
 const retentionSrc = `pipeline: src
@@ -99,7 +101,7 @@ func TestRetainAndPurge(t *testing.T) {
 	photoA := store.ArtifactRef{Name: "a.jpg", SHA256: sha('a'), Size: 1, Type: "image/jpeg"}
 	photoB := store.ArtifactRef{Name: "b.jpg", SHA256: sha('b'), Size: 1, Type: "image/jpeg"}
 	files := &memFiles{m: map[artifacts.File]bool{}}
-	pkgs := t.TempDir()
+	pkgs := testdir.New(t)
 	v := newEnv(t, Options{ArtifactFiles: files, PackageDir: pkgs, Env: func(k string) (string, bool) {
 		return "x", k == "MILLSTREAM_VAR_TAG"
 	}, Stubs: map[store.StepRef]Stub{

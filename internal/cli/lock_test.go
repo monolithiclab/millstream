@@ -9,6 +9,8 @@ import (
 
 	"github.com/monolithiclab/millstream/internal/pipeline"
 	"github.com/monolithiclab/millstream/internal/runtime/container/containertest"
+
+	"github.com/monolithiclab/millstream/internal/testdir"
 )
 
 const (
@@ -28,11 +30,11 @@ func containerSetup(t *testing.T, reportImage string) (pkg, envFile string, env 
 	if !e2eBuild { // the default build's cases fail before looking for docker
 		return pkg, envFile, map[string]string{"PATH": filepath.Join(pkg, "no-bin")}
 	}
-	pkg = t.TempDir()
+	pkg = testdir.New(t)
 	if err := copyTree(pkg, "boxes"); err != nil {
 		t.Fatal(err)
 	}
-	bin := t.TempDir()
+	bin := testdir.New(t)
 	if _, err := containertest.Write(bin, "docker", map[string]containertest.Image{
 		"report:dev":                      {ID: reportImage},
 		"ghcr.io/lab/actions/score:1.2.0": {ID: scoreID, Labels: map[string]string{pipeline.ManifestLabel: scoreLabel}},

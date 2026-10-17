@@ -13,11 +13,13 @@ import (
 	"time"
 
 	"github.com/monolithiclab/millstream/internal/store"
+
+	"github.com/monolithiclab/millstream/internal/testdir"
 )
 
 func TestOpenFileAndReopen(t *testing.T) {
 	noFsync(t)
-	path := filepath.Join(t.TempDir(), "m.db")
+	path := filepath.Join(testdir.New(t), "m.db")
 	s, err := Open(path, Options{})
 	if err != nil {
 		t.Fatalf("Open: %v", err)
@@ -91,7 +93,7 @@ func TestClone(t *testing.T) {
 }
 
 func TestOpenErrors(t *testing.T) {
-	if _, err := Open(filepath.Join(t.TempDir(), "missing", "dir", "m.db"), Options{}); err == nil {
+	if _, err := Open(filepath.Join(testdir.New(t), "missing", "dir", "m.db"), Options{}); err == nil {
 		t.Fatal("Open in a missing directory succeeded")
 	}
 }
@@ -100,7 +102,7 @@ func TestOpenErrors(t *testing.T) {
 // a write that fails each leave either the complete image at path or nothing.
 func Test_createFromImage(t *testing.T) {
 	syncs := noFsync(t)
-	dir := t.TempDir()
+	dir := testdir.New(t)
 	path := filepath.Join(dir, "m.db")
 	wantImage := func(t *testing.T) {
 		t.Helper()

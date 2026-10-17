@@ -19,6 +19,9 @@ import (
 // e2eBuild says whether this is the e2e build: see build_test.go.
 const e2eBuild = true
 
+// prepareStates does nothing in the e2e build: its states are run --once databases, made on first use.
+func prepareStates() error { return nil }
+
 // newState copies the appliedDB database, with --var scoreMode=error for scoreErrors.
 func newState(t *testing.T, scoreErrors bool) *state {
 	t.Helper()

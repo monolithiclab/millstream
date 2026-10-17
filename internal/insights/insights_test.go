@@ -22,6 +22,14 @@ import (
 func TestMain(m *testing.M) {
 	// The tests allocate heavily: a higher collector target trades memory for test time, as in the store tests.
 	debug.SetGCPercent(400)
+	// The history's store is the process's fixture, loaded before the tests; -update builds it again in its test.
+	flag.Parse()
+	if !*update {
+		if err := loadHistory(); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+	}
 	os.Exit(m.Run())
 }
 
@@ -260,16 +268,24 @@ func fixtureStore(t *testing.T) (*sqlite.Store, time.Time) {
 	if *update {
 		buildHistory(t)
 	}
+	if err := loadHistory(); err != nil {
+		t.Fatal(err)
+	}
+	return built.st, built.end
+}
+
+// loadHistory opens the history image into built.
+func loadHistory() error {
 	image, err := os.ReadFile(historyImage)
 	if err != nil {
-		t.Fatal(err)
+		return err
 	}
 	st, err := sqlite.OpenImage(image, sqlite.Options{Now: (&clock{t: historyEnd}).Now, Rand: half})
 	if err != nil {
-		t.Fatal(err)
+		return err
 	}
 	built.st, built.end = st, historyEnd
-	return built.st, built.end
+	return nil
 }
 
 // buildHistory builds the fixture's history and writes its image.

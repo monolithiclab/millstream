@@ -13,6 +13,8 @@ import (
 	"github.com/monolithiclab/millstream/internal/engine"
 	"github.com/monolithiclab/millstream/internal/store"
 	"github.com/monolithiclab/millstream/internal/store/sqlite"
+
+	"github.com/monolithiclab/millstream/internal/testdir"
 )
 
 // hookSrc is a pipeline of builtins with two webhook triggers, slow taking one request a minute, and a manual one.
@@ -34,7 +36,7 @@ func TestWebhooks(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = st.Close() })
-	eng, err := engine.New(engine.Options{Store: st, Now: clock.Now, PackageDir: t.TempDir()})
+	eng, err := engine.New(engine.Options{Store: st, Now: clock.Now, PackageDir: testdir.New(t)})
 	if err != nil {
 		t.Fatal(err)
 	}

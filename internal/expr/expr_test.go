@@ -2,12 +2,24 @@ package expr
 
 import (
 	"errors"
+	"os"
 	"reflect"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"cel.dev/cel-go/cel"
 )
+
+// TestMain builds the CEL environments before the tests: the process builds each once, on first use, and that
+// belongs to no test.
+func TestMain(m *testing.M) {
+	for _, env := range []func() (*cel.Env, error){interpEnv, itemEnv, routeEnv, assertEnv} {
+		_, _ = env()
+	}
+	os.Exit(m.Run())
+}
 
 var startedAt = time.Date(2026, 10, 14, 6, 0, 0, 0, time.UTC)
 

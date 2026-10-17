@@ -10,6 +10,8 @@ import (
 
 	"github.com/monolithiclab/millstream/internal/agent"
 	"github.com/monolithiclab/millstream/internal/pipeline"
+
+	"github.com/monolithiclab/millstream/internal/testdir"
 )
 
 // TestLoad: a case takes its name from its file, its values become JSON values, and every malformed case is
@@ -110,7 +112,7 @@ func TestRunAgentRecordReplay(t *testing.T) {
 	pkg := memPackage(t, srv.URL, map[string]string{
 		"actions/score/evals/one.yaml": "input: { url: \"https://example.com/1\" }\nassert: [\"output.score == 7\"]\n",
 	})
-	c, recordings := memCase(t, pkg, "actions/score"), t.TempDir()
+	c, recordings := memCase(t, pkg, "actions/score"), testdir.New(t)
 	opts := pkgOptions(t, pkg, "./actions/score", agent.ModeRecord, recordings)
 	opts.Client = srv.Client
 	opts.Price = &pipeline.Price{InPerMtok: 3, OutPerMtok: 15}
@@ -144,7 +146,7 @@ config: { mode: keyed, n: 1 }
 assert: [output == 0]
 judge: { rubric: "The output is zero.", model: claude-haiku-5, baseUrl: "` + srv.URL + `", apiKeySecret: apiToken }
 `})
-	recordings := t.TempDir()
+	recordings := testdir.New(t)
 	opts := pkgOptions(t, pkg, "./actions/echo", agent.ModeRecord, recordings)
 	opts.Client = srv.Client
 	r := Run(t.Context(), opts, c)

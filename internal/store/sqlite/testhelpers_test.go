@@ -12,13 +12,17 @@ import (
 
 	"github.com/monolithiclab/millstream/internal/pipeline"
 	"github.com/monolithiclab/millstream/internal/store"
+
+	"github.com/monolithiclab/millstream/internal/testdir"
 )
 
 // TestMain raises the collector's target: the transpiled SQLite allocates heavily, and the tests trade memory for time.
 func TestMain(m *testing.M) {
 	debug.SetGCPercent(400)
 	warm()
-	os.Exit(m.Run())
+	code := m.Run()
+	testdir.Remove()
+	os.Exit(code)
 }
 
 // warm runs a unit or two on a Memory store, so that what the process does once (SQLite's initialisation, the

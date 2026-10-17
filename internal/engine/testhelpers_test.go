@@ -18,6 +18,9 @@ import (
 	"github.com/monolithiclab/millstream/internal/runtime/exec/exectest/fakeexec"
 	"github.com/monolithiclab/millstream/internal/store"
 	"github.com/monolithiclab/millstream/internal/store/sqlite"
+	"github.com/monolithiclab/millstream/internal/store/sqlite/sqlitetest"
+
+	"github.com/monolithiclab/millstream/internal/testdir"
 )
 
 // The package's tests do not call t.Parallel: each runs a store, and the transpiled SQLite allocates under one
@@ -27,7 +30,9 @@ func TestMain(m *testing.M) {
 	// The tests allocate heavily (stores, CEL programs, the transpiled SQLite): a higher collector target trades memory
 	// for test time, as in the cli and store tests.
 	debug.SetGCPercent(400)
+	sqlitetest.Warm()
 	code := m.Run()
+	testdir.Remove()
 	fakeexec.Cleanup()
 	os.Exit(code)
 }
@@ -94,6 +99,23 @@ func newEnv(t *testing.T, opts Options) *env {
 	return &env{t: t, ctx: context.Background(), clock: clock, st: st, e: e, logs: logs}
 }
 
+// parsedPipelines caches pipeline.Parse by source: the tests parse the same few pipelines over and over, and the
+// engine only reads them. Each caller gets its own copy of the pipeline and of its steps, which a test may edit.
+var parsedPipelines sync.Map
+
+func parsed(src string) (*pipeline.Pipeline, error) {
+	f, _ := parsedPipelines.LoadOrStore(src, sync.OnceValues(func() (*pipeline.Pipeline, error) {
+		return pipeline.Parse([]byte(src))
+	}))
+	p, err := f.(func() (*pipeline.Pipeline, error))()
+	if err != nil {
+		return nil, err
+	}
+	c := *p
+	c.Steps = maps.Clone(p.Steps)
+	return &c, nil
+}
+
 // pkgDir is the directory every test package claims. The engine only joins paths onto it (it reads a package from
 // its Files), and the default build's in-process launcher never runs a command there, so nothing is on disk.
 const pkgDir = "/millstream-test/pkg"
@@ -107,7 +129,7 @@ func newPackage(t *testing.T, pipelineYAML string, actions ...string) *pipeline.
 		files["actions/"+a+"/action.yaml"] = []byte(fakeManifest)
 		files["actions/"+a+"/run"] = []byte("#!/bin/sh\n")
 	}
-	p, err := pipeline.Parse(files[pipeline.FileName])
+	p, err := parsed(pipelineYAML)
 	if err != nil {
 		t.Fatalf("load package: %v", err)
 	}

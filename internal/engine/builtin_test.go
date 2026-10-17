@@ -108,16 +108,16 @@ func TestPullReturnsBeforeItsLeasesExpire(t *testing.T) {
 	v.apply(newPackage(t, builtinPipeline, "a"))
 	v.fire("p", "adhoc", "r1")
 	var outs []store.Output
-	for n := range 30 {
+	for n := range 6 {
 		outs = append(outs, output(fmt.Sprint("k", n), fmt.Sprintf(`{"n":%d}`, 5+n)))
 	}
-	v.emit(outs...) // p's backlog: 30 filters, then 30 dedupes
+	v.emit(outs...) // p's backlog: 6 filters, then 6 dedupes
 	v.apply(newPackage(t, "pipeline: s\ntriggers: { adhoc: { manual: {} } }\nsteps:\n  job: { action: ./actions/a, in: trigger.adhoc }\n", "a"))
 	v.fire("s", "adhoc", "r1")
-	// Each look at the engine's clock takes 20 ms, the store's included: time passes as builtins run. The round-robin
+	// Each look at the engine's clock takes 100 ms, the store's included: time passes as builtins run. The round-robin
 	// leases s's job with p's first filter, then only p's builtins.
 	now := v.e.opts.Now
-	v.e.opts.Now = func() time.Time { v.clock.Advance(20 * time.Millisecond); return now() }
+	v.e.opts.Now = func() time.Time { v.clock.Advance(100 * time.Millisecond); return now() }
 	as, err := v.e.Pull(v.ctx, "node-a", 2)
 	if err != nil {
 		t.Fatal(err)

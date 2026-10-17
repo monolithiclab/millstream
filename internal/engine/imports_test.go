@@ -12,6 +12,8 @@ import (
 	"github.com/monolithiclab/millstream/internal/artifacts"
 	"github.com/monolithiclab/millstream/internal/ids"
 	"github.com/monolithiclab/millstream/internal/store"
+
+	"github.com/monolithiclab/millstream/internal/testdir"
 )
 
 const (
@@ -35,7 +37,7 @@ steps:
 // consumer.
 func TestImports(t *testing.T) {
 	env := map[string]string{}
-	v := newEnv(t, Options{Artifacts: artifacts.New(t.TempDir()), Env: func(k string) (string, bool) {
+	v := newEnv(t, Options{Artifacts: artifacts.New(testdir.New(t)), Env: func(k string) (string, bool) {
 		val, ok := env[k]
 		return val, ok
 	}})

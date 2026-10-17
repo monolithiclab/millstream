@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/monolithiclab/millstream/internal/testdir"
 )
 
 const minimalPipeline = "pipeline: p\ntriggers:\n  go: { manual: {} }\nsteps:\n  s: { action: ./actions/a, in: trigger.go }\n"
@@ -27,7 +29,7 @@ func writeTree(t *testing.T, dir string, files [][2]string) {
 
 func TestLoadPackage(t *testing.T) {
 	t.Parallel()
-	dir := t.TempDir()
+	dir := testdir.New(t)
 	writeTree(t, dir, [][2]string{
 		{"pipeline.yaml", minimalPipeline},
 		{"actions/a/action.yaml", "name: a\n"},
@@ -105,7 +107,7 @@ func TestLoadHash(t *testing.T) {
 
 func TestLoadSingleFile(t *testing.T) {
 	t.Parallel()
-	dir := t.TempDir()
+	dir := testdir.New(t)
 	writeTree(t, dir, [][2]string{{"daily.yaml", minimalPipeline}, {"other.txt", "not part of it"}})
 	pkg, err := Load(filepath.Join(dir, "daily.yaml"))
 	if err != nil {
@@ -122,11 +124,11 @@ func TestLoadSingleFile(t *testing.T) {
 
 func TestLoadErrors(t *testing.T) {
 	t.Parallel()
-	missing := t.TempDir()
+	missing := testdir.New(t)
 	writeTree(t, missing, [][2]string{{"README.md", "no pipeline"}})
-	broken := t.TempDir()
+	broken := testdir.New(t)
 	writeTree(t, broken, [][2]string{{"pipeline.yaml", "pipeline: p\nbogus: 1\n"}})
-	unreadable := t.TempDir()
+	unreadable := testdir.New(t)
 	writeTree(t, unreadable, [][2]string{{"pipeline.yaml", minimalPipeline}, {"secret/x", "x"}})
 	if err := os.Chmod(filepath.Join(unreadable, "secret"), 0o000); err != nil {
 		t.Fatal(err)
