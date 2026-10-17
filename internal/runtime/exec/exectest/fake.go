@@ -39,6 +39,11 @@ import (
 //   - lateMetric: answers done, then sends a metric for the same delivery
 //   - cost: sends a cost_usd metric for each number of config "costs" and a metric of another name, then answers
 //     done, or a non-retryable error when config "fail" is true
+//   - rules: a rule-based action a fallback backs (spec section 11.5), its outputs deterministic so that audits
+//     compare: run as an action whose name does not end in -fallback, it abstains on an item whose payload has
+//     "abstain" true and otherwise emits {"score": the payload's "score", 1 by default}; as the fallback (its name
+//     ends in -fallback) it emits the same, one more when the payload has "disagree" true, and answers a
+//     non-retryable error when the payload has "fallbackError" true
 //   - artifact: writes the payload's "files" (path to content) in MILLSTREAM_WORKDIR, creates its "links" (path to
 //     target) as symbolic links, then emits, with the payload's "emit" list as artifacts, an output mapping each
 //     input artifact's name to its content, and answers done with the payload's "attempt" list as the attempt's
@@ -80,6 +85,7 @@ type fake struct {
 	stderr    io.Writer
 	getenv    func(string) string
 	inProcess bool
+	action    string // hello's action name
 }
 
 // errExit carries an exit status out of a mode.
@@ -111,6 +117,7 @@ func (f *fake) run(stdin io.Reader) error {
 		return fmt.Errorf("first message is %s, want hello", m.Type())
 	}
 	mode, _ := hello.Config["mode"].(string)
+	f.action = hello.Action
 	if mode == "noReady" {
 		return f.hang()
 	}
@@ -220,6 +227,8 @@ func (f *fake) handle(w *protocol.Writer, config map[string]any, mode string, it
 		return w.Write(protocol.Done{Delivery: it.Delivery})
 	case "artifact":
 		return f.artifacts(w, it)
+	case "rules":
+		return f.rules(w, in, it)
 	case "slow":
 		ms, _ := config["sleepMs"].(float64)
 		select {
@@ -239,6 +248,26 @@ func (f *fake) echo(w *protocol.Writer, it protocol.Item) error {
 		return err
 	}
 	if err := w.Write(protocol.Emit{Delivery: it.Delivery, Key: it.Key, Payload: out}); err != nil {
+		return err
+	}
+	return w.Write(protocol.Done{Delivery: it.Delivery})
+}
+
+func (f *fake) rules(w *protocol.Writer, in map[string]any, it protocol.Item) error {
+	fallback := strings.HasSuffix(f.action, "-fallback")
+	score, ok := in["score"].(float64)
+	if !ok {
+		score = 1
+	}
+	switch {
+	case !fallback && in["abstain"] == true:
+		return w.Write(protocol.Abstain{Delivery: it.Delivery, Reason: "no rule for this item"})
+	case fallback && in["fallbackError"] == true:
+		return w.Write(protocol.Error{Delivery: it.Delivery, Message: "the fallback failed"})
+	case fallback && in["disagree"] == true:
+		score++
+	}
+	if err := w.Write(protocol.Emit{Delivery: it.Delivery, Payload: json.RawMessage(fmt.Sprintf(`{"score":%g}`, score))}); err != nil {
 		return err
 	}
 	return w.Write(protocol.Done{Delivery: it.Delivery})

@@ -263,6 +263,22 @@ func TestRunSchemaMismatch(t *testing.T) {
 	}
 }
 
+// TestRunAbstains: an answer that is the abstain object alone is not validated against the output schema: it is
+// answered abstain with its reason, the metrics and the transcript; an object with more keys is an output as any.
+func TestRunAbstains(t *testing.T) {
+	t.Parallel()
+	h := &fakeHarness{fn: answer("```json\n{\"abstain\": \"too vague\"}\n```", 10, 5)}
+	s := newSession(t, memPackage(t, testManifest, testPrompt), h).withWorkdir()
+	msgs := s.run(`{"url": "u"}`)
+	ab, ok := msgs[len(msgs)-1].(protocol.Abstain)
+	if !ok || ab.Delivery != "dl_a" || ab.Reason != "too vague" || len(ab.Artifacts) != 1 || len(msgs) != 6 {
+		t.Fatalf("messages %+v", msgs)
+	}
+	if _, ok := abstains(map[string]any{"abstain": "x", "score": 1.0}); ok {
+		t.Fatal("an object with another key abstained")
+	}
+}
+
 // TestRunFailures: what each failure answers, retryable or not, always with the transcript once the harness ran.
 func TestRunFailures(t *testing.T) {
 	t.Parallel()

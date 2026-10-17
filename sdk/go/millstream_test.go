@@ -34,6 +34,12 @@ func serveCases(workdir string) []serveCase {
 			`{"type":"ready"}` + "\n" + `{"type":"emit","delivery":"dl_1","key":"a","payload":"A"}` + "\n" +
 				`{"type":"done","delivery":"dl_1"}` + "\n", ""},
 		{"map", MapHandler(score), []string{"garbage"}, nil, 1, "", `"msg":"action stopped"`},
+		// An action abstaining, its abstention wrapped, then answering an audit of the item it would abstain on.
+		{"abstain", MapHandler(rules), []string{hello, item("dl_1", `{"url":"u"}`),
+			`{"type":"item","delivery":"dl_2","id":"it_2","payload":{"url":"u"},"audit":true}`}, nil, 0,
+			`{"type":"ready"}` + "\n" + `{"type":"abstain","delivery":"dl_1","reason":"no rule for u"}` + "\n" +
+				`{"type":"emit","delivery":"dl_2","payload":{"url":"audited","score":0}}` + "\n" +
+				`{"type":"done","delivery":"dl_2"}` + "\n", ""},
 		// An action reading an input artifact from the working directory and attaching the file it writes: the emit
 		// names it by its path relative to the working directory.
 		{"artifact", MapHandler(annotate(workdir)), []string{hello, `{"type":"item","delivery":"dl_1","id":"it_1",` +
@@ -103,6 +109,18 @@ func score(c Context, in listing) ([]scored, error) {
 	c.Metric("scored", 1, map[string]string{"city": c.Vars()["city"].(string)})
 	c.Logger().Info("scoring", "item", c.Item().ID)
 	return []scored{{URL: in.URL, Score: in.Price * cfg.Factor}}, nil
+}
+
+// rules abstains on every item, but on an audit, which it answers.
+func rules(c Context, in listing) ([]scored, error) {
+	if c.Item().Audit {
+		return []scored{{URL: "audited"}}, nil
+	}
+	err := fmt.Errorf("rules: %w", c.Abstain("no rule for "+in.URL))
+	if !IsAbstain(err) || err.Error() != "rules: abstain: no rule for u" {
+		return nil, fmt.Errorf("abstention %v", err)
+	}
+	return nil, err
 }
 
 // split emits one keyed output per character of the URL, or several unkeyed ones when asked to misbehave.

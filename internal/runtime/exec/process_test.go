@@ -73,6 +73,13 @@ func TestDeliverActionError(t *testing.T) {
 			t.Error("an action error must not end the process")
 		}
 	}
+	// An abstention is an action error marked Abstain, with its reason, and no outputs.
+	p := startFake(t, "rules", nil)
+	res, err := p.Deliver(t.Context(), delivery("dl_2", `{"abstain":true}`))
+	if err != nil || res.Err == nil || !res.Err.Abstain || res.Err.Message != "no rule for this item" ||
+		res.Outputs != nil {
+		t.Errorf("abstain: %+v, %v", res, err)
+	}
 }
 
 // TestDeliverRuntimeFailures pins review focus 4: garbage, an exit mid-delivery, no answer and out-of-protocol

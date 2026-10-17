@@ -173,7 +173,7 @@ func Test_testActionConformance(t *testing.T) {
 			"PASS shutdown:"}},
 		{"noReady", []string{"FAIL ready: no ready within 300ms", "SKIP item-answer: needs ready",
 			"FAIL unknown-keys: hello with an unknown key: no ready"}},
-		{"hang", []string{conformant, "FAIL item-answer: no done or error for the item within 300ms",
+		{"hang", []string{conformant, "FAIL item-answer: no done, error or abstain for the item within 300ms",
 			"FAIL shutdown: did not exit within 300ms of shutdown"}},
 		{"emitAfterDone", []string{"FAIL idle-silence: wrote emit between deliveries"}},
 		{"wrongId", []string{`FAIL item-answer: wrote emit for delivery "dl_other", want "dl_conformance_1"`}},

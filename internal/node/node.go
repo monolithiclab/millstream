@@ -26,7 +26,8 @@ import (
 )
 
 // ClassAction is the error class of a delivery the action itself failed with an error message. Runtime failures
-// carry exec's classes (timeout, crash, protocol).
+// carry exec's classes (timeout, crash, protocol), and an action's abstain message store.ClassAbstain: the engine
+// applies the Abstain unit to a Fail of that class.
 const ClassAction = "action"
 
 // Defaults for zero Options.
@@ -346,9 +347,15 @@ func (l *loop) execute(ctx context.Context, log *slog.Logger, a Assignment) {
 			Retryable: retryable, Unreported: true,
 		})
 	case res.Err != nil:
-		log.Info("delivery failed in the action", "retryable", res.Err.Retryable)
+		class := ClassAction
+		if res.Err.Abstain {
+			class = store.ClassAbstain
+			log.Info("delivery abstained in the action")
+		} else {
+			log.Info("delivery failed in the action", "retryable", res.Err.Retryable)
+		}
 		rerr = l.t.Fail(rctx, store.FailRequest{
-			LeaseRef: ref, Attempt: attempt, Class: ClassAction, Message: a.Redact.String(res.Err.Message),
+			LeaseRef: ref, Attempt: attempt, Class: class, Message: a.Redact.String(res.Err.Message),
 			Retryable: res.Err.Retryable, CostUSD: cost, Artifacts: res.Artifacts, Metrics: metrics,
 		})
 	default:

@@ -56,7 +56,20 @@ type Context interface {
 	// InputArtifact returns the absolute path of the input item's artifact called name, placed in the working
 	// directory before the item arrived.
 	InputArtifact(name string) (string, error)
+	// Abstain returns the error an action function returns to decline the item, saying why: the SDK answers abstain
+	// and the engine hands the delivery to the step's fallback action (on a step without one it dead-letters the
+	// item). Outputs are not emitted. An action that may abstain is what a fallback backs, such as rules backed by
+	// an agent.
+	Abstain(reason string) error
 }
+
+// abstention is the error Context.Abstain returns.
+type abstention struct{ reason string }
+
+func (a abstention) Error() string { return "abstain: " + a.reason }
+
+// IsAbstain reports whether err, or an error it wraps, came from Context.Abstain.
+func IsAbstain(err error) bool { return errors.As(err, new(abstention)) }
 
 // ItemInfo describes the item being processed.
 type ItemInfo struct {
@@ -66,6 +79,9 @@ type ItemInfo struct {
 	// IdempotencyKey is stable across retries of the delivery and new on replay: pass it to external systems that
 	// deduplicate requests.
 	IdempotencyKey string
+	// Audit is set when the action runs as a step's fallback on an item its primary action covered, for comparison:
+	// its outputs are stored, never published.
+	Audit bool
 }
 
 // Keyed is one keyed output. A delivery with more than one output must key all of them, with distinct keys.
@@ -205,6 +221,7 @@ type (
 		Attempt        int             `json:"attempt"`
 		IdempotencyKey string          `json:"idempotencyKey"`
 		Artifacts      []artifactMsg   `json:"artifacts"`
+		Audit          bool            `json:"audit"`
 	}
 	readyMsg struct {
 		Type string `json:"type"`
@@ -232,6 +249,11 @@ type (
 		Delivery  string `json:"delivery"`
 		Message   string `json:"message"`
 		Retryable bool   `json:"retryable"`
+	}
+	abstainMsg struct {
+		Type     string `json:"type"`
+		Delivery string `json:"delivery"`
+		Reason   string `json:"reason,omitempty"`
 	}
 )
 
@@ -329,6 +351,10 @@ func read(sc *bufio.Scanner) (inMsg, error) {
 func handle(out *writer, logger *slog.Logger, workdir string, hello, item inMsg, h Handler) error {
 	c := &itemContext{hello: hello, item: item, out: out, logger: logger, workdir: workdir}
 	outs, err := h(c, item.Payload)
+	var abstained abstention
+	if errors.As(err, &abstained) {
+		return out.send(abstainMsg{Type: "abstain", Delivery: item.Delivery, Reason: abstained.reason})
+	}
 	if err != nil {
 		return out.send(errorMsg{Type: "error", Delivery: item.Delivery, Message: err.Error(), Retryable: IsRetryable(err)})
 	}
@@ -375,8 +401,11 @@ func (c *itemContext) Metric(name string, value float64, labels map[string]strin
 func (c *itemContext) Logger() *slog.Logger { return c.logger }
 
 func (c *itemContext) Item() ItemInfo {
-	return ItemInfo{ID: c.item.ID, Key: c.item.Key, Attempt: c.item.Attempt, IdempotencyKey: c.item.IdempotencyKey}
+	return ItemInfo{ID: c.item.ID, Key: c.item.Key, Attempt: c.item.Attempt, IdempotencyKey: c.item.IdempotencyKey,
+		Audit: c.item.Audit}
 }
+
+func (c *itemContext) Abstain(reason string) error { return abstention{reason: reason} }
 
 func orEmpty(m map[string]any) map[string]any {
 	if m == nil {

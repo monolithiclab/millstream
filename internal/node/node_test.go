@@ -2,6 +2,7 @@ package node
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -202,6 +203,26 @@ func TestReportsCostMetrics(t *testing.T) {
 				t.Fatalf("metrics = %+v", metrics)
 			}
 		})
+	}
+}
+
+// An action's abstain message is reported as a Fail of class store.ClassAbstain, its reason the message: the engine
+// applies the Abstain unit to it.
+func TestReportsAbstain(t *testing.T) {
+	t.Parallel()
+	a := assignment("dl_1", "rules", nil)
+	a.ItemMsg.Payload = json.RawMessage(`{"abstain":true}`)
+	tr := newFakeTransport(a)
+	stop := startNode(t, tr, Options{})
+	await(t, tr.reported, 1)
+	if err := stop(); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	if len(tr.fails) != 1 || tr.fails[0].Class != store.ClassAbstain || tr.fails[0].Retryable ||
+		tr.fails[0].Message != "no rule for this item" {
+		t.Fatalf("fails = %+v", tr.fails)
 	}
 }
 

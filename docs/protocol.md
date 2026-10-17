@@ -62,8 +62,9 @@ optionally `source` and `added`) and `examples` (each with `input` and `output`,
 | `payload` | The item, any JSON value valid against the action's input schema |
 | `artifacts` | Input files, already placed under `MILLSTREAM_WORKDIR` at `path` |
 | `run` | The run the item belongs to |
-| `attempt` | 1 on the first try, then 2, 3… on retries; numbers go on after a dead-letter replay, never reused |
+| `attempt` | 1 on the first try, then 2, 3… on retries; numbers go on after a dead-letter replay or a hand-off to the fallback, never reused |
 | `idempotencyKey` | Stable across retries of this delivery, new on replay (see below) |
+| `audit` | Present and `true` on a fallback audit (see Abstain and fallback below); absent otherwise |
 
 **`shutdown`** asks the process to exit. It is only sent between deliveries. The process exits with status 0; the
 end of stdin means the same.
@@ -116,11 +117,19 @@ failure can be investigated.
 {"type":"error","delivery":"dl_3f…","message":"portal answered 503","retryable":true}
 ```
 
+**`abstain`** ends the delivery without output: the action declines the item and says why in `reason` (optional).
+Outputs it emitted for the delivery are discarded. The optional `artifacts` lists the attempt's own files, as on
+`done` and `error`. See Abstain and fallback below.
+
+```json
+{"type":"abstain","delivery":"dl_3f…","reason":"no rule covers listings without a surface"}
+```
+
 ## Ordering
 
 1. The engine sends `hello`; the process answers `ready` within 10 seconds.
 2. The engine sends one `item`. The process answers with any number of `emit` and `metric` messages, then exactly
-   one `done` or `error` for that delivery.
+   one `done`, `error` or `abstain` for that delivery.
 3. Only then does the engine send the next `item`, or `shutdown`. A process handles **one delivery at a time**;
    concurrency comes from running several processes.
 
@@ -139,6 +148,21 @@ An action written to this document works under both.
   sharing a key dead-letter the item at once.
 - Delivery is at least once: an item may be handed to an action again after a crash, even when the action had
   already acted on it. The idempotency key makes that safe.
+
+## Abstain and fallback
+
+A step may name a second action, its `fallback` (platform design, section 11.5): typically hand-written rules as the
+step's action, backed by an agent.
+
+- An action that is unsure of an item answers `abstain`. The engine hands the delivery to the step's fallback
+  action, on the same step and the same item, so its outputs get the ids the first action's would have had; the
+  fallback starts with its own retry budget, its attempts numbered on. On a step without a fallback for abstentions,
+  or from the fallback itself, `abstain` dead-letters the item at once, like a non-retryable error.
+- A step whose fallback lists `error` also hands it the first action's non-retryable errors.
+- A fallback may run on an item the first action already covered, to compare the two: an **audit**. Its `item`
+  carries `audit: true`; it is answered as any item, its outputs are stored for comparison and never published, and
+  it is not retried. Only actions declaring `effects: none` are audited, so an action that sees `audit: true` acts on
+  nothing outside Millstream anyway.
 
 ## Idempotency key
 
@@ -204,16 +228,12 @@ a minimal value of the input schema: its required properties, each empty, zero o
 | --- | --- |
 | `ready` | `hello` is answered by `ready`, first, within the timeout |
 | `unknown-keys` | A `hello` and an `item` carrying a key the action cannot know are answered as usual |
+| `audit-item` | An `item` carrying `audit: true` is answered as usual, with `done`, `error` or `abstain` |
 | `framing` | Every line, in every process of the suite, is a JSON object of a type an action writes, under 8 MiB |
-| `item-answer` | An `item` gets `done` or `error` within the timeout, every `emit` and `metric` for its delivery |
+| `item-answer` | An `item` gets `done`, `error` or `abstain` within the timeout, every `emit` and `metric` for its delivery |
 | `keyed-outputs` | Several outputs of a delivery carry distinct keys (skipped with fewer than two) |
 | `idle-silence` | Nothing is written after the answer, over a short window, but a late `metric` of that delivery |
-| `malformed-config` | With a `null` config, then with every config value of an unexpected type, the process takes `hello` and answers the item with `done` or `error`, instead of exiting |
+| `malformed-config` | With a `null` config, then with every config value of an unexpected type, the process takes `hello` and answers the item with `done`, `error` or `abstain`, instead of exiting |
 | `shutdown` | After `shutdown`, the process exits with status 0 within the timeout, writing nothing more |
 
 The command exits 1 when any check fails. Agent actions are the engine's own adapter and are not checked this way.
-
-## Not in version 1 yet
-
-`abstain` (hand a delivery to the step's fallback) and fallback audits (`audit` on `item`) arrive with
-self-improvement in milestone M5, as described in the platform design, section 11.5.

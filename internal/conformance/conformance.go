@@ -32,6 +32,7 @@ import (
 const (
 	CheckReady           = "ready"
 	CheckUnknownKeys     = "unknown-keys"
+	CheckAuditItem       = "audit-item"
 	CheckFraming         = "framing"
 	CheckItemAnswer      = "item-answer"
 	CheckKeyedOutputs    = "keyed-outputs"
@@ -95,7 +96,8 @@ func Run(ctx context.Context, t Target) []Result {
 		s.set(CheckFraming, Fail, "%s", strings.Join(s.violations, "; "))
 	}
 	out := make([]Result, 0, len(s.results))
-	for _, name := range []string{CheckReady, CheckUnknownKeys, CheckFraming, CheckItemAnswer, CheckKeyedOutputs,
+	for _, name := range []string{CheckReady, CheckUnknownKeys, CheckAuditItem, CheckFraming, CheckItemAnswer,
+		CheckKeyedOutputs,
 		CheckIdleSilence, CheckMalformedConfig, CheckShutdown} {
 		out = append(out, s.results[name])
 	}
@@ -240,9 +242,18 @@ func (s *suite) unknownKeys(ctx context.Context) {
 	}
 	if _, err := p.deliver(withKeys(s.item("dl_conformance_2"), extra)); err != nil {
 		s.set(CheckUnknownKeys, Fail, "item with an unknown key: %v", err)
+		s.set(CheckAuditItem, Skip, "needs %s to pass", CheckUnknownKeys)
 		return
 	}
 	s.set(CheckUnknownKeys, Pass, "hello and item with an unknown key answered")
+	audit := s.item("dl_conformance_audit")
+	audit.Audit = true
+	ans, err := p.deliver(audit)
+	if err != nil {
+		s.set(CheckAuditItem, Fail, "item marked audit: %v", err)
+		return
+	}
+	s.set(CheckAuditItem, Pass, "item marked audit answered: %s", ans)
 }
 
 // malformedConfig sends a null config, then one whose every value has an unexpected type: the process must take
@@ -377,7 +388,7 @@ func (p *process) violation(format string, args ...any) {
 
 // actionTypes are the messages an action may write.
 var actionTypes = []string{protocol.TypeReady, protocol.TypeEmit, protocol.TypeMetric, protocol.TypeDone,
-	protocol.TypeError}
+	protocol.TypeError, protocol.TypeAbstain}
 
 // parse decodes one line as a message an action may write; a line that is not one is a violation.
 func (p *process) parse(line []byte) (protocol.Message, error) {
@@ -463,16 +474,20 @@ type answer struct {
 	emits   []protocol.Emit
 	metrics int
 	err     *protocol.Error
+	abstain *protocol.Abstain
 }
 
 func (a answer) String() string {
 	if a.err != nil {
 		return fmt.Sprintf("error (retryable %t): %s", a.err.Retryable, a.err.Message)
 	}
+	if a.abstain != nil {
+		return fmt.Sprintf("abstain: %s", a.abstain.Reason)
+	}
 	return fmt.Sprintf("done with %d output(s) and %d metric(s)", len(a.emits), a.metrics)
 }
 
-// deliver sends an item and collects its answer, up to done or error, all for that delivery.
+// deliver sends an item and collects its answer, up to done, error or abstain, all for that delivery.
 func (p *process) deliver(item protocol.Message) (answer, error) {
 	var delivery string
 	switch it := item.(type) {
@@ -487,7 +502,7 @@ func (p *process) deliver(item protocol.Message) (answer, error) {
 	var ans answer
 	deadline := time.Now().Add(p.s.t.Timeout)
 	for {
-		m, err := p.next(deadline, "done or error for the item")
+		m, err := p.next(deadline, "done, error or abstain for the item")
 		if err != nil {
 			return ans, err
 		}
@@ -504,13 +519,17 @@ func (p *process) deliver(item protocol.Message) (answer, error) {
 		case protocol.Error:
 			about = m.Delivery
 			ans.err = &m
+		case protocol.Abstain:
+			about = m.Delivery
+			ans.abstain = &m
 		default:
 			return ans, fmt.Errorf("wrote %s during a delivery", m.Type())
 		}
 		if about != delivery {
 			return ans, fmt.Errorf("wrote %s for delivery %q, want %q", m.Type(), about, delivery)
 		}
-		if m.Type() == protocol.TypeDone || m.Type() == protocol.TypeError {
+		switch m.Type() {
+		case protocol.TypeDone, protocol.TypeError, protocol.TypeAbstain:
 			return ans, nil
 		}
 	}

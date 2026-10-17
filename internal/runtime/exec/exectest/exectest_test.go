@@ -109,6 +109,18 @@ func TestServe(t *testing.T) {
 					t.Errorf("emit = %+v", e)
 				}
 			}},
+		{name: "rules", config: `{"mode":"rules"}`, items: []string{`{"abstain":true}`, `{"score":4}`},
+			want: "ready abstain emit done"},
+		{name: "rules as the fallback", input: `{"type":"hello","protocol":1,"action":"r-fallback","config":` +
+			`{"mode":"rules"}}` + "\n" + `{"type":"item","delivery":"d1","payload":{"abstain":true,"disagree":true}}` +
+			"\n" + `{"type":"item","delivery":"d2","payload":{"fallbackError":true}}` + "\n",
+			want: "ready emit done error",
+			check: func(t *testing.T, msgs []protocol.Message, _ string) {
+				t.Helper()
+				if e, _ := msgs[1].(protocol.Emit); string(e.Payload) != `{"score":2}` {
+					t.Errorf("emit = %+v", e)
+				}
+			}},
 		{name: "emitAfterDone", config: `{"mode":"emitAfterDone"}`, items: []string{`{}`}, want: "ready done emit"},
 		{name: "lateMetric", config: `{"mode":"lateMetric"}`, items: []string{`{}`}, want: "ready done metric"},
 		{name: "stderr", config: `{"mode":"stderr"}`, items: []string{`{}`}, want: "ready emit done",

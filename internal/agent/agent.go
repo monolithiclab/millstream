@@ -5,7 +5,9 @@
 // For each item it renders the action's prompt template with the payload, config, vars and the step's lessons (from
 // hello), runs the harness with the manifest's tools and limits, extracts the structured output (native when the
 // harness has it, else the last fenced JSON block) and validates it against the output schema; a mismatch is a
-// retryable error. It emits the output with the metrics tokens_in, tokens_out, cost_usd, turns and duration_ms
+// retryable error. An answer that is an object whose only key is "abstain", holding a string, is not validated:
+// the adapter answers abstain with it as the reason, and the engine hands the delivery to the step's fallback (spec
+// section 11.5). It emits the output with the metrics tokens_in, tokens_out, cost_usd, turns and duration_ms
 // (labelled with the model), and keeps the attempt's transcript as the artifact transcript.json, on failure as on
 // success, with every secret value redacted.
 //
@@ -264,6 +266,9 @@ func (a *adapter) handle(ctx context.Context, w *protocol.Writer, it protocol.It
 			return err
 		}
 	}
+	if a, ok := errors.AsType[*abstention](err); ok {
+		return w.Write(protocol.Abstain{Delivery: it.Delivery, Reason: a.reason, Artifacts: arts})
+	}
 	if err != nil {
 		msg := err.Error()
 		if arts != nil {
@@ -313,11 +318,34 @@ func (a *adapter) attempt(ctx context.Context, it protocol.Item, t *Transcript) 
 	if err := json.Unmarshal(out, &v); err != nil {
 		return nil, schemaFailure("decode output: %v", err)
 	}
+	if reason, ok := abstains(v); ok {
+		return nil, &abstention{reason: reason}
+	}
 	if err := a.output.Validate(v); err != nil {
 		return nil, schemaFailure("the output does not match the output schema: %v", err)
 	}
 	return out, nil
 }
+
+// AbstainKey is the key of the answer by which an agent abstains (spec section 11.5): an object holding it alone,
+// with a string, {"abstain": "why"}. An output schema that lets the model abstain admits that object as an
+// alternative (anyOf), and the prompt says when to use it.
+const AbstainKey = "abstain"
+
+// abstains returns the reason of an answer that abstains.
+func abstains(v any) (string, bool) {
+	m, ok := v.(map[string]any)
+	if !ok || len(m) != 1 {
+		return "", false
+	}
+	reason, ok := m[AbstainKey].(string)
+	return reason, ok
+}
+
+// abstention is an attempt whose answer abstained.
+type abstention struct{ reason string }
+
+func (a *abstention) Error() string { return "the agent abstained: " + a.reason }
 
 // cost is the cost the harness reported, else the tokens at the environment file's price, else 0 with a warning.
 func (a *adapter) cost(resp Response) float64 {

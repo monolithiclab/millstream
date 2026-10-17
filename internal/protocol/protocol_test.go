@@ -48,6 +48,13 @@ func TestRoundTrip(t *testing.T) {
 		},
 		{Done{Delivery: "dl_1"}, `{"type":"done","delivery":"dl_1"}`},
 		{Error{Delivery: "dl_1", Message: "boom", Retryable: true}, `{"type":"error","delivery":"dl_1","message":"boom","retryable":true}`},
+		{Abstain{Delivery: "dl_1", Reason: "unsure"}, `{"type":"abstain","delivery":"dl_1","reason":"unsure"}`},
+		{
+			Item{Delivery: "dl_2", ID: "it_2", Payload: json.RawMessage(`{}`), Artifacts: []Artifact{}, Audit: true},
+			`{"type":"item","delivery":"dl_2","id":"it_2","key":"","payload":{},"artifacts":[],` +
+				`"run":{"id":"","trigger":"","startedAt":"0001-01-01T00:00:00Z","revision":""},"attempt":0,` +
+				`"idempotencyKey":"","audit":true}`,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.msg.Type(), func(t *testing.T) {
@@ -80,7 +87,7 @@ func TestReadErrors(t *testing.T) {
 		input string
 		want  string
 	}{
-		{"unknown type", `{"type":"abstain","delivery":"dl_1"}` + "\n", `unknown message type "abstain"`},
+		{"unknown type", `{"type":"propose","delivery":"dl_1"}` + "\n", `unknown message type "propose"`},
 		{"missing type", `{"delivery":"dl_1"}` + "\n", `unknown message type ""`},
 		{"not JSON", "garbage\n", "malformed line"},
 		{"not an object", "[1]\n", "malformed line"},

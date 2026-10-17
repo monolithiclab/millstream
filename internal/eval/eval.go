@@ -387,6 +387,8 @@ func runAgent(ctx context.Context, opts Options, config, vars map[string]any, it
 			r.Metrics = append(r.Metrics, m)
 		case protocol.Error:
 			r.Err = &exec.ActionError{Message: m.Message, Retryable: m.Retryable}
+		case protocol.Abstain:
+			r.Err = &exec.ActionError{Message: m.Reason, Abstain: true}
 		}
 	}
 }

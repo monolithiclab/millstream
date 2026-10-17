@@ -34,6 +34,7 @@ const (
 	TypeMetric   = "metric"
 	TypeDone     = "done"
 	TypeError    = "error"
+	TypeAbstain  = "abstain"
 )
 
 // Message is one protocol message.
@@ -65,6 +66,9 @@ type Item struct {
 	Attempt   int             `json:"attempt"`
 	// IdempotencyKey is hash(step, item id, generation): stable across retries, new on replay.
 	IdempotencyKey string `json:"idempotencyKey"`
+	// Audit marks a fallback audit (spec section 11.5): the step's fallback run on an item its primary action
+	// covered, its outputs stored for comparison, never published. Omitted when false.
+	Audit bool `json:"audit,omitempty"`
 }
 
 // Run is the run a delivery belongs to.
@@ -134,6 +138,15 @@ type Error struct {
 	Artifacts []Artifact `json:"artifacts,omitempty"`
 }
 
+// Abstain ends a delivery without output: the action declines the item, which goes to the step's fallback action
+// (spec section 11.5), or dead-letters as a non-retryable error on a step without one. Outputs it emitted are
+// discarded.
+type Abstain struct {
+	Delivery  string     `json:"delivery"`
+	Reason    string     `json:"reason,omitempty"`
+	Artifacts []Artifact `json:"artifacts,omitempty"`
+}
+
 func (Hello) Type() string    { return TypeHello }
 func (Item) Type() string     { return TypeItem }
 func (Shutdown) Type() string { return TypeShutdown }
@@ -142,6 +155,7 @@ func (Emit) Type() string     { return TypeEmit }
 func (Metric) Type() string   { return TypeMetric }
 func (Done) Type() string     { return TypeDone }
 func (Error) Type() string    { return TypeError }
+func (Abstain) Type() string  { return TypeAbstain }
 
 // decoders decode a line into the message of each type.
 var decoders = map[string]func([]byte) (Message, error){
@@ -153,6 +167,7 @@ var decoders = map[string]func([]byte) (Message, error){
 	TypeMetric:   decode[Metric],
 	TypeDone:     decode[Done],
 	TypeError:    decode[Error],
+	TypeAbstain:  decode[Abstain],
 }
 
 func decode[T Message](line []byte) (Message, error) {

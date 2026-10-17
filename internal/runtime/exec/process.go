@@ -197,7 +197,7 @@ type Delivery struct {
 }
 
 // Result is what a delivery produced. Outputs are set only when the action answered done, with the artifacts they
-// name already in the artifact store; Err only when it answered error. Artifacts are the attempt's own, named by its
+// name already in the artifact store; Err only when it answered error or abstain. Artifacts are the attempt's own, named by its
 // done or error, already in the artifact store.
 type Result struct {
 	Outputs   []store.Output
@@ -206,10 +206,12 @@ type Result struct {
 	Artifacts []store.ArtifactRef
 }
 
-// ActionError is an action's own error message.
+// ActionError is an action's own error message, or, with Abstain, its abstain message and reason (spec section
+// 6.3): the delivery goes to the step's fallback action.
 type ActionError struct {
 	Message   string
 	Retryable bool
+	Abstain   bool
 }
 
 // Process is a running action process. It serves one delivery at a time: Deliver must not be called concurrently.
@@ -528,6 +530,10 @@ func collect(res *Result, emitted *[][]protocol.Artifact, attempt *[]protocol.Ar
 		got = m.Delivery
 		res.Outputs, *emitted, *attempt = nil, nil, m.Artifacts
 		res.Err = &ActionError{Message: m.Message, Retryable: m.Retryable}
+	case protocol.Abstain:
+		got = m.Delivery
+		res.Outputs, *emitted, *attempt = nil, nil, m.Artifacts
+		res.Err = &ActionError{Message: m.Reason, Abstain: true}
 	default:
 		return false, fmt.Errorf("%w: unexpected %s message", protocol.ErrProtocol, m.Type())
 	}
@@ -535,7 +541,7 @@ func collect(res *Result, emitted *[][]protocol.Artifact, attempt *[]protocol.Ar
 		return false, fmt.Errorf("%w: %s message for delivery %q", protocol.ErrProtocol, m.Type(), got)
 	}
 	switch m.(type) {
-	case protocol.Done, protocol.Error:
+	case protocol.Done, protocol.Error, protocol.Abstain:
 		return true, nil
 	}
 	return false, nil

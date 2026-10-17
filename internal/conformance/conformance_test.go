@@ -20,9 +20,13 @@ func TestRunInProcess(t *testing.T) {
 		want map[string]string // check to status and a part of its reason
 	}{
 		{"keyed", map[string]string{
-			CheckReady: Pass, CheckUnknownKeys: Pass, CheckFraming: Pass, CheckItemAnswer: Pass,
+			CheckReady: Pass, CheckUnknownKeys: Pass, CheckAuditItem: Pass, CheckFraming: Pass, CheckItemAnswer: Pass,
 			CheckKeyedOutputs: Pass + " 3 outputs with distinct keys", CheckIdleSilence: Pass,
 			CheckMalformedConfig: Pass, CheckShutdown: Pass,
+		}},
+		{"rules", map[string]string{ // abstaining on its input, as an action a fallback backs may
+			CheckItemAnswer: Pass + " abstain: no rule", CheckAuditItem: Pass + " abstain", CheckFraming: Pass,
+			CheckKeyedOutputs: Skip,
 		}},
 		{"garbage", map[string]string{
 			CheckFraming: Fail + " malformed line", CheckItemAnswer: Fail + " protocol violation",
@@ -34,7 +38,7 @@ func TestRunInProcess(t *testing.T) {
 			t.Parallel()
 			results := Run(t.Context(), Target{
 				Spec:     exec.Spec{Action: "fake", Version: "1.0.0", Config: map[string]any{"mode": tt.mode, "n": 3}},
-				Launcher: exec.FuncLauncher{F: exectest.Serve}, Input: json.RawMessage(`{}`),
+				Launcher: exec.FuncLauncher{F: exectest.Serve}, Input: json.RawMessage(`{"abstain":true}`),
 				ConfigSchema: json.RawMessage(`{"type":"object","properties":{"greeting":{"type":"string"}}}`),
 				Timeout:      5 * time.Second, IdleWindow: time.Millisecond,
 			})
@@ -48,7 +52,7 @@ func TestRunInProcess(t *testing.T) {
 					t.Errorf("%s = %s %q, want %s with %q", check, r.Status, r.Reason, status, reason)
 				}
 			}
-			if Failed(results) != (tt.mode != "keyed") {
+			if Failed(results) != (tt.mode == "garbage") {
 				t.Errorf("Failed = %v for %+v", Failed(results), results)
 			}
 		})
