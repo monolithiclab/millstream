@@ -372,7 +372,8 @@ CREATE TABLE nodes (
     slots          INTEGER NOT NULL DEFAULT 0,
     state          TEXT NOT NULL,              -- active | draining | revoked
     registered_at  TEXT,                       -- NULL for an id revoked before it registered
-    last_heartbeat TEXT
+    last_heartbeat TEXT,
+    nonce          TEXT NOT NULL DEFAULT '' -- the registering process's: a drain holds while it registers again
 );
 
 -- Webhook trigger tokens (spec section 4.6): the SHA-256 of each token, hex, never the token. A token outlives the

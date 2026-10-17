@@ -71,6 +71,9 @@ type Register struct {
 	Labels   map[string]string `json:"labels"`
 	Runtimes []string          `json:"runtimes"`
 	Slots    int               `json:"slots"`
+	// Nonce is drawn by the node process, sent again when it registers again: a draining node stays draining
+	// across a failover, until a new process registers.
+	Nonce string `json:"nonce,omitempty"`
 }
 
 // Registered is the engine accepting a registration: who it is, and the lease duration nodes heartbeat within.

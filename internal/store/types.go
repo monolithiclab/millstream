@@ -543,7 +543,10 @@ type Node struct {
 	Labels   map[string]string
 	Runtimes []string
 	Slots    int
-	State    NodeState
+	// Nonce is drawn by each node process: a node registering again from the process that registered last (after a
+	// failover) stays draining when it was; another process makes it active.
+	Nonce string
+	State NodeState
 	// RegisteredAt is zero for an id revoked before it ever registered.
 	RegisteredAt  time.Time
 	LastHeartbeat time.Time

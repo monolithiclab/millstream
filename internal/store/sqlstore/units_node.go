@@ -10,41 +10,50 @@ import (
 	"github.com/monolithiclab/millstream/internal/store"
 )
 
-// RegisterNode records a remote node joining (spec section 5.10): a new row, or the same id again from a new
-// process, active again unless revoked.
-func (s *Store) RegisterNode(ctx context.Context, n store.Node) error {
+// RegisterNode records a remote node joining (spec section 5.10): a new row, or the same id again, active again
+// unless revoked, or draining and registering again from the same process (its nonce), as after a failover. It
+// returns the node's state.
+func (s *Store) RegisterNode(ctx context.Context, n store.Node) (store.NodeState, error) {
 	if n.ID == "" || n.Slots < 0 {
-		return fmt.Errorf("register node: an id and slots: %w", store.ErrInvalid)
+		return "", fmt.Errorf("register node: an id and slots: %w", store.ErrInvalid)
 	}
 	labels, err := json.Marshal(nonNil(n.Labels))
 	if err != nil {
-		return fmt.Errorf("register node %s: %w", n.ID, err)
+		return "", fmt.Errorf("register node %s: %w", n.ID, err)
 	}
 	if n.Runtimes == nil {
 		n.Runtimes = []string{}
 	}
 	runtimes, err := json.Marshal(n.Runtimes)
 	if err != nil {
-		return fmt.Errorf("register node %s: %w", n.ID, err)
+		return "", fmt.Errorf("register node %s: %w", n.ID, err)
 	}
-	return s.submit(ctx, unitRegisterNode, func(w *wtx) error {
+	var out store.NodeState
+	err = s.submit(ctx, unitRegisterNode, func(w *wtx) error {
 		var state store.NodeState
-		switch err := w.queryRow(`SELECT state FROM nodes WHERE id = ?`, n.ID).Scan(&state); {
+		var nonce string
+		switch err := w.queryRow(`SELECT state, nonce FROM nodes WHERE id = ?`, n.ID).Scan(&state, &nonce); {
 		case errors.Is(err, sql.ErrNoRows):
+			out = store.NodeActive
 			_, err := w.exec(`INSERT INTO nodes (id, version, labels, runtimes, slots, state, registered_at,
-				last_heartbeat) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, n.ID, n.Version, string(labels), string(runtimes),
-				n.Slots, store.NodeActive, w.ts(), w.ts())
+				last_heartbeat, nonce) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, n.ID, n.Version, string(labels),
+				string(runtimes), n.Slots, store.NodeActive, w.ts(), w.ts(), n.Nonce)
 			return err
 		case err != nil:
 			return fmt.Errorf("register node %s: %w", n.ID, err)
 		case state == store.NodeRevoked:
 			return fmt.Errorf("register node %s: %w", n.ID, store.ErrRevoked)
 		}
+		out = store.NodeActive
+		if state == store.NodeDraining && n.Nonce != "" && n.Nonce == nonce {
+			out = store.NodeDraining
+		}
 		_, err := w.exec(`UPDATE nodes SET version = ?, labels = ?, runtimes = ?, slots = ?, state = ?,
-			registered_at = ?, last_heartbeat = ? WHERE id = ?`, n.Version, string(labels), string(runtimes), n.Slots,
-			store.NodeActive, w.ts(), w.ts(), n.ID)
+			registered_at = ?, last_heartbeat = ?, nonce = ? WHERE id = ?`, n.Version, string(labels),
+			string(runtimes), n.Slots, out, w.ts(), w.ts(), n.Nonce, n.ID)
 		return err
 	})
+	return out, err
 }
 
 // SetNodeState drains or revokes a node, ending the leases it holds when asked to (spec sections 5.10 and 15.7).

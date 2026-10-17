@@ -11,6 +11,7 @@ package nodeapi
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -130,6 +131,9 @@ func NewClient(opts ClientOptions) (*Client, error) {
 	}
 	if opts.Logger == nil {
 		opts.Logger = slog.New(slog.DiscardHandler)
+	}
+	if opts.Node.Nonce == "" {
+		opts.Node.Nonce = rand.Text() // this process's: a drain holds across a failover (nodewire.Register)
 	}
 	t := &Client{opts: opts, log: opts.Logger, fatal: make(chan struct{}),
 		pkgs: newPackages(opts.StateDir)}

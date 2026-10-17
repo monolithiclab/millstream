@@ -231,7 +231,7 @@ func (h *Handler) register(w http.ResponseWriter, r *http.Request) error {
 	}
 	e := h.opts.Engine
 	if err := e.RegisterNode(r.Context(), engine.NodeInfo{ID: req.Node, Version: req.Version, Labels: req.Labels,
-		Runtimes: req.Runtimes, Slots: req.Slots}); err != nil {
+		Runtimes: req.Runtimes, Slots: req.Slots, Nonce: req.Nonce}); err != nil {
 		return err
 	}
 	lead := e.Leadership()

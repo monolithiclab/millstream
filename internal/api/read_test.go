@@ -719,7 +719,7 @@ func TestLineageAcrossPipelines(t *testing.T) {
 func TestNodeActions(t *testing.T) {
 	f := scratchFixture(t)
 	srv := f.server()
-	if err := f.st.RegisterNode(f.ctx, store.Node{ID: "gpu-1", Version: "v-old", Labels: map[string]string{"gpu": "true"},
+	if _, err := f.st.RegisterNode(f.ctx, store.Node{ID: "gpu-1", Version: "v-old", Labels: map[string]string{"gpu": "true"},
 		Runtimes: []string{"exec"}, Slots: 2}); err != nil {
 		t.Fatal(err)
 	}

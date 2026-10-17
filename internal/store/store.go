@@ -147,7 +147,7 @@ type Store interface {
 	SetInsightState(ctx context.Context, pipeline, id string, state InsightState) error
 	// RegisterNode records a remote node joining, or joining again from a new process: its version, labels,
 	// runtimes and slots, active, heard from now. A revoked id is ErrRevoked.
-	RegisterNode(ctx context.Context, n Node) error
+	RegisterNode(ctx context.Context, n Node) (NodeState, error)
 	// SetNodeState drains or revokes a node (spec sections 5.10 and 15.7). With expireLeases, every lease the node
 	// holds ends at once, as an expired lease does (its attempt consumed), and those leases are returned. Revoking
 	// an id never registered records it, so it is refused from then on; draining one is ErrNotFound. Renew updates
