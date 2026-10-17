@@ -201,9 +201,17 @@ func buildFixture(root, dir string) error {
 }
 
 func goBuild(root, out, pkg string, flags ...string) error {
+	return goBuildEnv(root, out, pkg, nil, flags...)
+}
+
+// goBuildEnv is goBuild with more environment variables, GOOS and GOARCH for another platform.
+func goBuildEnv(root, out, pkg string, env []string, flags ...string) error {
 	args := append([]string{"build", "-ldflags=-s -w", "-o", out}, flags...)
 	cmd := osexec.Command("go", append(args, pkg)...)
 	cmd.Dir = root
+	if env != nil {
+		cmd.Env = append(os.Environ(), env...)
+	}
 	if b, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("go build %s: %w\n%s", pkg, err, b)
 	}

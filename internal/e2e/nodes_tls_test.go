@@ -20,7 +20,8 @@ import (
 	"time"
 )
 
-// writeCA writes a certificate authority and a certificate it signs for 127.0.0.1 into dir, and returns the paths
+// writeCA writes a certificate authority and a certificate it signs for 127.0.0.1, localhost and the Compose engines
+// (engine, engine-standby) into dir, valid for 30 days and readable by the soak's containers, and returns the paths
 // of the CA's certificate, the certificate and its key.
 func writeCA(t *testing.T, dir string) (caPath, certPath, keyPath string) {
 	t.Helper()
@@ -29,7 +30,7 @@ func writeCA(t *testing.T, dir string) (caPath, certPath, keyPath string) {
 		t.Fatal(err)
 	}
 	ca := &x509.Certificate{SerialNumber: big.NewInt(1), Subject: pkix.Name{CommonName: "millstream test CA"},
-		NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(time.Hour), IsCA: true,
+		NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().AddDate(0, 0, 30), IsCA: true,
 		KeyUsage: x509.KeyUsageCertSign, BasicConstraintsValid: true}
 	caDER, err := x509.CreateCertificate(rand.Reader, ca, ca, &caKey.PublicKey, caKey)
 	if err != nil {
@@ -40,7 +41,8 @@ func writeCA(t *testing.T, dir string) (caPath, certPath, keyPath string) {
 		t.Fatal(err)
 	}
 	leaf := &x509.Certificate{SerialNumber: big.NewInt(2), Subject: pkix.Name{CommonName: "engine"},
-		NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(time.Hour),
+		NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().AddDate(0, 0, 30),
+		DNSNames:    []string{"engine", "engine-standby", "localhost"},
 		IPAddresses: []net.IP{net.ParseIP("127.0.0.1")}, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 		KeyUsage: x509.KeyUsageDigitalSignature}
 	leafDER, err := x509.CreateCertificate(rand.Reader, leaf, ca, &key.PublicKey, caKey)
@@ -53,7 +55,8 @@ func writeCA(t *testing.T, dir string) (caPath, certPath, keyPath string) {
 	}
 	write := func(name, kind string, der []byte) string {
 		p := filepath.Join(dir, name)
-		if err := os.WriteFile(p, pem.EncodeToMemory(&pem.Block{Type: kind, Bytes: der}), 0o600); err != nil {
+		// #nosec G306 -- a test's own key, read by the soak's containers under another uid
+		if err := os.WriteFile(p, pem.EncodeToMemory(&pem.Block{Type: kind, Bytes: der}), 0o644); err != nil {
 			t.Fatal(err)
 		}
 		return p

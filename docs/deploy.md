@@ -223,6 +223,8 @@ A second `millstream serve` on the same Postgres database, with the same environ
   the lock lives on a session.
 - **Clients.** Point the reverse proxy at both engines and fail over on `503`, or follow the header; the UI reloads
   its reads through whichever engine answers.
+- **Under chaos.** `make soak` runs this Compose deployment for 30 minutes while killing the active engine and the
+  nodes; its results and the command for a week-long run are in [the soak page](soak.md).
 
 ## Security
 

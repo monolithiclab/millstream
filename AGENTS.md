@@ -111,6 +111,10 @@ below) for the reasoning, and `make help` for every command.
   Docker and Postgres tests, and the long property runs. It is slow, is not part of `make ci`, and runs in CI as its own
   job; run it before closing a milestone and after touching the exec runtime, the node, the CLI's run path, the store's
   concurrency or the crash recovery.
+- `make soak` (docs/soak.md) runs the Compose deployment of `deploy/compose` from `make image` under chaos for
+  `SOAK_DURATION` (30m), then checks the store's invariants and writes `build/soak/report.md`. It is `TestSoak` in
+  `internal/e2e`, skipped unless `SOAK_DURATION` is set, so neither `make ci` nor `make test-e2e` runs it; it touches
+  only its own Compose project, `millstream-soak`. Run it after touching failover, the node or the Compose files.
 - `make test-e2e PKG=./internal/foo/...` is the iteration tier: `go test -tags e2e -count=1` of those packages alone,
   tagged and untagged, without `-race` or coverage. While working, run `make ci` and this for the packages a change
   touches; run the full `make test-e2e` once, when the change is done.

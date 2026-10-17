@@ -67,6 +67,17 @@ else
 	@cd $(SDK_DIR) && go test -race -count=1 -tags e2e ./...
 endif
 
+# The soak (internal/e2e/soak_test.go): the Compose deployment of deploy/compose, as its own project, runs three
+# pipelines for SOAK_DURATION while a chaos driver kills the active engine and the nodes every SOAK_CHAOS on average,
+# then checks the store's invariants and writes build/soak/report.md. Not in make ci or test-e2e (it skips without
+# SOAK_DURATION). A week: make soak SOAK_DURATION=168h.
+SOAK_DURATION ?= 30m
+SOAK_CHAOS ?= 2m
+
+.PHONY: soak
+soak: image ## Run the soak on the Compose deployment for SOAK_DURATION (30m), chaos every SOAK_CHAOS (2m); report in build/soak/report.md
+	@SOAK_DURATION=$(SOAK_DURATION) SOAK_CHAOS=$(SOAK_CHAOS) go test -tags e2e -count=1 -timeout 0 -v -run '^TestSoak$$' ./internal/e2e
+
 .PHONY: test-times
 test-times: ## Measure the default suite against its test-time budget (serial-equivalent, per test, per package)
 	@scripts/test-times

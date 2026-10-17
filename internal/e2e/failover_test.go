@@ -435,23 +435,25 @@ func (ts *takeovers) report(t *testing.T, what string) {
 	t.Helper()
 	ts.mu.Lock()
 	defer ts.mu.Unlock()
-	stats := func(pick func(takeover) time.Duration) string {
-		var ds []time.Duration
-		for _, tk := range ts.list {
-			if d := pick(tk); d > 0 {
-				ds = append(ds, d)
-			}
-		}
-		if len(ds) == 0 {
-			return "none"
-		}
-		slices.Sort(ds)
-		r := func(d time.Duration) time.Duration { return d.Round(time.Millisecond) }
-		return fmt.Sprintf("min %s, median %s, max %s over %d", r(ds[0]), r(ds[len(ds)/2]), r(ds[len(ds)-1]), len(ds))
-	}
 	t.Logf("%s takeovers: end to lock %s; end to first dispatch %s", what,
-		stats(func(tk takeover) time.Duration { return tk.lead }),
-		stats(func(tk takeover) time.Duration { return tk.dispatch }))
+		durationStats(ts.list, func(tk takeover) time.Duration { return tk.lead }),
+		durationStats(ts.list, func(tk takeover) time.Duration { return tk.dispatch }))
+}
+
+// durationStats formats the minimum, median and maximum of the positive durations pick returns.
+func durationStats(tks []takeover, pick func(takeover) time.Duration) string {
+	var ds []time.Duration
+	for _, tk := range tks {
+		if d := pick(tk); d > 0 {
+			ds = append(ds, d)
+		}
+	}
+	if len(ds) == 0 {
+		return "none"
+	}
+	slices.Sort(ds)
+	r := func(d time.Duration) time.Duration { return d.Round(time.Millisecond) }
+	return fmt.Sprintf("min %s, median %s, max %s over %d", r(ds[0]), r(ds[len(ds)/2]), r(ds[len(ds)-1]), len(ds))
 }
 
 // failoverReached are the units whose failpoints the active engine must reach in the failover matrix: the run's,

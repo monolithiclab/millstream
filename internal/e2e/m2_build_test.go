@@ -42,8 +42,7 @@ func buildM2(root, dir string) error {
 	if err := os.CopyFS(fixtureM2, os.DirFS(src)); err != nil {
 		return err
 	}
-	// The recordings and the recording test are not part of the package the engine stores.
-	for _, p := range []string{"recordings", "testdata", "recordings_test.go"} {
+	for _, p := range m2NotPackaged {
 		if err := os.RemoveAll(filepath.Join(fixtureM2, p)); err != nil {
 			return err
 		}
@@ -70,11 +69,17 @@ func buildM2(root, dir string) error {
 		rewrite(filepath.Join(fixtureM2NoDedupe, "pipeline.yaml"), [2]string{dedupeStep, ""},
 			[2]string{"    in: listings.unique\n", "    in: listings.raw\n"}),
 		os.WriteFile(filepath.Join(fixtureM2Lessons, "lessons", "score.yaml"), lessons, 0o600),
-		os.WriteFile(envFile, []byte("agents: { allowUnsandboxed: true }\n"+
-			"prices: { "+m2Model+": { inPerMtok: 3, outPerMtok: 15 } }\n"), 0o600),
+		os.WriteFile(envFile, []byte("agents: { allowUnsandboxed: true }\n"+m2Prices), 0o600),
 		crashRecordings(m2Recordings, m2CrashRecordings),
 	)
 }
+
+// m2NotPackaged are the M2 fixture's files outside the package the engine stores: the recordings and the
+// recording test.
+var m2NotPackaged = []string{"recordings", "testdata", "recordings_test.go"}
+
+// m2Prices prices the M2 fixture's fake model, in an environment file.
+var m2Prices = fmt.Sprintf("prices: { %s: { inPerMtok: %d, outPerMtok: %d } }\n", m2Model, m2InPerMtok, m2OutPerMtok)
 
 // dedupeStep is the M2 fixture's dedupe step, as pipeline.yaml writes it.
 const dedupeStep = `  dedupe:
