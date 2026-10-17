@@ -89,7 +89,7 @@ func (s *Store) submit(ctx context.Context, unit string, fn func(*wtx) error) er
 		return fmt.Errorf("%s: %w", unit, ctx.Err())
 	}
 	if err := <-r.done; err != nil {
-		return fmt.Errorf("%s: %w", unit, err)
+		return fmt.Errorf("%s: %w", unit, classify(s.d.Unavailable, err))
 	}
 	return nil
 }

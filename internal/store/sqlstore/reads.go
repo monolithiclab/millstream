@@ -67,7 +67,7 @@ func scan[T any](ctx context.Context, db *ReadDB, query string, args []any, fn f
 		}
 		out = append(out, v)
 	}
-	return out, closeRows(rows)
+	return out, classify(db.unavailable, closeRows(rows))
 }
 
 func closeRows(rows *sql.Rows) error {
@@ -137,7 +137,7 @@ func (s *Store) Runs(ctx context.Context, f store.RunFilter) ([]store.Run, error
 
 // Run returns one run.
 func (s *Store) Run(ctx context.Context, pipelineName, id string) (store.Run, error) {
-	r, err := scanRun(s.read.QueryRowContext(ctx, `SELECT `+runColumns+` FROM runs WHERE pipeline = ? AND id = ?`,
+	r, err := scanRun(s.read.Row(ctx, `SELECT `+runColumns+` FROM runs WHERE pipeline = ? AND id = ?`,
 		pipelineName, id))
 	if err != nil {
 		return r, notFound(err, "run "+id)
@@ -304,7 +304,7 @@ func (s *Store) PipelineEvents(ctx context.Context, f store.EventFilter) ([]stor
 // LastEventSeq returns the last event's sequence number, zero when there is none.
 func (s *Store) LastEventSeq(ctx context.Context) (int64, error) {
 	var seq int64
-	if err := s.read.QueryRowContext(ctx, `SELECT COALESCE(MAX(seq), 0) FROM events`).Scan(&seq); err != nil {
+	if err := s.read.Row(ctx, `SELECT COALESCE(MAX(seq), 0) FROM events`).Scan(&seq); err != nil {
 		return 0, fmt.Errorf("last event: %w", err)
 	}
 	return seq, nil
@@ -338,7 +338,7 @@ func (s *Store) OpenRevisions(ctx context.Context) ([]store.RevisionID, error) {
 
 func (s *Store) ActiveRevision(ctx context.Context, pipelineName string) (store.RevisionID, error) {
 	var id store.RevisionID
-	if err := s.read.QueryRowContext(ctx, `SELECT active_revision FROM pipelines WHERE id = ?`, pipelineName).
+	if err := s.read.Row(ctx, `SELECT active_revision FROM pipelines WHERE id = ?`, pipelineName).
 		Scan(&id); err != nil {
 		return 0, notFound(err, "pipeline "+pipelineName)
 	}
@@ -350,7 +350,7 @@ func (s *Store) Revision(ctx context.Context, id store.RevisionID) (store.Revisi
 	var r store.Revision
 	var data string
 	var appliedAt TimeCol
-	err := s.read.QueryRowContext(ctx,
+	err := s.read.Row(ctx,
 		`SELECT id, pipeline, package_hash, pipeline_json, applied_at, message FROM revisions WHERE id = ?`, id).
 		Scan(&r.ID, &r.Pipeline, &r.PackageHash, &data, &appliedAt, &r.Message)
 	if err != nil {
@@ -382,7 +382,7 @@ func (s *Store) Revisions(ctx context.Context, pipelineName string) ([]store.Rev
 // Package returns the bundle of the package applied under hash.
 func (s *Store) Package(ctx context.Context, hash string) ([]byte, error) {
 	var bundle []byte
-	if err := s.read.QueryRowContext(ctx, `SELECT bundle FROM packages WHERE hash = ?`, hash).Scan(&bundle); err != nil {
+	if err := s.read.Row(ctx, `SELECT bundle FROM packages WHERE hash = ?`, hash).Scan(&bundle); err != nil {
 		return nil, notFound(err, "package "+hash)
 	}
 	return bundle, nil

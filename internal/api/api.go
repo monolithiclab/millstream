@@ -527,7 +527,8 @@ func errorCode(err error) (int, string) {
 	case errors.Is(err, store.ErrInvalid), errors.Is(err, engine.ErrFiringConfig):
 		return http.StatusBadRequest, codeInvalid
 	case errors.Is(err, errUnavailable), errors.Is(err, store.ErrClosed), errors.Is(err, context.Canceled),
-		errors.Is(err, context.DeadlineExceeded), errors.Is(err, store.ErrReadOnly), errors.Is(err, store.ErrWriteLost):
+		errors.Is(err, context.DeadlineExceeded), errors.Is(err, store.ErrReadOnly), errors.Is(err, store.ErrWriteLost),
+		errors.Is(err, store.ErrUnavailable):
 		return http.StatusServiceUnavailable, codeUnavailable
 	}
 	return http.StatusInternalServerError, codeInternal

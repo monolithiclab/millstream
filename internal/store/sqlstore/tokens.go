@@ -79,7 +79,7 @@ func (s *Store) RotateTriggerToken(ctx context.Context, pipelineName, trigger, h
 // TriggerTokenHash returns a webhook trigger's token hash.
 func (s *Store) TriggerTokenHash(ctx context.Context, pipelineName, trigger string) (string, error) {
 	var hash string
-	err := s.read.QueryRowContext(ctx, `SELECT hash FROM trigger_tokens WHERE pipeline = ? AND trigger = ?`,
+	err := s.read.Row(ctx, `SELECT hash FROM trigger_tokens WHERE pipeline = ? AND trigger = ?`,
 		pipelineName, trigger).Scan(&hash)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", fmt.Errorf("the token of %s.%s: %w", pipelineName, trigger, store.ErrNotFound)

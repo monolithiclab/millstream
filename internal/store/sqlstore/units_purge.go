@@ -439,7 +439,7 @@ func (w *wtx) purge(id string) (store.Purge, error) {
 
 // Purge returns a purge.
 func (s *Store) Purge(ctx context.Context, id string) (store.Purge, error) {
-	p, err := scanPurge(s.read.QueryRowContext(ctx, `SELECT `+purgeColumns+` FROM purges WHERE id = ?`, id))
+	p, err := scanPurge(s.read.Row(ctx, `SELECT `+purgeColumns+` FROM purges WHERE id = ?`, id))
 	if err != nil {
 		return p, notFound(err, "purge "+id)
 	}

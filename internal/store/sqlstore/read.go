@@ -3,6 +3,7 @@ package sqlstore
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"sync"
 	"sync/atomic"
 
@@ -25,6 +26,8 @@ type ReadDB struct {
 	rebind  func(string) string
 	prepare bool
 	closed  atomic.Bool
+	// unavailable is the dialect's (Dialect.Unavailable).
+	unavailable func(error) bool
 }
 
 // NewReadDB wraps db as the read pool of a store speaking d; stmts holds statements an earlier store prepared on
@@ -33,7 +36,21 @@ func NewReadDB(db *sql.DB, d Dialect, stmts *StmtCache) *ReadDB {
 	if stmts == nil {
 		stmts = &StmtCache{m: map[string]*sql.Stmt{}}
 	}
-	return &ReadDB{DB: db, stmts: stmts, rebind: d.Rebind, prepare: d.Prepare}
+	return &ReadDB{DB: db, stmts: stmts, rebind: d.Rebind, prepare: d.Prepare, unavailable: d.Unavailable}
+}
+
+// Row is a row a read returns, whose Scan classifies the error (Dialect.Unavailable).
+type Row struct {
+	row         *sql.Row
+	unavailable func(error) bool
+}
+
+// Scan scans the row as sql.Row.Scan does.
+func (r *Row) Scan(dest ...any) error { return classify(r.unavailable, r.row.Scan(dest...)) }
+
+// Row runs query as QueryRowContext does, its error classified.
+func (r *ReadDB) Row(ctx context.Context, query string, args ...any) *Row {
+	return &Row{row: r.QueryRowContext(ctx, query, args...), unavailable: r.unavailable}
 }
 
 // StmtCache holds the statements a read pool prepared, up to maxStmts of them.
@@ -95,10 +112,14 @@ func (r *ReadDB) QueryContext(ctx context.Context, query string, args ...any) (*
 	if r.rebind != nil {
 		query = r.rebind(query)
 	}
+	var rows *sql.Rows
+	var err error
 	if st := r.stmt(ctx, query); st != nil {
-		return st.QueryContext(ctx, args...)
+		rows, err = st.QueryContext(ctx, args...)
+	} else {
+		rows, err = r.DB.QueryContext(ctx, query, args...)
 	}
-	return r.DB.QueryContext(ctx, query, args...)
+	return rows, classify(r.unavailable, err)
 }
 
 // QueryRowContext runs query, prepared when the dialect prepares.
@@ -123,4 +144,12 @@ func (r *ReadDB) CloseStmts() {
 		_ = st.Close()
 	}
 	clear(c.m)
+}
+
+// classify wraps err with store.ErrUnavailable when unavailable reports it so.
+func classify(unavailable func(error) bool, err error) error {
+	if err != nil && unavailable != nil && unavailable(err) {
+		return fmt.Errorf("%w: %w", store.ErrUnavailable, err)
+	}
+	return err
 }

@@ -40,6 +40,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jackc/pgx/v5/stdlib"
 
@@ -122,6 +123,20 @@ var dialect = sqlstore.Dialect{
 		}
 		return "SELECT " + value + " FROM " + jsonEach("CAST(? AS jsonb)")
 	},
+	Unavailable: unavailable,
+}
+
+// unavailable reports an error meaning the server cannot serve now (store.ErrUnavailable): insufficient resources
+// (SQLSTATE class 53, too many connections among them), a connection exception (class 08), an administrator
+// shutdown (57P01) or a server still starting (57P03), or no connection made at all.
+func unavailable(err error) bool {
+	var pe *pgconn.PgError
+	if errors.As(err, &pe) {
+		return strings.HasPrefix(pe.Code, "53") || strings.HasPrefix(pe.Code, "08") || pe.Code == "57P01" ||
+			pe.Code == "57P03"
+	}
+	var ce *pgconn.ConnectError
+	return errors.As(err, &ce)
 }
 
 func jsonEach(expr string) string { return "jsonb_array_elements_text(" + expr + ") AS je(value)" }

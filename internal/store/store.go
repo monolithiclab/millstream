@@ -34,6 +34,10 @@ var (
 	// ErrRevoked means a node id was revoked (millstream nodes revoke): the engine refuses it from then on (spec
 	// section 15.7).
 	ErrRevoked = errors.New("node revoked")
+	// ErrUnavailable means the database cannot serve the request now: out of resources or connections, shutting
+	// down or starting, or unreachable (Postgres SQLSTATE classes 53 and 08, 57P01, 57P03). Retrying later may
+	// succeed.
+	ErrUnavailable = errors.New("store unavailable")
 )
 
 // RollupBatch is the most events one Rollup pass reads.

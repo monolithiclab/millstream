@@ -603,6 +603,7 @@ func Test_errorCode(t *testing.T) {
 		{errUnavailable, 503, codeUnavailable},
 		{fmt.Errorf("pause: %w", store.ErrReadOnly), 503, codeUnavailable},
 		{fmt.Errorf("pause: %w", store.ErrWriteLost), 503, codeUnavailable},
+		{fmt.Errorf("pause: %w", store.ErrUnavailable), 503, codeUnavailable},
 		{&http.MaxBytesError{Limit: 1}, 413, codeTooLarge},
 		{json.Unmarshal([]byte("x"), new(int)), 500, codeInternal},
 	} {

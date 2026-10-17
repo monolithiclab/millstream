@@ -167,7 +167,8 @@ func (h *Handler) fail500(w http.ResponseWriter, r *http.Request, err error) {
 // unavailable reports whether err, or r's context, means the engine cannot answer now rather than a failure.
 func unavailable(r *http.Request, err error) bool {
 	return r.Context().Err() != nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) ||
-		errors.Is(err, store.ErrClosed) || errors.Is(err, store.ErrWriteLost) || errors.Is(err, store.ErrReadOnly)
+		errors.Is(err, store.ErrClosed) || errors.Is(err, store.ErrWriteLost) || errors.Is(err, store.ErrReadOnly) ||
+		errors.Is(err, store.ErrUnavailable)
 }
 
 // authorized reports whether r carries the node token whose SHA-256 is sum, compared in constant time, and answers
