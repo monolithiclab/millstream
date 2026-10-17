@@ -23,6 +23,7 @@ import (
 func TestMain(m *testing.M) {
 	// The tests allocate heavily: a higher collector target trades memory for test time, as in the store tests.
 	debug.SetGCPercent(400)
+	warm()
 	code := m.Run()
 	testdir.Remove()
 	fakeexec.Cleanup()
@@ -39,6 +40,26 @@ output: { type: object, properties: { score: { type: integer } }, required: [sco
 runtime: { agent: { harness: api, model: claude-sonnet-5-5, apiKeySecret: apiToken, baseUrl: "%s" } }
 `
 )
+
+// warm loads an eval case before the tests: the YAML decoder, the pipeline's parse and the CEL environment of the
+// assertions are a process's set-up, which the first test would otherwise pay (scripts/test-times leaves TestMain
+// out). Failures are ignored: the tests then pay the set-up themselves and report what fails.
+func warm() {
+	dir, err := os.MkdirTemp("", "millstream-eval-warm-")
+	if err != nil {
+		return
+	}
+	defer func() { _ = os.RemoveAll(dir) }()
+	pkg, err := pipeline.Materialize(dir, map[string][]byte{"pipeline.yaml": []byte(testPipeline),
+		"actions/echo/action.yaml":  []byte(echoManifest),
+		"actions/echo/evals/w.yaml": []byte("input: { city: Lyon }\nassert: [\"output.city == 'Lyon'\"]\n"),
+		"actions/score/action.yaml": []byte(fmt.Sprintf(agentManifest, "http://unused")),
+		"actions/score/prompt.md":   []byte("Score.\n"),
+	})
+	if err == nil {
+		_, _ = Load(filepath.Join(pkg.Dir, "actions", "echo"))
+	}
+}
 
 // writePackage writes a package with the exec action ./actions/echo (the fake action, once placeFake placed it) and the agent action
 // ./actions/score calling baseURL, plus files, and returns its directory.

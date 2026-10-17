@@ -549,9 +549,66 @@ func TestMain(m *testing.M) {
 		panic(err)
 	}
 	sqlitetest.Warm()
+	warm()
 	code := m.Run()
 	_ = os.RemoveAll(testRoot)
 	os.Exit(code)
+}
+
+// warm runs one delivery through the protocol before the tests, as sqlitetest.Warm does for the store: the package
+// parsed and applied, the handlers and the client's first requests, the package fetched into the shared node state
+// the tests' transports use, the spooled artifact. The first test would
+// otherwise pay that set-up, a process's, not a test's (scripts/test-times leaves TestMain out). Failures are
+// ignored: the tests then pay the set-up themselves and report what fails.
+func warm() {
+	ctx := context.Background()
+	st, err := sqlite.Open(sqlite.Memory, sqlite.Options{})
+	if err != nil {
+		return
+	}
+	defer func() { _ = st.Close() }()
+	arts := newMemArtifacts()
+	e, err := engine.New(engine.Options{Store: st, Artifacts: arts, Leadership: engine.Leadership{ID: "warm", Epoch: 1}})
+	if err != nil {
+		return
+	}
+	files := map[string][]byte{"pipeline.yaml": []byte(pipelineYAML), "actions/fake/action.yaml": []byte(manifest),
+		"actions/fake/run": []byte("#!/bin/sh\n")}
+	pkg, err := pipeline.Materialize(filepath.Join(testRoot, "packages"), files)
+	if err != nil {
+		return
+	}
+	if _, err := e.Apply(ctx, pkg); err != nil {
+		return
+	}
+	h, err := nodeapi.New(nodeapi.Options{Engine: e, Token: token, Artifacts: arts, Version: "v1"})
+	if err != nil {
+		return
+	}
+	hs := &hosts{h: map[string]http.Handler{"a:7070": h}}
+	tr, err := nodeapi.NewClient(nodeapi.ClientOptions{Join: []string{"https://a:7070"}, Token: token,
+		HTTP: &http.Client{Transport: hs}, Node: nodewire.Register{Node: "w", Version: "v1", Runtimes: []string{"exec"},
+			Slots: 1}, StateDir: filepath.Join(testRoot, "state"), TmpDir: filepath.Join(testRoot, "tmp"), PullWait: time.Millisecond})
+	if err != nil {
+		return
+	}
+	if _, err := tr.Register(ctx); err != nil {
+		return
+	}
+	if _, _, err := e.Fire(ctx, "remote", "go", "k1", json.RawMessage(`{"mode":"artifact"}`)); err != nil {
+		return
+	}
+	as, err := tr.Pull(ctx, "w", 1)
+	if err != nil || len(as) != 1 {
+		return
+	}
+	l := as[0].Lease
+	ref, err := tr.PutArtifact(ctx, l.Ref(), "report.txt", strings.NewReader("margin 18%"))
+	if err != nil {
+		return
+	}
+	_ = tr.Done(ctx, store.DoneRequest{LeaseRef: l.Ref(), Attempt: l.Attempt, Outputs: []store.Output{
+		{Key: "p1", Payload: json.RawMessage(`{"mode":"artifact"}`), Artifacts: []store.ArtifactRef{ref}}}})
 }
 
 func shared(t *testing.T, name string) string {
