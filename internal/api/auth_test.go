@@ -40,7 +40,7 @@ func TestTokenAuth(t *testing.T) {
 	// The reviewer is auth.user, whatever the request says.
 	rec = do(t, srv, request{target: "/api/v1/session", header: map[string]string{"Authorization": "bearer s3cret",
 		UserHeader: "mallory"}})
-	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `{"auth":true,"user":"operator"}`) {
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `{"auth":true,"user":"operator","environment":"development"}`) {
 		t.Fatalf("session: %d %s", rec.Code, rec.Body)
 	}
 

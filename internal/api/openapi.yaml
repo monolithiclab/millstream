@@ -1681,11 +1681,15 @@ components:
               source: { type: string }
     Session:
       type: object
-      required: [auth]
+      required: [auth, environment]
       additionalProperties: false
       properties:
         auth: { type: boolean, description: Whether the server requires the token. }
         user: { type: string, description: Who the request's decisions are recorded under. }
+        environment:
+          type: string
+          enum: [production, development]
+          description: The deployment's environment (spec section 11.2), shown in the UI's header.
     SessionLogin:
       type: object
       required: [token]

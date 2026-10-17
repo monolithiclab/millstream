@@ -466,7 +466,9 @@ export class FakeApi implements Api {
 
   getSession: Api['getSession'] = () =>
     Promise.resolve(
-      this.options.token === undefined ? { auth: false, user: 'demo' } : { auth: true, user: 'operator' },
+      this.options.token === undefined
+        ? { auth: false, user: 'demo', environment: 'development' }
+        : { auth: true, user: 'operator', environment: 'development' },
     );
   signIn: Api['signIn'] = (token) => {
     if (this.options.token === undefined)
@@ -474,7 +476,7 @@ export class FakeApi implements Api {
     if (token !== this.options.token)
       return Promise.reject(new ApiError(401, 'unauthorized', "the token does not match this server's"));
     this.signedIn = true;
-    return this.record('signIn', [], { auth: true, user: 'operator' });
+    return this.record('signIn', [], { auth: true, user: 'operator', environment: 'development' as const });
   };
   signOut: Api['signOut'] = () => {
     this.signedIn = false;

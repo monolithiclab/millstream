@@ -224,7 +224,7 @@ export function AppShell() {
             </svg>
           </button>
           {demo && <DemoBadge />}
-          <EnvironmentBadge />
+          <EnvironmentBadge session={session} />
           <div className="flex-1" />
           {pipeline !== undefined && <LiveIndicator state={live} />}
           <button

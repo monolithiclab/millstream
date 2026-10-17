@@ -251,8 +251,7 @@ describe('environment badge', () => {
     expect(await within(screen.getByRole('banner')).findByText('Development')).toBeInTheDocument();
     cleanup();
     const api = new FakeApi();
-    const nodes = await api.listNodes();
-    api.listNodes = () => Promise.resolve({ ...nodes, engine: { ...nodes.engine, environment: 'production' } });
+    api.getSession = () => Promise.resolve({ auth: false, environment: 'production' });
     renderApp({ api, language: 'fr' });
     expect(await within(screen.getByRole('banner')).findByText('Production')).toBeInTheDocument();
   });

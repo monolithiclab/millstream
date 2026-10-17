@@ -1607,6 +1607,11 @@ export interface components {
       auth: boolean;
       /** @description Who the request's decisions are recorded under. */
       user?: string;
+      /**
+       * @description The deployment's environment (spec section 11.2), shown in the UI's header.
+       * @enum {string}
+       */
+      environment: 'production' | 'development';
     };
     SessionLogin: {
       token: string;

@@ -26,7 +26,8 @@ below) for the reasoning, and `make help` for every command.
 - The environment (`production` or `development`, spec section 11.2) is the environment file's key, else the
   command's default: `serve` production, `run` development. Production refuses `improve.enabled` and
   `improve.publish: apply` (`pipeline.Environment.CheckMode`, `ErrProduction`); a command that runs the `improve`
-  pipeline calls `RequireDevelopment`. The engine reports it in `/api/v1/nodes`, the UI's header shows it.
+  pipeline calls `RequireDevelopment`. The API reports it in `/api/v1/nodes` and `/session`, whence the UI's header
+  shows it.
 - An insight trigger fires only for the insights of other pipelines, after each projector pass
   (`engine/insight.go`), keyed by the insight and its `insightOpened` or `insightEscalated` event: a pipeline never
   feeds itself, and reading an event again finds the run it fired.
