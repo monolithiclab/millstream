@@ -186,7 +186,8 @@ type Store interface {
 	PipelineEvents(ctx context.Context, f EventFilter) ([]Event, error)
 	// MetricRollups returns the rollups f selects.
 	MetricRollups(ctx context.Context, f MetricFilter) ([]MetricRollup, error)
-	// MetricTotals returns every series of the rollups over every minute, by pipeline, name and labels.
+	// MetricTotals returns every series' running totals over every minute ever rolled up, retained or not, by
+	// pipeline, name and labels.
 	MetricTotals(ctx context.Context) ([]MetricTotal, error)
 	// Insights returns the insights f selects.
 	Insights(ctx context.Context, f InsightFilter) ([]Insight, error)

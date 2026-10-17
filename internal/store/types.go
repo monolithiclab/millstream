@@ -719,14 +719,14 @@ type MetricRollup struct {
 	Max    float64
 }
 
-// MetricTotal is one series of the rollups, a pipeline's metric and label set, over every minute the store holds:
-// what the Prometheus exposition shows.
+// MetricTotal is one series of the rollups, a pipeline's metric and label set, over every minute ever rolled up,
+// those retention deleted included: what the Prometheus exposition shows.
 type MetricTotal struct {
 	Pipeline string
 	Name     string
 	// Labels are the label set, by name; nil when it has none.
 	Labels map[string]string
-	// Count and Sum add up every minute.
+	// Count and Sum add up every minute, so they never decrease.
 	Count int64
 	Sum   float64
 	// Last is the latest minute, and LastCount and LastSum its count and sum: a gauge shows their mean.

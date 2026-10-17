@@ -278,6 +278,20 @@ CREATE TABLE metric_rollups (
 );
 CREATE INDEX metric_rollups_minute ON metric_rollups (minute); -- rollup retention
 
+-- Each series' running totals over every minute it was rolled up, written with its rollups: retention deletes old
+-- minutes, never these, so a Prometheus counter never falls back.
+CREATE TABLE metric_totals (
+    pipeline    text NOT NULL,
+    name        text NOT NULL,
+    labels_json text NOT NULL,
+    count       bigint NOT NULL,
+    sum         double precision NOT NULL,
+    last_minute timestamptz NOT NULL, -- the latest minute rolled up
+    last_count  bigint NOT NULL,      -- and its count and sum: a gauge shows their mean
+    last_sum    double precision NOT NULL,
+    PRIMARY KEY (pipeline, name, labels_json)
+);
+
 -- id is the insight's fingerprint (spec section 11.1), so a recurring problem updates its row.
 CREATE TABLE insights (
     pipeline      text NOT NULL,
