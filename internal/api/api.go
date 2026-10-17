@@ -395,6 +395,10 @@ func Handler(s *Server, ui http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h := w.Header()
 		h.Set("X-Frame-Options", "DENY")
+		if dotSegments(r.URL.Path) {
+			writeErrorBody(w, http.StatusNotFound, codeNotFound, "a path with . or .. segments names nothing")
+			return
+		}
 		if mount := s.serviceMount(r.URL.Path); mount != nil { // not a browser: no Host guard, no auth.token
 			h.Set("Content-Security-Policy", apiPolicy)
 			h.Set("X-Content-Type-Options", "nosniff")
@@ -414,6 +418,18 @@ func Handler(s *Server, ui http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// dotSegments reports whether a path, decoded, holds a . or .. segment. A browser resolves them before it sends a
+// request; sent as such (or escaped, %2e%2e), a path under one mount would resolve to another path once a mux cleans
+// it, so Handler refuses it before choosing where it goes.
+func dotSegments(path string) bool {
+	for seg := range strings.SplitSeq(path, "/") {
+		if seg == "." || seg == ".." {
+			return true
+		}
+	}
+	return false
 }
 
 // serviceMount returns what serves path when a service rather than a browser calls it, nil otherwise: the node

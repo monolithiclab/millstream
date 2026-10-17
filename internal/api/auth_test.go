@@ -240,7 +240,8 @@ func TestStandbyAuth(t *testing.T) {
 }
 
 // Remote nodes' prefix bypasses the browser guards and auth.token: the node API, which checks the node token itself,
-// answers a node naming any host; without one the prefix is not found, never the UI.
+// answers a node naming any host; without one the prefix is not found, never the UI. A path with dot segments,
+// escaped or not, reaches neither a service mount nor the API: it would name one mount and resolve to another.
 func TestNodePrefixSeam(t *testing.T) {
 	f := readFixture(t)
 	nodes := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusTeapot) })
@@ -255,7 +256,15 @@ func TestNodePrefixSeam(t *testing.T) {
 		{with, NodePrefix + "/pull", http.StatusTeapot},
 		{with, NodePrefix, http.StatusTeapot},
 		{with, "/node/v10", http.StatusForbidden}, // not the prefix: the Host guard applies
+		{with, "/node/v1x/register", http.StatusForbidden},
 		{without, NodePrefix + "/pull", http.StatusNotFound},
+		{with, NodePrefix + "/../api/v1/pipelines", http.StatusNotFound},
+		{with, NodePrefix + "/%2e%2e/api/v1/pipelines", http.StatusNotFound},
+		{with, NodePrefix + "/pull/./../pull", http.StatusNotFound},
+		{with, "/hooks/%2e%2e/api/v1/pipelines", http.StatusNotFound},
+		{with, "/hooks/x/%2e%2e/%2e%2e/api/v1/pipelines", http.StatusNotFound},
+		{with, "/hooks/x%2f..%2f..%2fapi/v1/pipelines", http.StatusNotFound},
+		{with, "/api/v1/../v1/pipelines", http.StatusNotFound},
 	} {
 		rec := httptest.NewRecorder()
 		r := httptest.NewRequest(http.MethodPost, tt.path, nil)
@@ -264,5 +273,13 @@ func TestNodePrefixSeam(t *testing.T) {
 		if rec.Code != tt.want {
 			t.Errorf("%s: %d, want %d", tt.path, rec.Code, tt.want)
 		}
+	}
+	// On a loopback host the Host guard passes: a path beside the prefix is the UI's, never the node API's.
+	rec := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodPost, "/node/v1x/register", nil)
+	r.Host = "127.0.0.1:7070"
+	Handler(with, ui).ServeHTTP(rec, r)
+	if rec.Code != http.StatusOK || rec.Body.String() != "ui" {
+		t.Errorf("/node/v1x/register on loopback: %d %s", rec.Code, rec.Body)
 	}
 }
