@@ -41,19 +41,18 @@ func TestRunRespectsSlotsRealTime(t *testing.T) {
 	}
 }
 
+// The delivery hangs until the drain timeout abandons it, so the test waits for heartbeats, not for a sleep long
+// enough to fit two of them: a 60 ms delivery under load could end before its second.
 func TestHeartbeatRenewsHeldLeasesRealTime(t *testing.T) {
 	t.Parallel()
-	tr := newFakeTransport(assignment("dl_1", "slow", map[string]any{"sleepMs": 60}))
-	stop := startNode(t, tr, Options{HeartbeatInterval: 5 * time.Millisecond})
-	await(t, tr.reported, 1)
-	if err := stop(); err != nil {
-		t.Fatalf("Run: %v", err)
+	tr := newFakeTransport(assignment("dl_1", "hang", nil))
+	stop := startNode(t, tr, Options{HeartbeatInterval: 5 * time.Millisecond, DrainTimeout: 20 * time.Millisecond})
+	await(t, tr.beats, 2) // without IdleHeartbeat, only a held lease heartbeats
+	if err := stop(); !errors.Is(err, ErrDrainTimeout) {
+		t.Fatalf("Run = %v, want ErrDrainTimeout", err)
 	}
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
-	if len(tr.heartbeats) < 2 {
-		t.Fatalf("heartbeats = %d, want several during a 60 ms delivery", len(tr.heartbeats))
-	}
 	want := store.LeaseRef{Pipeline: "listings", DeliveryID: "dl_1", Step: "score", FencingToken: 7}
 	for _, refs := range tr.heartbeats {
 		if len(refs) != 1 || refs[0] != want {
@@ -93,9 +92,12 @@ func TestPullAndHeartbeatErrorsAreRetriedRealTime(t *testing.T) {
 	tr := newFakeTransport(assignment("dl_1", "slow", map[string]any{"sleepMs": 40}))
 	tr.pullErr = errors.New("engine busy")
 	tr.hbErr = errors.New("engine busy")
+	// Idle heartbeats keep beating after the delivery: the test waits for a second beat, so the first one's error
+	// was logged, however short the delivery was next to the interval.
 	stop := startNode(t, tr, Options{PullInterval: 5 * time.Millisecond, HeartbeatInterval: 5 * time.Millisecond,
-		Logger: newJSONLogger(&logs)})
+		IdleHeartbeat: true, Logger: newJSONLogger(&logs)})
 	await(t, tr.reported, 1)
+	await(t, tr.beats, 2)
 	if err := stop(); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
