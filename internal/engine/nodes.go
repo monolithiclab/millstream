@@ -289,7 +289,7 @@ func (e *Engine) HeldPackage(ctx context.Context, owner string, ref store.LeaseR
 }
 
 // HeldInput returns the input artifact sha of a delivery owner holds, its file made present in the delivery's
-// pipeline (an artifact of a copy on an imported stream is copied into the importer's on first use, spec section
+// pipeline (an artifact of a copy on an imported stream is copied from the producer's on first use, spec section
 // 9.2).
 func (e *Engine) HeldInput(ctx context.Context, owner string, ref store.LeaseRef, sha string) (store.ArtifactRef,
 	error,
@@ -308,7 +308,7 @@ func (e *Engine) HeldInput(ctx context.Context, owner string, ref store.LeaseRef
 				if e.opts.Artifacts == nil {
 					return store.ArtifactRef{}, errNoArtifactStore
 				}
-				return a, EnsureArtifact(ctx, e.st, e.opts.Artifacts, ref.Pipeline, a)
+				return a, EnsureArtifact(ctx, e.opts.Artifacts, ref.Pipeline, it.ParentPipeline, a)
 			}
 		}
 	}

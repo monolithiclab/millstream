@@ -421,6 +421,24 @@ func TestFailLeaveAndStoreErrors(t *testing.T) {
 		t.Fatalf("pull = %v, %v", as, err)
 	}
 	lease := mustJSON(nodewire.FromRef(as[0].Lease.Ref()))
+	// A node reporting another pipeline's content, to read it through its own pipeline later, is refused: a report
+	// names only what is stored in the lease's pipeline (spec section 15.7).
+	secret, err := d.arts.Put(d.ctx, "secrets", "key.pem", strings.NewReader("another pipeline's"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for path, body := range map[string]string{
+		nodewire.PathDone: `{"node":"n1","attempt":1,"lease":` + lease + `,"outputs":[{"key":"x","payload":{},` +
+			`"artifacts":[` + mustJSON(secret) + `]}]}`,
+		nodewire.PathFail: `{"node":"n1","attempt":1,"class":"action","lease":` + lease + `,"artifacts":[` +
+			mustJSON(secret) + `]}`,
+	} {
+		rec := request(h, http.MethodPost, path, body)
+		wantCode(t, rec, http.StatusBadRequest, nodewire.CodeInvalid)
+		if !strings.Contains(rec.Body.String(), "is not stored in pipeline remote") {
+			t.Errorf("%s with another pipeline's artifact: %s", path, rec.Body.String())
+		}
+	}
 	cut, cancel := context.WithCancel(d.ctx)
 	cancel()
 	for path, body := range map[string]string{
