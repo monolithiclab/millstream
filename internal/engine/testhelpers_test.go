@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"maps"
 	"os"
+	"runtime"
 	"runtime/debug"
 	"slices"
 	"sync"
@@ -30,6 +31,12 @@ func TestMain(m *testing.M) {
 	// The tests allocate heavily (stores, CEL programs, the transpiled SQLite): a higher collector target trades memory
 	// for test time, as in the cli and store tests.
 	debug.SetGCPercent(400)
+	// The tests run one at a time, and every store unit hands off to the store's writer goroutine and back: with one
+	// processor the hand-off is a goroutine switch, not an idle thread to wake, as in the store tests (the package
+	// took 67 ms instead of 71).
+	if !raceEnabled {
+		runtime.GOMAXPROCS(1)
+	}
 	sqlitetest.Warm()
 	code := m.Run()
 	testdir.Remove()

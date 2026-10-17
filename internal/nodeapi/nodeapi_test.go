@@ -15,6 +15,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"sync"
@@ -544,6 +545,9 @@ func TestPresignedURLs(t *testing.T) {
 var testRoot string
 
 func TestMain(m *testing.M) {
+	// The tests allocate heavily: a higher collector target trades memory for test time, as in the engine, cli and
+	// store tests.
+	debug.SetGCPercent(400)
 	var err error
 	if testRoot, err = os.MkdirTemp("", "millstream-node-test-"); err != nil {
 		panic(err)

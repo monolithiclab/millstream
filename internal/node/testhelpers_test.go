@@ -11,6 +11,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"os"
+	"runtime/debug"
 	"sync"
 	"testing"
 	"time"
@@ -27,6 +28,9 @@ import (
 var fakeBin string
 
 func TestMain(m *testing.M) {
+	// The tests allocate heavily: a higher collector target trades memory for test time, as in the engine, cli and
+	// store tests.
+	debug.SetGCPercent(400)
 	os.Exit(runTests(m))
 }
 

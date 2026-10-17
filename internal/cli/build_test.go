@@ -46,14 +46,26 @@ func newState(t *testing.T, scoreErrors bool) *state {
 	return &state{t: t, db: unusedDB(), st: st}
 }
 
-// prepareStates builds newState's two histories before the tests (TestMain): they are the process's fixtures.
+// prepareStates builds newState's two histories before the tests (TestMain): they are the process's fixtures. It
+// then runs the run fixture once through run --once on a store of its own, as Test_runOnce does: what the first
+// engine run of a process sets up (the run path's first statements, the in-process launcher, the JSON log handler)
+// belongs to the process, not to whichever test runs first.
 func prepareStates() error {
 	for _, s := range seeded {
 		if _, err := s(); err != nil {
 			return err
 		}
 	}
-	return nil
+	st, err := sqlite.Open(sqlite.Memory, sqlite.Options{})
+	if err != nil {
+		return err
+	}
+	s := &state{db: unusedDB(), st: st}
+	if code, _, errOut := s.run("run", "--once", "--request-id", "warm", fixture("run")); code != 0 {
+		_ = st.Close()
+		return fmt.Errorf("warm-up run --once: code %d\n%s", code, errOut)
+	}
+	return st.Close()
 }
 
 // seeded holds newState's two histories, scoreErrors false then true, each built once; their stores stay open for

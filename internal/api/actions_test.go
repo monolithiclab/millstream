@@ -1,7 +1,6 @@
 package api
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -144,7 +143,7 @@ func TestActions(t *testing.T) {
 	// The replayed delivery fails again, keeping a transcript of its own under the same name: a new dead letter,
 	// discarded by id, then nothing is left for all.
 	l := f.lease("score")
-	second := must(f.arts.Put(context.Background(), "listings", "transcript.jsonl", strings.NewReader(`{"role":"assistant"}`+"\n")))
+	second := f.retryTranscript
 	if l.DeliveryID != f.deadDelivery || l.Attempt != 2 {
 		t.Fatalf("replayed lease = %+v: attempt numbers go on after a replay", l)
 	}

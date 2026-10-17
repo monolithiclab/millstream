@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"reflect"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"testing"
@@ -15,6 +16,9 @@ import (
 // TestMain builds the CEL environments before the tests: the process builds each once, on first use, and that
 // belongs to no test.
 func TestMain(m *testing.M) {
+	// The tests allocate heavily: a higher collector target trades memory for test time, as in the engine, cli and
+	// store tests.
+	debug.SetGCPercent(400)
 	for _, env := range []func() (*cel.Env, error){interpEnv, itemEnv, routeEnv, assertEnv} {
 		_, _ = env()
 	}

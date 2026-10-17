@@ -1,13 +1,18 @@
 package sqlstore_test
 
 import (
+	"context"
+	"encoding/json"
 	"os"
 	"runtime"
 	"runtime/debug"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/monolithiclab/millstream/internal/pipeline"
+	"github.com/monolithiclab/millstream/internal/store"
 	"github.com/monolithiclab/millstream/internal/store/sqlite"
 	"github.com/monolithiclab/millstream/internal/store/sqlite/sqlitetest"
 	"github.com/monolithiclab/millstream/internal/store/sqlstore"
@@ -26,7 +31,70 @@ func TestMain(m *testing.M) {
 		runtime.GOMAXPROCS(1)
 	}
 	sqlitetest.Warm()
+	warmLaterUnits()
+	// A second warmed connection, for the tests that change the schema (schemaChanging): Warm runs while the first
+	// is held, so it warms a connection of its own, and both go back to the pool.
+	if held, err := sqlite.Open(sqlite.Memory, sqlite.Options{}); err == nil {
+		sqlitetest.Warm()
+		_ = held.Close()
+	}
 	os.Exit(m.Run())
+}
+
+// warmPipeline is the pipeline warmLaterUnits runs: a step whose outputs another reads.
+const warmPipeline = `
+pipeline: warm2
+triggers:
+  adhoc: { manual: {} }
+steps:
+  crawl: { action: ./actions/crawl, in: trigger.adhoc, out: listings }
+  score: { action: ./actions/score, in: listings }
+`
+
+// warmLaterUnits runs, on the connection Warm left in the pool, the units Warm leaves out whose first statements cost
+// the most (the rollup, a replay, a purge): the process's set-up, not the first test's to pay. Failures are ignored:
+// the tests then pay it and report what fails.
+func warmLaterUnits() {
+	s, err := sqlite.Open(sqlite.Memory, sqlite.Options{})
+	if err != nil {
+		return
+	}
+	defer func() { _ = s.Close() }()
+	p, err := pipeline.Parse([]byte(warmPipeline))
+	if err != nil {
+		return
+	}
+	ctx := context.Background()
+	if _, err := s.ApplyRevision(ctx, store.PackageRecord{Hash: "warm2", Pipeline: p}); err != nil {
+		return
+	}
+	if _, err := s.Fire(ctx, store.Firing{Pipeline: "warm2", Trigger: "adhoc", Key: "r1", RunID: "r1"}); err != nil {
+		return
+	}
+	metric := []store.Metric{{Name: "pages", Value: 1, Labels: map[string]string{"source": "x"}}}
+	for range 2 { // crawl, then the first score
+		ls, err := s.Lease(ctx, store.LeaseRequest{Owner: "warm", Max: 1, TTL: time.Minute})
+		if err != nil || len(ls) != 1 {
+			return
+		}
+		_, _ = s.Done(ctx, store.DoneRequest{LeaseRef: ls[0].Ref(), Attempt: ls[0].Attempt, CostUSD: 0.25,
+			Metrics: metric, Outputs: []store.Output{{Key: "a", Payload: json.RawMessage(`{"n":1}`)},
+				{Key: "b", Payload: json.RawMessage(`{"n":2}`)}}})
+	}
+	_, _ = s.Rollup(ctx)
+	_, _ = s.MetricRollups(ctx, store.MetricFilter{Pipeline: "warm2", Name: "pages"})
+	if items, err := s.Items(ctx, store.ItemFilter{Pipeline: "warm2", Stream: "listings"}); err == nil && len(items) > 0 {
+		_, _, _ = s.StartReplay(ctx, store.ReplayStart{Pipeline: "warm2", Step: "score", RunID: "rp1", Key: "rp1",
+			Items: []string{items[0].ID}})
+	}
+	req := store.PurgeRequest{ID: "p1", Key: "a"}
+	pg, _, err := s.StartPurge(ctx, req)
+	for err == nil && pg.State == store.PurgeErasing {
+		pg, err = s.ErasePurge(ctx, req.ID)
+	}
+	if err == nil && pg.State == store.PurgeSweeping {
+		_, _ = s.FinishPurge(ctx, req.ID)
+	}
 }
 
 func init() {
@@ -45,10 +113,24 @@ func init() {
 	}
 }
 
+// schemaChanging names the tests whose stores change the schema (TestUnitsSurfaceStoreErrors renames a table), so
+// never go back to the Memory pool.
+var schemaChanging = map[string]bool{"TestUnitsSurfaceStoreErrors": true}
+
 // memoryStore is the conformance suite's opener: a Memory store, which reuses a closed one's connection and its prepared
-// statements, where a clone would prepare them all again.
+// statements, where a clone would prepare them all again. For a schemaChanging test it first holds, until the test
+// ends, the pool's latest connection, which the tests before left with their statements prepared: the test takes
+// the spare connection TestMain warmed, and the tests after it keep the other (the package's other tests took 3 ms
+// longer when it was lost).
 func memoryStore(t *testing.T, opts storetest.Options) storetest.Store {
 	t.Helper()
+	if top, _, _ := strings.Cut(t.Name(), "/"); schemaChanging[top] {
+		held, err := sqlite.Open(sqlite.Memory, sqlite.Options{})
+		if err != nil {
+			t.Fatalf("Open: %v", err)
+		}
+		t.Cleanup(func() { _ = held.Close() })
+	}
 	s, err := sqlite.Open(sqlite.Memory, sqlite.Options{Now: opts.Now, Rand: opts.Rand})
 	if err != nil {
 		t.Fatalf("Open: %v", err)

@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"runtime/debug"
 	"slices"
 	"strings"
 	"sync"
@@ -24,6 +25,7 @@ import (
 	"github.com/monolithiclab/millstream/internal/schema"
 	"github.com/monolithiclab/millstream/internal/store"
 	"github.com/monolithiclab/millstream/internal/store/sqlite"
+	"github.com/monolithiclab/millstream/internal/store/sqlite/sqlitetest"
 
 	"github.com/monolithiclab/millstream/internal/testdir"
 )
@@ -38,6 +40,9 @@ var artifactDir string
 
 func TestMain(m *testing.M) {
 	flag.Parse()
+	// The tests allocate heavily: a higher collector target trades memory for test time, as in the engine, cli and
+	// store tests.
+	debug.SetGCPercent(400)
 	dir, err := os.MkdirTemp("", "millstream-api-")
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -47,6 +52,9 @@ func TestMain(m *testing.M) {
 	// Built once per process, before the tests: the seeded store the others clone, the OpenAPI document and the
 	// routes.
 	sharedFixture()
+	// After the shared fixture, whose store stays open: the warmed connection goes to the Memory pool, for the tests
+	// that open a store of their own.
+	sqlitetest.Warm()
 	theContract()
 	apiMux()
 	hooksMux()
@@ -184,6 +192,7 @@ type fixture struct {
 	crawlDelivery, reviewDelivery, sampleDelivery, deadDelivery string
 	trigger, good, dead                                         store.Item
 	transcript, photo, page                                     store.ArtifactRef
+	retryTranscript                                             store.ArtifactRef // stored, not referenced: TestActions' replayed attempt keeps it
 }
 
 // sharedFixture is the read tests' fixture: seeded once, never changed. The other tests clone it.
@@ -327,6 +336,8 @@ func (f *fixture) seed() {
 	f.clock.Advance(time.Second)
 	f.photo = must(f.arts.Put(context.Background(), "listings", "photo.png", bytes.NewReader([]byte("\x89PNG\r\n\x1a\nphoto"))))
 	f.transcript = must(f.arts.Put(context.Background(), "listings", "transcript.jsonl", strings.NewReader(`{"role":"user"}`+"\n")))
+	f.retryTranscript = must(f.arts.Put(context.Background(), "listings", "transcript.jsonl",
+		strings.NewReader(`{"role":"assistant"}`+"\n")))
 	f.page = must(f.arts.Put(context.Background(), "listings", "page.html", strings.NewReader("<html><script>alert(1)</script></html>")))
 	l := f.lease("crawl")
 	f.crawlDelivery, f.trigger = l.DeliveryID, l.Item

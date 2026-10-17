@@ -434,7 +434,10 @@ func TestProjectKeys(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			before := events()
+			before := 0
+			if tt.name == "off" { // every event read: only where the projector must write none
+				before = events()
+			}
 			if err := Project(s.ctx, s.st, p, now, nil); err != nil {
 				t.Fatal(err)
 			}

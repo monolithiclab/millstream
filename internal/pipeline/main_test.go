@@ -2,6 +2,7 @@ package pipeline
 
 import (
 	"os"
+	"runtime/debug"
 	"testing"
 
 	"github.com/monolithiclab/millstream/internal/expr"
@@ -13,6 +14,9 @@ import (
 // TestMain sets up before the tests what the process builds once, on first use: the CEL environments, the YAML
 // decoding of a pipeline and the JSON Schema compiler. It belongs to no test.
 func TestMain(m *testing.M) {
+	// The tests allocate heavily: a higher collector target trades memory for test time, as in the engine, cli and
+	// store tests.
+	debug.SetGCPercent(400)
 	warm()
 	code := m.Run()
 	testdir.Remove()
