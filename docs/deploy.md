@@ -104,6 +104,9 @@ runtime their action needs; a step no node can take is listed as unschedulable o
   `POST /api/v1/nodes/{id}/drain` and `/revoke` do. `millstream nodes revoke <id>` refuses an id for good and ends
   its leases at once. To rotate the node token, restart the engines with the new one: every node is refused and
   exits until it is restarted with it.
+- **A compromised node.** Revoking it is not enough: the node token is the deployment's, and whoever holds the
+  host holds it, so they can register again under a new id. Revoke the node, then rotate the node token and give
+  the new one to every other node.
 
 ## Signing in and monitoring
 
@@ -244,7 +247,8 @@ A second `millstream serve` on the same Postgres database, with the same environ
   proxy as well.
 - **Node token and TLS.** Nodes present the deployment's node token, over TLS except on loopback (spec section 15.7).
   A node can fetch packages and artifacts only for the deliveries it holds. `millstream nodes revoke <id>` refuses
-  a node; rotating the token disconnects every node until it has the new one (see Remote nodes).
+  a node; rotating the token disconnects every node until it has the new one (see Remote nodes). A compromised
+  node requires both: revoke it, then rotate the node token, since its host holds the token any new id joins with.
 - **Secrets** live in `.env` or `/etc/millstream/*.env`, mode 0600, never in `millstream.yaml`, an image or Git.
 - **Supply chain.** Base images are pinned by digest (`make lint-pins` checks every `FROM`), the release build runs
   `go mod verify`, each archive has an SBOM, and checksums and images are signed with cosign (spec section 15.5).
