@@ -12,6 +12,7 @@ import { themes, usePreferences, type Theme } from '../preferences';
 import { pipelinePath, pipelineScreens, screenPath, screens, workspaceScreens, type Screen } from '../routes';
 import { CommandPalette, type Command } from './CommandPalette';
 import { DemoBadge } from './DemoBadge';
+import { EnvironmentBadge } from './EnvironmentBadge';
 import { Kbd } from './Kbd';
 import { Logo } from './Logo';
 import { LiveIndicator } from './LiveIndicator';
@@ -223,6 +224,7 @@ export function AppShell() {
             </svg>
           </button>
           {demo && <DemoBadge />}
+          <EnvironmentBadge />
           <div className="flex-1" />
           {pipeline !== undefined && <LiveIndicator state={live} />}
           <button

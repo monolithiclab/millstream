@@ -1,6 +1,7 @@
 package pipeline
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -96,8 +97,22 @@ improve:
 		t.Fatalf("development, explicit: %v", err)
 	}
 	env.Mode = ""
-	if err := env.CheckMode(ModeProduction); err == nil {
-		t.Fatal("improve.enabled under a production default: no error")
+	if err := env.CheckMode(ModeProduction); !errors.Is(err, ErrProduction) {
+		t.Fatalf("improve.enabled under a production default: %v", err)
+	}
+	if err := env.CheckMode(ModeDevelopment); err != nil {
+		t.Fatalf("improve.enabled under a development default: %v", err)
+	}
+	env.Improve.Enabled, env.Improve.Publish = false, PublishApply
+	if err := env.CheckMode(ModeProduction); !errors.Is(err, ErrProduction) ||
+		!strings.Contains(err.Error(), "improve.publish: apply") {
+		t.Fatalf("publish apply in production: %v", err)
+	}
+	if err := env.RequireDevelopment(ModeProduction, "millstream improve"); !errors.Is(err, ErrProduction) {
+		t.Fatalf("improve in production: %v", err)
+	}
+	if err := env.RequireDevelopment(ModeDevelopment, "millstream improve"); err != nil {
+		t.Fatalf("improve in development: %v", err)
 	}
 }
 

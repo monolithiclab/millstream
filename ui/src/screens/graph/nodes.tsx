@@ -305,12 +305,12 @@ export function TriggerNode({ data }: NodeProps<TriggerNodeType>) {
   } else {
     const { trigger } = data;
     name = trigger.name;
-    detail =
-      trigger.kind === 'cron'
-        ? t('graph.trigger.cron', { schedule: trigger.schedule ?? '' })
-        : trigger.kind === 'webhook'
-          ? t('graph.trigger.webhook')
-          : t('graph.trigger.manual');
+    detail = {
+      cron: () => t('graph.trigger.cron', { schedule: trigger.schedule ?? '' }),
+      webhook: () => t('graph.trigger.webhook'),
+      insight: () => t('graph.trigger.insight'),
+      manual: () => t('graph.trigger.manual'),
+    }[trigger.kind]();
   }
   return (
     <div className="flex min-h-[52px] w-[120px] flex-col justify-center gap-0.5 rounded-1 border border-dashed border-line-strong bg-surface-2 px-2.5">

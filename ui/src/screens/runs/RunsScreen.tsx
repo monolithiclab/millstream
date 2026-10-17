@@ -56,9 +56,11 @@ export function RunsScreen() {
   const statusLabel = useStatusLabel();
   const label = (filter: Filter) => (filter === 'all' ? t('runs.filter.all') : statusLabel(filter));
 
-  // Any trigger but a webhook can be fired by hand (spec section 4.6); a webhook is fired by its caller's token.
+  // Cron and manual triggers can be fired by hand (spec section 4.6); a webhook is fired by its caller's token, an
+  // insight trigger by the insights it takes.
   const triggers = useResource(`pipeline:${pipeline}`, (a) => a.getPipeline(pipeline));
-  const fireable = triggers.status === 'ready' ? triggers.data.triggers.filter((tr) => tr.kind !== 'webhook') : [];
+  const fireable =
+    triggers.status === 'ready' ? triggers.data.triggers.filter((tr) => tr.kind === 'cron' || tr.kind === 'manual') : [];
   const [firing, setFiring] = useState(false);
   const { notice, setNotice, dismiss } = useNotice();
   // Each click is its own request id: a retry of the same click (Retry, or a resent request) returns the same run

@@ -95,6 +95,12 @@ func CronRun(scheduledAt time.Time, trigger string) string { return run(CronKey(
 // ManualRun is the id of the run a manual (or webhook) firing opens: run_<request id>_<trigger>.
 func ManualRun(requestID, trigger string) string { return run(requestID, trigger) }
 
+// InsightKey is an insight trigger's key: the insight's id and the sequence number of the event that opened,
+// reopened or escalated it (spec section 4.6).
+func InsightKey(insightID string, seq int64) string {
+	return insightID + "." + strconv.FormatInt(seq, 10)
+}
+
 func run(key, trigger string) string { return runPrefix + key + "_" + trigger }
 
 // UpperSnake converts a user-chosen name to the upper snake case used in environment variable names:

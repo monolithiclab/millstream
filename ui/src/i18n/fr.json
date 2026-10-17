@@ -14,6 +14,8 @@
     "preferences": "Préférences",
     "demo": "Données de démonstration",
     "exitDemo": "Quitter la démo",
+    "production": "Production",
+    "development": "Développement",
     "signOut": "Se déconnecter"
   },
   "signIn": {
@@ -174,6 +176,7 @@
     "trigger": {
       "cron": "cron {{schedule}}",
       "webhook": "webhook",
+      "insight": "constats",
       "manual": "manuel",
       "imported": "de {{pipeline}} · {{stream}}"
     },

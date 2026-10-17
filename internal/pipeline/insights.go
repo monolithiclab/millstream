@@ -19,6 +19,15 @@ const (
 	InsightUnschedulable  = "unschedulable"
 )
 
+// SeverityInfo is the lowest insight severity; insights share warning and error with check's diagnostics.
+const SeverityInfo = "info"
+
+// Severities are the insight severities, in increasing order.
+var Severities = []string{SeverityInfo, SeverityWarning, SeverityError}
+
+// SeverityRank orders severities: info 0, warning 1, error 2, anything else -1.
+func SeverityRank(s string) int { return slices.Index(Severities, s) }
+
 // InsightKinds are every kind of the spec, which insights.disable may name, including those a later milestone
 // computes.
 var InsightKinds = []string{InsightSlowStep, InsightFailureCluster, InsightCost, InsightReviewPattern, InsightWaste,

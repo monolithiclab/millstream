@@ -122,6 +122,9 @@ type Options struct {
 	// the active engine), outside the browser guards and outside auth.token: it must require the node token on every
 	// request. Nil answers the prefix notFound: no node.token, no remote nodes.
 	NodeAPI http.Handler
+	// Environment is the deployment's environment, production or development (spec section 11.2), reported with
+	// the engine; empty reads development.
+	Environment string
 	// Standby serves a standby engine's API (spec section 5.9): reads only, from a read-only store; every action
 	// answers 503 unavailable, naming the active engine in ActiveEngineHeader and ActiveAddressHeader when
 	// Deployment knows it.

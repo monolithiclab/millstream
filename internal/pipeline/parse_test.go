@@ -198,6 +198,8 @@ pipeline: deal-flow
 triggers:
   hook: { webhook: { rate: 10/s }, inputSchema: { type: object } }
   nightly: { cron: "0 1 * * *", catchup: all }
+  fix: { insight: { minSeverity: error, kinds: [waste, distillable] } }
+  any: { insight: {} }
 streams:
   approved: { pipeline: property-sourcing, stream: listings.approved, retention: 7d }
   out: { schema: schemas/out.json, redact: [/email] }
@@ -215,6 +217,10 @@ improve: { enabled: false }
 	if w := p.Triggers["hook"]; w.Webhook == nil || w.Webhook.Rate != "10/s" ||
 		!reflect.DeepEqual(w.InputSchema, map[string]any{"type": "object"}) {
 		t.Errorf("hook = %+v", w)
+	}
+	if in := p.Triggers["fix"].Insight; in == nil || in.MinSeverity != "error" ||
+		!reflect.DeepEqual(in.Kinds, []string{"waste", "distillable"}) || p.Triggers["any"].Insight == nil {
+		t.Errorf("insight triggers = %+v, %+v", in, p.Triggers["any"])
 	}
 	if c := p.Triggers["nightly"].Cron; c == nil || c.Catchup != CatchupAll || c.TZ != "" {
 		t.Errorf("nightly = %+v", c)
@@ -292,8 +298,10 @@ func TestParseErrors(t *testing.T) {
 		{"empty dlq", step("    dlq: \"\"\n"), "steps.score.dlq: must not be empty"},
 		{"lessons type", step("    lessons: [a]\n"), "steps.score.lessons: must be a string"},
 		{"step not mapping", pipelineWith("  s: x\n"), "steps.s: must be a mapping"},
-		{"trigger two kinds", "pipeline: p\ntriggers: { t: { manual: {}, cron: \"* * * * *\" } }\n", "triggers.t: must set exactly one of cron, manual or webhook"},
-		{"trigger insight", "pipeline: p\ntriggers: { t: { insight: {} } }\n", "triggers.t: must set exactly one of"},
+		{"trigger two kinds", "pipeline: p\ntriggers: { t: { manual: {}, cron: \"* * * * *\" } }\n", "triggers.t: must set exactly one of cron, manual, webhook or insight"},
+		{"insight severity", "pipeline: p\ntriggers: { t: { insight: { minSeverity: high } } }\n", "triggers.t.insight.minSeverity: must be one of info, warning, error"},
+		{"insight kind", "pipeline: p\ntriggers: { t: { insight: { kinds: [slowStep, typo] } } }\n", "triggers.t.insight.kinds: typo is not an insight kind"},
+		{"insight schema", "pipeline: p\ntriggers: { t: { insight: {}, inputSchema: {} } }\n", "triggers.t.inputSchema: unknown key"},
 		{"trigger cron key on manual", "pipeline: p\ntriggers: { t: { manual: {}, tz: UTC } }\n", "triggers.t.tz: unknown key"},
 		{"manual key", "pipeline: p\ntriggers: { t: { manual: { schema: x } } }\n", "triggers.t.manual.schema: unknown key"},
 		{"manual not mapping", "pipeline: p\ntriggers: { t: { manual: x } }\n", "triggers.t.manual: must be a mapping"},

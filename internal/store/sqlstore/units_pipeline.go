@@ -107,7 +107,7 @@ func (s *Store) Fire(ctx context.Context, f store.Firing) (bool, error) {
 	switch source {
 	case "", store.SourceManual:
 		source = store.SourceManual
-	case store.SourceWebhook:
+	case store.SourceWebhook, store.SourceInsight:
 	case store.SourceCron:
 		if f.ScheduledAt.IsZero() {
 			return false, fmt.Errorf("fire: a cron firing needs its scheduled time: %w", store.ErrInvalid)

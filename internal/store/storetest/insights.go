@@ -65,6 +65,7 @@ func TestInsightLifecycle(t *testing.T, open Opener) {
 		t.Fatalf("updated insight = %+v, %v", ins, err)
 	}
 	wantState(t, "resolved events", len(e.eventKinds(store.EventInsightResolved)), 1)
+	wantState(t, "escalated events (a, warning to error)", len(e.eventKinds(store.EventInsightEscalated)), 1)
 
 	e.record([]string{"slowStep"}) // failureCluster not evaluated: a stays open
 	wantState(t, "a when its kind is not evaluated", e.insightStates()["a"], store.InsightOpen)
@@ -72,6 +73,7 @@ func TestInsightLifecycle(t *testing.T, open Opener) {
 	e.record(kinds, finding("b", "failureCluster", "error"), finding("a", "failureCluster", "error"))
 	wantState(t, "b recurring", e.insightStates()["b"], store.InsightOpen)
 	wantState(t, "opened events", len(e.eventKinds(store.EventInsightOpened)), 4)
+	wantState(t, "escalated events", len(e.eventKinds(store.EventInsightEscalated)), 1)
 }
 
 func TestInsightRequests(t *testing.T, open Opener) {

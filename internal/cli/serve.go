@@ -53,7 +53,7 @@ func newAPIServer(st store.Store, e *engine.Engine, notes *review.Notifier, logs
 	a, err := api.New(api.Options{Store: st, Engine: e, Artifacts: x.arts, Broker: b, Logs: logs,
 		Nodes: x.nodes, Version: x.rt.Version, User: identity(x.rt), Auth: sec.auth, Logger: log,
 		Identity: lead.identity, Deployment: lead.deployment, NotificationFailures: notes.Failures,
-		NodeAPI: x.nodeAPI, LeaseTTL: x.leaseTTL})
+		NodeAPI: x.nodeAPI, LeaseTTL: x.leaseTTL, Environment: x.mode})
 	if err != nil {
 		return nil, err
 	}
@@ -68,6 +68,7 @@ type apiExtras struct {
 	nodes    []api.Node
 	nodeAPI  http.Handler
 	leaseTTL time.Duration
+	mode     string // the deployment's environment
 }
 
 // apiSecurity is what the API server reads from the environment, auth.token and tls: run and serve read it before

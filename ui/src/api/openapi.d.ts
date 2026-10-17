@@ -1105,7 +1105,7 @@ export interface components {
     Trigger: {
       name: string;
       /** @enum {string} */
-      kind: 'cron' | 'manual' | 'webhook';
+      kind: 'cron' | 'manual' | 'webhook' | 'insight';
       schedule?: string;
       stream: string;
       /** @description A webhook trigger's path under the server's address: /hooks/{pipeline}/{trigger}. */
@@ -1165,7 +1165,7 @@ export interface components {
       /** @description The scheduled time or request id */
       triggerKey: string;
       /** @enum {string} */
-      triggerSource: 'cron' | 'manual' | 'webhook' | 'import';
+      triggerSource: 'cron' | 'manual' | 'webhook' | 'import' | 'insight';
       /** Format: date-time */
       scheduledAt?: string;
       generation: number;
@@ -1618,6 +1618,11 @@ export interface components {
         state: 'active' | 'standby';
         id: string;
         version: string;
+        /**
+         * @description The deployment's environment (spec section 11.2): production refuses the improve pipeline and improve.publish apply. serve defaults to production, run to development.
+         * @enum {string}
+         */
+        environment: 'production' | 'development';
         /**
          * Format: date-time
          * @description When the engine took the leadership lock (active) or began to wait for it (standby).

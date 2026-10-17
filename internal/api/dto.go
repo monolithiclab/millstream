@@ -340,6 +340,8 @@ type EngineInfo struct {
 	Version string     `json:"version"`
 	Since   *time.Time `json:"since,omitempty"`
 	Epoch   int64      `json:"epoch,omitempty"`
+	// Environment is the deployment's: production or development (spec section 11.2).
+	Environment string `json:"environment"`
 	// NotificationsFailed counts the review notifications that failed or were dropped (review_notifications_failed).
 	NotificationsFailed int64 `json:"notificationsFailed"`
 }
@@ -499,13 +501,12 @@ func graph(p *pipeline.Pipeline, ps *store.PipelineState) Graph {
 	for _, name := range slices.Sorted(maps.Keys(p.Triggers)) {
 		t := p.Triggers[name]
 		tr := Trigger{Name: name, Stream: pipeline.TriggerStreamPrefix + name}
+		tr.Kind = t.Kind()
 		switch {
 		case t.Cron != nil:
-			tr.Kind, tr.Schedule = "cron", t.Cron.Expr
+			tr.Schedule = t.Cron.Expr
 		case t.Webhook != nil:
-			tr.Kind, tr.Path, tr.Rate = "webhook", HookPath(p.Name, name), t.Webhook.Rate
-		default:
-			tr.Kind = "manual"
+			tr.Path, tr.Rate = HookPath(p.Name, name), t.Webhook.Rate
 		}
 		streams[tr.Stream] = true
 		g.Triggers = append(g.Triggers, tr)

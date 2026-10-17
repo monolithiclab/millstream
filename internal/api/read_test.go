@@ -446,7 +446,7 @@ func TestNodes(t *testing.T) {
 	f := readFixture(t)
 	n := get[Nodes](t, f.srv, "/api/v1/nodes")
 	if n.Engine.State != "active" || n.Engine.Version != "v-test" || n.Engine.NotificationsFailed != 2 ||
-		len(n.Nodes) != 1 || n.Nodes[0].Leases != 0 ||
+		n.Engine.Environment != "development" || len(n.Nodes) != 1 || n.Nodes[0].Leases != 0 ||
 		n.Nodes[0].Labels == nil {
 		t.Errorf("nodes = %+v", n)
 	}
@@ -474,11 +474,12 @@ func TestStandby(t *testing.T) {
 	standby := DeploymentEngine{ID: "mill-02", State: "standby", Version: "v-test", Since: &t0}
 	srv := func(d Deployment) *Server {
 		return must(New(Options{Store: f.st, Version: "v-test", Standby: true, Deployment: d,
-			Identity: Identity{ID: "mill-02", Since: t0}}))
+			Identity: Identity{ID: "mill-02", Since: t0}, Environment: "production"}))
 	}
 	s := srv(fakeDeployment{engines: []DeploymentEngine{active, standby}})
 	n := get[Nodes](t, s, "/api/v1/nodes")
 	if n.Engine.State != "standby" || n.Engine.ID != "mill-02" || n.Engine.Since == nil || n.Engine.Epoch != 0 ||
+		n.Engine.Environment != "production" ||
 		len(n.Engines) != 2 || n.Engines[0].Address != active.Address || n.Engines[1].ID != "mill-02" {
 		t.Errorf("nodes from the standby = %+v", n)
 	}

@@ -245,6 +245,19 @@ describe('app shell', () => {
   });
 });
 
+describe('environment badge', () => {
+  it('names the deployment environment the engine reports, in the reader’s language', async () => {
+    renderApp();
+    expect(await within(screen.getByRole('banner')).findByText('Development')).toBeInTheDocument();
+    cleanup();
+    const api = new FakeApi();
+    const nodes = await api.listNodes();
+    api.listNodes = () => Promise.resolve({ ...nodes, engine: { ...nodes.engine, environment: 'production' } });
+    renderApp({ api, language: 'fr' });
+    expect(await within(screen.getByRole('banner')).findByText('Production')).toBeInTheDocument();
+  });
+});
+
 describe('demo mode', () => {
   it('shows a permanent Demo data badge with Exit demo, only on demo data', async () => {
     renderApp({ route: '/pipelines', demo: true });

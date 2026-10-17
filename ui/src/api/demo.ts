@@ -1217,6 +1217,7 @@ export const demoFixtures: Fixtures = {
       version: '0.0.0',
       since: minutesBefore(2000),
       epoch: 3,
+      environment: 'development',
       notificationsFailed: 0,
     },
     engines: [

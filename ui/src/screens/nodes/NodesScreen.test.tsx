@@ -46,7 +46,7 @@ function withNodes(overrides: Partial<Nodes>, { dropUnschedulable = false } = {}
 
 const standbyEngine = { id: 'mill-02', state: 'standby' as const, version: '0.0.0' };
 const standbyNodes = {
-  engine: { ...standbyEngine, notificationsFailed: 0 },
+  engine: { ...standbyEngine, environment: 'production' as const, notificationsFailed: 0 },
   engines: [{ id: 'mill-01', state: 'active' as const, version: '0.0.0' }, standbyEngine],
 };
 
@@ -196,7 +196,13 @@ describe('NodesScreen', () => {
 
   it('marks labels, an old version and a standby engine, without actions', async () => {
     const nodes = {
-      engine: { state: 'standby' as const, id: 'mill-02', version: '0.9.2', notificationsFailed: 0 },
+      engine: {
+        state: 'standby' as const,
+        id: 'mill-02',
+        version: '0.9.2',
+        environment: 'production' as const,
+        notificationsFailed: 0,
+      },
       engines: [{ id: 'mill-02', state: 'standby' as const, version: '0.9.2' }],
       nodes: [remote({ id: 'gpu-box', version: '0.9.1', behind: true, labels: { gpu: 'true' }, health: 'lost' })],
     };
@@ -281,7 +287,7 @@ describe('NodesScreen', () => {
     const api = new FakeApi({
       ...demoFixtures,
       nodes: {
-        engine: { state: 'active', id: 'mill-01', version: '1', notificationsFailed: 0 },
+        engine: { state: 'active', id: 'mill-01', version: '1', environment: 'development', notificationsFailed: 0 },
         engines: [],
         nodes: [],
       },

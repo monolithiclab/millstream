@@ -1129,7 +1129,7 @@ func (s *Server) listNodes(w http.ResponseWriter, r *http.Request) error {
 	}
 	id := s.opts.Identity
 	self := EngineInfo{State: stateActive, ID: id.ID, Version: s.opts.Version, Since: timePtr(id.Since),
-		Epoch: id.Epoch}
+		Epoch: id.Epoch, Environment: cmp.Or(s.opts.Environment, pipeline.ModeDevelopment)}
 	if s.opts.Standby {
 		self.State, self.Epoch = stateStandby, 0
 	}

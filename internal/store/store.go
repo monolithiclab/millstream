@@ -154,7 +154,7 @@ type Store interface {
 	// RecordInsights applies one pass of the insights projector (spec section 11.1): each insight found is opened
 	// or updated by fingerprint, a resolved one found again reopens, and the open or acknowledged insights of the
 	// evaluated kinds not found are resolved; muted ones keep their state. It records insightOpened and
-	// insightResolved events.
+	// insightResolved events, and insightEscalated when an open or acknowledged insight's severity rises.
 	RecordInsights(ctx context.Context, r InsightReport) error
 	// SetInsightState acknowledges or mutes an insight, or reopens one (open).
 	SetInsightState(ctx context.Context, pipeline, id string, state InsightState) error

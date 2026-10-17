@@ -96,6 +96,9 @@ type Options struct {
 	// for ever), and how often the retention job runs (Every; zero means DefaultRetentionInterval). Streams carry
 	// their own retention in their pipelines (spec section 9.3).
 	Retention pipeline.Retention
+	// Improve is the environment file's improve key: the default minSeverity of insight triggers and the settings
+	// the insights projector reads (spec sections 11.1, 11.5 and 11.6).
+	Improve pipeline.Improve
 	// Takeover makes every step's rate start empty, a full token's interval before its first lease, so that an
 	// engine taking a deployment over (serve) never causes a burst (spec section 5.9).
 	Takeover bool
@@ -164,6 +167,8 @@ type Engine struct {
 
 	projMu       sync.Mutex           // serialises Project
 	lastInsights map[string]time.Time // when each pipeline's insights last ran; under projMu
+	insightSeq   int64                // the last insight event the insight triggers fired for; under projMu
+	insightTS    time.Time            // and when it was recorded
 	retainMu     sync.Mutex           // serialises Retain
 
 	// Test seams, set before Run: maxDue bounds the missed cron times kept (the maxDue constant), and ticked and
