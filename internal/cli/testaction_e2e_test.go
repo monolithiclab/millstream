@@ -177,7 +177,7 @@ func Test_testActionConformance(t *testing.T) {
 			"FAIL shutdown: did not exit within 300ms of shutdown"}},
 		{"emitAfterDone", []string{"FAIL idle-silence: wrote emit between deliveries"}},
 		{"wrongId", []string{`FAIL item-answer: wrote emit for delivery "dl_other", want "dl_conformance_1"`}},
-		{"crash", []string{"FAIL item-answer: exited (exit status 3) before done or error for the item"}},
+		{"crash", []string{"FAIL item-answer: exited (exit status 3) before done, error or abstain for the item"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.mode, func(t *testing.T) {
