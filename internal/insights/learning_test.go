@@ -255,3 +255,18 @@ func TestBoundedFields(t *testing.T) {
 		t.Fatalf("fields of an unreadable schema = %v", f)
 	}
 }
+
+// A field CEL cannot read with a dot is indexed; strings and booleans are literals, numbers doubles.
+func TestCELSpelling(t *testing.T) {
+	if got := celField("/a b/in/ok_1/x~1y"); got != `item["a b"]["in"].ok_1["x/y"]` {
+		t.Errorf("celField = %s", got)
+	}
+	for v, want := range map[any]string{true: "true", `say "hi"`: `"say \"hi\""`} {
+		if got, ok := celLiteral(v); !ok || got != want {
+			t.Errorf("celLiteral(%v) = %s, %v", v, got, ok)
+		}
+	}
+	if _, ok := celLiteral(1.5); ok || celNumber(3) != "3.0" || celNumber(2.5) != "2.5" {
+		t.Error("numbers are no string literals, and are doubles")
+	}
+}

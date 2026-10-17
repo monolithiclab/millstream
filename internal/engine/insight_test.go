@@ -1,10 +1,11 @@
 package engine
 
 import (
+	"context"
 	"encoding/json"
 	"testing"
+	"time"
 
-	"github.com/monolithiclab/millstream/internal/ids"
 	"github.com/monolithiclab/millstream/internal/pipeline"
 	"github.com/monolithiclab/millstream/internal/store"
 )
@@ -18,57 +19,84 @@ steps:
   draft: { action: ./actions/a, in: [trigger.fix, trigger.quiet] }
 `
 
-// An insight that opens fires the insight triggers of the other pipelines that take its kind at its severity: one
-// run, its input the insight, keyed by the insight and its event, so passes after it, and another engine's first
-// pass, fire nothing more.
-func TestInsightTriggerFiresARun(t *testing.T) {
-	v := stubbedEnv(t, Options{Improve: pipeline.Improve{MinSeverity: pipeline.SeverityError}})
-	v.apply(newPackage(t, fixPipeline, "a"))
-	v.fire("p", "adhoc", "r1")
-	v.pull(10) // sink fails for good: a failureCluster of severity error
-	if err := v.e.Project(v.ctx); err != nil {
-		t.Fatal(err)
-	}
-	ins := v.insights()
-	if len(ins) != 1 || ins[0].Kind != pipeline.InsightFailureCluster {
-		t.Fatalf("insights = %+v", ins)
-	}
-	opened := v.events(store.EventInsightOpened)
-	runs := v.runs("fix")
-	want := ids.ManualRun(ids.InsightKey(ins[0].ID, opened[0].Seq), "fix")
-	if len(runs) != 1 || runs[0].ID != want || runs[0].TriggerSource != store.SourceInsight {
-		t.Fatalf("runs of fix = %+v, want one %s", runs, want)
-	}
-	items, err := v.st.Items(v.ctx, store.ItemFilter{Pipeline: "fix", RunID: want})
-	if err != nil || len(items) != 1 {
-		t.Fatalf("trigger items = %+v, %v", items, err)
-	}
-	var input map[string]any
-	if err := json.Unmarshal(items[0].Payload, &input); err != nil {
-		t.Fatal(err)
-	}
-	if input["pipeline"] != "p" || input["insightId"] != ins[0].ID || input["kind"] != "failureCluster" ||
-		input["scope"] != "sink" || input["severity"] != "error" || input["evidence"] == nil {
-		t.Fatalf("run input = %v", input)
-	}
+// insightStore serves the events and insights fireInsightTriggers reads and records the firings, no SQLite.
+type insightStore struct {
+	store.Store
+	evs     []store.Event
+	ins     []store.Insight
+	firings []store.Firing
+}
 
-	if err := v.e.Project(v.ctx); err != nil {
-		t.Fatal(err)
+func (s *insightStore) PipelineEvents(context.Context, store.EventFilter) ([]store.Event, error) {
+	return s.evs, nil
+}
+
+func (s *insightStore) Insights(context.Context, store.InsightFilter) ([]store.Insight, error) {
+	return s.ins, nil
+}
+
+func (s *insightStore) ActiveRevision(context.Context, string) (store.RevisionID, error) {
+	return 1, nil
+}
+
+func (s *insightStore) Fire(_ context.Context, f store.Firing) (bool, error) {
+	s.firings = append(s.firings, f)
+	return true, nil
+}
+
+// A pass fires each matching trigger once per event of another pipeline's insight, skipping muted insights, its
+// own pipeline's, and the events an earlier pass read.
+func TestFireInsightTriggers(t *testing.T) {
+	ev := func(seq int64, pipelineName, id, severity string) store.Event {
+		data, _ := json.Marshal(map[string]string{"insightId": id, "kind": "failureCluster", "severity": severity})
+		return store.Event{Seq: seq, TS: t0, Pipeline: pipelineName, Kind: store.EventInsightOpened, Data: data}
 	}
-	other, err := New(Options{Store: v.st, Now: v.clock.Now, Logger: newLogger(v.logs),
-		Improve: pipeline.Improve{MinSeverity: pipeline.SeverityError}})
+	st := &insightStore{
+		evs: []store.Event{ev(1, "p", "in_a", "error"), ev(2, "p", "in_m", "error"), ev(3, "fix", "in_a", "error"),
+			ev(4, "p", "in_a", "info")},
+		ins: []store.Insight{{Pipeline: "p", ID: "in_a", Kind: "failureCluster", State: store.InsightOpen},
+			{Pipeline: "p", ID: "in_m", Kind: "failureCluster", State: store.InsightMuted}},
+	}
+	e, err := New(Options{Store: st, Now: func() time.Time { return t0 }})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := other.Project(v.ctx); err != nil {
+	p, err := parsed(fixPipeline)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if runs := v.runs("fix"); len(runs) != 1 {
-		t.Fatalf("after more passes, runs of fix = %+v", runs)
+	e.revs[1] = &revision{id: 1, p: p}
+	pipelines := []store.PipelineState{{Name: "fix", ActiveRevision: 1}, {Name: "off", Disabled: true}}
+	for range 2 {
+		if err := e.fireInsightTriggers(t.Context(), pipelines); err != nil {
+			t.Fatal(err)
+		}
 	}
+	if len(st.firings) != 1 || st.firings[0].Key != "in_a.1" || st.firings[0].Source != store.SourceInsight ||
+		e.insightSeq != 4 {
+		t.Fatalf("firings = %+v, seq %d", st.firings, e.insightSeq)
+	}
+}
 
-	// Under a stricter improve.minSeverity than the insight's, nothing fires.
-	if v.e.insightMatches(&pipeline.InsightSpec{}, "cost", pipeline.SeverityWarning) {
-		t.Error("a warning fired a trigger whose minimum is error")
+// An insight fires a trigger of one of its kinds (any without) at or above its minSeverity, else
+// improve.minSeverity, else warning.
+func TestInsightMatches(t *testing.T) {
+	e := &Engine{}
+	strict := &Engine{opts: Options{Improve: pipeline.Improve{MinSeverity: pipeline.SeverityError}}}
+	for _, tt := range []struct {
+		e              *Engine
+		spec           pipeline.InsightSpec
+		kind, severity string
+		want           bool
+	}{
+		{e, pipeline.InsightSpec{}, "cost", "warning", true},
+		{e, pipeline.InsightSpec{}, "cost", "info", false},
+		{strict, pipeline.InsightSpec{}, "cost", "warning", false},
+		{strict, pipeline.InsightSpec{MinSeverity: "info"}, "cost", "info", true},
+		{e, pipeline.InsightSpec{Kinds: []string{"waste"}}, "cost", "error", false},
+	} {
+		if got := tt.e.insightMatches(&tt.spec, tt.kind, tt.severity); got != tt.want {
+			t.Errorf("%+v %s %s = %v", tt.spec, tt.kind, tt.severity, got)
+		}
 	}
 }
