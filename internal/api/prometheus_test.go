@@ -58,7 +58,7 @@ func TestEngineFamilies(t *testing.T) {
 	})
 	batches := batchHistogram(store.BatchSizes{Bounds: []int{1, 2}, Counts: []int64{3, 4, 5}, Sum: 9})
 	var buf bytes.Buffer
-	if err := metrics.Exposition(&buf, nil, []metrics.Family{leases, evals, batches}); err != nil {
+	if err := metrics.Exposition(&buf, nil, []metrics.Family{leases, evals, batches}, nil); err != nil {
 		t.Fatal(err)
 	}
 	want := `# TYPE millstream_eval_score gauge

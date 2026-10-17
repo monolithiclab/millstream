@@ -19,9 +19,9 @@ type batchSizer interface {
 	WriterBatches() store.BatchSizes
 }
 
-// prometheus serves /metrics (spec section 10.2): every rollup series over the minutes the store holds, and the
-// metrics the engine measures itself: leases held by node, the writer's batch sizes, failed review notifications
-// and each eval case's latest score.
+// prometheus serves /metrics (spec section 10.2): every rollup series' running totals, gauges only while current,
+// and the metrics the engine measures itself: leases held by node, the writer's batch sizes, failed review
+// notifications and each eval case's latest score.
 func (s *Server) prometheus(w http.ResponseWriter, r *http.Request) error {
 	ctx := r.Context()
 	totals, err := s.opts.Store.MetricTotals(ctx)
@@ -45,7 +45,7 @@ func (s *Server) prometheus(w http.ResponseWriter, r *http.Request) error {
 		families = append(families, batchHistogram(b.WriterBatches()))
 	}
 	var buf bytes.Buffer
-	if err := metrics.Exposition(&buf, totals, families); err != nil {
+	if err := metrics.Exposition(&buf, metrics.Current(totals, s.opts.Clock.Now()), families, s.log); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", prometheusType)

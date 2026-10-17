@@ -5,11 +5,13 @@ import (
 	"cmp"
 	"fmt"
 	"io"
+	"log/slog"
 	"maps"
 	"math"
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/monolithiclab/millstream/internal/store"
 )
@@ -17,10 +19,22 @@ import (
 // Namespace prefixes every metric name in the Prometheus exposition.
 const Namespace = "millstream_"
 
+// GaugeWindow is how long a gauge stays current after the start of its latest minute: the rollup samples the queue
+// gauges at every pass (every 15 seconds by default), so a current gauge's latest minute is this one or the one
+// before, and one older than the window (a step no longer sampled) is left out of the exposition.
+const GaugeWindow = 5 * time.Minute
+
 // Prometheus writes rollups in the Prometheus text exposition format (version 0.0.4), aggregated over their
 // minutes: Exposition of their Totals, without engine families.
-func Prometheus(w io.Writer, rollups []store.MetricRollup) error {
-	return Exposition(w, Totals(rollups), nil)
+func Prometheus(w io.Writer, rollups []store.MetricRollup, log *slog.Logger) error {
+	return Exposition(w, Totals(rollups), nil, log)
+}
+
+// Current drops the gauges whose latest minute started more than GaugeWindow before now.
+func Current(totals []store.MetricTotal, now time.Time) []store.MetricTotal {
+	return slices.DeleteFunc(slices.Clone(totals), func(t store.MetricTotal) bool {
+		return KindOf(t.Name) == Gauge && now.Sub(t.Last) > GaugeWindow
+	})
 }
 
 // Totals aggregates rollups into one series per pipeline, metric and label set, as the store's MetricTotals does.
@@ -70,8 +84,9 @@ type Sample struct {
 // distribution as a summary without quantiles (<name>_sum, <name>_count); a histogram with its cumulative buckets.
 // Every rollup series is labelled with its pipeline. Names and label names are sanitised to [a-zA-Z0-9_], and the
 // output is sorted by family, so equal inputs render equally. An engine family hides a rollup family exposed under
-// the same name (an action's metric, whose name sanitises to it).
-func Exposition(w io.Writer, totals []store.MetricTotal, engine []Family) error {
+// the same name (an action's metric, whose name sanitises to it). Of two rollup families exposed under one name
+// (a.b and a_b), the first by stored name keeps it and the other is left out, logged on log (nil logs nothing).
+func Exposition(w io.Writer, totals []store.MetricTotal, engine []Family, log *slog.Logger) error {
 	families := map[string][]store.MetricTotal{} // by family name: a histogram's buckets join its family
 	for _, t := range totals {
 		labels := maps.Clone(t.Labels)
@@ -87,12 +102,21 @@ func Exposition(w io.Writer, totals []store.MetricTotal, engine []Family) error 
 		families[family] = append(families[family], t)
 	}
 	blocks := map[string]string{} // by exposed name
-	for family, ts := range families {
+	owners := map[string]string{} // the rollup family exposed under each name
+	for _, family := range slices.Sorted(maps.Keys(families)) {
+		ts := families[family]
 		slices.SortFunc(ts, func(a, b store.MetricTotal) int {
 			return cmp.Or(cmp.Compare(a.Name, b.Name), compareLabels(a.Labels, b.Labels))
 		})
 		name, block := rollupFamily(family, ts)
-		blocks[name] = block
+		if owner, taken := owners[name]; taken {
+			if log != nil {
+				log.Warn("metric left out of the exposition: its name collides", "metric", family, "exposed", name,
+					"kept", owner)
+			}
+			continue
+		}
+		owners[name], blocks[name] = family, block
 	}
 	for _, f := range engine {
 		name, block := engineFamily(f)

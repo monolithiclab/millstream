@@ -2,6 +2,7 @@ package metrics
 
 import (
 	"bytes"
+	"log/slog"
 	"maps"
 	"math"
 	"regexp"
@@ -42,7 +43,7 @@ func TestExpositionFormat(t *testing.T) {
 		}},
 	}
 	var buf bytes.Buffer
-	if err := Exposition(&buf, totals, engine); err != nil {
+	if err := Exposition(&buf, totals, engine, nil); err != nil {
 		t.Fatal(err)
 	}
 	families := parseExposition(t, buf.String())
@@ -55,6 +56,51 @@ func TestExpositionFormat(t *testing.T) {
 	}
 	if strings.Contains(buf.String(), `step="score"} 7`) {
 		t.Errorf("the action's eval-score shows beside the engine's:\n%s", buf.String())
+	}
+}
+
+// Two stored names exposed under one name (a.b and a_b) make one family: the first by stored name keeps it, and the
+// other is left out with a warning, whatever order the totals come in.
+func TestExpositionNameCollision(t *testing.T) {
+	t.Parallel()
+	m0 := time.Date(2026, 10, 15, 6, 0, 0, 0, time.UTC)
+	totals := []store.MetricTotal{
+		{Pipeline: "p", Name: "a_b", Count: 1, Sum: 2, Last: m0, LastCount: 1, LastSum: 2},
+		{Pipeline: "p", Name: "a.b", Count: 1, Sum: 1, Last: m0, LastCount: 1, LastSum: 1},
+	}
+	var buf, logs bytes.Buffer
+	if err := Exposition(&buf, totals, nil, slog.New(slog.NewTextHandler(&logs, nil))); err != nil {
+		t.Fatal(err)
+	}
+	if families := parseExposition(t, buf.String()); len(families) != 1 {
+		t.Fatalf("families %v", families)
+	}
+	if !strings.Contains(buf.String(), `millstream_a_b_sum{pipeline="p"} 1`+"\n") ||
+		!strings.Contains(logs.String(), "metric=a_b") || !strings.Contains(logs.String(), "kept=a.b") {
+		t.Errorf("exposition\n%s\nlogs\n%s", buf.String(), logs.String())
+	}
+}
+
+// A gauge whose latest minute is older than the window is no longer current: it is left out; counters stay.
+func TestCurrentDropsStaleGauges(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 10, 15, 6, 30, 20, 0, time.UTC)
+	s := map[string]string{"step": "score"}
+	fresh := store.MetricTotal{Pipeline: "p", Name: QueueDepth, Labels: s, Last: now.Truncate(time.Minute),
+		LastCount: 1, LastSum: 3}
+	stale := store.MetricTotal{Pipeline: "q", Name: QueueDepth, Labels: s, Last: now.Add(-GaugeWindow - time.Minute),
+		LastCount: 1, LastSum: 9}
+	counter := store.MetricTotal{Pipeline: "q", Name: ItemsIn, Labels: s, Count: 4, Sum: 4, Last: stale.Last}
+	var buf bytes.Buffer
+	if err := Exposition(&buf, Current([]store.MetricTotal{fresh, stale, counter}, now), nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	parseExposition(t, buf.String())
+	got := buf.String()
+	if !strings.Contains(got, `millstream_queue_depth{pipeline="p",step="score"} 3`) ||
+		strings.Contains(got, `pipeline="q",step="score"} 9`) ||
+		!strings.Contains(got, `millstream_items_in_total{pipeline="q",step="score"} 4`) {
+		t.Errorf("exposition\n%s", got)
 	}
 }
 
