@@ -137,8 +137,9 @@ func TestNodesKilled(t *testing.T) {
 }
 
 // TestNodePartitioned cuts a node off from the engine by a proxy for longer than its lease while it runs the crawl
-// (Review focus 2): the crawl goes to another node; healed, the cut-off node's buffered result is refused by fencing
-// and it carries on.
+// (Review focus 2): the crawl goes to another node; healed, the cut-off node's result is refused by fencing and it
+// carries on. Its heartbeat, on its own goroutine, may learn the lease is lost before its buffered result is sent:
+// the node then abandons the delivery instead of reporting it stale, the same refusal.
 func TestNodePartitioned(t *testing.T) {
 	t.Parallel()
 	want := cleanBuiltinsRunOn(t, postgresBackend)
@@ -153,7 +154,13 @@ func TestNodePartitioned(t *testing.T) {
 	f.startNode("2", nodeToken, a.url)
 	a.waitLine(t, `"msg":"lease expired"`, 30*time.Second)
 	proxy.heal()
-	n1.waitLine(t, "stale lease, result dropped", 2*time.Minute)
+	refused := func(l logLine) bool {
+		return strings.Contains(l.text, "stale lease, result dropped") ||
+			strings.Contains(l.text, "delivery abandoned, result dropped")
+	}
+	if _, ok := n1.log.wait(refused, 2*time.Minute, n1.done); !ok {
+		t.Fatalf("node 1's result was never refused by fencing\n%s", lastLines(n1.log.String(), 20))
+	}
 	f.waitSettled()
 	if !n1.alive() {
 		t.Errorf("the partitioned node exited (%d) instead of carrying on", n1.code)
