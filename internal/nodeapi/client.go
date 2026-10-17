@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"net"
 	"net/http"
 	"net/url"
@@ -575,7 +576,7 @@ func (t *Client) artifactURL(ctx context.Context, lease store.LeaseRef, op strin
 // transfer makes the request that moves an artifact: to the presigned URL as is, or to the engine's proxy with the
 // node token.
 func (t *Client) transfer(ctx context.Context, method string, u nodewire.URL, body io.Reader, size int64,
-	contentType string,
+	contentType string, header http.Header,
 ) (*http.Response, error) {
 	target := u.URL
 	if !u.Direct {
@@ -596,6 +597,7 @@ func (t *Client) transfer(ctx context.Context, method string, u nodewire.URL, bo
 		req.ContentLength = size
 		req.Header.Set("Content-Type", contentType)
 	}
+	maps.Copy(req.Header, header)
 	resp, err := t.opts.HTTP.Do(req)
 	if err != nil {
 		return nil, err
@@ -616,7 +618,7 @@ func (t *Client) OpenArtifact(ctx context.Context, lease store.LeaseRef, ref sto
 	if err != nil {
 		return nil, fmt.Errorf("open artifact %s: %w", ref.Name, err)
 	}
-	resp, err := t.transfer(ctx, http.MethodGet, u, nil, 0, "")
+	resp, err := t.transfer(ctx, http.MethodGet, u, nil, 0, "", nil)
 	if err != nil {
 		return nil, fmt.Errorf("open artifact %s: %w", ref.Name, err)
 	}
@@ -646,7 +648,11 @@ func (t *Client) PutArtifact(ctx context.Context, lease store.LeaseRef, name str
 	if u.Exists {
 		return ref, nil
 	}
-	resp, err := t.transfer(ctx, http.MethodPut, u, f, ref.Size, ref.Type)
+	var header http.Header
+	if u.Direct { // the presigned URL signs the content's checksum (artifacts.Presigner)
+		header = http.Header{artifacts.ChecksumHeader: {artifacts.ChecksumSHA256(ref.SHA256)}}
+	}
+	resp, err := t.transfer(ctx, http.MethodPut, u, f, ref.Size, ref.Type, header)
 	if err != nil {
 		return store.ArtifactRef{}, fmt.Errorf("put artifact %s: %w", name, err)
 	}

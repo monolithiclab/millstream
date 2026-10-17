@@ -473,7 +473,7 @@ func (h *Handler) artifactURL(w http.ResponseWriter, r *http.Request) error {
 		if req.Op == nodewire.OpGet {
 			u, err = p.PresignGet(ref.Pipeline, a.SHA256, URLTTL)
 		} else {
-			u, err = p.PresignPut(ref.Pipeline, a.SHA256, URLTTL)
+			u, err = p.PresignPut(ref.Pipeline, a.SHA256, a.Size, URLTTL)
 		}
 		if err != nil {
 			return err

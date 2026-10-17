@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/monolithiclab/millstream/internal/api"
+	"github.com/monolithiclab/millstream/internal/artifacts"
 	"github.com/monolithiclab/millstream/internal/engine"
 	"github.com/monolithiclab/millstream/internal/nodeapi"
 	"github.com/monolithiclab/millstream/internal/nodewire"
@@ -468,8 +469,8 @@ func (presigning) PresignGet(p, sha string, _ time.Duration) (string, error) {
 	return "https://s3.test/get/" + p + "/" + sha, nil
 }
 
-func (presigning) PresignPut(p, sha string, _ time.Duration) (string, error) {
-	return "https://s3.test/put/" + p + "/" + sha, nil
+func (presigning) PresignPut(p, sha string, size int64, _ time.Duration) (string, error) {
+	return "https://s3.test/put/" + p + "/" + sha + "?size=" + strconv.FormatInt(size, 10), nil
 }
 
 // With a presigning store, a node gets presigned URLs, direct, for an input it holds and an output.
@@ -492,11 +493,24 @@ func TestPresignedURLs(t *testing.T) {
 	body := mustJSON(nodewire.ArtifactURL{Node: "n1", Lease: nodewire.FromRef(as[0].Lease.Ref()), Op: nodewire.OpPut,
 		Artifact: store.ArtifactRef{Name: "o.txt", SHA256: sha, Size: 1, Type: "text/plain"}})
 	rec := request(h, http.MethodPost, nodewire.PathArtifactURL, body)
-	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"url":"https://s3.test/put/remote/`+sha+`","direct":true`) {
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"url":"https://s3.test/put/remote/`+sha+`?size=1","direct":true`) {
 		t.Fatalf("presigned put: %d %s", rec.Code, rec.Body.String())
 	}
 	bad := strings.Replace(body, `"size":1`, `"size":-1`, 1)
 	wantCode(t, request(h, http.MethodPost, nodewire.PathArtifactURL, bad), http.StatusBadRequest, nodewire.CodeInvalid)
+
+	// The node's direct PUT sends the length and the checksum the presigned URL signs, without the node token.
+	var got *http.Request
+	d.hosts.set("s3.test", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { got = r }))
+	ref, err := n1.PutArtifact(d.ctx, as[0].Lease.Ref(), "margin.txt", strings.NewReader("margin 18%"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got == nil || got.URL.Query().Get("size") != "10" || got.ContentLength != 10 ||
+		got.Header.Get(artifacts.ChecksumHeader) != artifacts.ChecksumSHA256(ref.SHA256) ||
+		got.Header.Get("Authorization") != "" {
+		t.Fatalf("direct PUT = %+v", got)
+	}
 }
 
 // The tests write into one directory per process, removed when the tests end: a temporary directory per test costs

@@ -262,16 +262,19 @@ func (s *Store) PresignGet(pipeline, sha string, ttl time.Duration) (string, err
 	if err != nil {
 		return "", err
 	}
-	return s.sign.presign(http.MethodGet, s.objectURL(key), ttl, s.cfg.Now()), nil
+	return s.sign.presign(http.MethodGet, s.objectURL(key), nil, ttl, s.cfg.Now()), nil
 }
 
-// PresignPut implements artifacts.Presigner.
-func (s *Store) PresignPut(pipeline, sha string, ttl time.Duration) (string, error) {
+// PresignPut implements artifacts.Presigner: the URL signs the Content-Length and the x-amz-checksum-sha256 of the
+// content, so the server refuses another length, and a body whose hash is not sha.
+func (s *Store) PresignPut(pipeline, sha string, size int64, ttl time.Duration) (string, error) {
 	key, err := s.key(pipeline, sha)
 	if err != nil {
 		return "", err
 	}
-	return s.sign.presign(http.MethodPut, s.objectURL(key), ttl, s.cfg.Now()), nil
+	header := map[string]string{"content-length": strconv.FormatInt(size, 10),
+		strings.ToLower(artifacts.ChecksumHeader): artifacts.ChecksumSHA256(sha)}
+	return s.sign.presign(http.MethodPut, s.objectURL(key), header, ttl, s.cfg.Now()), nil
 }
 
 // object reads an object from its offset with ranged GETs.
