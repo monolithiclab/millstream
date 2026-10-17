@@ -309,7 +309,7 @@ func (w *wtx) erase(it itemRef) error {
 }
 
 // failureKinds are the events that quote an attempt's error message.
-var failureKinds = []any{store.EventDeliveryRetry, store.EventDeliveryDead}
+var failureKinds = []any{store.EventDeliveryRetry, store.EventDeliveryDead, store.EventDeliveryFallback}
 
 func (w *wtx) eraseDelivery(pipelineName, deliveryID, runID string) error {
 	arts, err := queryAll(w, scanAttemptArtifact, `SELECT pipeline, delivery_id, attempt, name, sha256
@@ -347,7 +347,7 @@ func (w *wtx) scrubEvents(pipelineName, deliveryID, runID string) error {
 			return ev, err
 		}
 		return ev, json.Unmarshal([]byte(body), &ev.data)
-	}, `SELECT seq, data FROM events WHERE pipeline = ? AND run_id = ? AND kind IN (?, ?) ORDER BY seq`,
+	}, `SELECT seq, data FROM events WHERE pipeline = ? AND run_id = ? AND kind IN (?, ?, ?) ORDER BY seq`,
 		append([]any{pipelineName, runID}, failureKinds...)...)
 	if err != nil {
 		return fmt.Errorf("read failure events: %w", err)

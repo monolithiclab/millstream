@@ -1,6 +1,7 @@
 package ids
 
 import (
+	"strconv"
 	"testing"
 	"time"
 )
@@ -65,5 +66,23 @@ func TestUpperSnake(t *testing.T) {
 				t.Errorf("UpperSnake(%q) = %q, want %q", tt.in, got, tt.want)
 			}
 		})
+	}
+}
+
+// Audit ids are deterministic per delivery and recognisable; Sampled takes about rate of the ids, deterministically.
+func TestAuditAndSampled(t *testing.T) {
+	t.Parallel()
+	id := Audit("dl_1")
+	if id != Audit("dl_1") || id == Audit("dl_2") || !IsAudit(id) || IsAudit("dl_1") {
+		t.Fatalf("Audit = %q", id)
+	}
+	n := 0
+	for i := range 1000 {
+		if Sampled(Audit(strconv.Itoa(i)), 0.25) {
+			n++
+		}
+	}
+	if n < 200 || n > 300 || Sampled(id, 0) || !Sampled(id, 1) {
+		t.Fatalf("Sampled took %d of 1000 at 0.25", n)
 	}
 }

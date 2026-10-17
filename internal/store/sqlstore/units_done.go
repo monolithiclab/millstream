@@ -85,10 +85,14 @@ func (w *wtx) emit(d *deliveryRow, run *runRow, outs []store.Output, outputs []p
 			return w.fail(d, run, rev, step, failure{class: store.ClassRoute, message: err.Error(), attemptEnd: end})
 		}
 	}
+	by := producedBy(step, d)
 	for i, o := range outputs {
-		if err := w.publishOutput(rev, run, step, d, outs[i], i, o, routes[i]); err != nil {
+		if err := w.publishOutput(rev, run, step, d, outs[i], i, o, routes[i], by); err != nil {
 			return "", err
 		}
+	}
+	if err := w.sampleAudit(d, step, outs, outputs); err != nil {
+		return "", err
 	}
 	if _, err := w.exec(`UPDATE deliveries SET state = ?, lease_owner = '', lease_expires_at = NULL
 		WHERE pipeline = ? AND id = ?`, store.DeliveryDone, d.pipeline, d.id); err != nil {
@@ -102,6 +106,9 @@ func (w *wtx) emit(d *deliveryRow, run *runRow, outs []store.Output, outputs []p
 		return "", err
 	}
 	data["outputs"] = len(outputs)
+	if by != "" {
+		data["producedBy"] = by
+	}
 	if err := w.event(d.pipeline, d.runID, store.EventDeliveryDone, data); err != nil {
 		return "", err
 	}
@@ -160,7 +167,7 @@ func keyRule(outputs []store.Output) string {
 // publishOutput publishes output index of delivery d, whose payload is o, where its routing sends it, or as an
 // unrouted dead letter that keeps its artifacts for a replay.
 func (w *wtx) publishOutput(rev *revision, run *runRow, step pipeline.Step, d *deliveryRow, out store.Output,
-	index int, o payload, r routing,
+	index int, o payload, r routing, producedBy string,
 ) error {
 	key := out.Key
 	if r.unrouted {
@@ -174,7 +181,7 @@ func (w *wtx) publishOutput(rev *revision, run *runRow, step pipeline.Step, d *d
 	for _, stream := range r.streams {
 		err := w.publish(rev, run, newItem{
 			id: ids.Item(step.Name, stream, d.itemID, d.generation, key, index), stream: stream, step: step.Name,
-			key: key, parents: []string{d.itemID}, payload: o, artifacts: out.Artifacts,
+			key: key, parents: []string{d.itemID}, payload: o, artifacts: out.Artifacts, producedBy: producedBy,
 		})
 		if err != nil {
 			return err

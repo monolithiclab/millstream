@@ -79,9 +79,18 @@ type Store interface {
 	// Done is the Done unit. It returns the state the delivery ended in: done, dead (key rule or a route that
 	// fails to evaluate) or cancelled (its run was cancelled).
 	Done(ctx context.Context, d DoneRequest) (DeliveryState, error)
-	// Fail is the Fail unit. It returns the state the delivery ended in: pending (retry scheduled), dead or
+	// Fail is the Fail unit, or the Abstain unit for a failure of class ClassAbstain. It returns the state the delivery ended in: pending (retry scheduled), dead or
 	// cancelled.
 	Fail(ctx context.Context, f FailRequest) (DeliveryState, error)
+	// Abstain is the Abstain unit (spec section 5.11): the leased delivery's action abstained (f.Message is its
+	// reason; f.Class and f.Retryable are not read). It goes to its step's fallback action, pending at once with its
+	// retry budget restarted, or, when the step has no fallback for abstain or the fallback itself abstained, it
+	// fails as a non-retryable error of class ClassAbstain. It returns the state the delivery ended in.
+	Abstain(ctx context.Context, f FailRequest) (DeliveryState, error)
+	// EndAudit ends a leased fallback audit (spec section 11.5): done with the fallback's outputs and their
+	// agreement with the primary's, or failed, never retried; its reservation settles and its cost is charged to
+	// the pipeline's day. An audit of an item erased meanwhile is cancelled, its outputs dropped.
+	EndAudit(ctx context.Context, req AuditEnd) error
 	// Filter is the Filter unit: a builtin decided not to pass the leased delivery on (spec section 4.7). It
 	// returns filtered, or cancelled for a delivery of a cancelled run.
 	Filter(ctx context.Context, f FilterRequest) (DeliveryState, error)
@@ -206,6 +215,8 @@ type Store interface {
 	// MetricTotals returns every series' running totals over every minute ever rolled up, retained or not, by
 	// pipeline, name and labels.
 	MetricTotals(ctx context.Context) ([]MetricTotal, error)
+	// Audits returns the fallback audits f selects.
+	Audits(ctx context.Context, f AuditFilter) ([]Audit, error)
 	// Insights returns the insights f selects.
 	Insights(ctx context.Context, f InsightFilter) ([]Insight, error)
 	// Reviews returns the reviews f selects, with their items.

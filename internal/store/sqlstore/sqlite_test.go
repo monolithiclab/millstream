@@ -32,11 +32,17 @@ func TestMain(m *testing.M) {
 	}
 	sqlitetest.Warm()
 	warmLaterUnits()
-	// A second warmed connection, for the tests that change the schema (schemaChanging): Warm runs while the first
-	// is held, so it warms a connection of its own, and both go back to the pool.
-	if held, err := sqlite.Open(sqlite.Memory, sqlite.Options{}); err == nil {
-		sqlitetest.Warm()
-		_ = held.Close()
+	// A warmed connection more for each test that changes the schema (schemaChanging): Warm runs while the others
+	// are held, so it warms a connection of its own, and all go back to the pool.
+	var held []*sqlite.Store
+	for range schemaChanging {
+		if s, err := sqlite.Open(sqlite.Memory, sqlite.Options{}); err == nil {
+			held = append(held, s)
+			sqlitetest.Warm()
+		}
+	}
+	for _, s := range held {
+		_ = s.Close()
 	}
 	os.Exit(m.Run())
 }
@@ -113,9 +119,9 @@ func init() {
 	}
 }
 
-// schemaChanging names the tests whose stores change the schema (TestUnitsSurfaceStoreErrors renames a table), so
-// never go back to the Memory pool.
-var schemaChanging = map[string]bool{"TestUnitsSurfaceStoreErrors": true}
+// schemaChanging names the tests whose stores change the schema (they rename a table), so never go back to the
+// Memory pool.
+var schemaChanging = map[string]bool{"TestUnitsSurfaceStoreErrors": true, "TestAuditsSurfaceStoreErrors": true}
 
 // memoryStore is the conformance suite's opener: a Memory store, which reuses a closed one's connection and its prepared
 // statements, where a clone would prepare them all again. For a schemaChanging test it first holds, until the test

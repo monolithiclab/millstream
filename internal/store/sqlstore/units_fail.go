@@ -14,6 +14,9 @@ import (
 // Fail is the Fail unit (spec section 5.11): fencing check, then a retry after backoff while attempts remain for
 // a retryable error, or dead with its dead letter.
 func (s *Store) Fail(ctx context.Context, f store.FailRequest) (store.DeliveryState, error) {
+	if f.Class == store.ClassAbstain {
+		return s.Abstain(ctx, f) // the action abstained: the Abstain unit (spec section 5.11)
+	}
 	if err := validAttemptArtifacts(f.Artifacts); err != nil {
 		return "", fmt.Errorf("fail: %w", err)
 	}
@@ -63,11 +66,15 @@ type failure struct {
 }
 
 // fail ends a failed attempt of a leased delivery: pending after backoff when the error is retryable and attempts
-// remain, dead with a dead letter otherwise.
+// remain; handed to the step's fallback action when the error is not retryable and fallback.when lists error (spec
+// section 11.5); dead with a dead letter otherwise.
 func (w *wtx) fail(d *deliveryRow, run *runRow, rev *revision, step pipeline.Step, f failure) (store.DeliveryState,
 	error,
 ) {
 	msg := truncate(f.message, store.MaxErrorMessage)
+	if !f.retryable && f.class != store.ClassAbstain && w.fallsBack(d, step, store.FallbackOnError) {
+		return w.handOff(d, store.FallbackOnError, f.class, msg, f.attemptEnd)
+	}
 	if err := w.addCost(d, f.cost); err != nil {
 		return "", err
 	}

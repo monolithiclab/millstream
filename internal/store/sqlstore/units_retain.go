@@ -120,9 +120,11 @@ func (w *wtx) tombstone(pipelineName, id, artifacts string, why store.Tombstone)
 	if why == store.TombstoneErased {
 		key = "''"
 	}
-	_, err := w.exec(`UPDATE items SET payload = 'null', payload_hash = '', artifacts = '[]', key = `+key+`,
-		tombstone = ? WHERE pipeline = ? AND id = ?`, why, pipelineName, id)
-	return err
+	if _, err := w.exec(`UPDATE items SET payload = 'null', payload_hash = '', artifacts = '[]', key = `+key+`,
+		tombstone = ? WHERE pipeline = ? AND id = ?`, why, pipelineName, id); err != nil {
+		return err
+	}
+	return w.dropAudits(pipelineName, id, why)
 }
 
 // unref drops one reference to an artifact: at zero, the artifact sweep deletes its file, then its entry.

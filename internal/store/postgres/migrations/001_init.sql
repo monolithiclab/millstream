@@ -115,6 +115,8 @@ CREATE TABLE items (
     -- why the item no longer holds its payload (spec section 9.3): '' while it does, expired (retention) or
     -- erased (purge); payload is then null, artifacts [] and payload_hash ''
     tombstone    text NOT NULL DEFAULT '',
+    -- for an output of a step with a fallback (spec section 11.5): primary or fallback; '' for any other item
+    produced_by  text NOT NULL DEFAULT '',
     PRIMARY KEY (pipeline, id),
     FOREIGN KEY (pipeline, run_id) REFERENCES runs (pipeline, id)
 );
@@ -167,6 +169,8 @@ CREATE TABLE deliveries (
     finished_at      timestamptz,
     wait_ms          bigint NOT NULL DEFAULT 0,
     work_ms          bigint NOT NULL DEFAULT 0,
+    -- the step's fallback action runs it (spec section 11.5): its primary abstained or failed
+    fallback         boolean NOT NULL DEFAULT FALSE,
     PRIMARY KEY (pipeline, id),
     UNIQUE (pipeline, step, item_id, generation),
     FOREIGN KEY (pipeline, run_id) REFERENCES runs (pipeline, id),
@@ -434,3 +438,31 @@ CREATE TABLE purge_items (
     PRIMARY KEY (purge_id, pipeline, item_id)
 );
 CREATE INDEX purge_items_pending ON purge_items (purge_id, erased);
+
+-- Fallback audits (spec section 11.5): the step's fallback run on a sample of the deliveries its primary covered,
+-- leased like a delivery but never part of a run. primary_output and fallback_output are JSON arrays of
+-- {"key", "payload"}; agreement is 1 or 0 once done, NULL before.
+CREATE TABLE audits (
+    rowid            bigint GENERATED ALWAYS AS IDENTITY,
+    pipeline         text NOT NULL,
+    id               text NOT NULL,
+    delivery_id      text NOT NULL,
+    run_id           text NOT NULL,
+    step             text NOT NULL,
+    item_id          text NOT NULL,
+    state            text NOT NULL, -- pending | leased | done | failed | cancelled
+    lease_owner      text NOT NULL DEFAULT '',
+    fencing_token    bigint NOT NULL DEFAULT 0,
+    lease_expires_at timestamptz,
+    reserved_usd     double precision NOT NULL DEFAULT 0,
+    cost_usd         double precision NOT NULL DEFAULT 0,
+    primary_output   text NOT NULL,
+    fallback_output  text NOT NULL DEFAULT 'null',
+    agreement        double precision,
+    error            text NOT NULL DEFAULT '',
+    created_at       timestamptz NOT NULL,
+    finished_at      timestamptz,
+    PRIMARY KEY (pipeline, id)
+);
+CREATE INDEX audits_state ON audits (state, lease_expires_at);
+CREATE INDEX audits_item ON audits (pipeline, item_id);

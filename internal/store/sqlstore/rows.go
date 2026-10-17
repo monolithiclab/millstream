@@ -24,6 +24,7 @@ type deliveryRow struct {
 	reserved                          float64 // the budget reservation of a leased agent delivery
 	createdAt, leasedAt               time.Time
 	erased                            bool // a purge fenced its item (spec section 9.3)
+	fallback                          bool // the step's fallback action runs it (spec section 11.5)
 }
 
 func (w *wtx) delivery(pipelineName, id string) (*deliveryRow, error) {
@@ -31,11 +32,11 @@ func (w *wtx) delivery(pipelineName, id string) (*deliveryRow, error) {
 	var created, leased TimeCol
 	var tombstone string
 	err := w.queryRow(`SELECT d.run_id, d.step, d.item_id, d.generation, d.state, d.attempt, d.attempt_base,
-		d.lease_owner, d.fencing_token, d.reserved_usd, d.created_at, d.leased_at, i.tombstone
+		d.lease_owner, d.fencing_token, d.reserved_usd, d.created_at, d.leased_at, i.tombstone, d.fallback
 		FROM deliveries d JOIN items i ON i.pipeline = d.pipeline AND i.id = d.item_id
 		WHERE d.pipeline = ? AND d.id = ?`, pipelineName, id).
 		Scan(&d.runID, &d.step, &d.itemID, &d.generation, &d.state, &d.attempt, &d.attemptBase, &d.owner, &d.token,
-			&d.reserved, &created, &leased, &tombstone)
+			&d.reserved, &created, &leased, &tombstone, &d.fallback)
 	if err != nil {
 		return nil, notFound(err, "delivery "+id)
 	}
@@ -78,6 +79,9 @@ func (w *wtx) endAttempt(d *deliveryRow, terminal bool, a attemptEnd) (map[strin
 		return nil, err
 	}
 	data := map[string]any{"deliveryId": d.id, "itemId": d.itemID, "step": d.step, "attempt": d.attempt}
+	if d.fallback { // the fallback's attempt (spec section 11.5)
+		data["fallback"] = true
+	}
 	if !d.leasedAt.IsZero() { // a parked review's attempt ended when it parked: its decision adds no work
 		data["workMs"] = work
 	}

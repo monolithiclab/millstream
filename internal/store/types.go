@@ -104,6 +104,22 @@ const (
 	ClassMissingStep = "missingStep"
 	// ClassLeaseExpired: the lease expired before its owner reported (spec section 5.3). It consumes the attempt.
 	ClassLeaseExpired = "leaseExpired"
+	// ClassAbstain: the action abstained (spec section 6.3). A Fail of this class is the Abstain unit's: the
+	// delivery goes to the step's fallback action, or, on a step without one, dead-letters as a non-retryable error.
+	ClassAbstain = "abstain"
+)
+
+// What produced an item of a step with a fallback (spec section 11.5), recorded in its envelope: the step's own
+// action, or its fallback after the primary abstained or failed.
+const (
+	ProducedByPrimary  = "primary"
+	ProducedByFallback = "fallback"
+)
+
+// Why a delivery went to its step's fallback action (spec section 11.5), as fallback.when spells it.
+const (
+	FallbackOnAbstain = "abstain"
+	FallbackOnError   = "error"
 )
 
 // Reasons a builtin filters a delivery, recorded on it (Delivery.FilterReason) and in its deliveryFiltered event.
@@ -159,6 +175,11 @@ const (
 	EventItemsExpired           = "itemsExpired"
 	EventPurgeStarted           = "purgeStarted"
 	EventPurgeCompleted         = "purgeCompleted"
+	// EventDeliveryFallback: an attempt abstained or failed non-retryably, and the delivery went to its step's
+	// fallback action with its retry budget restarted (spec section 11.5).
+	EventDeliveryFallback = "deliveryFallback"
+	// EventAuditEnded: a fallback audit ended, with its agreement or its error, and its cost (spec section 11.5).
+	EventAuditEnded = "auditEnded"
 )
 
 // Budget scopes (spec section 7.5): budget.runUsd bounds the spend of one run, budget.dayUsd the spend of the
@@ -276,10 +297,12 @@ type LeaseRequest struct {
 }
 
 // AgentStep is an agent step of one revision of a pipeline: what a budget reservation is keyed by, since another
-// revision may set another maxCostUsd.
+// revision may set another maxCostUsd. Fallback names the step's fallback action (spec section 11.5), which runs the
+// deliveries handed to it and the step's audits.
 type AgentStep struct {
 	StepRef
 	Revision RevisionID
+	Fallback bool
 }
 
 // Lease is a leased delivery with what a node needs to run it.
@@ -294,6 +317,12 @@ type Lease struct {
 	FencingToken int64
 	ExpiresAt    time.Time
 	Item         Item
+	// Fallback says the step's fallback action runs the delivery (spec section 11.5): its primary abstained or
+	// failed, or the lease is an audit.
+	Fallback bool
+	// Audit says the lease is a fallback audit, not a delivery: DeliveryID is the audit's id, RunID the run of the
+	// delivery it audits, and its end goes to EndAudit (spec section 11.5).
+	Audit bool
 }
 
 // Ref returns the reference that renews or completes the lease.
@@ -520,6 +549,9 @@ type Item struct {
 	// ParentPipeline is the pipeline holding the item's parents when it is another one: a copy published on an
 	// imported stream (spec section 4.12). Empty for every other item.
 	ParentPipeline string
+	// ProducedBy is ProducedByPrimary or ProducedByFallback for an output of a step with a fallback (spec section
+	// 11.5), empty for every other item.
+	ProducedBy string
 	// Tombstone says why the item no longer holds its payload: empty while it does. A tombstoned item keeps its
 	// envelope and lineage; its payload reads as null and it carries no artifacts (spec section 9.3).
 	Tombstone Tombstone
@@ -577,6 +609,8 @@ type Delivery struct {
 	CostUSD      float64
 	// ReservedUSD is the budget reservation of a leased agent delivery (spec section 5.9), zero otherwise.
 	ReservedUSD float64
+	// Fallback says the delivery went to its step's fallback action (spec section 11.5).
+	Fallback bool
 	// CreatedAt is when the delivery was created (or reset by a dead-letter replay), LeasedAt when its latest
 	// attempt was leased (zero before the first), and FinishedAt when it became terminal (zero until then).
 	CreatedAt  time.Time
@@ -811,6 +845,71 @@ type DeadLetterFilter struct {
 	Pipeline string
 	RunID    string
 	State    DeadLetterState
+}
+
+// AuditState is a fallback audit's state (spec section 11.5).
+type AuditState string
+
+// Audit states.
+const (
+	// AuditPending: sampled when the delivery it audits was done, waiting for a lease.
+	AuditPending AuditState = "pending"
+	// AuditLeased: the fallback action runs it.
+	AuditLeased AuditState = "leased"
+	// AuditDone: the fallback answered; its outputs and agreement are recorded.
+	AuditDone AuditState = "done"
+	// AuditFailed: the fallback failed, abstained, lost its lease, or could not be dispatched. Never retried.
+	AuditFailed AuditState = "failed"
+	// AuditCancelled: its item was erased or expired, or a budget left no room for its reservation.
+	AuditCancelled AuditState = "cancelled"
+)
+
+// Audit is a fallback audit (spec section 11.5): the step's fallback action run on an item its primary covered, a
+// record beside the run, never part of it. Primary and Fallback are the outputs of each, a JSON array of
+// {"key", "payload"} objects (Fallback is null until the audit is done); Agreement is 1 when they are the same
+// outputs (by key, then canonical payload) and 0 otherwise, set once done.
+type Audit struct {
+	ID         string
+	Pipeline   string
+	DeliveryID string
+	RunID      string
+	Step       string
+	ItemID     string
+	State      AuditState
+	// LeaseOwner and FencingToken are those of its latest lease.
+	LeaseOwner   string
+	FencingToken int64
+	Primary      json.RawMessage
+	Fallback     json.RawMessage
+	Agreement    *float64
+	CostUSD      float64
+	// Error is the class and message of a failed or cancelled audit.
+	Error      string
+	CreatedAt  time.Time
+	FinishedAt time.Time
+}
+
+// AuditFilter selects audits; empty fields match everything. Audits come in creation order.
+type AuditFilter struct {
+	Pipeline   string
+	ID         string
+	ItemID     string
+	DeliveryID string
+	RunID      string
+	State      AuditState
+}
+
+// AuditEnd ends a leased audit: the fallback's outputs, or why it failed (Class set), with its cost. Owner, when set,
+// must be the lease's owner, as DoneRequest's.
+type AuditEnd struct {
+	LeaseRef
+	Owner      string
+	Outputs    []Output
+	Class      string
+	Message    string
+	CostUSD    float64
+	Unreported bool
+	Metrics    []Metric
 }
 
 // EvalResult is the score of one eval case of an action (spec section 7.4), which the M4 Prometheus endpoint

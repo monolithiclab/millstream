@@ -249,9 +249,10 @@ func (w *wtx) replayOne(rev *revision, run *runRow, dl deadLetterRow) (bool, err
 		return false, err
 	}
 	if dl.kind == store.DeadLetterDead {
-		// The replayed delivery starts afresh: its timings count from the replay, and its retry budget from its next
-		// attempt, numbered on from the dead one (attempt numbers are never reused).
-		n, err := w.affected(`UPDATE deliveries SET state = ?, attempt_base = attempt, attempt = attempt + 1,
+		// The replayed delivery starts afresh: its timings count from the replay, its retry budget from its next
+		// attempt, numbered on from the dead one (attempt numbers are never reused), and with its step's own action
+		// when it died in the fallback (spec section 11.5).
+		n, err := w.affected(`UPDATE deliveries SET state = ?, attempt_base = attempt, attempt = attempt + 1, fallback = FALSE,
 			next_attempt_at = ?, created_at = ?,
 			leased_at = NULL, finished_at = NULL, wait_ms = 0, work_ms = 0
 			WHERE pipeline = ? AND id = ? AND state = ?`,
@@ -293,7 +294,7 @@ func (w *wtx) replayOne(rev *revision, run *runRow, dl deadLetterRow) (bool, err
 		return false, nil
 	}
 	out := store.Output{Key: letter.Item.Key, Artifacts: letter.Item.Artifacts}
-	return true, w.publishOutput(rev, run, step, d, out, letter.Item.Index, o, r)
+	return true, w.publishOutput(rev, run, step, d, out, letter.Item.Index, o, r, producedBy(step, d))
 }
 
 // DiscardDeadLetters is the Dead-letter discard unit (spec section 5.11): the open dead letters named become

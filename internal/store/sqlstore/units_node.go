@@ -90,7 +90,11 @@ func (s *Store) SetNodeState(ctx context.Context, id string, state store.NodeSta
 			reason = fmt.Sprintf("node %s was revoked while it held the lease", id)
 		}
 		var err error
-		ended, err = w.expireWhere(`lease_owner = ?`, []any{id}, reason)
+		if ended, err = w.expireWhere(`lease_owner = ?`, []any{id}, reason); err != nil {
+			return err
+		}
+		audits, err := w.expireAudits(`lease_owner = ?`, []any{id}, reason)
+		ended = append(ended, audits...)
 		return err
 	})
 	if err != nil {

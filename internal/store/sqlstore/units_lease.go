@@ -11,6 +11,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/monolithiclab/millstream/internal/ids"
 	"github.com/monolithiclab/millstream/internal/store"
 )
 
@@ -63,6 +64,17 @@ func (p *leasePass) deny(ref store.StepRef, l store.Lease, scope string) {
 	}
 }
 
+// take counts one lease of ref against what the pass has left: its Max, the step's slots and the pipeline's.
+func (p *leasePass) take(ref store.StepRef) {
+	p.req.Max--
+	if _, ok := p.req.Slots[ref]; ok {
+		p.req.Slots[ref]--
+	}
+	if _, ok := p.req.PipelineSlots[ref.Pipeline]; ok {
+		p.req.PipelineSlots[ref.Pipeline]--
+	}
+}
+
 // heldBack reports whether a budget already held back a delivery like l, of ref, during this lease.
 func (p *leasePass) heldBack(ref store.StepRef, l store.Lease) bool {
 	return slices.Contains(p.deniedRuns[ref], l.RunID) || slices.Contains(p.deniedRevs[ref], l.Revision)
@@ -95,7 +107,7 @@ func (w *wtx) lease(req store.LeaseRequest) ([]store.Lease, error) {
 		for _, c := range w.s.roundRobin(queues, p.req.Max) {
 			l := c.lease
 			ref := store.StepRef{Pipeline: l.Pipeline, Step: l.Step}
-			reserve, agent := req.Reserve[store.AgentStep{StepRef: ref, Revision: l.Revision}]
+			reserve, agent := req.Reserve[store.AgentStep{StepRef: ref, Revision: l.Revision, Fallback: l.Fallback}]
 			if agent {
 				if p.heldBack(ref, l) {
 					skipped = true
@@ -131,17 +143,18 @@ func (w *wtx) lease(req store.LeaseRequest) ([]store.Lease, error) {
 				return nil, err
 			}
 			leases = append(leases, l)
-			p.req.Max--
-			if _, ok := p.req.Slots[ref]; ok {
-				p.req.Slots[ref]--
-			}
-			if _, ok := p.req.PipelineSlots[l.Pipeline]; ok {
-				p.req.PipelineSlots[l.Pipeline]--
-			}
+			p.take(ref)
 		}
 		if !skipped {
 			break
 		}
+	}
+	if p.req.Max > 0 {
+		audits, err := w.leaseAudits(p, expires)
+		if err != nil {
+			return nil, err
+		}
+		leases = append(leases, audits...)
 	}
 	return leases, nil
 }
@@ -209,7 +222,7 @@ func excluded(exclude []store.StepRef, ref store.StepRef) bool {
 // dueDeliveries returns the step's n oldest due deliveries, but those of the runs and revisions given.
 func (w *wtx) dueDeliveries(ref store.StepRef, n int, runs []string, revs []store.RevisionID) ([]candidate, error) {
 	rows, err := w.query(`SELECT d.rowid, d.next_attempt_at, d.id, d.run_id, r.revision, d.generation, d.attempt,
-		i.id, i.run_id, i.stream, i.step, i.key, i.parents, i.generation, i.ts, i.payload, i.artifacts
+		d.fallback, i.id, i.run_id, i.stream, i.step, i.key, i.parents, i.generation, i.ts, i.payload, i.artifacts
 		FROM deliveries d
 		JOIN runs r ON r.pipeline = d.pipeline AND r.id = d.run_id
 		JOIN items i ON i.pipeline = d.pipeline AND i.id = d.item_id
@@ -227,7 +240,7 @@ func (w *wtx) dueDeliveries(ref store.StepRef, n int, runs []string, revs []stor
 		var parents, body, artifacts string
 		var due, ts TimeCol
 		if err := rows.Scan(&c.rowid, &due, &l.DeliveryID, &l.RunID, &l.Revision, &l.Generation, &l.Attempt,
-			&l.Item.ID, &l.Item.RunID, &l.Item.Stream, &l.Item.Step, &l.Item.Key, &parents, &l.Item.Generation,
+			&l.Fallback, &l.Item.ID, &l.Item.RunID, &l.Item.Stream, &l.Item.Step, &l.Item.Key, &parents, &l.Item.Generation,
 			&ts, &body, &artifacts); err != nil {
 			_ = rows.Close()
 			return nil, fmt.Errorf("scan due delivery: %w", err)
@@ -308,9 +321,13 @@ func (s *Store) Renew(ctx context.Context, owner string, refs []store.LeaseRef, 
 			}
 		}
 		for _, ref := range refs {
-			n, err := w.affected(`UPDATE deliveries SET lease_expires_at = ? WHERE pipeline = ? AND id = ?
+			table, state := "deliveries", string(store.DeliveryLeased)
+			if ids.IsAudit(ref.DeliveryID) {
+				table, state = "audits", string(store.AuditLeased)
+			}
+			n, err := w.affected(`UPDATE `+table+` SET lease_expires_at = ? WHERE pipeline = ? AND id = ?
 				AND state = ? AND lease_owner = ? AND fencing_token = ?`,
-				expires, ref.Pipeline, ref.DeliveryID, store.DeliveryLeased, owner, ref.FencingToken)
+				expires, ref.Pipeline, ref.DeliveryID, state, owner, ref.FencingToken)
 			if err != nil {
 				return err
 			}
@@ -334,7 +351,11 @@ func (s *Store) ExpireLeases(ctx context.Context) ([]store.LeaseRef, error) {
 	var expired []store.LeaseRef
 	err := s.submit(ctx, unitExpireLeases, func(w *wtx) error {
 		var err error
-		expired, err = w.expireWhere(`lease_expires_at < ?`, []any{w.ts()}, "")
+		if expired, err = w.expireWhere(`lease_expires_at < ?`, []any{w.ts()}, ""); err != nil {
+			return err
+		}
+		audits, err := w.expireAudits(`lease_expires_at < ?`, []any{w.ts()}, "")
+		expired = append(expired, audits...)
 		return err
 	})
 	if err != nil {

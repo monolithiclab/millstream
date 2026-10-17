@@ -328,3 +328,23 @@ func TestPurgeAcrossImports(t *testing.T) {
 func TestPurgeResumesAfterCrash(t *testing.T) {
 	storetest.TestPurgeResumesAfterCrash(t, memoryStore)
 }
+
+func TestAbstainAndFallback(t *testing.T) {
+	storetest.TestAbstainAndFallback(t, memoryStore)
+}
+
+func TestAudits(t *testing.T) {
+	storetest.TestAudits(t, memoryStore)
+}
+
+func TestAuditBudget(t *testing.T) {
+	storetest.TestAuditBudget(t, memoryStore)
+}
+
+func TestFallbackEdges(t *testing.T) {
+	storetest.TestFallbackEdges(t, memoryStore)
+}
+
+func TestAuditsSurfaceStoreErrors(t *testing.T) {
+	storetest.TestAuditsSurfaceStoreErrors(t, memoryStore)
+}

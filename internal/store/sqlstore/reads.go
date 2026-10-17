@@ -193,7 +193,7 @@ func (s *Store) Items(ctx context.Context, f store.ItemFilter) ([]store.Item, er
 		w.args = append(w.args, f.After)
 	}
 	q := `SELECT rowid, pipeline, id, run_id, stream, step, key, parents, generation, ts, payload, artifacts,
-		parent_pipeline, tombstone FROM items` +
+		parent_pipeline, tombstone, produced_by FROM items` +
 		w.String() + ` ORDER BY rowid`
 	if f.Limit > 0 {
 		q += limitParam
@@ -204,7 +204,7 @@ func (s *Store) Items(ctx context.Context, f store.ItemFilter) ([]store.Item, er
 		var parents, body, artifacts string
 		var ts TimeCol
 		if err := rows.Scan(&it.Seq, &it.Pipeline, &it.ID, &it.RunID, &it.Stream, &it.Step, &it.Key, &parents,
-			&it.Generation, &ts, &body, &artifacts, &it.ParentPipeline, &it.Tombstone); err != nil {
+			&it.Generation, &ts, &body, &artifacts, &it.ParentPipeline, &it.Tombstone, &it.ProducedBy); err != nil {
 			return it, fmt.Errorf("scan item: %w", err)
 		}
 		it.Payload = json.RawMessage(body)
@@ -228,14 +228,15 @@ func (s *Store) Deliveries(ctx context.Context, f store.DeliveryFilter) ([]store
 	w.since("created_at", f.Since)
 	ds, err := scan(ctx, s.read, `SELECT pipeline, id, run_id, step, item_id, generation, state, attempt, lease_owner,
 		fencing_token, lease_expires_at, next_attempt_at, error_class, error_message, filter_reason, cost_usd,
-		reserved_usd, created_at, leased_at, finished_at, wait_ms, work_ms FROM deliveries`+w.String()+` ORDER BY rowid`,
+		reserved_usd, created_at, leased_at, finished_at, wait_ms, work_ms, fallback FROM deliveries`+w.String()+`
+		ORDER BY rowid`,
 		w.args, func(rows *sql.Rows) (store.Delivery, error) {
 			var d store.Delivery
 			var expires, next, created, leased, finished TimeCol
 			var wait, work int64
 			if err := rows.Scan(&d.Pipeline, &d.ID, &d.RunID, &d.Step, &d.ItemID, &d.Generation, &d.State, &d.Attempt,
 				&d.LeaseOwner, &d.FencingToken, &expires, &next, &d.ErrorClass, &d.ErrorMessage, &d.FilterReason,
-				&d.CostUSD, &d.ReservedUSD, &created, &leased, &finished, &wait, &work); err != nil {
+				&d.CostUSD, &d.ReservedUSD, &created, &leased, &finished, &wait, &work, &d.Fallback); err != nil {
 				return d, fmt.Errorf("scan delivery: %w", err)
 			}
 			d.Wait, d.Work = time.Duration(wait)*time.Millisecond, time.Duration(work)*time.Millisecond

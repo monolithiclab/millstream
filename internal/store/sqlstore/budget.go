@@ -22,7 +22,8 @@ func within(spent, reserve, limit float64) bool {
 // the run's revision, and its pipeline's for the day within budget.dayUsd of the active revision (spec section
 // 7.5). The first delivery a budget stops at its current limit pauses the pipeline's agent steps, named by agents,
 // with a budgetReached event; paused records the pipelines paused during this Lease, whose agent deliveries are
-// held back for the rest of it (as by a day budget: the whole step).
+// held back for the rest of it (as by a day budget: the whole step). An audit (spec section 11.5) is checked against
+// the day budget only, and its denial pauses nothing.
 func (w *wtx) budgetAllows(l store.Lease, reserve float64, agents map[store.AgentStep]float64,
 	paused map[string]bool,
 ) (string, error) {
@@ -33,7 +34,7 @@ func (w *wtx) budgetAllows(l store.Lease, reserve float64, agents map[store.Agen
 	if err != nil {
 		return "", err
 	}
-	if limit := rev.p.Budget.RunUSD; limit > 0 {
+	if limit := rev.p.Budget.RunUSD; limit > 0 && !l.Audit { // an audit is no part of its run (spec section 11.5)
 		var spent, reserved, reached float64
 		if err := w.queryRow(`SELECT r.cost_usd, COALESCE((SELECT SUM(d.reserved_usd) FROM deliveries d
 			WHERE d.pipeline = r.pipeline AND d.run_id = r.id AND d.state = ?), 0), r.budget_reached_usd
@@ -63,13 +64,15 @@ func (w *wtx) budgetAllows(l store.Lease, reserve float64, agents map[store.Agen
 		var spent, reserved, reached float64
 		if err := w.queryRow(`SELECT
 			COALESCE((SELECT spent_usd FROM budget_days WHERE pipeline = ? AND day = ?), 0),
-			COALESCE((SELECT SUM(reserved_usd) FROM deliveries WHERE pipeline = ? AND state = ?), 0),
+			COALESCE((SELECT SUM(reserved_usd) FROM deliveries WHERE pipeline = ? AND state = ?), 0)
+			+ COALESCE((SELECT SUM(reserved_usd) FROM audits WHERE pipeline = ? AND state = ?), 0),
 			COALESCE((SELECT reached_usd FROM budget_days WHERE pipeline = ? AND day = ?), 0)`,
-			l.Pipeline, w.day(), l.Pipeline, store.DeliveryLeased, l.Pipeline, w.day()).Scan(&spent, &reserved, &reached); err != nil {
+			l.Pipeline, w.day(), l.Pipeline, store.DeliveryLeased, l.Pipeline, store.AuditLeased, l.Pipeline, w.day()).
+			Scan(&spent, &reserved, &reached); err != nil {
 			return "", fmt.Errorf("read day budget: %w", err)
 		}
 		if !within(spent+reserved, reserve, limit) {
-			if reached < limit {
+			if reached < limit && !l.Audit { // an audit held back is cancelled, never pauses the pipeline
 				if _, err := w.exec(`INSERT INTO budget_days (pipeline, day, reached_usd) VALUES (?, ?, ?)
 					ON CONFLICT (pipeline, day) DO UPDATE SET reached_usd = excluded.reached_usd`, l.Pipeline, w.day(), limit); err != nil {
 					return "", err

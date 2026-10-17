@@ -18,6 +18,8 @@ type newItem struct {
 	parents        []string
 	payload        payload
 	artifacts      []store.ArtifactRef
+	// producedBy is primary or fallback for an output of a step with a fallback (spec section 11.5), else empty.
+	producedBy string
 }
 
 // publish inserts an item under the first-commit rule (spec section 5.2) and creates the deliveries of every step
@@ -45,9 +47,9 @@ func (w *wtx) publish(rev *revision, run *runRow, it newItem) error {
 	hash := hashPayload(it.payload.raw)
 	n, err := w.affected(`INSERT INTO items
 		(pipeline, id, run_id, stream, step, key, parents, generation, ts, payload, payload_hash, artifacts,
-		parent_pipeline) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`,
+		parent_pipeline, produced_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`,
 		run.pipeline, it.id, run.id, it.stream, it.step, it.key, string(parentsJSON), run.generation, w.ts(),
-		string(it.payload.raw), hash, string(artifactsJSON), it.parentPipeline)
+		string(it.payload.raw), hash, string(artifactsJSON), it.parentPipeline, it.producedBy)
 	if err != nil {
 		return err
 	}
@@ -266,9 +268,14 @@ func (w *wtx) addCost(d *deliveryRow, cost float64) error {
 		cost, d.pipeline, d.runID); err != nil {
 		return err
 	}
+	return w.chargeDay(d.pipeline, cost)
+}
+
+// chargeDay adds cost to the pipeline's spend for the batch's UTC day (budget_days, spec section 7.5).
+func (w *wtx) chargeDay(pipelineName string, cost float64) error {
 	_, err := w.exec(`INSERT INTO budget_days (pipeline, day, spent_usd) VALUES (?, ?, ?)
 		ON CONFLICT (pipeline, day) DO UPDATE SET spent_usd = budget_days.spent_usd + excluded.spent_usd`,
-		d.pipeline, w.day(), cost)
+		pipelineName, w.day(), cost)
 	return err
 }
 

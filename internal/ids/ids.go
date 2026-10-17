@@ -6,6 +6,7 @@ package ids
 
 import (
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/hex"
 	"strconv"
 	"strings"
@@ -17,6 +18,7 @@ const (
 	itemPrefix     = "it_"
 	deliveryPrefix = "dl_"
 	runPrefix      = "run_"
+	auditPrefix    = "au_"
 )
 
 // hashLen is the number of hex characters kept from the SHA-256 digest.
@@ -141,4 +143,20 @@ func ReplayRun(requestID string) string {
 // on the purge it already started.
 func Purge(requestID string) string {
 	return "purge_" + requestID
+}
+
+// Audit is the id of the fallback audit of a delivery (spec section 11.5): au_ and hash("audit", delivery id). A
+// delivery is audited at most once.
+func Audit(deliveryID string) string {
+	return auditPrefix + digest("audit", deliveryID)
+}
+
+// IsAudit reports whether id is an audit's id: a lease of one names it in place of a delivery's.
+func IsAudit(id string) bool { return strings.HasPrefix(id, auditPrefix) }
+
+// Sampled reports whether id falls in a sample at rate: deterministic per id, and uniform over ids (the first 8
+// bytes of the id's SHA-256 as a fraction of 2^64), so about rate of them do.
+func Sampled(id string, rate float64) bool {
+	sum := sha256.Sum256([]byte(id))
+	return float64(binary.BigEndian.Uint64(sum[:8]))/(1<<64) < rate
 }
