@@ -2,7 +2,8 @@
 // (SQLite's initialisation, the template image's load, the first statements of the common units, which closed
 // Memory stores hand on prepared, and the CEL and schema set-up of parsing a pipeline) belongs to the process, not to
 // whichever test happens to run first: a TestMain calls Warm before the tests, as it builds its shared fixtures.
-// scripts/test-times leaves TestMain out of the budget.
+// scripts/test-times leaves TestMain out of the budget. The packages running the store conformance suite
+// (internal/store/sqlstore/conformance/...) use Main as their TestMain and Memory as their opener.
 package sqlitetest
 
 import (

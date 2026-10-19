@@ -138,3 +138,29 @@ func (e *env) openDeadLetters(pipelineName, runID string) []store.DeadLetter {
 	}
 	return dls
 }
+
+// TestImportFollowsRollback: the streams a pipeline imports, and the variables of the runs they open, are its
+// active revision's, a rollback's included (spec section 4.12): rolled back to a revision that imports, it receives
+// again with that revision's variables; rolled forward to one that does not, it receives nothing.
+func TestImportFollowsRollback(t *testing.T, open Opener) {
+	e := newEnv(t, open, srcPipeline)
+	importing := e.applyVars(dealPipeline, map[string]any{"tag": "first"})
+	dropped := e.applyVars(strings.Replace(dealPipeline, "stream: listings", "stream: nothing", 1),
+		map[string]any{"tag": "second"})
+	if _, err := e.s.Rollback(e.ctx, "deal", 0); err != nil {
+		t.Fatal(err)
+	}
+	e.firePipeline("src", "go", "r1")
+	e.done(e.leaseIn("src", "crawl"), out("a", `{}`))
+	if r := e.runIn("deal", ids.ImportRun("approved", "r1")); r.Revision != importing || r.Vars["tag"] != "first" {
+		t.Fatalf("import run after the rollback = %+v", r)
+	}
+	if _, err := e.s.Rollback(e.ctx, "deal", dropped); err != nil {
+		t.Fatal(err)
+	}
+	e.firePipeline("src", "go", "r2")
+	e.done(e.leaseIn("src", "crawl"), out("b", `{}`))
+	if _, err := e.s.Run(e.ctx, "deal", ids.ImportRun("approved", "r2")); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("import run on a revision that does not import the stream: %v", err)
+	}
+}

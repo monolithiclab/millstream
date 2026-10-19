@@ -4,9 +4,13 @@ package storetest
 
 import (
 	"encoding/json"
+	"errors"
+	"reflect"
 	"testing"
 	"time"
 
+	"github.com/monolithiclab/millstream/internal/failpoint"
+	"github.com/monolithiclab/millstream/internal/metrics"
 	"github.com/monolithiclab/millstream/internal/store"
 )
 
@@ -70,5 +74,64 @@ func TestDeliveryTimings(t *testing.T, open Opener) {
 	pending := e.deliveries("r1")[1]
 	if !pending.FinishedAt.IsZero() || pending.Latency(t0.Add(time.Hour)) != time.Hour-69*time.Second {
 		t.Errorf("pending delivery: finished %v, latency %v", pending.FinishedAt, pending.Latency(t0.Add(time.Hour)))
+	}
+}
+
+// Rollups and pipeline events are filtered by pipeline, name, kind and time.
+func TestMetricAndEventFilters(t *testing.T, open Opener) {
+	e := newEnv(t, open, fixture, otherPipeline)
+	e.fire("r1")
+	e.rollup() // a first minute of the queue depths, which the totals' latest minute must not show
+	e.clock.Advance(time.Hour)
+	e.firePipeline("other", "daily", "r2")
+	e.rollup()
+	rs, err := e.s.MetricRollups(e.ctx, store.MetricFilter{Name: metrics.ItemsOut, Since: t0.Add(time.Minute)})
+	if err != nil || len(rs) != 1 || rs[0].Pipeline != "other" || rs[0].Labels["stream"] != "trigger.daily" {
+		t.Fatalf("rollups since an hour = %+v, %v", rs, err)
+	}
+	// The totals add up every minute of a series and keep its latest one.
+	all, err := e.s.MetricRollups(e.ctx, store.MetricFilter{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	totals, err := e.s.MetricTotals(e.ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := metrics.Totals(all); !reflect.DeepEqual(totals, want) || len(totals) == 0 {
+		t.Fatalf("totals\n%+v\nwant\n%+v", totals, want)
+	}
+	evs, err := e.s.PipelineEvents(e.ctx, store.EventFilter{Pipeline: "listings",
+		Kinds: []string{store.EventRunStarted, store.EventItemPublished}})
+	if err != nil || len(evs) != 2 || evs[0].Kind != store.EventRunStarted {
+		t.Fatalf("listings events = %+v, %v", evs, err)
+	}
+	evs, err = e.s.PipelineEvents(e.ctx, store.EventFilter{Since: t0.Add(time.Hour)})
+	if err != nil || len(evs) == 0 || evs[0].Pipeline != "other" {
+		t.Fatalf("events since an hour = %+v, %v", evs, err)
+	}
+	ds, err := e.s.Deliveries(e.ctx, store.DeliveryFilter{Since: t0.Add(time.Minute)})
+	if err != nil || len(ds) != 1 || ds[0].Pipeline != "other" {
+		t.Fatalf("deliveries since an hour = %+v, %v", ds, err)
+	}
+}
+
+// A crash before the rollup commits leaves the cursor where it was: the next pass rolls the same events up once.
+func TestRollupFailpoint(t *testing.T, open Opener) {
+	e := newEnv(t, open, fixture)
+	e.fire("r1")
+	e.done(e.leaseStep("crawl"), out("a", `{"score":80}`))
+	reset := failpoint.Set("rollup.beforeCommit")
+	_, err := e.s.Rollup(e.ctx)
+	reset()
+	if !errors.As(err, new(failpoint.Crash)) {
+		t.Fatalf("Rollup = %v, want the failpoint crash", err)
+	}
+	if got := e.rollups(metrics.ItemsIn, "crawl"); len(got) != 0 {
+		t.Fatalf("rollups after a crash before commit: %+v", got)
+	}
+	e.rollup()
+	if got := e.rollups(metrics.ItemsIn, "crawl"); len(got) != 1 || got[0].Count != 1 {
+		t.Fatalf("items in after the retried pass: %+v", got)
 	}
 }

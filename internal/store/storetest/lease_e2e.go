@@ -121,3 +121,36 @@ func TestLeaseExpiryConsumesAttempts(t *testing.T, open Opener) {
 		t.Fatalf("dead letters = %+v", dls)
 	}
 }
+
+func TestLeaseSlotsAndExclusions(t *testing.T, open Opener) {
+	e := newEnv(t, open, fixture)
+	for _, id := range []string{"r1", "r2", "r3"} {
+		e.fire(id)
+	}
+	crawl := store.StepRef{Pipeline: "listings", Step: "crawl"}
+	tests := []struct {
+		name string
+		req  store.LeaseRequest
+		want int
+	}{
+		{"slots cap the step", store.LeaseRequest{Slots: map[store.StepRef]int{crawl: 2}}, 2},
+		{"zero slots", store.LeaseRequest{Slots: map[store.StepRef]int{crawl: 0}}, 0},
+		{"other steps uncapped", store.LeaseRequest{Slots: map[store.StepRef]int{{Pipeline: "listings", Step: "x"}: 0}}, 3},
+		{"step excluded", store.LeaseRequest{Exclude: []store.StepRef{crawl}}, 0},
+		{"pipeline excluded", store.LeaseRequest{Exclude: []store.StepRef{{Pipeline: "listings"}}}, 0},
+		{"other pipeline excluded", store.LeaseRequest{Exclude: []store.StepRef{{Pipeline: "other"}}}, 3},
+	}
+	for _, tt := range tests {
+		// Not parallel: each case leases and then expires what it leased.
+		req := tt.req
+		req.Owner, req.Max, req.TTL = "n", 10, time.Minute
+		ls, err := e.s.Lease(e.ctx, req)
+		if err != nil || len(ls) != tt.want {
+			t.Fatalf("%s: leased %d (%v), want %d", tt.name, len(ls), err, tt.want)
+		}
+		e.clock.Advance(2 * time.Minute)
+		if _, err := e.s.ExpireLeases(e.ctx); err != nil {
+			t.Fatal(err)
+		}
+	}
+}

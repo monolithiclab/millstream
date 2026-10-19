@@ -6,8 +6,10 @@ VULNCHECK_PACKAGES = ./cmd/... ./internal/...
 COVERAGE_MIN = 89
 
 # make test runs the default build without -race, to stay within its budget (scripts/test-times): the race detector
-# runs in test-e2e. golangci-lint sees one build: the e2e-tagged one holds every file.
-TEST_FLAGS =
+# runs in test-e2e. Coverage counts every package's statements in every test binary (-coverpkg): the store's
+# conformance suite runs from packages of its own (internal/store/sqlstore/conformance/...), not from the package
+# whose code it covers. golangci-lint sees one build: the e2e-tagged one holds every file.
+TEST_FLAGS = -coverpkg=./...
 GOLANGCI_ARGS = --build-tags e2e
 
 .PHONY: docs
@@ -55,7 +57,7 @@ ifdef PKG
 else
 	@mkdir -p build
 	@docker version >/dev/null 2>&1 || echo "Docker is unavailable: the Postgres tests skip (internal/store/postgres/pgtest)"
-	@go test -race -count=1 -tags e2e -coverprofile=build/cover-e2e.out ./...
+	@go test -race -count=1 -tags e2e -coverpkg=./... -coverprofile=build/cover-e2e.out ./...
 	@if [ -f .covignore ]; then \
 		patterns=$$(grep -vE '^[[:space:]]*(#|$$)' .covignore || true); \
 		if [ -n "$$patterns" ]; then \

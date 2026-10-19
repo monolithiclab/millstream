@@ -53,4 +53,9 @@ func TestTestsListed(t *testing.T) {
 	if len(got) != len(want) {
 		t.Errorf("Tests lists %d tests, the sources define %d: one is listed twice", len(got), len(want))
 	}
+	for _, name := range SchemaChanging {
+		if !slices.Contains(got, name) {
+			t.Errorf("SchemaChanging names %s, which Tests does not list", name)
+		}
+	}
 }

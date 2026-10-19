@@ -8,15 +8,17 @@ type Test struct {
 	Run  func(t *testing.T, open Opener)
 }
 
+// SchemaChanging names the tests whose stores change the schema (they rename a table): a SQLite Memory store they
+// used never goes back to the pool (sqlitetest.Memory).
+var SchemaChanging = []string{"TestUnitsSurfaceStoreErrors", "TestAuditsSurfaceStoreErrors"}
+
 // Tests lists the conformance tests the build holds: every exported Test function, those of the *_e2e.go files only
 // under the e2e tag. TestTestsListed checks the list against the sources.
 var Tests = append([]Test{
 	{"TestDoneRefusesInvalidArtifacts", TestDoneRefusesInvalidArtifacts},
 	{"TestAttemptArtifacts", TestAttemptArtifacts},
-	{"TestRunBudgetConcurrentLeases", TestRunBudgetConcurrentLeases},
 	{"TestReservationChargedWhenUnreported", TestReservationChargedWhenUnreported},
 	{"TestFailCostReplacesReservation", TestFailCostReplacesReservation},
-	{"TestBudgetLeavesUserPauses", TestBudgetLeavesUserPauses},
 	{"TestFilter", TestFilter},
 	{"TestBuiltinUnitsOnCancelledRun", TestBuiltinUnitsOnCancelledRun},
 	{"TestDedupeWindow", TestDedupeWindow},
@@ -27,7 +29,6 @@ var Tests = append([]Test{
 	{"TestReplayMigrateToRevisionWithoutStep", TestReplayMigrateToRevisionWithoutStep},
 	{"TestReplayMigrateRefusedWhileLiveStepMissing", TestReplayMigrateRefusedWhileLiveStepMissing},
 	{"TestOrphanStepEndsDead", TestOrphanStepEndsDead},
-	{"TestReplayRestartsTheRetryBudget", TestReplayRestartsTheRetryBudget},
 	{"TestDoneStaleLease", TestDoneStaleLease},
 	{"TestDoneInvalidOutput", TestDoneInvalidOutput},
 	{"TestDoneKeyRule", TestDoneKeyRule},
@@ -37,14 +38,12 @@ var Tests = append([]Test{
 	{"TestEvalResults", TestEvalResults},
 	{"TestSkipFiringsAndLastFiring", TestSkipFiringsAndLastFiring},
 	{"TestPipelines", TestPipelines},
-	{"TestLeasePipelineSlots", TestLeasePipelineSlots},
 	{"TestInsightLifecycle", TestInsightLifecycle},
 	{"TestEvidenceExports", TestEvidenceExports},
 	{"TestEvidenceImports", TestEvidenceImports},
 	{"TestInsightRequests", TestInsightRequests},
 	{"TestRecordInsightsFailpoint", TestRecordInsightsFailpoint},
 	{"TestLease", TestLease},
-	{"TestLeaseSlotsAndExclusions", TestLeaseSlotsAndExclusions},
 	{"TestRenew", TestRenew},
 	{"TestNodes", TestNodes},
 	{"TestApplyRevision", TestApplyRevision},
@@ -57,7 +56,6 @@ var Tests = append([]Test{
 	{"TestRollback", TestRollback},
 	{"TestRandomUnitSequences", TestRandomUnitSequences},
 	{"TestStartReplay", TestStartReplay},
-	{"TestConcurrentReplaysTakeDistinctGenerations", TestConcurrentReplaysTakeDistinctGenerations},
 	{"TestStartReplayRefusals", TestStartReplayRefusals},
 	{"TestReplayRefusesExpiredPayloads", TestReplayRefusesExpiredPayloads},
 	{"TestReviewDecisions", TestReviewDecisions},
@@ -66,14 +64,11 @@ var Tests = append([]Test{
 	{"TestReviewTimeoutSkipsABrokenReview", TestReviewTimeoutSkipsABrokenReview},
 	{"TestRollupMath", TestRollupMath},
 	{"TestDoneRefusesInvalidMetrics", TestDoneRefusesInvalidMetrics},
-	{"TestRollupFailpoint", TestRollupFailpoint},
-	{"TestMetricAndEventFilters", TestMetricAndEventFilters},
 	{"TestCancelWhileLeased", TestCancelWhileLeased},
 	{"TestCancelFailAndExpiry", TestCancelFailAndExpiry},
 	{"TestCancelPendingAndRetrying", TestCancelPendingAndRetrying},
 	{"TestCancelErrors", TestCancelErrors},
 	{"TestOpenRevisions", TestOpenRevisions},
-	{"TestConcurrentDone", TestConcurrentDone},
 	{"TestCloseDrainsQueuedUnits", TestCloseDrainsQueuedUnits},
 	{"TestFailpointBeforeCommit", TestFailpointBeforeCommit},
 	{"TestFailpointAfterCommit", TestFailpointAfterCommit},
@@ -92,10 +87,7 @@ var Tests = append([]Test{
 	{"TestImportPausedConsumerAndCancel", TestImportPausedConsumerAndCancel},
 	{"TestImportProducerReplay", TestImportProducerReplay},
 	{"TestImportBackfill", TestImportBackfill},
-	{"TestImportFollowsRollback", TestImportFollowsRollback},
 	{"TestRetainKeepsWhatUnfinishedWorkNeeds", TestRetainKeepsWhatUnfinishedWorkNeeds},
 	{"TestRetainEventsTranscriptsRollups", TestRetainEventsTranscriptsRollups},
-	{"TestMetricTotalsSurviveRetention", TestMetricTotalsSurviveRetention},
-	{"TestPurgeAcrossImports", TestPurgeAcrossImports},
 	{"TestPurgeResumesAfterCrash", TestPurgeResumesAfterCrash},
 }, e2eTests...)

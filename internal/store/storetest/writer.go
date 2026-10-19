@@ -25,42 +25,6 @@ func checkEvents(t *testing.T, e *env) []store.Event {
 
 var errUnit = errors.New("unit failed on purpose")
 
-// Many concurrent Done calls batch into shared transactions and each publishes exactly its own outputs.
-func TestConcurrentDone(t *testing.T, open Opener) {
-	e := newEnv(t, open, fixture)
-	const runs = concurrentDones
-	for i := range runs {
-		e.fire(fmt.Sprint("r", i))
-	}
-	leases := e.lease(runs)
-	if len(leases) != runs {
-		t.Fatalf("leased %d", len(leases))
-	}
-	var wg sync.WaitGroup
-	errs := make([]error, runs)
-	for i, l := range leases {
-		wg.Go(func() {
-			_, errs[i] = e.s.Done(e.ctx, store.DoneRequest{LeaseRef: l.Ref(), Attempt: 1, Outputs: []store.Output{
-				out("a", fmt.Sprintf(`{"score":%d}`, i)), out("b", `{"score":99}`),
-			}})
-		})
-	}
-	wg.Wait()
-	for i, err := range errs {
-		if err != nil {
-			t.Fatalf("Done %d: %v", i, err)
-		}
-	}
-	if n := len(e.items("listings.raw")); n != 2*runs {
-		t.Fatalf("%d raw items, want %d", n, 2*runs)
-	}
-	ds, _ := e.s.Deliveries(e.ctx, store.DeliveryFilter{State: store.DeliveryPending})
-	if len(ds) != 4*runs { // score and audit for each of two outputs
-		t.Fatalf("%d pending deliveries, want %d", len(ds), 4*runs)
-	}
-	checkEvents(t, e)
-}
-
 func TestCloseDrainsQueuedUnits(t *testing.T, open Opener) {
 	s := open(t, Options{})
 	ctx := context.Background()

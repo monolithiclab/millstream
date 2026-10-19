@@ -1,4 +1,4 @@
-package sqlstore_test
+package delivery_test
 
 import (
 	"testing"
@@ -6,8 +6,10 @@ import (
 	"github.com/monolithiclab/millstream/internal/store/storetest"
 )
 
-// The conformance suite (store/storetest), one top-level test per function, so that test-times measures each.
-// TestConformanceListed keeps the list in step with storetest.Tests.
+// The conformance suite's share of this package (store/storetest): the pipeline, run and delivery units: revisions,
+// firings, leases, done and fail, routes, built-in steps, budgets, dead letters and replays, the writer. One top-level
+// test per function, so that test-times measures each; TestConformanceListed (internal/store/sqlstore) keeps the shares
+// in step with storetest.Tests.
 
 func TestDoneRefusesInvalidArtifacts(t *testing.T) {
 	storetest.TestDoneRefusesInvalidArtifacts(t, memoryStore)
@@ -17,20 +19,12 @@ func TestAttemptArtifacts(t *testing.T) {
 	storetest.TestAttemptArtifacts(t, memoryStore)
 }
 
-func TestRunBudgetConcurrentLeases(t *testing.T) {
-	storetest.TestRunBudgetConcurrentLeases(t, memoryStore)
-}
-
 func TestReservationChargedWhenUnreported(t *testing.T) {
 	storetest.TestReservationChargedWhenUnreported(t, memoryStore)
 }
 
 func TestFailCostReplacesReservation(t *testing.T) {
 	storetest.TestFailCostReplacesReservation(t, memoryStore)
-}
-
-func TestBudgetLeavesUserPauses(t *testing.T) {
-	storetest.TestBudgetLeavesUserPauses(t, memoryStore)
 }
 
 func TestFilter(t *testing.T) {
@@ -73,10 +67,6 @@ func TestOrphanStepEndsDead(t *testing.T) {
 	storetest.TestOrphanStepEndsDead(t, memoryStore)
 }
 
-func TestReplayRestartsTheRetryBudget(t *testing.T) {
-	storetest.TestReplayRestartsTheRetryBudget(t, memoryStore)
-}
-
 func TestDoneStaleLease(t *testing.T) {
 	storetest.TestDoneStaleLease(t, memoryStore)
 }
@@ -97,14 +87,6 @@ func TestDoneRouteDoesNotCompile(t *testing.T) {
 	storetest.TestDoneRouteDoesNotCompile(t, memoryStore)
 }
 
-func TestUnitsSurfaceStoreErrors(t *testing.T) {
-	storetest.TestUnitsSurfaceStoreErrors(t, memoryStore)
-}
-
-func TestEvalResults(t *testing.T) {
-	storetest.TestEvalResults(t, memoryStore)
-}
-
 func TestSkipFiringsAndLastFiring(t *testing.T) {
 	storetest.TestSkipFiringsAndLastFiring(t, memoryStore)
 }
@@ -113,36 +95,12 @@ func TestPipelines(t *testing.T) {
 	storetest.TestPipelines(t, memoryStore)
 }
 
-func TestLeasePipelineSlots(t *testing.T) {
-	storetest.TestLeasePipelineSlots(t, memoryStore)
-}
-
-func TestInsightLifecycle(t *testing.T) {
-	storetest.TestInsightLifecycle(t, memoryStore)
-}
-
-func TestInsightRequests(t *testing.T) {
-	storetest.TestInsightRequests(t, memoryStore)
-}
-
-func TestRecordInsightsFailpoint(t *testing.T) {
-	storetest.TestRecordInsightsFailpoint(t, memoryStore)
-}
-
 func TestLease(t *testing.T) {
 	storetest.TestLease(t, memoryStore)
 }
 
-func TestLeaseSlotsAndExclusions(t *testing.T) {
-	storetest.TestLeaseSlotsAndExclusions(t, memoryStore)
-}
-
 func TestRenew(t *testing.T) {
 	storetest.TestRenew(t, memoryStore)
-}
-
-func TestNodes(t *testing.T) {
-	storetest.TestNodes(t, memoryStore)
 }
 
 func TestApplyRevision(t *testing.T) {
@@ -185,48 +143,12 @@ func TestStartReplay(t *testing.T) {
 	storetest.TestStartReplay(t, memoryStore)
 }
 
-func TestConcurrentReplaysTakeDistinctGenerations(t *testing.T) {
-	storetest.TestConcurrentReplaysTakeDistinctGenerations(t, memoryStore)
-}
-
 func TestStartReplayRefusals(t *testing.T) {
 	storetest.TestStartReplayRefusals(t, memoryStore)
 }
 
 func TestReplayRefusesExpiredPayloads(t *testing.T) {
 	storetest.TestReplayRefusesExpiredPayloads(t, memoryStore)
-}
-
-func TestReviewDecisions(t *testing.T) {
-	storetest.TestReviewDecisions(t, memoryStore)
-}
-
-func TestReviewTimeouts(t *testing.T) {
-	storetest.TestReviewTimeouts(t, memoryStore)
-}
-
-func TestAutoApproveAndSamples(t *testing.T) {
-	storetest.TestAutoApproveAndSamples(t, memoryStore)
-}
-
-func TestReviewTimeoutSkipsABrokenReview(t *testing.T) {
-	storetest.TestReviewTimeoutSkipsABrokenReview(t, memoryStore)
-}
-
-func TestRollupMath(t *testing.T) {
-	storetest.TestRollupMath(t, memoryStore)
-}
-
-func TestDoneRefusesInvalidMetrics(t *testing.T) {
-	storetest.TestDoneRefusesInvalidMetrics(t, memoryStore)
-}
-
-func TestRollupFailpoint(t *testing.T) {
-	storetest.TestRollupFailpoint(t, memoryStore)
-}
-
-func TestMetricAndEventFilters(t *testing.T) {
-	storetest.TestMetricAndEventFilters(t, memoryStore)
 }
 
 func TestCancelWhileLeased(t *testing.T) {
@@ -249,10 +171,6 @@ func TestOpenRevisions(t *testing.T) {
 	storetest.TestOpenRevisions(t, memoryStore)
 }
 
-func TestConcurrentDone(t *testing.T) {
-	storetest.TestConcurrentDone(t, memoryStore)
-}
-
 func TestCloseDrainsQueuedUnits(t *testing.T) {
 	storetest.TestCloseDrainsQueuedUnits(t, memoryStore)
 }
@@ -265,94 +183,10 @@ func TestFailpointAfterCommit(t *testing.T) {
 	storetest.TestFailpointAfterCommit(t, memoryStore)
 }
 
-func TestClosedStore(t *testing.T) {
-	storetest.TestClosedStore(t, memoryStore)
-}
-
-func TestCancelledContext(t *testing.T) {
-	storetest.TestCancelledContext(t, memoryStore)
-}
-
-func TestReads(t *testing.T) {
-	storetest.TestReads(t, memoryStore)
-}
-
-func TestAPIReads(t *testing.T) {
-	storetest.TestAPIReads(t, memoryStore)
-}
-
 func TestDoneFirstCommit(t *testing.T) {
 	storetest.TestDoneFirstCommit(t, memoryStore)
 }
 
 func TestRevisionNumbersSurviveACrash(t *testing.T) {
 	storetest.TestRevisionNumbersSurviveACrash(t, memoryStore)
-}
-
-func TestImportCopiesAndRuns(t *testing.T) {
-	storetest.TestImportCopiesAndRuns(t, memoryStore)
-}
-
-func TestImportPausedConsumerAndCancel(t *testing.T) {
-	storetest.TestImportPausedConsumerAndCancel(t, memoryStore)
-}
-
-func TestImportProducerReplay(t *testing.T) {
-	storetest.TestImportProducerReplay(t, memoryStore)
-}
-
-func TestImportBackfill(t *testing.T) {
-	storetest.TestImportBackfill(t, memoryStore)
-}
-
-func TestImportFollowsRollback(t *testing.T) {
-	storetest.TestImportFollowsRollback(t, memoryStore)
-}
-
-func TestRetainKeepsWhatUnfinishedWorkNeeds(t *testing.T) {
-	storetest.TestRetainKeepsWhatUnfinishedWorkNeeds(t, memoryStore)
-}
-
-func TestRetainEventsTranscriptsRollups(t *testing.T) {
-	storetest.TestRetainEventsTranscriptsRollups(t, memoryStore)
-}
-
-func TestMetricTotalsSurviveRetention(t *testing.T) {
-	storetest.TestMetricTotalsSurviveRetention(t, memoryStore)
-}
-
-func TestPurgeAcrossImports(t *testing.T) {
-	storetest.TestPurgeAcrossImports(t, memoryStore)
-}
-
-func TestPurgeResumesAfterCrash(t *testing.T) {
-	storetest.TestPurgeResumesAfterCrash(t, memoryStore)
-}
-
-func TestAbstainAndFallback(t *testing.T) {
-	storetest.TestAbstainAndFallback(t, memoryStore)
-}
-
-func TestAudits(t *testing.T) {
-	storetest.TestAudits(t, memoryStore)
-}
-
-func TestAuditBudget(t *testing.T) {
-	storetest.TestAuditBudget(t, memoryStore)
-}
-
-func TestFallbackEdges(t *testing.T) {
-	storetest.TestFallbackEdges(t, memoryStore)
-}
-
-func TestAuditsSurfaceStoreErrors(t *testing.T) {
-	storetest.TestAuditsSurfaceStoreErrors(t, memoryStore)
-}
-
-func TestEvidenceExports(t *testing.T) {
-	storetest.TestEvidenceExports(t, memoryStore)
-}
-
-func TestEvidenceImports(t *testing.T) {
-	storetest.TestEvidenceImports(t, memoryStore)
 }
