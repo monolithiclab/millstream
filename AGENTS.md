@@ -1,17 +1,19 @@
 # AGENTS.md
 
-Millstream is a Monolithic Lab pipeline platform (Go engine, React UI) under construction: the repo holds the
-specification, decisions and the Go engine as it is built. See [README.md](README.md) for what it is, `docs/` (table
-below) for the reasoning, and `make help` for every command.
+Millstream is a Monolithic Lab pipeline platform (Go engine, React UI) under construction. See [README.md](README.md)
+for what it is, the documents below for the reasoning, [docs/testing.md](docs/testing.md) for how the suites work,
+and `make help` for every command.
 
 ## Hard rules
 
 - The repo is meant to go open source: no customer, prospect or partner names anywhere, in docs, examples or
   commit messages. The reference example is the generic real estate pipeline.
-- Each milestone is implemented from its plan in `docs/plans/`; a change to a public contract updates the spec in the
+- Each milestone is implemented from its plan in `docs/plans/`.
+- The pipeline file format, the action protocol and the HTTP API are public contracts: a change to one updates the
+  spec in the same commit. For the API that is `internal/api/openapi.yaml` and spec section 12.1 together; the tests
+  fail on an undocumented route, a documented operation the server lacks, or a response that does not validate.
+- A change to the `node --join` command or the environment file's keys updates `deploy/` and `docs/deploy.md` in the
   same commit.
-- A change to the pipeline file format, the action protocol or the HTTP API updates the spec in the same commit:
-  these are public contracts.
 
 ## Constraints that look like bugs
 
@@ -26,272 +28,85 @@ below) for the reasoning, and `make help` for every command.
 - The environment (`production` or `development`, spec section 11.2) is the environment file's key, else the
   command's default: `serve` production, `run` development. Production refuses `improve.enabled` and
   `improve.publish: apply` (`pipeline.Environment.CheckMode`, `ErrProduction`); a command that runs the `improve`
-  pipeline calls `RequireDevelopment`. The API reports it in `/api/v1/nodes` and `/session`, whence the UI's header
-  shows it.
-- An insight trigger fires only for the insights of other pipelines, after each projector pass
-  (`engine/insight.go`), keyed by the insight and its `insightOpened` or `insightEscalated` event: a pipeline never
-  feeds itself, and reading an event again finds the run it fired.
+  pipeline calls `Environment.RequireDevelopment`.
+- An insight trigger fires only for the insights of other pipelines (`engine/insight.go`), keyed by the insight and
+  its `insightOpened` or `insightEscalated` event: a pipeline never feeds itself, and reading an event again finds
+  the run it fired.
 - An item whose payload is gone keeps its row: `items.tombstone` says why (`expired` by retention, `erased` by a
   purge), its payload is `null` and its artifacts `[]` (spec section 9.3). Test the tombstone, never a `null`
   payload, which an action may publish. Retention skips what unfinished work needs; a purge fences its lineage in one
   unit before it erases anything, and a leased delivery of a fenced item is cancelled when it reports
-  (`sqlstore.discards`). The engine's retention job (`internal/engine/retention.go`) drives both, with the artifact
-  sweep and the pruning of the package cache and the engine's caches.
-
-## Layout
-
-- `cmd/millstream/`: the binary's `main`.
-- `internal/`: `cli`, `pipeline`, `ids`, `expr`, `schema`, `protocol`, `store`, `failpoint`, `engine`, `node`,
-  `redact` and the other packages named in the M1 plan's file structure.
-- Remote nodes (spec section 5.10): `nodewire` is the node protocol's JSON; `nodeapi` both its sides, the engine's
-  handler under `/node/v1` (`api.Options.NodeAPI`) and the node's `Client`, a `node.Transport`; `node.Launch` is a
-  delivery's action process as the engine resolves it, which a node builds its process spec from (`Launch.Spec`) for
-  its own platform and package cache. The engine's node registry, placement and lease-scoped fetches are
-  `engine/nodes.go`; `artifacts` is the artifact store interface over the local `Dir` and `artifacts/s3` (SigV4
-  written in-repo), both also implementing `Files` (what the retention job's artifact sweep lists, stats, copies and
-  removes, `engine/retention.go`) and `Toucher`.
-- Insights (`internal/insights`, spec section 11.1): `Load` reads a pipeline's history into `Data`, `Compute` is pure
-  over it, so the golden tests of the newer kinds build `Data` by hand (`learning_test.go`), no store. `lineage.go`
-  holds what the lineage-based kinds share: the steps as the engine resolves them (`StepsOf`), the items loaded for
-  the walks and review attribution (`author`, spec section 11.6); `waste.go`, `distill.go` and `patterns.go` (the
-  `reviewPattern` attribution and proposal hints) build on it. `reviewDecided` events say whether a reason text came
-  (`text`), never the text.
-- `internal/store/`: the log store interface; `sqlstore` is its implementation on `database/sql` (the writer loop,
-  every unit, the reads), shared by `sqlite` and `postgres`, which open, migrate and hold the connections and give a
-  `sqlstore.Dialect` for what the databases spell differently; `storetest` is the conformance suite both pass;
-  `stores` opens the one the environment file names, in one of two modes: `Open` for an engine or a command writing
-  from its own process (on Postgres it takes the leadership lock), `OpenReader` for a command that only reads (on
-  Postgres read-only, without the lock, its units refused with `store.ErrReadOnly`).
-- Evidence (spec section 11.2): `evidence` builds, encodes and decodes bundles (`Export`, `Import`, `Load`), redacts
-  them with the store's `EvidenceKey`, and gives imported history back in the store's shapes (`Bundle.StoreItems`
-  and the like); imported bundles live whole in the artifact store, recorded in `evidence_imports`, never in the
-  deployment's own items. The API's `exportEvidence`/`importEvidence` and the CLI's `evidence export|import` call it;
-  the retention job deletes expired imports (`engine.expireEvidence`).
-- Backtests (spec section 11.3): `patch` parses, applies and writes the unified diffs proposals and backtests share
-  (`Millstream-Base` trailer, strict paths, exact hunks); `backtest` replays a patch's changed steps on sampled
-  history, base then patched, each in a `sqlite.Memory` store driven by an engine whose `Options.Stubber` settles
-  every delivery from history (off-sample cut, external and unchanged reviews recorded or cut, unchanged steps on
-  historical inputs recorded) or lets it run. `backtest.Runner` is what proposals validate through; `Jobs` runs them
-  in the background for `POST /api/v1/backtests` (in memory, not the store); `millstream backtest` runs one from its
-  own process. The improve budget is a `backtest.Budget`, a per-process `Ledger` until the improve pipeline exists.
-- Proposals (spec section 11.3): `internal/proposals` holds the rules, no store: `Prepare` applies the patch with
-  `internal/patch` (exactly, at its lines) and adds the paths per kind of spec 11.7 and the steps touched; `Rebase`
-  moves a stale proposal's patch with `patch.Patch.Rebase` (nearest offset) and renders it with `patch.Format`;
-  `Validator` runs check, the base revision's evals before and after and the backtest through its `Backtester`, which
-  `backtest.ForProposals` adapts from the engine's runner (pass rule `backtest.Report.Holds`). `engine/proposals.go`
-  calls them before the store's proposal units, whose Proposal acceptance unit (`sqlstore/proposals.go`) accepts on the
-  base revision only and makes overlapping open proposals stale; apply and rollback make proposals on another base stale
-  (`staleProposals`). The proposals-only token (`api/proposals.go`) is checked in `ServeHTTP` against `proposalRoutes`
-  before routing.
-- CLI writes (`internal/cli`): a command that changes state goes through `changeState`, which calls the served
-  engine's API when `--server`/`MILLSTREAM_SERVER` names one (`remote.go`), else `withWriter` (SQLite, or Postgres
-  with `--direct`); reads use `withStore`, engines (`run`, `serve`) `withStoreMode(engineStore)`. A new command that
-  changes state follows the same split.
-- `sdk/go/`: the Go action SDK, its own module.
-- `ui/`: the web UI, built and tested only in containers (see Web UI).
-- `examples/`: fixture and example pipeline packages.
-- `deploy/`: the Compose deployment and the systemd units (see Packaging).
-- `make ci` is the gate: lint (golangci-lint over the e2e-tagged build, which holds every file, govulncheck, tidy,
-  pins, shellcheck), the default test suite without `-race`, and the docs check, for the main module and the SDK
-  module alike.
-
-## Test suites
-
-- `make test` runs the default build: in-process unit tests, without `-race`, within a budget measured without
-  `-race` by `make test-times` (`scripts/test-times`). It runs the suite serially (`-p 1 -parallel 1`) three times
-  (five with `CI=1`), times each top-level test from the `go test -json` event timestamps and takes its median: the
-  sum of the medians is at most 500 ms, no test's median is over 20 ms, and the slowest run of each listed test is
-  printed beside it. It runs the suite three more times at `-p 1` (`t.Parallel` in effect): no package's median wall
-  time, from its first test's start to its last test's end, is over 100 ms. Compilation, binary start, package
-  initialisation and `TestMain` are not counted. It says "noisy machine" when its slowest serial run took over 1.2
-  times its fastest, and exits 1 over budget.
-- The working target is 400 ms, which the script warns about: a change that takes the median total above it makes
-  room in the same change.
-- What keeps it there: actions run in-process (`exec.FuncLauncher` with `exectest.Serve`, wired through `fakeexec` and
-  `cli.Runtime.Launchers`); stores are `sqlite.Memory`, whose template loads from an embedded image and whose closed
-  connections, emptied, serve the next store with their statements already prepared (`Clone` is slower: it prepares them
-  all again); fixtures (packages, parsed pipelines, applied runs, insight histories) are built once per process, and the
-  files a test only reads are committed under `testdata` (the CLI's shared packages are those directories themselves,
-  never copies; the store images `internal/store/sqlite/template.db` and `internal/insights/testdata/history.db` are
-  rebuilt with `-update` after a schema change); what a process does once (SQLite's start and the template's load,
-  the common units' first statements, the CEL environments, the JSON Schema compiler, the shared seeded stores) is
-  done in `TestMain`, outside the budget: `sqlitetest.Warm` for the packages that open Memory stores, a package's own
-  fixtures beside it; time is a fake clock or an injected timer. No `go build`, no process,
-  no Docker, no sleep or polling, no file database but the one that tests opening a file: a test that needs one, or
-  drives the CLI or the engine end to end, goes behind the `e2e` build tag, in a `*_e2e_test.go` file. The store, engine
-  and insights tests run serially: the transpiled SQLite allocates under one process-wide lock, so parallel tests
-  contend instead of overlapping. A table's subtests that take microseconds do not call `t.Parallel` either: pausing and
-  resuming one costs more than running it.
-- The store tests are the conformance suite `internal/store/storetest`: exported functions taking an opener, one per
-  behaviour, run against SQLite Memory stores in the default build and against Postgres in `internal/store/postgres`
-  under the tag. The default build runs them from three packages by area, each with its own warmed process
-  (`sqlitetest.Main` as `TestMain`, `sqlitetest.Memory` as the opener), so that no package nears the 100 ms limit:
-  `internal/store/sqlstore/conformance/delivery` (revisions, firings, leases, done and fail, built-in steps, budgets,
-  dead letters, replays, the writer), `review` (reviews, audits and fallbacks, imports, insights, evals, proposals, the
-  API reads) and `retention` (retention, purges, rollups, evidence, nodes, missing tables). Each has one top-level
-  wrapper per test in its `conformance_test.go`, so test-times measures each. `make test` and `make test-e2e` pass
-  `-coverpkg=./...`, so their coverage counts in `internal/store/sqlstore`: coverage is cross-package, every test
-  crediting the statements it runs in any package. The e2e-only tests are wrapped in
-  `internal/store/sqlstore/conformance_e2e_test.go`. A new store test goes in storetest, listed in `storetest.Tests` and
-  wrapped in the package of its area (a package nearing 70 ms wall splits again); `TestTestsListed` and
-  `TestConformanceListed` name what is missing, or wrapped twice. A test that must reach behind the units uses the
-  store's `Exec`, `Unit` or `QueryRow`, written with `?` placeholders.
-- Postgres tests (`internal/store/postgres`, `stores`, and the crash suite's Postgres half in `internal/e2e`) run
-  under the e2e tag in Docker: `pgtest` starts one container of `pgtest.Image` (the official `postgres:17`, pinned by
-  digest) per test binary on first use, its data directory a tmpfs (no volume outlives it), migrates a template
-  database once and copies a new database from it for each test, dropped when the test ends; `TestMain` calls
-  `pgtest.Stop`. Without Docker they skip, saying so. Run them alone with
-  `go test -tags e2e ./internal/store/postgres/...`.
-- `make test-e2e` (`go test -race -count=1 -tags e2e ./...`, and the SDK module's) runs everything, tagged and untagged,
-  under the race detector, and prints the whole suite's coverage (`make test` checks the default build's against
-  `COVERAGE_MIN`): the `internal/e2e` package (crash matrix on SQLite and Postgres, run with a second pipeline importing
-  the fixture's stream so that it covers a Done that imports, the failover chaos suite of `failover_test.go` on the same
-  two pipelines with token auth on, two `serve` processes on Postgres, the node chaos suite of `nodes_test.go` (remote
-  node processes killed, cut off by a proxy past their lease, revoked, refused a rotated token, following a failover)
-  and `nodes_tls_test.go` (a node over HTTPS and HTTP/2 with `--ca`), M1 and M2 scenarios), the S3 store against a real
-  S3-compatible server (SeaweedFS pinned by digest: MinIO publishes no server image any more), the end-to-end CLI and
-  engine tests, the real-process twins of the in-process tests (under the tag, `fakeexec` runs the built fake binary),
-  Docker and Postgres tests, and the long property runs. It is slow, is not part of `make ci`, and runs in CI as its own
-  job; run it before closing a milestone and after touching the exec runtime, the node, the CLI's run path, the store's
-  concurrency or the crash recovery.
-- `make soak` (docs/soak.md) runs the Compose deployment of `deploy/compose` from `make image` under chaos for
-  `SOAK_DURATION` (30m), then checks the store's invariants and writes `build/soak/report.md`. It is `TestSoak` in
-  `internal/e2e`, skipped unless `SOAK_DURATION` is set, so neither `make ci` nor `make test-e2e` runs it; it touches
-  only its own Compose project, `millstream-soak`. Run it after touching failover, the node or the Compose files.
-- `make test-e2e`, `make test-ui-e2e` and `make soak` take a machine-wide lock first (`scripts/e2elock`, `flock` on
-  `$TMPDIR/millstream-e2e.lock`, since macOS has no `flock(1)`): runs from several checkouts or agents queue, the
-  waiting one printing "waiting for the e2e lock held by <pid> (<checkout>)", instead of loading the machine
-  together, under which the failover and partition tests time out. Each runs its `*-locked` twin under the lock;
-  call that twin directly only when nothing else can be running. `PKG=` runs take no lock.
-- `make test-e2e PKG=./internal/foo/...` is the iteration tier: `go test -tags e2e -count=1` of those packages alone,
-  tagged and untagged, without `-race` or coverage. While working, run `make ci` and this for the packages a change
-  touches; run the full `make test-e2e` once, when the change is done.
-
-## Web UI
-
-- `ui/`: the React 18 + TypeScript (strict) + Vite + Tailwind CSS single-page app of spec section 12.2. `src/shell/` is
-  the app shell (navigation, pipeline switcher, command palette, shortcut help, live mark), `src/routes.ts` the screens
-  and their URLs, `src/screens/` one folder per screen, `src/common/` the pieces screens share, one module per concept
-  (status glyphs and badges, loading, empty and error states, confirmation dialog, notices, ids, the segmented toggle,
-  the pipeline filter, JSON viewer, log tail, class lists in `styles.ts`, `useResource` for every API read,
-  `useLoadMore` for its next pages, `useThrottle`, `arrowKeys` for tab lists and toggles, `useFormat`, `useNow`),
-  `src/api/` the HTTP API client, `src/auth/` the session gate (the sign-in screen whenever the API answers 401, on
-  a server with `auth.token`; every API method goes through its guard) and `useSession` (the shell's Sign out),
-  `src/live/` the server-sent events hub (one reference-counted connection per URL, held
-  in the API context and shared by every subscriber) and its hook, `src/i18n/` the catalogues and `Intl` formatting,
-  `src/styles/` the tokens, `e2e/` the Playwright tests. The pipeline graph is React Flow laid out by dagre; jsdom gets
-  the browser APIs React Flow needs from `src/test/flow.ts`, installed for every test file.
-- No host toolchain (D35): npm, Vite, Vitest and Playwright run only in containers, from images pinned by digest in
-  `ui/images.mk`. Never install Node on the host. `node_modules` and the npm cache live in the named volumes
-  `millstream-ui-node-modules` and `millstream-ui-npm-cache`; containers run as the host uid.
-- `make ui` builds into `internal/ui/dist/`, which `internal/ui` embeds (`//go:embed all:dist`) and serves as an SPA
-  (index.html for client routes, immutable caching for `assets/`). The build is not committed; the committed
-  `internal/ui/dist/placeholder.html` is served until it exists, so `go build` never needs npm.
-- `make test-ui`: typecheck, ESLint (typescript-eslint, jsx-a11y, react-hooks), Prettier check, and Vitest with coverage
-  in jsdom: fake timers and a `FakeApi`, never a network or a wall-clock wait. `make test-ui-e2e` builds, then runs
-  Playwright with axe (WCAG 2.2 AA) on the shell in both themes, both languages, at 375 and 1280 px, reaching the build
-  through `millstream run` (cross-compiled for the container with the UI embedded) serving the API and the UI over
-  `ui/e2e/fixture`, a package of builtin steps. `e2e/global.setup.ts` seeds runs through the API first: four listings
-  parked in the analysts and triage inboxes, one filtered out so a run settles, and one the fixture's `price-check`
-  dead-letters (its surface is 0). `e2e/screens.spec.ts` runs axe and the clipping check of `e2e/checks.ts` on every
-  built screen, then the flows across screens (graph, item, replayed dead letter; the items list's stream and CEL
-  filter; the reject sheet; the density strip; the metrics explorer); `e2e/inbox-flow.spec.ts` decides reviews from the
-  keyboard in French; `e2e/smoke.spec.ts` covers the shell on `?demo`. Then `make test-ui-e2e` runs
-  `e2e/auth.spec.ts` (`playwright.auth.config.ts`) on a `millstream run` of the fixture with `auth.token`
-  (`e2e/auth/millstream.yaml`): the sign-in screen in both themes, languages and widths, then signing in, a
-  decision recorded under `auth.user`, and signing out. Then it runs the M3 reference
-  demo, `e2e/demo.spec.ts` (`playwright.demo.config.ts`; `make test-ui-demo` runs it alone), once in English and light,
-  once in French and dark, each on a `millstream run` of its own over the package make assembles in `.build/demo`:
-  `e2e/demo-fixture/pipeline.yaml` (the M2 fixture with a `review` step after `score`), the M2 fixture's actions with
-  their Go exec actions compiled for the container, and its recordings replayed offline but L002's, withheld so that
-  listing dead-letters; `e2e/demo-fixture/millstream.yaml` lets the agent run unsandboxed. It fires the run from the
-  Runs screen, watches the graph, reads a transcript, decides the reviews from the keyboard, checks the run settles and
-  the cost per approved item, replays the dead letter and opens the metrics, with axe on every state. `make ui-shell`
-  opens a shell in the node container (`npm run dev` serves on port 5173). Both test targets run in CI as their own
-  jobs, not in `make ci`.
-- Tokens: `ui/src/styles/tokens.css` holds every colour, font, radius, shadow and motion token of the canvas identity
-  board as `--ms-*` custom properties, colours as `light-dark(light, dark)`. The theme follows
-  `prefers-color-scheme` unless `<html data-theme="light|dark">` overrides it. `src/styles/index.css` maps the tokens
-  into Tailwind and clears Tailwind's own palette, so only token utilities exist (`bg-surface`, `text-ink-2`).
-  `tokens.test.ts` checks the WCAG contrast of every text (4.5:1) and UI (3:1) pair from the file itself.
-- i18n: react-i18next with `src/i18n/en.json` and `fr.json`; `t()` accepts only keys of the English catalogue.
-  `i18n.test.ts` fails on a key missing in either language, a key no source file uses (a key is used when it
-  appears as a quoted literal: keep keys literal, no built-up names), and French typography (no-break space before
-  `: ; ! ? »`). Numbers, money, durations and relative times go through `src/i18n/format.ts`.
-- API: `src/api/api.ts` is the `Api` interface, `http.ts` its fetch implementation, `fake.ts` the in-memory one for
-  tests and `?demo`, over the one demo dataset of `demo.ts` (every screen's data, linked: an inbox card, a timeline bar
-  or an insight sample opens an item the item screen has). `src/demo.ts` wires them for `?demo`, and `main.tsx` loads it
-  with a dynamic import only in demo mode, so neither is in the main bundle; the shell then shows a Demo data badge with
-  Exit demo. `src/api/openapi.d.ts` is generated from `internal/api/openapi.yaml` by `make ui-types` and committed;
-  `src/api/schema.ts` aliases its schemas, so the rest of the UI imports resource types from there.
-
-## HTTP API
-
-- `internal/api` is the HTTP API of spec section 12.1: `routes` in `api.go` lists every operation, `read.go` and
-  `actions.go` the handlers (reads from the store, actions through the store's units or the engine, the same code
-  paths as the CLI), `dto.go` the JSON resources, `broker.go` the live event broker, `logs.go` the live log ring and
-  `sse.go` the streams. `millstream run` serves it with the UI (`internal/cli/serve.go`).
-- `internal/api/openapi.yaml` is the contract, embedded and served at `/api/v1/openapi.yaml`. A change to a route or
-  a resource changes the document and spec section 12.1 in the same commit. The tests enforce it: every route is
-  documented and called by a test, the document has no operation the server lacks, and every response a handler test
-  sees validates against the document's schemas (`internal/schema.CompileDocument`).
-- Access (`auth.go`): without `Options.Auth` the API serves loopback clients only; with it (`auth.token`, wired by
-  `internal/cli`'s `apiAuth`) every request carries the token as a bearer token or the UI's session cookie, the Host
-  guard also accepts `ui.baseUrl`'s and `listen`'s hosts, and the reviewer is `auth.user`. Every state-changing
-  request is checked for a foreign `Origin`, with or without the token. `/metrics` (`prometheus.go`) is served
-  beside the API by the same `Server`, outside the OpenAPI document; `metrics.Exposition` renders the store's
-  `MetricTotals` and the engine's own families, and its tests parse the output as the Prometheus text format.
-- Webhook triggers (`hooks.go`, spec section 4.6): `POST /hooks/{pipeline}/{trigger}` is one of `Handler`'s
-  service mounts (`serviceMount`, with `api.NodePrefix`): outside `/api/v1`, before the Host guard and outside
-  `auth.token` and the Origin check, the trigger's own token authenticating it (bearer or `?token=`, compared by
-  SHA-256); tests reach it through `Handler`. It is documented in the OpenAPI document under a path-level `servers`
-  override; the route tests treat it as one more route (`hookOperation`). Tokens are generated by
-  `engine.NewTriggerToken`, stored hashed by the Trigger tokens unit, and never logged; the engine checks the
-  trigger, its rate (`engine.Bucket`, shared with step rates) and its input schema in `FireWebhook`.
-- Handler tests call the server through `httptest.NewRecorder` on the shared fixture, seeded once per process in
-  `TestMain` (`sharedFixture`), or on a clone of it for a test that changes state; live tests drive the broker by
-  hand (`pump`, `flush`) with a fake clock, never a listener or a wall-clock wait. The real listener and SSE client
-  are in `internal/cli`'s e2e tests.
-- After changing the document, regenerate the UI's types: `make ui-types` writes `ui/src/api/openapi.d.ts`
-  (openapi-typescript in the node container), committed; `ui/src/api/schema.ts` aliases them.
-
-## Agent recordings and the live smoke test
-
-- Tests never reach a model: agent calls replay from recordings made against a fake model server. `make recordings`
-  rewrites them (`internal/agent/testdata/recordings`, `examples/m2-fixture/recordings`) after a change to a prompt,
-  a lessons file, an output schema or the fake model.
-- The live smoke test runs the M2 fixture's score action through the `claude-code` harness against the real `claude`
-  CLI (installed, logged in) on two listings, recording into a temporary directory, and spends a few cents:
-  `MILLSTREAM_LIVE=1 go test -tags e2e -count=1 -v -run TestLiveScore ./internal/e2e` (`MILLSTREAM_LIVE_MODEL` picks
-  the model, `haiku` by default). It is never part of `make ci`; never commit what it records.
-- The end-to-end and crash tests sit behind the `e2e` build tag: `make test-e2e`, or `go test -tags e2e ./internal/e2e`.
-
-## Packaging
-
-- `Dockerfile` builds the image from source: the UI in the node image of `ui/images.mk` (keep its digest equal to
-  `UI_NODE_IMAGE`), the binary with the UI embedded in the golang image of go.mod's toolchain, then
-  `gcr.io/distroless/static-debian13:nonroot`. Every `FROM` is pinned by digest (`lint-pins`). `Dockerfile.release`
-  is GoReleaser's: the same runtime around the binaries it built; keep the two runtime stages in step.
-- `make image` builds `millstream:dev`; `make test-image` checks it prints its version and that `millstream run`
-  in it serves the built UI (not the placeholder) and the API over `ui/e2e/fixture`, from a node container sharing
-  its network namespace (run listens on loopback only). `make test-deploy` runs `docker compose config` on
-  `deploy/compose` and `systemd-analyze verify` and `security` on `deploy/systemd` in a pinned ubi-init image. None
-  of them is in `make ci`; CI's `image` job runs them.
-- `make release-snapshot` runs GoReleaser (`.goreleaser.yaml`) with `--snapshot --skip=sign`: archives, an SBOM
-  each, checksums and local images in `dist/`, nothing signed or pushed. GoReleaser and syft are pinned in their own
-  tools module, `tools/release/go.mod`, so their dependencies never move the linters' in `tools/go.mod`; bump them
-  with `go get -tool -modfile=tools/release/go.mod <module>@<version>`.
-- `deploy/compose/millstream.yaml` and the units run `node --join` with TLS from `deploy/compose/tls/` (git-ignored,
-  made per deployment: docs/deploy.md): a change to that command or the environment file's keys updates `deploy/`
-  and `docs/deploy.md` in the same commit.
-  `TestDeployEnvironmentParses` (`internal/pipeline`) parses the Compose environment file strictly.
+  (`sqlstore.discards`). Both run from the retention job, `internal/engine/retention.go`.
+- `reviewDecided` events say whether a reason text came (`text`), never the text.
+- Imported evidence bundles live whole in the artifact store, recorded in `evidence_imports`, never in the
+  deployment's own items.
+- Proposals (spec section 11.3) are accepted on their base revision only, and an accepted one makes overlapping open
+  proposals stale; apply and rollback make proposals on another base stale. The proposals-only token is checked in
+  `ServeHTTP` against `proposalRoutes` before routing (`internal/api/proposals.go`). Backtest jobs live in memory, not
+  the store.
+- Webhook triggers (`POST /hooks/{pipeline}/{trigger}`, `internal/api/hooks.go`) sit outside `/api/v1`, before the
+  Host guard and outside `auth.token` and the Origin check, on purpose: the trigger's own token authenticates them.
+  Trigger tokens are stored hashed and never logged.
+- Without `auth.token` the API serves loopback clients only; every state-changing request is checked for a foreign
+  `Origin`, with or without the token.
 
 ## Where things go
 
+- A CLI command that changes state goes through `changeState` (`internal/cli`), which calls the served engine's API
+  when `--server`/`MILLSTREAM_SERVER` names one, else `withWriter`; reads use `withStore`. A command that only reads
+  opens the store with `stores.OpenReader` (on Postgres: read-only, no leadership lock).
+- A new store test goes in `internal/store/storetest`, listed in `storetest.Tests` and wrapped in the
+  `conformance_test.go` of the `internal/store/sqlstore/conformance/` package of its area (`delivery`, `review` or
+  `retention`; a package nearing 70 ms wall splits again); `TestTestsListed` and `TestConformanceListed` name what is
+  missing, or wrapped twice.
+- A test that needs a process, `go build`, Docker, a file database or drives the CLI or engine end to end goes behind
+  the `e2e` build tag, in a `*_e2e_test.go` file.
 - Architecture decisions live in `docs/decisions.md`. Until the first public release the log is kept current: edit
   an entry to match the design and remove superseded ones. From the first release on, it is append-only.
 - Specs and plans: `docs/specs/YYYYMMDD.<topic>-design.md` and `docs/plans/YYYYMMDD.<topic>.md`.
 - Parked ideas and follow-ups: `ROADMAP.md`.
+
+## Testing
+
+- `make test` (the default build, no `-race`) has a time budget checked by `make test-times`: medians summing to at
+  most 750 ms, no test over 20 ms, no package over 100 ms. The working target is 600 ms: a change that takes the
+  median total above it makes room in the same change. What keeps it there: [docs/testing.md](docs/testing.md).
+- Tiers: while working, run `make ci` and `make test-e2e PKG=./internal/foo/...` for the packages a change touches.
+  Run the full `make test-e2e` (race, every tag, Docker, Postgres, S3, chaos) once when the change is done, before
+  closing a milestone, and after touching the exec runtime, the node, the CLI's run path, the store's concurrency or
+  crash recovery. Run `make soak` (docs/soak.md) after touching failover, the node or the Compose files. None of these
+  is in `make ci`; CI runs `test-e2e`, the UI suites and the image checks as separate jobs.
+- `make test-e2e`, `make test-ui-e2e` and `make soak` queue behind a machine-wide lock (`scripts/e2elock`); `PKG=`
+  runs take none. Never run their `*-locked` twins while another run may be going: the failover tests time out.
+- After a schema change, rebuild the committed store images (`internal/store/sqlite/template.db`,
+  `internal/insights/testdata/history.db`) with `-update`.
+- Tests never reach a model: agent calls replay from recordings. `make recordings` rewrites them after a change to a
+  prompt, a lessons file, an output schema or the fake model. The live smoke test (`MILLSTREAM_LIVE=1`, see
+  docs/testing.md) spends money and is never part of `make ci`; never commit what it records.
+
+## Web UI
+
+- No host toolchain (D35): npm, Vite, Vitest and Playwright run only in containers, from images pinned by digest in
+  `ui/images.mk`. Never install Node on the host.
+- `make ui` builds into `internal/ui/dist/`, embedded by `internal/ui`. The build is not committed; the committed
+  `internal/ui/dist/placeholder.html` is served until it exists, so `go build` never needs npm.
+- Only token utilities exist: `ui/src/styles/index.css` clears Tailwind's palette, and every colour, font, radius,
+  shadow and motion comes from `ui/src/styles/tokens.css`, whose contrast `tokens.test.ts` checks.
+- i18n: `t()` accepts only keys of `src/i18n/en.json`; keep keys literal (no built-up names), or `i18n.test.ts`
+  reports them unused. French copy needs a no-break space before `: ; ! ? »`. Numbers, money, durations and relative
+  times go through `src/i18n/format.ts`.
+- After changing `internal/api/openapi.yaml`, run `make ui-types` and commit `ui/src/api/openapi.d.ts`; the UI
+  imports resource types from `src/api/schema.ts`, never from the generated file.
+- Unit tests use fake timers and the `FakeApi`, never a network or a wall-clock wait. `make test-ui` and
+  `make test-ui-e2e` (Playwright and axe, WCAG 2.2 AA) are not in `make ci`.
+
+## Packaging
+
+- `Dockerfile`'s node stage digest equals `UI_NODE_IMAGE` in `ui/images.mk`; its runtime stage and
+  `Dockerfile.release`'s stay in step. Every `FROM` is pinned by digest (`lint-pins`).
+- GoReleaser and syft are pinned in `tools/release/go.mod`, apart from the linters' `tools/go.mod`; bump them with
+  `go get -tool -modfile=tools/release/go.mod <module>@<version>`.
+- `make test-image` and `make test-deploy` are not in `make ci`; CI's `image` job runs them.
 
 ## Documentation
 
@@ -299,11 +114,11 @@ below) for the reasoning, and `make help` for every command.
 | --- | --- |
 | `docs/specs/20261014.platform-design.md` | The platform design: concepts, file format, execution model, protocol, UI, deployment, milestones |
 | `docs/decisions.md` | Architecture decisions D1 onward |
-| `docs/protocol.md` | The action protocol: messages, framing, ordering, errors, for action authors and SDKs |
+| `docs/protocol.md` | The action protocol, for action authors and SDKs |
 | `docs/deploy.md` | Deployment: the image, Compose, systemd, security, backups and upgrades |
-| `docs/design/20261015.ui-brief.md` | Design brief for the web UI, written for Claude Design |
-| `docs/design/canvas/` | Snapshot of the Claude Design canvas for the web UI, with its version id |
-| `ROADMAP.md` | Parked ideas and follow-ups |
+| `docs/testing.md` | The test suites: budget mechanics, fixtures, Postgres, end-to-end and UI suites |
+| `docs/soak.md` | The soak test |
+| `docs/design/` | The web UI's design brief and the Claude Design canvas snapshot |
 
 ## Workflow
 
