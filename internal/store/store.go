@@ -195,6 +195,19 @@ type Store interface {
 	// FinishPurge ends a sweeping purge, once the engine deleted the artifact files no surviving item references,
 	// with a purgeCompleted event in each pipeline it erased items of. A done purge is returned as it is.
 	FinishPurge(ctx context.Context, id string) (Purge, error)
+	// EvidenceKey returns the deployment's redaction key (spec section 11.2), made at random by its first call and
+	// kept in the store, never exported.
+	EvidenceKey(ctx context.Context) ([]byte, error)
+	// RecordExport records an evidence bundle exported, with the item keys it holds. An id already recorded is
+	// ErrConflict.
+	RecordExport(ctx context.Context, e EvidenceExport) error
+	// RecordImport records an evidence bundle imported, its file already in the artifact store, and counts a
+	// reference to it. A bundle expired by the store clock is ErrConflict; one already imported is left as it is,
+	// with created false.
+	RecordImport(ctx context.Context, e EvidenceImport) (created bool, err error)
+	// ExpireEvidence deletes the evidence imports expired by the store clock, dropping their references, and returns
+	// them: the retention job then deletes their files.
+	ExpireEvidence(ctx context.Context) ([]EvidenceImport, error)
 	// DeleteArtifacts removes the artifact store entries named that no item or attempt references any more (their
 	// reference count is zero): the artifact sweep, once their files are gone. It returns how many it removed.
 	DeleteArtifacts(ctx context.Context, keys []ArtifactKey) (int, error)
@@ -256,6 +269,12 @@ type Store interface {
 	Nodes(ctx context.Context) ([]Node, error)
 	// TriggerTokenHash returns the SHA-256 (hex) of a webhook trigger's token, ErrNotFound when it has none.
 	TriggerTokenHash(ctx context.Context, pipeline, trigger string) (string, error)
+	// EvidenceImports returns the evidence imports of a pipeline (every pipeline when empty), expired or not, oldest
+	// first.
+	EvidenceImports(ctx context.Context, pipeline string) ([]EvidenceImport, error)
+	// EvidenceExports returns the evidence exports of a pipeline (every pipeline when empty), oldest first, with the
+	// item keys they still hold.
+	EvidenceExports(ctx context.Context, pipeline string) ([]EvidenceExport, error)
 	// Purge returns a purge.
 	Purge(ctx context.Context, id string) (Purge, error)
 	// Purges returns the purges not yet done, oldest first: what the engine resumes.

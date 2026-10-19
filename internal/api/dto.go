@@ -475,6 +475,7 @@ type Purge struct {
 	Items       int64      `json:"items"`
 	Erased      int64      `json:"erased"`
 	Pipelines   []string   `json:"pipelines"`
+	Bundles     []string   `json:"bundles"`
 	RequestedAt time.Time  `json:"requestedAt"`
 	FinishedAt  *time.Time `json:"finishedAt,omitempty"`
 }
@@ -482,7 +483,8 @@ type Purge struct {
 // ToPurge is a purge as the API answers it.
 func ToPurge(p store.Purge) Purge {
 	return Purge{ID: p.ID, Scope: string(p.Scope), Pipeline: p.Pipeline, State: string(p.State), Items: p.Items,
-		Erased: p.Erased, Pipelines: orEmpty(p.Pipelines), RequestedAt: p.RequestedAt, FinishedAt: timePtr(p.FinishedAt)}
+		Erased: p.Erased, Pipelines: orEmpty(p.Pipelines), Bundles: orEmpty(p.Bundles), RequestedAt: p.RequestedAt,
+		FinishedAt: timePtr(p.FinishedAt)}
 }
 
 func toDelivery(d store.Delivery) Delivery {

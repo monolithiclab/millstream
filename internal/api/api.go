@@ -145,8 +145,19 @@ type Options struct {
 	Logger *slog.Logger
 	// MaxBody bounds a request body; zero means DefaultMaxBody.
 	MaxBody int64
-	// MaxPackagesBody bounds an apply's body; zero means DefaultMaxPackagesBody.
+	// MaxPackagesBody bounds an apply's body, and an evidence import's; zero means DefaultMaxPackagesBody.
 	MaxPackagesBody int64
+	// Evidence is the deployment's evidence settings (spec section 11.2): its environment's mode, which refuses
+	// imports in production, and improve.evidence.
+	Evidence EvidenceSettings
+}
+
+// EvidenceSettings are what evidence export and import read from the environment file: the effective mode, the
+// sample size and the bundles' expiry (zero for the defaults).
+type EvidenceSettings struct {
+	Mode   string
+	Sample int
+	TTL    time.Duration
 }
 
 // Server serves the API. It is an http.Handler for the paths under Prefix.
@@ -217,6 +228,8 @@ var routes = []route{
 	{http.MethodGet, "/insights", (*Server).listInsights},
 	{http.MethodGet, "/metrics", (*Server).getMetrics},
 	{http.MethodGet, "/metrics/names", (*Server).listMetricNames},
+	{http.MethodPost, "/pipelines/{pipeline}/evidence", (*Server).exportEvidence},
+	{http.MethodPost, "/evidence/imports", (*Server).importEvidence},
 	{http.MethodPost, "/purges", (*Server).createPurge},
 	{http.MethodGet, "/purges/{purge}", (*Server).getPurge},
 	{http.MethodGet, "/nodes", (*Server).listNodes},

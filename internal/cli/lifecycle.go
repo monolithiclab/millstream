@@ -174,11 +174,7 @@ func (c PurgeCmd) Run(rt *Runtime) error {
 		started = created(status)
 		return err
 	}, func(st store.Store) error {
-		env, err := environment(rt)
-		if err != nil {
-			return err
-		}
-		arts, err := artifactStore(rt, env)
+		_, arts, err := localArtifacts(rt)
 		if err != nil {
 			return err
 		}
@@ -205,6 +201,12 @@ func (c PurgeCmd) Run(rt *Runtime) error {
 	if len(p.Pipelines) > 0 {
 		where = " in " + strings.Join(p.Pipelines, ", ")
 	}
-	_, err = fmt.Fprintf(rt.IO.Out, "%s %s: %s erased%s%s\n", p.ID, p.State, plural(int(p.Erased), "item"), where, suffix)
+	if _, err := fmt.Fprintf(rt.IO.Out, "%s %s: %s erased%s%s\n", p.ID, p.State, plural(int(p.Erased), "item"), where,
+		suffix); err != nil {
+		return err
+	}
+	if len(p.Bundles) > 0 { // spec section 11.2: the copies the evidence bundles took are out of the purge's reach
+		_, err = fmt.Fprintf(rt.IO.Out, "evidence bundles that held it: %s\n", strings.Join(p.Bundles, ", "))
+	}
 	return err
 }

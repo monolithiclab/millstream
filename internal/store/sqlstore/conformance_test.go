@@ -348,3 +348,11 @@ func TestFallbackEdges(t *testing.T) {
 func TestAuditsSurfaceStoreErrors(t *testing.T) {
 	storetest.TestAuditsSurfaceStoreErrors(t, memoryStore)
 }
+
+func TestEvidenceExports(t *testing.T) {
+	storetest.TestEvidenceExports(t, memoryStore)
+}
+
+func TestEvidenceImports(t *testing.T) {
+	storetest.TestEvidenceImports(t, memoryStore)
+}

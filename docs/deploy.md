@@ -289,7 +289,44 @@ nothing else references, and prints how many items it erased. It survives a cras
 purge when it starts and at every retention pass, and repeating the command with the same `--request-id` finds it.
 `GET /api/v1/purges/purge_<request id>` shows its progress. The purge records neither the key nor the item: keep the
 request id with the erasure request instead. A purge does not reach backups taken before it, nor the logs the host
-keeps (spec section 15.6): expire those on the same schedule.
+keeps (spec section 15.6): expire those on the same schedule. Nor does it reach the evidence bundles exported before
+it: it prints the bundles that held a key it erased (`evidence bundles that held it: …`, also in the purge's
+`bundles`), so you can delete their files and ask the development deployments that imported them to wait for their
+expiry or start over.
+
+## Moving evidence between deployments
+
+Production holds the history; development is where pipelines are improved (spec section 11.2). Mark each deployment
+in its `millstream.yaml` (`serve` defaults to production, `run` and the other commands to development):
+
+```yaml
+environment: production
+improve: { evidence: { sample: 500, ttl: 30d } }   # the defaults
+```
+
+On production, export a pipeline's evidence: a stratified sample of what it did in the window, with every step's
+inputs and outputs, review decisions, transcripts and the revision's package, in one file:
+
+```sh
+millstream evidence export --pipeline property-sourcing --since 30d --out sourcing.tar.gz
+millstream evidence export --pipeline property-sourcing --insight <id>   # one insight's step and samples
+```
+
+Through `MILLSTREAM_SERVER` the served engine exports it (`POST /api/v1/pipelines/<p>/evidence`), recorded under
+`auth.user`; on SQLite from the command's own process. Before exporting a stream that holds personal data, list its
+fields under `streams: { <name>: { redact: [/seller/phone, /seller/email] } }`: those values, and the same values
+wherever steps copied them, leave as `hmac:…` hashes keyed by a secret the production store keeps, so they still
+compare but cannot be read. The file is written readable by its owner alone; move it as you would a database dump.
+
+On development, import it:
+
+```sh
+millstream --env-file millstream.yaml evidence import sourcing.tar.gz
+```
+
+The bundle is kept in the artifact store as read-only history (nothing joins the deployment's own items) until its
+`ttl` passes, when the engine's retention job deletes it; a production deployment and an expired bundle are refused.
+The command says when the development package has diverged from the revision production exported the evidence on.
 
 ## Backups
 

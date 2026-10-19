@@ -94,7 +94,7 @@ func (f *memFiles) has(pipelineName, name string) bool {
 // TestRetainAndPurge covers the engine's retention job and purges (spec section 9.3): a stream's retention applied
 // from the active revision, the artifact sweep (an expired item's file deleted after the grace, but first copied
 // into the prefix of an importer that references it without holding it; files no entry names deleted once old; a
-// file stored again within the grace kept), the package directory and the caches pruned of revisions nothing uses,
+// file stored again within the grace kept), expired imported evidence and its file deleted, the package directory and the caches pruned of revisions nothing uses,
 // and a purge run to its end, its files swept at once, and resumed when interrupted.
 func TestRetainAndPurge(t *testing.T) {
 	sha := func(c byte) string { return strings.Repeat(string(c), 64) }
@@ -117,8 +117,14 @@ func TestRetainAndPurge(t *testing.T) {
 	v.fire("src", "go", "r1")
 	v.pull(10)
 	v.pull(10)
+	// Imported evidence expiring within the hour (spec section 11.2).
+	if _, err := v.st.RecordImport(v.ctx, store.EvidenceImport{ID: "ev1", Pipeline: "src", SHA256: sha('e'), Size: 1,
+		ExpiresAt: v.clock.Now().Add(time.Hour)}); err != nil {
+		t.Fatal(err)
+	}
 	v.clock.Advance(25 * time.Hour)
 	now := v.clock.Now()
+	files.put("src", sha('e'), now) // within the sweep's grace: the expiry alone deletes it
 	// photo b was stored again an hour ago; an old orphan and temporary file, a fresh orphan; package directories.
 	files.put("src", photoA.SHA256, t0)
 	files.put("src", photoB.SHA256, now.Add(-time.Hour))
@@ -151,11 +157,14 @@ func TestRetainAndPurge(t *testing.T) {
 		want           bool
 	}{
 		{"src", photoA.SHA256, false}, {"deal", photoA.SHA256, true}, {"src", photoB.SHA256, true},
-		{"src", sha('o'), false}, {"src", ".put-1", false}, {"src", sha('f'), true},
+		{"src", sha('o'), false}, {"src", ".put-1", false}, {"src", sha('f'), true}, {"src", sha('e'), false},
 	} {
 		if files.has(c.pipeline, c.name) != c.want {
 			t.Errorf("file %s of %s kept %v, want %v", c.name[:8], c.pipeline, !c.want, c.want)
 		}
+	}
+	if ims, err := v.st.EvidenceImports(v.ctx, ""); err != nil || len(ims) != 0 {
+		t.Fatalf("evidence imports after expiry = %+v, %v", ims, err)
 	}
 	for name, want := range map[string]bool{src.Hash: true, sha('9'): false, ".tmp-1": true} {
 		if _, err := os.Stat(filepath.Join(pkgs, name)); (err == nil) != want {

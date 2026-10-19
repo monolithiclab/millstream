@@ -163,7 +163,7 @@ type engineHost struct {
 	nodeToken string
 	// laptop makes the embedded node take every delivery whatever its placement: run's, a laptop's only node.
 	laptop bool
-	// mode is the deployment's environment, production or development (spec section 11.2).
+	// mode is the environment's effective mode (spec section 11.2): run defaults to development, serve to production.
 	mode string
 }
 
@@ -226,7 +226,8 @@ func (h engineHost) run(ctx context.Context, rt *Runtime, env *pipeline.Environm
 		serveDone <- nil
 	} else {
 		srv, err := newAPIServer(st, e, notes, logs, apiExtras{rt: rt, arts: h.arts, nodes: nodes, nodeAPI: nodeAPI,
-			leaseTTL: h.leaseTTL, mode: h.mode}, h.lead, h.sec, log)
+			leaseTTL: h.leaseTTL, mode: h.mode, evidence: api.EvidenceSettings{Mode: h.mode, Sample: env.Improve.EvidenceSample,
+				TTL: env.Improve.EvidenceTTL}}, h.lead, h.sec, log)
 		if err != nil {
 			cancel(nil)
 			return errors.Join(err, <-siteDone)

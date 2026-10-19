@@ -323,6 +323,7 @@ func TestParseErrors(t *testing.T) {
 		{"stream retention", top + "streams: { a: { retention: forever } }\n", "streams.a.retention: invalid duration"},
 		{"stream retention type", top + "streams: { a: { retention: [1] } }\n", "streams.a.retention: must be a string"},
 		{"stream redact", top + "streams: { a: { redact: /x } }\n", "streams.a.redact: must be a list of strings"},
+		{"stream redact pointer", top + "streams: { a: { redact: [x] } }\n", "streams.a.redact[0]: must be a JSON pointer"},
 		{"stream schema", top + "streams: { a: { schema: { ? [x] : 1 } } }\n", "streams.a.schema: keys must be strings"},
 		{"streams not mapping", top + "streams: [a]\n", "streams: must be a mapping"},
 		{"stream not mapping", top + "streams: { a: b }\n", "streams.a: must be a mapping"},
