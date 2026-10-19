@@ -23,6 +23,14 @@ below) for the reasoning, and `make help` for every command.
   revision was applied, not when they open: they open inside the producer's Done unit (spec section 4.12). A copy is
   made only when the producer's item is newly inserted; earlier items reach a new importer through
   `replay --stream`.
+- The environment (`production` or `development`, spec section 11.2) is the environment file's key, else the
+  command's default: `serve` production, `run` development. Production refuses `improve.enabled` and
+  `improve.publish: apply` (`pipeline.Environment.CheckMode`, `ErrProduction`); a command that runs the `improve`
+  pipeline calls `RequireDevelopment`. The API reports it in `/api/v1/nodes` and `/session`, whence the UI's header
+  shows it.
+- An insight trigger fires only for the insights of other pipelines, after each projector pass
+  (`engine/insight.go`), keyed by the insight and its `insightOpened` or `insightEscalated` event: a pipeline never
+  feeds itself, and reading an event again finds the run it fired.
 - An item whose payload is gone keeps its row: `items.tombstone` says why (`expired` by retention, `erased` by a
   purge), its payload is `null` and its artifacts `[]` (spec section 9.3). Test the tombstone, never a `null`
   payload, which an action may publish. Retention skips what unfinished work needs; a purge fences its lineage in one
@@ -42,6 +50,12 @@ below) for the reasoning, and `make help` for every command.
   `engine/nodes.go`; `artifacts` is the artifact store interface over the local `Dir` and `artifacts/s3` (SigV4
   written in-repo), both also implementing `Files` (what the retention job's artifact sweep lists, stats, copies and
   removes, `engine/retention.go`) and `Toucher`.
+- Insights (`internal/insights`, spec section 11.1): `Load` reads a pipeline's history into `Data`, `Compute` is pure
+  over it, so the golden tests of the newer kinds build `Data` by hand (`learning_test.go`), no store. `lineage.go`
+  holds what the lineage-based kinds share: the steps as the engine resolves them (`StepsOf`), the items loaded for
+  the walks and review attribution (`author`, spec section 11.6); `waste.go`, `distill.go` and `patterns.go` (the
+  `reviewPattern` attribution and proposal hints) build on it. `reviewDecided` events say whether a reason text came
+  (`text`), never the text.
 - `internal/store/`: the log store interface; `sqlstore` is its implementation on `database/sql` (the writer loop,
   every unit, the reads), shared by `sqlite` and `postgres`, which open, migrate and hold the connections and give a
   `sqlstore.Dialect` for what the databases spell differently; `storetest` is the conformance suite both pass;

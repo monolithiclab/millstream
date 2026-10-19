@@ -35,8 +35,23 @@ type Trigger struct {
 	Cron    *CronSpec
 	Manual  *ManualSpec
 	Webhook *WebhookSpec
-	// InputSchema is the schema of the trigger's stream, as written (a path or an inline schema).
+	Insight *InsightSpec
+	// InputSchema is the schema of the trigger's stream, as written (a path or an inline schema). An insight
+	// trigger has none: its stream carries insights.
 	InputSchema any
+}
+
+// Kind names the trigger's kind: cron, manual, webhook or insight.
+func (t Trigger) Kind() string {
+	switch {
+	case t.Cron != nil:
+		return "cron"
+	case t.Webhook != nil:
+		return "webhook"
+	case t.Insight != nil:
+		return "insight"
+	}
+	return "manual"
 }
 
 // Catch-up policies for cron firings missed while no engine ran (spec section 4.6).
@@ -65,6 +80,15 @@ type WebhookSpec struct {
 	// Rate is the most requests its token may make per period, as written (for example "10/s"), DefaultWebhookRate
 	// unless the trigger sets one; see ParseRate.
 	Rate string
+}
+
+// InsightSpec is an insight trigger (spec sections 4.6 and 11.1): it fires a run for each insight of the deployment's
+// other pipelines that opens, reopens or escalates at or above MinSeverity, of one of Kinds.
+type InsightSpec struct {
+	// MinSeverity is info, warning or error; empty means the environment file's improve.minSeverity, else warning.
+	MinSeverity string
+	// Kinds are the insight kinds it fires for; empty means every kind.
+	Kinds []string
 }
 
 // StreamDecl is an entry under streams: either settings for a stream of this pipeline, or an import of another

@@ -98,7 +98,7 @@ func (c RunPackagesCmd) Run(rt *Runtime) error {
 			Store: st, Logger: log, LeaseTTL: c.LeaseTTL, Env: rt.Env, Secrets: secrets(rt, env), Flags: c.Var,
 			NoCron: c.Once, Artifacts: arts, Resolver: actions, Agents: agents(rt, env),
 			Notifier: notes, PackageDir: packageDir(rt, env), Check: checkOptions(rt, env), Retention: env.Retention,
-			Leadership: engine.Leadership{ID: id},
+			Leadership: engine.Leadership{ID: id}, Improve: env.Improve,
 		})
 		if err != nil {
 			return err
@@ -136,7 +136,8 @@ func (c RunPackagesCmd) Run(rt *Runtime) error {
 			}
 		}
 		h := engineHost{listen: listen, sec: sec, embedded: true, slots: c.Slots, leaseTTL: c.LeaseTTL,
-			lead: leadership{identity: api.Identity{ID: id, Since: time.Now()}}, arts: arts, laptop: true}
+			lead: leadership{identity: api.Identity{ID: id, Since: time.Now()}}, arts: arts, laptop: true,
+			mode: env.EffectiveMode(pipeline.ModeDevelopment)}
 		if err := h.run(ctx, rt, env, st, e, notes, log, wait); err != nil {
 			return err
 		}
@@ -162,6 +163,8 @@ type engineHost struct {
 	nodeToken string
 	// laptop makes the embedded node take every delivery whatever its placement: run's, a laptop's only node.
 	laptop bool
+	// mode is the deployment's environment, production or development (spec section 11.2).
+	mode string
 }
 
 // run runs the engine, its embedded node and the API server until ctx ends or wait, called once the engine is
@@ -223,7 +226,7 @@ func (h engineHost) run(ctx context.Context, rt *Runtime, env *pipeline.Environm
 		serveDone <- nil
 	} else {
 		srv, err := newAPIServer(st, e, notes, logs, apiExtras{rt: rt, arts: h.arts, nodes: nodes, nodeAPI: nodeAPI,
-			leaseTTL: h.leaseTTL}, h.lead, h.sec, log)
+			leaseTTL: h.leaseTTL, mode: h.mode}, h.lead, h.sec, log)
 		if err != nil {
 			cancel(nil)
 			return errors.Join(err, <-siteDone)

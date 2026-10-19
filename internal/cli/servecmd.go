@@ -218,7 +218,8 @@ func (s *server) standby(ctx context.Context, since time.Time) {
 	}
 	a, err := api.New(api.Options{Store: st, Artifacts: s.arts, Version: s.rt.Version,
 		User: identity(s.rt), Auth: s.sec.auth, Logger: s.log, Identity: api.Identity{ID: s.id, Since: since},
-		Deployment: dep, Standby: true, NodeAPI: nodes, LeaseTTL: s.cmd.LeaseTTL})
+		Deployment: dep, Standby: true, NodeAPI: nodes, LeaseTTL: s.cmd.LeaseTTL,
+		Environment: s.env.EffectiveMode(pipeline.ModeProduction)})
 	if err != nil {
 		s.log.Error("the standby serves no API", "error", err.Error())
 		return
@@ -239,6 +240,7 @@ func (s *server) term(ctx context.Context, st store.Store, lead leadership) erro
 		Artifacts: s.arts, Resolver: resolver(rt, env, false), Agents: agents(rt, env),
 		Notifier: notes, PackageDir: packageDir(rt, env), Check: checkOptions(rt, env),
 		Leadership: engine.Leadership{ID: s.id, Epoch: lead.identity.Epoch}, Takeover: true, Retention: env.Retention,
+		Improve: env.Improve,
 	})
 	if err != nil {
 		return err
@@ -261,7 +263,7 @@ func (s *server) term(ctx context.Context, st store.Store, lead leadership) erro
 		}
 	}
 	h := engineHost{site: s.site, sec: s.sec, embedded: env.NodeEmbedded, slots: s.cmd.Slots, leaseTTL: s.cmd.LeaseTTL,
-		lead: lead, arts: s.arts, nodeToken: s.nodeToken}
+		lead: lead, arts: s.arts, nodeToken: s.nodeToken, mode: env.EffectiveMode(pipeline.ModeProduction)}
 	return h.run(ctx, rt, env, st, e, notes, s.log, wait)
 }
 

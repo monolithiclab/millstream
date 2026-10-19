@@ -71,6 +71,9 @@ const (
 	SourceImport TriggerSource = "import"
 	// SourceWebhook is a webhook trigger's request (spec section 4.6), keyed by its request id.
 	SourceWebhook TriggerSource = "webhook"
+	// SourceInsight is an insight trigger's (spec section 4.6), keyed by the insight and the event that opened,
+	// reopened or escalated it.
+	SourceInsight TriggerSource = "insight"
 )
 
 // DeadLetterKind is why a dead letter exists (spec section 5.6).
@@ -166,6 +169,7 @@ const (
 	EventBudgetReached          = "budgetReached"
 	EventInsightOpened          = "insightOpened"
 	EventInsightResolved        = "insightResolved"
+	EventInsightEscalated       = "insightEscalated"
 	EventReviewParked           = "reviewParked"
 	EventReviewDecided          = "reviewDecided"
 	EventReviewEscalated        = "reviewEscalated"

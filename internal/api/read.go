@@ -1136,6 +1136,9 @@ func (s *Server) listMetricNames(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
+// environment is the deployment's environment: Options.Environment, development when unset.
+func (s *Server) environment() string { return cmp.Or(s.opts.Environment, pipeline.ModeDevelopment) }
+
 func (s *Server) listNodes(w http.ResponseWriter, r *http.Request) error {
 	leased, err := s.opts.Store.Deliveries(r.Context(), store.DeliveryFilter{State: store.DeliveryLeased})
 	if err != nil {
@@ -1147,7 +1150,7 @@ func (s *Server) listNodes(w http.ResponseWriter, r *http.Request) error {
 	}
 	id := s.opts.Identity
 	self := EngineInfo{State: stateActive, ID: id.ID, Version: s.opts.Version, Since: timePtr(id.Since),
-		Epoch: id.Epoch}
+		Epoch: id.Epoch, Environment: s.environment()}
 	if s.opts.Standby {
 		self.State, self.Epoch = stateStandby, 0
 	}

@@ -376,7 +376,7 @@ func TestReportWithoutHistory(t *testing.T) {
 // a schema-validation failure) and the unschedulable publish step.
 func TestGoldenInsights(t *testing.T) {
 	s := shared(t)
-	d, err := Load(s.ctx, s.st, "shop", now)
+	d, err := Load(s.ctx, s.st, "shop", now, Config{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -438,7 +438,7 @@ func TestProjectKeys(t *testing.T) {
 			if tt.name == "off" { // every event read: only where the projector must write none
 				before = events()
 			}
-			if err := Project(s.ctx, s.st, p, now, nil); err != nil {
+			if err := Project(s.ctx, s.st, p, now, Config{}); err != nil {
 				t.Fatal(err)
 			}
 			if got := recorded(); fmt.Sprint(got) != fmt.Sprint(tt.want) {
@@ -453,7 +453,7 @@ func TestProjectKeys(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := Project(context.Background(), nil, bad, now, nil); err == nil {
+	if err := Project(context.Background(), nil, bad, now, Config{}); err == nil {
 		t.Error("Project accepted an invalid insights key")
 	}
 }
@@ -494,7 +494,7 @@ func TestGoldenReports(t *testing.T) {
 // TestUnschedulablePending: the steps whose pending deliveries no registered node can take are unschedulable
 // insights of class noNode, one per step, with what they need.
 func TestUnschedulablePending(t *testing.T) {
-	d := &Data{Pipeline: "shop", Now: now, Pending: []PendingStep{{Step: "score", Count: 3, Needs: "runtime exec"}}}
+	d := &Data{Pipeline: "shop", Now: now, Config: Config{Pending: []PendingStep{{Step: "score", Count: 3, Needs: "runtime exec"}}}}
 	got := Compute(d, []string{pipeline.InsightUnschedulable})
 	if len(got) != 1 || got[0].Scope != "score" || got[0].Severity != SeverityError {
 		t.Fatalf("insights = %+v", got)

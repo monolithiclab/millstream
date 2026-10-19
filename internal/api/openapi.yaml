@@ -1116,7 +1116,7 @@ components:
       additionalProperties: false
       properties:
         name: { type: string }
-        kind: { type: string, enum: [cron, manual, webhook] }
+        kind: { type: string, enum: [cron, manual, webhook, insight] }
         schedule: { type: string }
         stream: { type: string }
         path: { type: string, description: "A webhook trigger's path under the server's address: /hooks/{pipeline}/{trigger}." }
@@ -1182,7 +1182,7 @@ components:
         kind: { type: string, enum: [trigger, replay, import] }
         trigger: { type: string, description: The trigger, or for an import run the imported stream. }
         triggerKey: { type: string, description: The scheduled time or request id, or for an import run the producer run. }
-        triggerSource: { type: string, enum: [cron, manual, webhook, import] }
+        triggerSource: { type: string, enum: [cron, manual, webhook, import, insight] }
         scheduledAt: { type: string, format: date-time }
         generation: { type: integer }
         state: { $ref: "#/components/schemas/RunState" }
@@ -1738,11 +1738,15 @@ components:
               source: { type: string }
     Session:
       type: object
-      required: [auth]
+      required: [auth, environment]
       additionalProperties: false
       properties:
         auth: { type: boolean, description: Whether the server requires the token. }
         user: { type: string, description: Who the request's decisions are recorded under. }
+        environment:
+          type: string
+          enum: [production, development]
+          description: The deployment's environment (spec section 11.2), shown in the UI's header.
     SessionLogin:
       type: object
       required: [token]
@@ -1757,12 +1761,18 @@ components:
         engine:
           type: object
           description: The engine serving this response, the active one or a standby serving reads.
-          required: [state, id, version, notificationsFailed]
+          required: [state, id, version, environment, notificationsFailed]
           additionalProperties: false
           properties:
             state: { type: string, enum: [active, standby] }
             id: { type: string }
             version: { type: string }
+            environment:
+              type: string
+              enum: [production, development]
+              description: >-
+                The deployment's environment (spec section 11.2): production refuses the improve pipeline and
+                improve.publish apply. serve defaults to production, run to development.
             since:
               type: string
               format: date-time

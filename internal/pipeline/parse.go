@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"regexp"
+	"slices"
+	"strings"
 
 	"go.yaml.in/yaml/v3"
 )
@@ -126,13 +128,13 @@ func parseTrigger(n *yaml.Node, path string) (Trigger, error) {
 		return t, err
 	}
 	kinds := 0
-	for _, k := range []string{"cron", "manual", "webhook"} {
+	for _, k := range []string{"cron", "manual", "webhook", "insight"} {
 		if f.get(k) != nil {
 			kinds++
 		}
 	}
 	if kinds != 1 {
-		return t, errAt(f.node, path, "must set exactly one of cron, manual or webhook")
+		return t, errAt(f.node, path, "must set exactly one of cron, manual, webhook or insight")
 	}
 	switch {
 	case f.get("cron") != nil:
@@ -145,6 +147,10 @@ func parseTrigger(n *yaml.Node, path string) (Trigger, error) {
 		}
 		if t.Manual == nil {
 			t.Manual = &ManualSpec{}
+		}
+	case f.get("insight") != nil:
+		if err = f.allow("insight"); err == nil {
+			err = required(f, "insight", &t.Insight, parseInsightTrigger)
 		}
 	default:
 		if err = f.allow("webhook", "inputSchema"); err == nil {
@@ -195,6 +201,30 @@ func parseWebhook(n *yaml.Node, path string) (*WebhookSpec, error) {
 	}
 	w := &WebhookSpec{Rate: DefaultWebhookRate}
 	return w, optional(f, "rate", &w.Rate, rate)
+}
+
+func parseInsightTrigger(n *yaml.Node, path string) (*InsightSpec, error) {
+	f, err := mapping(n, path)
+	if err != nil {
+		return nil, err
+	}
+	if err := f.allow("minSeverity", "kinds"); err != nil {
+		return nil, err
+	}
+	in := &InsightSpec{}
+	if err := optional(f, "minSeverity", &in.MinSeverity, oneOf(Severities...)); err != nil {
+		return nil, err
+	}
+	if err := optional(f, "kinds", &in.Kinds, strList); err != nil {
+		return nil, err
+	}
+	for _, k := range in.Kinds {
+		if !slices.Contains(InsightKinds, k) {
+			return nil, errAt(f.get("kinds"), f.sub("kinds"), "%s is not an insight kind (%s)", k,
+				strings.Join(InsightKinds, ", "))
+		}
+	}
+	return in, nil
 }
 
 func parseStreams(n *yaml.Node, path string) (map[string]StreamDecl, error) {

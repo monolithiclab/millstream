@@ -212,6 +212,9 @@ func (w *wtx) decided(r *reviewRow, state store.ReviewState, decision, reviewer,
 	if len(patch) > 0 {
 		data["edited"] = review.Pointers(patch)
 	}
+	if text != "" { // whether a reason text came with it, never the text (spec section 11.6)
+		data["text"] = true
+	}
 	return w.event(r.pipeline, r.runID, store.EventReviewDecided, data)
 }
 

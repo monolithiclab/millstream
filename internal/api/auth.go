@@ -196,10 +196,12 @@ func (s *Server) hostAllowed(host string) bool {
 	return slices.Contains(s.opts.Auth.Hosts, strings.ToLower(hostName(host)))
 }
 
-// Session is the answer of the session operations: whether the server requires the token, and who decides.
+// Session is the answer of the session operations: whether the server requires the token, who decides, and the
+// deployment's environment (spec section 11.2), which the UI's header shows.
 type Session struct {
-	Auth bool   `json:"auth"`
-	User string `json:"user,omitempty"`
+	Auth        bool   `json:"auth"`
+	User        string `json:"user,omitempty"`
+	Environment string `json:"environment"`
 }
 
 // sessionLogin is the body of POST /session.
@@ -210,7 +212,7 @@ type sessionLogin struct {
 // getSession says whether the server requires the token, and who the request decides as.
 func (s *Server) getSession(w http.ResponseWriter, r *http.Request) error {
 	user, _ := s.user(r)
-	writeJSON(w, http.StatusOK, Session{Auth: s.opts.Auth != nil, User: user})
+	writeJSON(w, http.StatusOK, Session{Auth: s.opts.Auth != nil, User: user, Environment: s.environment()})
 	return nil
 }
 
@@ -237,7 +239,7 @@ func (s *Server) createSession(w http.ResponseWriter, r *http.Request) error {
 	ttl := s.opts.Auth.SessionTTL
 	id := s.opts.Auth.Sessions.create(now, now.Add(ttl))
 	http.SetCookie(w, sessionCookie(id, int(ttl/time.Second), s.opts.Auth.SecureCookie))
-	writeJSON(w, http.StatusOK, Session{Auth: true, User: s.opts.Auth.User})
+	writeJSON(w, http.StatusOK, Session{Auth: true, User: s.opts.Auth.User, Environment: s.environment()})
 	return nil
 }
 

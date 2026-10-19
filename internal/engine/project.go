@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/monolithiclab/millstream/internal/insights"
+	"github.com/monolithiclab/millstream/internal/pipeline"
 	"github.com/monolithiclab/millstream/internal/store"
 )
 
@@ -30,9 +31,9 @@ func (e *Engine) projectLoop(ctx context.Context) {
 }
 
 // Project runs the projectors now (spec sections 10.2 and 11.1): the metric rollup over every event not yet rolled
-// up, then the insights projector of every pipeline whose insights are on. Run calls it on a ticker, where a
-// pipeline's insights run only when insights.every has passed or one of its runs settled since their last pass;
-// "run --once" calls it once its runs settled. A pipeline whose insights fail is logged and the others still run.
+// up, then the insights projector of every pipeline whose insights are on, then the insight triggers. Run calls it
+// on a ticker, where a pipeline's insights run only when insights.every has passed or one of its runs settled since
+// their last pass; "run --once" calls it once its runs settled. A pipeline whose insights fail is logged and the others still run.
 func (e *Engine) Project(ctx context.Context) error { return e.project(ctx, true) }
 
 func (e *Engine) project(ctx context.Context, force bool) error {
@@ -66,6 +67,9 @@ func (e *Engine) project(ctx context.Context, force bool) error {
 			errs = append(errs, err)
 		}
 	}
+	if err := e.fireInsightTriggers(ctx, pipelines); err != nil {
+		errs = append(errs, err)
+	}
 	return errors.Join(errs...)
 }
 
@@ -90,7 +94,10 @@ func (e *Engine) projectInsights(ctx context.Context, ps store.PipelineState, fo
 			return err
 		}
 	}
-	if err := insights.Project(ctx, e.st, rev.p, now, pending); err != nil {
+	steps := insights.StepsOf(rev.p, func(ref string) *pipeline.Action { return e.action(rev, ref).a })
+	if err := insights.Project(ctx, e.st, rev.p, now, insights.Config{Steps: steps, Pending: pending,
+		DistillMinDeliveries: e.opts.Improve.DistillMinDeliveries,
+		FilterMaxFalseDrop:   e.opts.Improve.FilterMaxFalseDrop}); err != nil {
 		return err
 	}
 	e.lastInsights[ps.Name] = now

@@ -125,7 +125,13 @@ describe('FakeApi', () => {
       'revokeNode',
       'drainNode',
     ]);
-    const engine = { state: 'standby' as const, id: 'mill-02', version: '0.0.0', notificationsFailed: 0 };
+    const engine = {
+      state: 'standby' as const,
+      id: 'mill-02',
+      version: '0.0.0',
+      environment: 'production' as const,
+      notificationsFailed: 0,
+    };
     const standby = new FakeApi({ ...demoFixtures, nodes: { ...demoFixtures.nodes, engine } });
     await expect(standby.drainNode('gpu-01')).rejects.toMatchObject({ status: 503 });
     expect((await new FakeApi().listNodes()).nodes.find((n) => n.id === 'gpu-01')?.state).toBe('active');

@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/monolithiclab/millstream/internal/pipeline"
 	"github.com/monolithiclab/millstream/internal/store"
 )
 
@@ -39,10 +40,12 @@ func (s *Store) RecordInsights(ctx context.Context, r store.InsightReport) error
 }
 
 // recordInsight opens an insight found for the first time, reopens a resolved one, and updates the figures of the
-// others, keeping their state.
+// others, keeping their state; an open or acknowledged one whose severity rises records insightEscalated.
 func (w *wtx) recordInsight(pipelineName string, in store.Insight) error {
 	var state store.InsightState
-	err := w.queryRow(`SELECT state FROM insights WHERE pipeline = ? AND id = ?`, pipelineName, in.ID).Scan(&state)
+	var severity string
+	err := w.queryRow(`SELECT state, severity FROM insights WHERE pipeline = ? AND id = ?`, pipelineName, in.ID).
+		Scan(&state, &severity)
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
 		if _, err := w.exec(`INSERT INTO insights (pipeline, id, kind, scope, window_start, window_end, severity,
@@ -65,8 +68,11 @@ func (w *wtx) recordInsight(pipelineName string, in store.Insight) error {
 		pipelineName, in.ID); err != nil {
 		return err
 	}
-	if next != state {
+	switch {
+	case next != state:
 		return w.insightEvent(pipelineName, store.EventInsightOpened, in)
+	case state != store.InsightMuted && pipeline.SeverityRank(in.Severity) > pipeline.SeverityRank(severity):
+		return w.insightEvent(pipelineName, store.EventInsightEscalated, in)
 	}
 	return nil
 }

@@ -16,6 +16,13 @@ earlier designs are in the git history of the spec.
 - Lessons: selecting examples per item by similarity instead of including them all (D28).
 - Evidence bundles pulled directly from a production deployment by a development one, instead of export and import
   files.
+- `reviewPattern` filter candidates test one field at a time, on fields every decided item holds; conjunctions of
+  fields, fields some items lack (a `has()` guard) and thresholds that allow `improve.filter.maxFalseDrop` false
+  drops on numbers are left to the `improve` agent and the backtest.
+- The insights projector reads the lineage of every item discarded or decided in the window, with payloads: on a
+  large pipeline, sample them (as `distillable` samples 50 deliveries) once a profile shows the pass is slow.
+- Insight evidence is JSON with HTML escaping (`\u003e` for `>`, `\u003curl\u003e`); readers decode it, but the raw
+  rows would read better without it.
 
 ## Follow-ups
 

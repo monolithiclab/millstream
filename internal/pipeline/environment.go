@@ -119,17 +119,33 @@ func (e *Environment) EffectiveMode(def string) string {
 	return def
 }
 
+// ErrProduction marks what a production deployment refuses (spec section 11.2, D31).
+var ErrProduction = errors.New("refused in production")
+
 // CheckMode refuses what the mode forbids (spec section 11.2): in production the improve pipeline does not run, so
-// improve.enabled and improve.publish: apply are refused.
+// improve.enabled and improve.publish: apply are refused. serve checks it with production as the default, run with
+// development.
 func (e *Environment) CheckMode(def string) error {
 	if e.EffectiveMode(def) != ModeProduction {
 		return nil
 	}
 	switch {
 	case e.Improve.Enabled:
-		return errors.New("improve.enabled: the improve pipeline runs in development deployments only")
+		return fmt.Errorf("improve.enabled: the improve pipeline runs in development deployments only: %w",
+			ErrProduction)
 	case e.Improve.Publish == PublishApply:
-		return errors.New("improve.publish: apply is refused in production")
+		return fmt.Errorf("improve.publish: apply is %w: set environment: development, or another publisher",
+			ErrProduction)
+	}
+	return nil
+}
+
+// RequireDevelopment refuses what only a development deployment does, such as running the improve pipeline (what),
+// in a production one; def is the command's default mode.
+func (e *Environment) RequireDevelopment(def, what string) error {
+	if e.EffectiveMode(def) == ModeProduction {
+		return fmt.Errorf("%s runs in development deployments only (environment: production): %w", what,
+			ErrProduction)
 	}
 	return nil
 }
@@ -852,7 +868,7 @@ func readImprove(f *fields, env *Environment) error {
 	for _, err := range []error{
 		optional(imf, "enabled", &im.Enabled, boolean),
 		optional(imf, "harness", &im.Harness, oneOf("claude-code", "api")),
-		optional(imf, "minSeverity", &im.MinSeverity, oneOf("info", "warning", "error")),
+		optional(imf, "minSeverity", &im.MinSeverity, oneOf(Severities...)),
 		optional(imf, "publish", &im.Publish, oneOf(PublishApply, PublishPatchFile, PublishGitPRGH, PublishGitPRGLab)),
 		sub("budget", []string{"dayUsd"}, func(sf *fields) []error {
 			return []error{optional(sf, "dayUsd", &im.BudgetDayUSD, nonNegativeNumber)}
