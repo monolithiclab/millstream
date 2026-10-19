@@ -60,6 +60,10 @@ improve:
   harness: api
   minSeverity: warning
   publish: apply
+  patchFile: { dir: proposals }
+  git: { repo: "https://git.example/p.git", base: trunk, path: "pipelines/{pipeline}", env: [GH_TOKEN],
+    image: "ghcr.io/x/publish@sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    author: { name: Bot, email: bot@example.invalid } }
   budget: { dayUsd: 5 }
   evidence: { sample: 500, ttl: 30d }
   backtest: { sample: 200 }
@@ -83,6 +87,9 @@ improve:
 		Retention: Retention{Events: 90 * day, Transcripts: 30 * day, Rollups: 400 * day, Every: 30 * time.Minute},
 		Engine:    EngineConfig{LockCheck: 2 * time.Second, Keepalive: 3 * time.Second},
 		Improve: Improve{Enabled: true, Harness: "api", MinSeverity: "warning", Publish: PublishApply, BudgetDayUSD: 5,
+			PatchFile: PatchFileConfig{Dir: "proposals"}, Git: GitConfig{Repo: "https://git.example/p.git", Base: "trunk",
+				Path: "pipelines/{pipeline}", Env: []string{"GH_TOKEN"}, AuthorName: "Bot", AuthorEmail: "bot@example.invalid",
+				Image: "ghcr.io/x/publish@sha256:0000000000000000000000000000000000000000000000000000000000000000"},
 			EvidenceSample: 500, EvidenceTTL: 30 * day, BacktestSample: 200, DistillMinDeliveries: 500,
 			DistillLanguage: "go", DistillMinAgreement: 0.98, DistillMinCoverage: 0.6, FilterMaxFalseDrop: 0.01},
 	}
@@ -165,6 +172,7 @@ func TestSecretLookup(t *testing.T) {
 
 func TestParseEnvironmentErrors(t *testing.T) {
 	t.Parallel()
+	const pinned = "x@sha256:0000000000000000000000000000000000000000000000000000000000000000"
 	tests := map[string]struct{ src, want string }{
 		"unknown key":       {"registry: {}\n", "line 1: registry: unknown key"},
 		"environment":       {"environment: staging\n", "environment: must be one of production, development"},
@@ -210,6 +218,11 @@ func TestParseEnvironmentErrors(t *testing.T) {
 		"improve agreement": {"improve: { distill: { minAgreement: 2 } }\n", "improve.distill.minAgreement: must be a number from 0 to 1"},
 		"improve filter":    {"improve: { filter: 3 }\n", "improve.filter: must be a mapping"},
 		"improve prod":      {"environment: production\nimprove: { enabled: true }\n", "improve: enabled: the improve pipeline runs in development"},
+		"patch-file dir":    {"improve: { publish: patch-file }\n", "improve.publish: patch-file needs improve.patchFile.dir"},
+		"git repo":          {"improve: { publish: git-pr-gh }\n", "improve.publish: git-pr-gh needs improve.git"},
+		"git image":         {"improve: { git: { repo: r, image: alpine/git } }\n", "improve.git.image: must be pinned by digest"},
+		"git path":          {"improve: { git: { repo: r, path: ../x, image: " + pinned + " } }\n", "improve.git.path: must be a clean"},
+		"git env":           {"improve: { git: { repo: r, env: [GH-TOKEN], image: " + pinned + " } }\n", "improve.git.env[0]: must be an environment"},
 		"improve prod pub":  {"environment: production\nimprove: { publish: apply }\n", "improve: publish: apply is refused in production"},
 		"store both":        {"store: { sqlite: { path: a }, postgres: { dsn: { env: D } } }\n", "store: want exactly one"},
 		"store none":        {"store: {}\n", "store: want exactly one of sqlite and postgres"},

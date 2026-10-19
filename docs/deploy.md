@@ -328,6 +328,39 @@ The bundle is kept in the artifact store as read-only history (nothing joins the
 `ttl` passes, when the engine's retention job deletes it; a production deployment and an expired bundle are refused.
 The command says when the development package has diverged from the revision production exported the evidence on.
 
+## Publishing accepted proposals
+
+On a development deployment, an accepted proposal goes to the publish action `improve.publish` names (spec section
+11.7). Each one publishes the validated patch and nothing else: a patch that no longer hashes to the validated one,
+or that touches a path its kind does not allow, is refused.
+
+```yaml
+environment: development
+improve:
+  publish: git-pr-gh            # apply | patch-file | git-pr-gh | git-pr-glab
+  patchFile: { dir: proposals }  # patch-file: <dir>/<proposal id>.patch, relative to this file
+  git:                           # git-pr-gh and git-pr-glab
+    repo: https://github.com/example/pipelines.git
+    base: main                   # the branch pull requests target (default main)
+    path: pipelines/{pipeline}   # the package's directory in the repository (default the root)
+    image: registry.example/publish@sha256:…   # git and gh (or glab), pinned by digest
+    env: [GH_TOKEN]              # the variables passed to the action's container, and nothing else
+    author: { name: Millstream, email: millstream@example.com }
+```
+
+- `apply` makes the patched package the pipeline's next revision, only while its active revision is still the
+  proposal's base. Production refuses it.
+- The git actions run `improve.git.image` with the container runtime (`runtime.container`): a hardened container
+  with the network, the variables `improve.git.env` names (`GH_TOKEN`; `GITLAB_TOKEN` and `GITLAB_HOST` for glab)
+  and nothing else. They clone the base branch, apply the patch exactly, commit it with a
+  `Millstream-Proposal: <id>` trailer, push `millstream/<id>` (never forced) and open the pull request with the
+  validation report in its body. git runs with hooks disabled; nothing from the repository is built or run. Pull
+  requests come from a bot: do not expose secrets to the CI jobs of branches it pushes.
+- When the merged package is applied, `millstream apply` reads the `Millstream-Proposal` trailers of the last commit
+  that touched the package directory. A revision that is not exactly the proposal's patch over its validated base is
+  recorded as not validated in that combination; the engine runs the evals and a backtest of it against the revision
+  before it and opens a `regression` insight when it regressed.
+
 ## Backups
 
 Everything durable is in Postgres, plus the artifact store. Back up with `pg_dump` in custom format:

@@ -22,26 +22,38 @@ type ApplyCmd struct {
 // Run checks the packages, each on its own and with every other pipeline of the deployment, then applies each as a
 // new revision of its pipeline: through the served engine's API with --server, else to the store from this process.
 // It prints each pipeline's revision, and the check's warnings on stderr.
+//
+// A package directory in a git checkout carries the accepted proposals the Millstream-Proposal trailers of its last
+// commit name (spec section 11.3): each is recorded applied, and validated again when the revision is not exactly
+// its patch over its base.
 func (c ApplyCmd) Run(rt *Runtime) error {
 	pkgs := make([]*pipeline.Package, 0, len(c.Dirs))
+	carried := map[string][]string{}
 	for _, dir := range c.Dirs {
 		pkg, err := pipeline.Load(dir)
 		if err != nil {
 			return err
 		}
 		pkgs = append(pkgs, pkg)
+		carried[pkg.Pipeline.Name] = append(carried[pkg.Pipeline.Name], proposalTrailers(rt, dir)...)
 	}
-	return changeState(rt, func(cl *apiClient) error { return c.remote(rt, cl, pkgs) }, func(st store.Store) error {
+	return changeState(rt, func(cl *apiClient) error { return c.remote(rt, cl, pkgs, carried) }, func(st store.Store) error {
 		env, err := environment(rt)
 		if err != nil {
 			return err
 		}
+		// A revision carrying proposals in a combination nobody validated is validated before the command returns,
+		// its backtest on local history.
+		mode := env.EffectiveMode(pipeline.ModeDevelopment)
 		e, err := engine.New(engine.Options{Store: st, Env: rt.Env, Secrets: secrets(rt, env),
-			Resolver: resolver(rt, env, false), Check: checkOptions(rt, env), PackageDir: packageDir(rt, env)})
+			Resolver: resolver(rt, env, false), Check: checkOptions(rt, env), PackageDir: packageDir(rt, env),
+			Agents: agents(rt, env), Mode: mode,
+			Proposals: proposalOptions(rt, env, newBacktester(rt, env, st, nil, mode, nil))})
 		if err != nil {
 			return err
 		}
-		applied, findings, err := e.ApplyPackages(rt.Ctx, pkgs, engine.ApplyOptions{Force: c.Force, Message: c.Message})
+		applied, findings, err := e.ApplyPackages(rt.Ctx, pkgs, engine.ApplyOptions{Force: c.Force, Message: c.Message,
+			Proposals: carried})
 		if ce := (*engine.CheckError)(nil); errors.As(err, &ce) {
 			findings, err = ce.Findings, errFailed
 		}
@@ -58,10 +70,11 @@ func (c ApplyCmd) Run(rt *Runtime) error {
 	})
 }
 
-func (c ApplyCmd) remote(rt *Runtime, cl *apiClient, pkgs []*pipeline.Package) error {
+func (c ApplyCmd) remote(rt *Runtime, cl *apiClient, pkgs []*pipeline.Package, carried map[string][]string) error {
 	req := api.ApplyRequest{Force: c.Force, Message: c.Message}
 	for _, pkg := range pkgs {
-		req.Packages = append(req.Packages, api.PackageFiles{Files: pkg.Files})
+		req.Packages = append(req.Packages, api.PackageFiles{Files: pkg.Files, Proposals: carried[pkg.Pipeline.Name]})
+		carried[pkg.Pipeline.Name] = nil // a pipeline given twice carries its proposals once
 	}
 	var res api.ApplyResponse
 	if _, err := cl.post(rt.Ctx, "/revisions", req, &res); err != nil {

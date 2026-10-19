@@ -103,8 +103,12 @@ type Options struct {
 	// Improve is the environment file's improve key: the default minSeverity of insight triggers and the settings
 	// the insights projector reads (spec sections 11.1, 11.5 and 11.6).
 	Improve pipeline.Improve
-	// Proposals are what proposals are validated with (spec section 11.3).
+	// Proposals are what proposals are validated with (spec section 11.3), and the revisions carrying proposals in
+	// a combination nobody validated.
 	Proposals ProposalOptions
+	// Mode is the deployment's environment (spec section 11.2): production refuses ApplyProposal. Empty reads
+	// development.
+	Mode string
 	// Takeover makes every step's rate start empty, a full token's interval before its first lease, so that an
 	// engine taking a deployment over (serve) never causes a burst (spec section 5.9).
 	Takeover bool
@@ -178,6 +182,7 @@ type Engine struct {
 	insightSeq   int64                // the last insight event the insight triggers fired for; under projMu
 	insightTS    time.Time            // and when it was recorded
 	retainMu     sync.Mutex           // serialises Retain
+	bg           background           // the checks of revisions carrying unvalidated proposals, while Run runs
 
 	// Test seams, set before Run: maxDue bounds the missed cron times kept (the maxDue constant), and ticked and
 	// projected, when set, are called after each pass of Run's expiry tick and of its projectors.
@@ -282,17 +287,18 @@ func (e *Engine) LeaseTTL() time.Duration { return e.opts.LeaseTTL }
 // (spec section 4.12); they must resolve, secrets included. Each webhook trigger without a token gets one, returned
 // once in Applied.Tokens.
 func (e *Engine) Apply(ctx context.Context, pkg *pipeline.Package) (Applied, error) {
-	return e.apply(ctx, pkg, "")
+	return e.apply(ctx, pkg, ApplyOptions{})
 }
 
-func (e *Engine) apply(ctx context.Context, pkg *pipeline.Package, message string) (Applied, error) {
+func (e *Engine) apply(ctx context.Context, pkg *pipeline.Package, opts ApplyOptions) (Applied, error) {
 	name := pkg.Pipeline.Name
 	fail := func(err error) (Applied, error) { return Applied{}, fmt.Errorf("apply %s: %w", name, err) }
 	bundle, err := pipeline.EncodeBundle(pkg.Files)
 	if err != nil {
 		return fail(fmt.Errorf("encode bundle: %w", err))
 	}
-	rec := store.PackageRecord{Hash: pkg.Hash, Bundle: bundle, Pipeline: pkg.Pipeline, Message: message}
+	rec := store.PackageRecord{Hash: pkg.Hash, Bundle: bundle, Pipeline: pkg.Pipeline, Message: opts.Message,
+		Base: opts.Base}
 	if len(pkg.Pipeline.Imports()) > 0 {
 		res, err := pipeline.ResolveVarsWith(pkg.Pipeline, e.declaredFlags(pkg.Pipeline), e.opts.Env, e.secrets(name))
 		if err != nil {
@@ -304,6 +310,15 @@ func (e *Engine) apply(ctx context.Context, pkg *pipeline.Package, message strin
 	if err != nil && !errors.Is(err, store.ErrNotFound) {
 		return fail(err)
 	}
+	parent := ""
+	if before != 0 {
+		rev, err := e.st.Revision(ctx, before)
+		if err != nil {
+			return fail(err)
+		}
+		parent = rev.PackageHash
+	}
+	rec.Proposals = e.carried(ctx, name, parent, pkg.Hash, opts.Proposals[name])
 	id, err := e.st.ApplyRevision(ctx, rec)
 	if err != nil {
 		return fail(err)
@@ -317,6 +332,9 @@ func (e *Engine) apply(ctx context.Context, pkg *pipeline.Package, message strin
 	tokens, err := e.createTriggerTokens(ctx, pkg.Pipeline)
 	if err != nil {
 		return fail(err)
+	}
+	if id != before {
+		e.checkCombination(ctx, name, id, parent, pkg.Hash, rec.Proposals)
 	}
 	return Applied{Pipeline: name, Revision: id, PackageHash: pkg.Hash, Created: id != before, Tokens: tokens}, nil
 }
@@ -339,6 +357,8 @@ func (e *Engine) Run(ctx context.Context) error {
 	// Reviews overdue while no engine ran time out before anything waits on their runs.
 	e.reviewTimeouts(ctx)
 	e.readyOnce.Do(func() { close(e.ready) })
+	e.bg.start(ctx)
+	defer e.bg.stop()
 	var wg sync.WaitGroup
 	defer wg.Wait()
 	wg.Go(func() { e.projectLoop(ctx) })

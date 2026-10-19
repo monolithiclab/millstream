@@ -64,8 +64,9 @@ type Store interface {
 	// last event: what live event streams wake on (spec section 12.1). fn must not block; nil stops the calls.
 	OnCommit(fn func(lastSeq int64))
 
-	// ApplyRevision stores a package and makes its revision the pipeline's active one. Applying the package that
-	// is already active is a no-op returning its revision.
+	// ApplyRevision stores a package and makes its revision the pipeline's active one, on condition that the active
+	// revision's package is still pkg.Base when it is set (ErrConflict otherwise), recording proposalApplied for the
+	// accepted proposals it carries. Applying the package that is already active is a no-op returning its revision.
 	ApplyRevision(ctx context.Context, pkg PackageRecord) (RevisionID, error)
 	// Fire is the Trigger unit: the run, its trigger item and the deliveries of the steps reading the trigger
 	// stream. created is false when the run already existed: the firing already happened.
@@ -228,6 +229,9 @@ type Store interface {
 	// RejectProposal rejects an open or stale proposal with a reason, required (ErrInvalid without), recording the
 	// highest severity of its insights for the suppression of its fingerprint.
 	RejectProposal(ctx context.Context, id, reason, by string) (Proposal, error)
+	// RecordPublished records that an accepted proposal went to its publish action: proposalPublished, with the
+	// action's name and where it put the proposal. A proposal that is not accepted is ErrConflict.
+	RecordPublished(ctx context.Context, id, publisher, where string) error
 	// SetProposalToken replaces the hash (SHA-256, hex) of the proposals-only API token (spec section 11.3).
 	SetProposalToken(ctx context.Context, hash string) error
 	// DeleteArtifacts removes the artifact store entries named that no item or attempt references any more (their

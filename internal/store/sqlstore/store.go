@@ -39,7 +39,7 @@ var Units = []string{
 	unitDeleteArtifacts, unitAbstain, unitEndAudit,
 	unitEvidenceKey, unitRecordExport, unitRecordImport, unitExpireEvidence,
 	unitCreateProposal, unitStartValidation, unitRecordValidation, unitAcceptProposal, unitRejectProposal,
-	unitSetProposalToken,
+	unitSetProposalToken, unitRecordPublished,
 }
 
 const (
@@ -88,6 +88,7 @@ const (
 	unitAcceptProposal   = "acceptProposal"
 	unitRejectProposal   = "rejectProposal"
 	unitSetProposalToken = "setProposalToken"
+	unitRecordPublished  = "recordPublished"
 )
 
 // Dialect is what the SQLite and Postgres stores spell differently under the shared SQL.

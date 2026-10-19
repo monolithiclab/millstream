@@ -21,6 +21,12 @@ type ApplyOptions struct {
 	Force bool
 	// Message says why, kept with each revision.
 	Message string
+	// Base, with a single package, is the package hash its pipeline's active revision must still have, or the apply
+	// is store.ErrConflict (the apply publish action, spec section 11.3).
+	Base string
+	// Proposals are the accepted proposals each pipeline's package carries, by pipeline: the Millstream-Proposal
+	// trailers of the commit it was applied from (spec section 11.3).
+	Proposals map[string][]string
 }
 
 // Applied is one package applied.
@@ -70,6 +76,9 @@ func (e *Engine) ApplyPackages(ctx context.Context, pkgs []*pipeline.Package, op
 	if len(pkgs) == 0 {
 		return nil, nil, fmt.Errorf("apply: no package: %w", store.ErrInvalid)
 	}
+	if opts.Base != "" && len(pkgs) != 1 {
+		return nil, nil, fmt.Errorf("apply: a base revision conditions the apply of one package: %w", store.ErrInvalid)
+	}
 	findings, err := e.checkApply(ctx, pkgs, opts)
 	if err != nil {
 		return nil, nil, err
@@ -79,7 +88,7 @@ func (e *Engine) ApplyPackages(ctx context.Context, pkgs []*pipeline.Package, op
 	}
 	out := make([]Applied, 0, len(pkgs))
 	for _, pkg := range pkgs {
-		a, err := e.apply(ctx, pkg, opts.Message)
+		a, err := e.apply(ctx, pkg, opts)
 		if err != nil {
 			return out, findings, err
 		}

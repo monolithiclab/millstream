@@ -19,9 +19,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	osexec "os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -147,29 +149,105 @@ func (l Launcher) Kill(_ exec.Spec, workdir string) {
 
 // Args are the CLI arguments that run spec with workdir.
 func (l Launcher) Args(spec exec.Spec, workdir string) []string {
-	args := []string{"run", "--interactive", "--rm", "--pull=never", "--name", Name(workdir),
-		"--read-only", "--tmpfs", "/tmp", "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
-		"--mount", bindMount(workdir, workdir, false), "--workdir", workdir, "--env", "MILLSTREAM_WORKDIR=" + workdir}
-	if !spec.Network {
+	args := append([]string{"run", "--interactive"}, hardened(Name(workdir))...)
+	args = append(args, "--mount", bindMount(workdir, workdir, false), "--workdir", workdir,
+		"--env", "MILLSTREAM_WORKDIR="+workdir)
+	args = append(args, l.Runtime.isolation(spec.Network)...)
+	args = append(args, l.Runtime.mountsAndEnv(spec.Mounts, spec.Env)...)
+	args = append(args, spec.Image)
+	return append(args, spec.Command...)
+}
+
+// hardened are the flags every container gets: removed on exit, never pulled, a read-only root with a private
+// /tmp, no capabilities and no new privileges.
+func hardened(name string) []string {
+	return []string{"--rm", "--pull=never", "--name", name, "--read-only", "--tmpfs", "/tmp", "--cap-drop", "ALL",
+		"--security-opt", "no-new-privileges"}
+}
+
+// isolation are the flags of the network, none unless network, and of the user, the node's.
+func (r Runtime) isolation(network bool) []string {
+	var args []string
+	if !network {
 		args = append(args, "--network", "none")
 	}
 	switch {
-	case l.Runtime.Name == pipeline.RuntimePodman && l.Runtime.User != "" && !strings.HasPrefix(l.Runtime.User, "0:"):
+	case r.Name == pipeline.RuntimePodman && r.User != "" && !strings.HasPrefix(r.User, "0:"):
 		args = append(args, "--userns", "keep-id") // rootless Podman maps the node's user into the container
-	case l.Runtime.User != "":
-		args = append(args, "--user", l.Runtime.User)
+	case r.User != "":
+		args = append(args, "--user", r.User)
 	}
-	for _, m := range spec.Mounts {
+	return args
+}
+
+// mountsAndEnv are the flags of the mounts and the variables: a variable the CLI's own environment lacks is passed
+// by name, its value reaching the container through the CLI's environment, never its arguments.
+func (r Runtime) mountsAndEnv(mounts []exec.Mount, env []string) []string {
+	var args []string
+	for _, m := range mounts {
 		args = append(args, "--mount", bindMount(m.Source, m.Target, m.ReadOnly))
 	}
-	for _, kv := range spec.Env {
-		if k, _, _ := strings.Cut(kv, "="); !l.Runtime.hasEnv(k) {
-			kv = k // by name: the value reaches the container through the CLI's environment, never its arguments
+	for _, kv := range env {
+		if k, _, _ := strings.Cut(kv, "="); !r.hasEnv(k) {
+			kv = k
 		}
 		args = append(args, "--env", kv)
 	}
-	args = append(args, spec.Image)
-	return append(args, spec.Command...)
+	return args
+}
+
+// Job is a one-off container run, hardened as an action's container is: a sandbox build, a publish action.
+type Job struct {
+	// Name names the container, so a cancelled job's container can be removed.
+	Name  string
+	Image string
+	// Entrypoint replaces the image's entrypoint when set.
+	Entrypoint string
+	Command    []string
+	Mounts     []exec.Mount
+	Workdir    string
+	// Env is KEY=VALUE; the values travel in the CLI's environment, never its arguments.
+	Env []string
+	// Network gives the job the network; it has none otherwise.
+	Network bool
+}
+
+// JobArgs are the CLI arguments that run j.
+func (r Runtime) JobArgs(j Job) []string {
+	args := append(append([]string{"run"}, hardened(j.Name)...), r.isolation(j.Network)...)
+	if j.Entrypoint != "" {
+		args = append(args, "--entrypoint", j.Entrypoint)
+	}
+	if j.Workdir != "" {
+		args = append(args, "--workdir", j.Workdir)
+	}
+	args = append(args, r.mountsAndEnv(j.Mounts, j.Env)...)
+	args = append(args, j.Image)
+	return append(args, j.Command...)
+}
+
+// RunJob runs j to its end, its output to stdout and stderr. A cancelled job's container is removed.
+func (r Runtime) RunJob(ctx context.Context, j Job, stdout, stderr io.Writer) error {
+	for _, m := range j.Mounts {
+		if strings.Contains(m.Source+m.Target, ",") {
+			return fmt.Errorf("job %s: mount path %q holds a comma, which --mount cannot pass", j.Name, m.Source)
+		}
+	}
+	cmd := r.command(ctx, r.JobArgs(j)...)
+	cmd.Stdout, cmd.Stderr = stdout, stderr
+	cmd.Env = slices.Clone(r.Env)
+	for _, kv := range j.Env {
+		if k, _, _ := strings.Cut(kv, "="); !r.hasEnv(k) {
+			cmd.Env = append(cmd.Env, kv)
+		}
+	}
+	err := r.run(cmd)
+	if ctx.Err() != nil {
+		rmCtx, cancel := context.WithTimeout(context.Background(), removeTimeout)
+		defer cancel()
+		_ = r.run(r.command(rmCtx, "rm", "--force", j.Name))
+	}
+	return err
 }
 
 // bindMount is a bind mount as --mount takes it: unlike --volume's src:dst:ro, a path may hold a colon (Command

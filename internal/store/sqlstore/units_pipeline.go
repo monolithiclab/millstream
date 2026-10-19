@@ -38,6 +38,12 @@ func (s *Store) ApplyRevision(ctx context.Context, pkg store.PackageRecord) (sto
 		var activeHash string
 		err := w.queryRow(`SELECT p.active_revision, r.package_hash FROM pipelines p
 			JOIN revisions r ON r.id = p.active_revision WHERE p.id = ?`, name).Scan(&id, &activeHash)
+		if pkg.Base != "" && (err != nil || activeHash != pkg.Base) {
+			if err != nil && !errors.Is(err, sql.ErrNoRows) {
+				return fmt.Errorf("read active revision: %w", err)
+			}
+			return fmt.Errorf("the active revision of %s is no longer %.12s: %w", name, pkg.Base, store.ErrConflict)
+		}
 		switch {
 		case err == nil && activeHash == pkg.Hash:
 			if _, err := w.exec(`UPDATE revisions SET vars = ?, var_sources = ? WHERE id = ?`, vars, sources,
@@ -73,6 +79,9 @@ func (s *Store) ApplyRevision(ctx context.Context, pkg store.PackageRecord) (sto
 			return err
 		}
 		if err := w.staleProposals(name, pkg.Hash); err != nil {
+			return err
+		}
+		if err := w.appliedProposals(name, id, pkg.Hash, activeHash, pkg.Proposals); err != nil {
 			return err
 		}
 		for stepName, step := range pkg.Pipeline.Steps {

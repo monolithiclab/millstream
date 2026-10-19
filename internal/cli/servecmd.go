@@ -242,7 +242,7 @@ func (s *server) term(ctx context.Context, st store.Store, lead leadership) erro
 		Artifacts: s.arts, Resolver: resolver(rt, env, false), Agents: agents(rt, env),
 		Notifier: notes, PackageDir: packageDir(rt, env), Check: checkOptions(rt, env),
 		Leadership: engine.Leadership{ID: s.id, Epoch: lead.identity.Epoch}, Takeover: true, Retention: env.Retention,
-		Improve: env.Improve, Proposals: proposalOptions(rt, env, bt),
+		Improve: env.Improve, Proposals: proposalOptions(rt, env, bt), Mode: mode,
 	})
 	if err != nil {
 		return err

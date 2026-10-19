@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"net"
 	"os"
+	pathpkg "path"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -260,7 +261,10 @@ type Improve struct {
 	Harness     string
 	MinSeverity string
 	// Publish is the publisher of accepted proposals: apply, patch-file, git-pr-gh or git-pr-glab.
-	Publish      string
+	Publish string
+	// PatchFile is improve.patchFile, the patch-file action's settings; Git is improve.git, the git actions'.
+	PatchFile    PatchFileConfig
+	Git          GitConfig
 	BudgetDayUSD float64
 	// EvidenceSample and EvidenceTTL are improve.evidence: the items an evidence bundle samples, and its expiry.
 	EvidenceSample int
@@ -275,6 +279,36 @@ type Improve struct {
 	// FilterMaxFalseDrop is improve.filter.maxFalseDrop.
 	FilterMaxFalseDrop float64
 }
+
+// PublishActions are the publish actions improve.publish may name.
+var PublishActions = []string{PublishApply, PublishPatchFile, PublishGitPRGH, PublishGitPRGLab}
+
+// PatchFileConfig is improve.patchFile.
+type PatchFileConfig struct {
+	// Dir is where the patch-file action writes each accepted proposal's patch, relative to the environment file.
+	Dir string
+}
+
+// GitConfig is improve.git: the repository the git-pr-gh and git-pr-glab actions open pull requests on. Millstream
+// holds no forge credential (D32): Env names the variables of the engine's environment passed to the action's
+// container, such as GH_TOKEN or GITLAB_TOKEN, and nothing else reaches it.
+type GitConfig struct {
+	// Repo is the repository's clone URL; Base the branch pull requests target (default main).
+	Repo string
+	Base string
+	// Path is the package's directory in the repository (default the root); {pipeline} stands for the pipeline's
+	// name.
+	Path string
+	// Image is the action's container image, with git and the forge's CLI, pinned by digest.
+	Image string
+	Env   []string
+	// AuthorName and AuthorEmail sign the commits (default Millstream, millstream@localhost).
+	AuthorName  string
+	AuthorEmail string
+}
+
+// DefaultGitBase is improve.git.base's default.
+const DefaultGitBase = "main"
 
 // StoreConfig is the store key: SQLite at a path, or Postgres at a DSN read from a source, never written in the
 // file. The zero value, no store key, is SQLite at the --db path.
@@ -377,6 +411,7 @@ func LoadEnvironment(path string, required bool) (*Environment, error) {
 	abs(&env.AgentBinary)
 	abs(&env.Store.SQLitePath)
 	abs(&env.Artifacts.LocalPath)
+	abs(&env.Improve.PatchFile.Dir)
 	if env.TLS != nil {
 		abs(&env.TLS.Cert)
 		abs(&env.TLS.Key)
@@ -857,8 +892,8 @@ func readImprove(f *fields, env *Environment) error {
 	if err != nil {
 		return err
 	}
-	if err := imf.allow("enabled", "harness", "minSeverity", "publish", "budget", "evidence", "backtest", "distill",
-		"filter"); err != nil {
+	if err := imf.allow("enabled", "harness", "minSeverity", "publish", "patchFile", "git", "budget", "evidence",
+		"backtest", "distill", "filter"); err != nil {
 		return err
 	}
 	im := &env.Improve
@@ -869,7 +904,22 @@ func readImprove(f *fields, env *Environment) error {
 		optional(imf, "enabled", &im.Enabled, boolean),
 		optional(imf, "harness", &im.Harness, oneOf("claude-code", "api")),
 		optional(imf, "minSeverity", &im.MinSeverity, oneOf(Severities...)),
-		optional(imf, "publish", &im.Publish, oneOf(PublishApply, PublishPatchFile, PublishGitPRGH, PublishGitPRGLab)),
+		optional(imf, "publish", &im.Publish, oneOf(PublishActions...)),
+		sub("patchFile", []string{"dir"}, func(sf *fields) []error {
+			return []error{required(sf, "dir", &im.PatchFile.Dir, nonEmptyStr)}
+		}),
+		sub("git", []string{"repo", "base", "path", "image", "env", "author"}, func(sf *fields) []error {
+			g := &im.Git
+			return []error{required(sf, "repo", &g.Repo, nonEmptyStr),
+				optional(sf, "base", &g.Base, nonEmptyStr),
+				optional(sf, "path", &g.Path, packageDir),
+				required(sf, "image", &g.Image, pinnedImage),
+				optional(sf, "env", &g.Env, envNames),
+				section(sf, "author", []string{"name", "email"}, func(af *fields) []error {
+					return []error{optional(af, "name", &g.AuthorName, nonEmptyStr),
+						optional(af, "email", &g.AuthorEmail, nonEmptyStr)}
+				})}
+		}),
 		sub("budget", []string{"dayUsd"}, func(sf *fields) []error {
 			return []error{optional(sf, "dayUsd", &im.BudgetDayUSD, nonNegativeNumber)}
 		}),
@@ -894,10 +944,50 @@ func readImprove(f *fields, env *Environment) error {
 			return err
 		}
 	}
+	if at := imf.get("publish"); at != nil {
+		switch {
+		case im.Publish == PublishPatchFile && im.PatchFile.Dir == "":
+			return errAt(at, imf.sub("publish"), "patch-file needs improve.patchFile.dir")
+		case (im.Publish == PublishGitPRGH || im.Publish == PublishGitPRGLab) && im.Git.Repo == "":
+			return errAt(at, imf.sub("publish"), "%s needs improve.git (repo and image)", im.Publish)
+		}
+	}
 	if env.Mode != "" {
 		if err := env.CheckMode(""); err != nil {
 			return errAt(imf.node, imf.path, "%s", strings.TrimPrefix(err.Error(), "improve."))
 		}
 	}
 	return nil
+}
+
+// pinnedImage reads a container image reference pinned by digest (repository@sha256:<64 hex>).
+func pinnedImage(n *yaml.Node, path string) (string, error) {
+	s, err := nonEmptyStr(n, path)
+	if err == nil && !pinnedRef.MatchString(s) {
+		err = errAt(deref(n), path, "must be pinned by digest: <repository>@sha256:<64 hex characters>")
+	}
+	return s, err
+}
+
+var pinnedRef = regexp.MustCompile(`^[^\s@]+@sha256:[0-9a-f]{64}$`)
+
+// packageDir reads a clean relative directory, "{pipeline}" standing for a pipeline's name.
+func packageDir(n *yaml.Node, path string) (string, error) {
+	s, err := nonEmptyStr(n, path)
+	if err == nil && (filepath.IsAbs(s) || strings.Contains(s, "\\") || pathpkg.Clean(s) != s ||
+		s == ".." || strings.HasPrefix(s, "../")) {
+		err = errAt(deref(n), path, "must be a clean relative path inside the repository")
+	}
+	return s, err
+}
+
+// envNames reads a list of environment variable names.
+func envNames(n *yaml.Node, path string) ([]string, error) {
+	names, err := strSeq(n, path)
+	for i, name := range names {
+		if err == nil && !envName.MatchString(name) {
+			err = errAt(deref(n).Content[i], indexPath(path, i), "must be an environment variable's name")
+		}
+	}
+	return names, err
 }

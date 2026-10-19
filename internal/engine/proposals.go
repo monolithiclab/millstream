@@ -132,16 +132,7 @@ func (e *Engine) ValidateProposal(ctx context.Context, id string) (store.Proposa
 // validate runs the validation and encodes its report; a validation that could not run fails with its error as the
 // report, so the proposal goes back to drafting rather than staying validating.
 func (e *Engine) validate(ctx context.Context, pipelineName string, prep proposals.Prepared) (json.RawMessage, bool) {
-	evals := e.opts.Proposals.Evals
-	if evals.Env == nil {
-		evals.Env = func(string) func(string) (string, bool) { return e.opts.Env }
-	}
-	if evals.Prices == nil {
-		evals.Prices = e.opts.Agents.Prices
-	}
-	v := proposals.Validator{Check: e.checkProposal, Resolver: e.opts.Resolver, Evals: evals,
-		Backtest: e.opts.Proposals.Backtest, Scratch: e.opts.PackageDir}
-	r, err := v.Validate(ctx, pipelineName, prep)
+	r, err := e.validator().Validate(ctx, pipelineName, prep)
 	if err != nil {
 		data, _ := json.Marshal(map[string]any{"passed": false, "baseRevision": prep.Base.Hash,
 			"patchSha256": prep.SHA256, "error": err.Error()})
@@ -152,6 +143,19 @@ func (e *Engine) validate(ctx context.Context, pipelineName string, prep proposa
 		return json.RawMessage(`{"passed":false}`), false
 	}
 	return data, r.Passed
+}
+
+// validator is the engine's proposal validator.
+func (e *Engine) validator() proposals.Validator {
+	evals := e.opts.Proposals.Evals
+	if evals.Env == nil {
+		evals.Env = func(string) func(string) (string, bool) { return e.opts.Env }
+	}
+	if evals.Prices == nil {
+		evals.Prices = e.opts.Agents.Prices
+	}
+	return proposals.Validator{Check: e.checkProposal, Resolver: e.opts.Resolver, Evals: evals,
+		Backtest: e.opts.Proposals.Backtest, Scratch: e.opts.PackageDir}
 }
 
 // checkProposal checks a patched package as apply would, against the rest of the deployment.

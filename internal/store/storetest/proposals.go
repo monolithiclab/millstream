@@ -251,3 +251,52 @@ func TestProposalUnitsFailpoints(t *testing.T, open Opener) {
 	}
 	wantErr(t, e.s.SetProposalToken(e.ctx, ""), store.ErrInvalid)
 }
+
+// TestProposalPublishing: an apply under a base applies only while the active revision is still that base, and
+// records proposalApplied for the accepted proposals the revision carries, validated or not, leaving out the rest;
+// only an accepted proposal is recorded published (spec sections 11.3 and 11.7).
+func TestProposalPublishing(t *testing.T, open Opener) {
+	e := newEnv(t, open, fixture)
+	base := hashOf(fixture)
+	e.createProposal(proposal("p1", base, []string{"pipeline.yaml"}, nil))
+	e.createProposal(proposal("open", base, []string{"lessons/score.yaml"}, []string{"score"}))
+	wantErr(t, e.s.RecordPublished(e.ctx, "p1", "patch-file", "x.patch"), store.ErrConflict)
+	e.ready("p1")
+	if _, err := e.s.AcceptProposal(e.ctx, "p1", "sha-p1", "ana"); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.s.RecordPublished(e.ctx, "p1", "patch-file", "x.patch"); err != nil {
+		t.Fatal(err)
+	}
+	v2, v3 := fixture+"\n# v2\n", fixture+"\n# v3\n"
+	record := func(src, cond string, applied ...store.AppliedProposal) error {
+		_, err := e.s.ApplyRevision(e.ctx, store.PackageRecord{Hash: hashOf(src), Bundle: []byte(src),
+			Pipeline: parse(e.t, src), Base: cond, Proposals: applied})
+		return err
+	}
+	wantErr(t, record(v2, hashOf("elsewhere"), store.AppliedProposal{ID: "p1", Validated: true}), store.ErrConflict)
+	if err := record(v2, base, store.AppliedProposal{ID: "p1", Validated: true},
+		store.AppliedProposal{ID: "open"}, store.AppliedProposal{ID: "absent"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := record(v3, "", store.AppliedProposal{ID: "p1"}); err != nil {
+		t.Fatal(err)
+	}
+	evs, err := e.s.PipelineEvents(e.ctx, store.EventFilter{Pipeline: "listings",
+		Kinds: []string{store.EventProposalPublished, store.EventProposalApplied}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, ev := range evs {
+		got = append(got, ev.Kind+" "+string(ev.Data))
+	}
+	want := []string{
+		`proposalPublished {"id":"p1","publisher":"patch-file","where":"x.patch"}`,
+		`proposalApplied {"id":"p1","packageHash":"` + hashOf(v2) + `","parent":"` + base + `","revision":2,"validated":true}`,
+		`proposalApplied {"id":"p1","packageHash":"` + hashOf(v3) + `","parent":"` + hashOf(v2) + `","revision":3,"validated":false}`,
+	}
+	if !slices.Equal(got, want) {
+		t.Fatalf("events\n%q\nwant\n%q", got, want)
+	}
+}

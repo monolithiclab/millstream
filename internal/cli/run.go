@@ -102,6 +102,7 @@ func (c RunPackagesCmd) Run(rt *Runtime) error {
 			NoCron: c.Once, Artifacts: arts, Resolver: actions, Agents: agents(rt, env),
 			Notifier: notes, PackageDir: packageDir(rt, env), Check: checkOptions(rt, env), Retention: env.Retention,
 			Leadership: engine.Leadership{ID: id}, Improve: env.Improve, Proposals: proposalOptions(rt, env, bt),
+			Mode: mode,
 		})
 		if err != nil {
 			return err

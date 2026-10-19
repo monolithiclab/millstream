@@ -120,3 +120,24 @@ func TestFind(t *testing.T) {
 		t.Fatal("Find found a file that is not executable")
 	}
 }
+
+// TestJobArgs: a job is hardened as an action's container is, its variables passed by name, and has the network
+// only when it asks for it.
+func TestJobArgs(t *testing.T) {
+	t.Parallel()
+	rt := Runtime{Name: pipeline.RuntimeDocker, User: "501:20", Env: []string{"PATH=/bin"}}
+	j := Job{Name: "millstream-job-1", Image: "img@sha256:abc", Entrypoint: "/bin/sh", Command: []string{"-c", "true"},
+		Workdir: "/work", Mounts: []exec.Mount{{Source: "/h/src", Target: "/src", ReadOnly: true}},
+		Env: []string{"TOKEN=secret", "PATH=/x"}}
+	got := strings.Join(rt.JobArgs(j), " ")
+	want := "run --rm --pull=never --name millstream-job-1 --read-only --tmpfs /tmp --cap-drop ALL " +
+		"--security-opt no-new-privileges --network none --user 501:20 --entrypoint /bin/sh --workdir /work " +
+		"--mount type=bind,src=/h/src,dst=/src,readonly --env TOKEN --env PATH=/x img@sha256:abc -c true"
+	if got != want {
+		t.Fatalf("JobArgs\n%s\nwant\n%s", got, want)
+	}
+	j.Network = true
+	if args := rt.JobArgs(j); slices.Contains(args, "none") || strings.Contains(strings.Join(args, " "), "secret") {
+		t.Fatalf("a job with the network: %q", args)
+	}
+}

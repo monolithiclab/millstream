@@ -191,6 +191,11 @@ const (
 	EventProposalAccepted  = "proposalAccepted"
 	EventProposalRejected  = "proposalRejected"
 	EventProposalStale     = "proposalStale"
+	// EventProposalPublished: an accepted proposal went to its publish action (spec section 11.7), with where.
+	EventProposalPublished = "proposalPublished"
+	// EventProposalApplied: a revision carrying an accepted proposal was applied (its Millstream-Proposal trailer,
+	// or the apply publish action), validated in that combination or not (spec section 11.3).
+	EventProposalApplied = "proposalApplied"
 )
 
 // Budget scopes (spec section 7.5): budget.runUsd bounds the spend of one run, budget.dayUsd the spend of the
@@ -219,6 +224,19 @@ type PackageRecord struct {
 	// applying the active package again replaces them.
 	Vars       map[string]any
 	VarSources map[string]string
+	// Base, when set, is the package hash the pipeline's active revision must still have: otherwise the apply is
+	// ErrConflict and changes nothing. The apply publish action applies under it (spec section 11.3).
+	Base string
+	// Proposals are the accepted proposals the revision carries, each recorded proposalApplied when it becomes the
+	// active revision; ids that are not accepted proposals of the pipeline are left out.
+	Proposals []AppliedProposal
+}
+
+// AppliedProposal is an accepted proposal a revision carries. Validated says whether the revision is the proposal's
+// patch applied to the base it was validated on, over that base: otherwise this combination was never validated.
+type AppliedProposal struct {
+	ID        string
+	Validated bool
 }
 
 // Revision is an applied revision.

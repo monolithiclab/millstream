@@ -100,6 +100,26 @@ func Rebase(kind store.ProposalKind, base *pipeline.Package, text string) (Prepa
 	return prepared(kind, base, string(rebased), p, files)
 }
 
+// Diff is the change from one revision's package to another's, prepared as a proposal's patch is but under no kind's
+// path rules: what the engine validates when a revision carries proposals in a combination nobody validated (spec
+// section 11.3).
+func Diff(base, patched *pipeline.Package) (Prepared, error) {
+	text, err := patch.Format(base.Hash, base.Files, patched.Files)
+	switch {
+	case err != nil:
+		return Prepared{}, err
+	case text == nil:
+		return Prepared{}, fmt.Errorf("%w: revisions %.12s and %.12s hold the same files", patch.ErrPatch, base.Hash,
+			patched.Hash)
+	}
+	p, err := patch.Parse(text)
+	if err != nil {
+		return Prepared{}, err
+	}
+	return Prepared{Patch: string(text), SHA256: patch.Hash(text), Changes: p.Files, Base: base, Patched: patched,
+		Steps: touchedSteps(base.Pipeline, patched.Pipeline, p.Files)}, nil
+}
+
 // Fingerprint identifies a proposal's idea when its drafter names none: its pipeline, kind, the insights it answers
 // and the paths it touches. A rejection suppresses it (spec section 11.3).
 func Fingerprint(pipelineName string, kind store.ProposalKind, insights, paths []string) string {

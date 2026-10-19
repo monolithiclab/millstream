@@ -1749,6 +1749,12 @@ components:
                 type: object
                 description: The package's files by slash-separated path, each base64.
                 additionalProperties: { type: string, contentEncoding: base64 }
+              proposals:
+                type: array
+                description: >-
+                  The accepted proposals the package carries: the Millstream-Proposal trailers of the commit it comes
+                  from. Each is recorded applied, validated in this combination or not.
+                items: { type: string }
         force: { type: boolean, description: Let through breaking an importer's contract. }
         message: { type: string, description: Why, kept with each revision. }
     ApplyResponse:

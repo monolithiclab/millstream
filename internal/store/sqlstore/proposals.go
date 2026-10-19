@@ -377,6 +377,49 @@ func (s *Store) RejectProposal(ctx context.Context, id, reason, by string) (stor
 	return out, nil
 }
 
+// appliedProposals records proposalApplied for each accepted proposal of the pipeline a new revision carries.
+func (w *wtx) appliedProposals(pipelineName string, rev store.RevisionID, hash, parent string,
+	applied []store.AppliedProposal,
+) error {
+	for _, a := range applied {
+		var state string
+		err := w.queryRow(`SELECT state FROM proposals WHERE id = ? AND pipeline = ?`, a.ID, pipelineName).Scan(&state)
+		switch {
+		case errors.Is(err, sql.ErrNoRows) || err == nil && state != string(store.ProposalAccepted):
+			continue
+		case err != nil:
+			return err
+		}
+		if err := w.event(pipelineName, "", store.EventProposalApplied, map[string]any{"id": a.ID, "revision": rev,
+			"packageHash": hash, "parent": parent, "validated": a.Validated}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// RecordPublished records an accepted proposal's publication: see store.Store.
+func (s *Store) RecordPublished(ctx context.Context, id, publisher, where string) error {
+	if id == "" || publisher == "" {
+		return fmt.Errorf("record published: a proposal and a publisher: %w", store.ErrInvalid)
+	}
+	err := s.submit(ctx, unitRecordPublished, func(w *wtx) error {
+		p, err := w.proposal(id)
+		if err != nil {
+			return err
+		}
+		if p.State != store.ProposalAccepted {
+			return fmt.Errorf("proposal %s is %s: only an accepted one is published: %w", id, p.State, store.ErrConflict)
+		}
+		return w.event(p.Pipeline, "", store.EventProposalPublished, map[string]any{"id": id, "publisher": publisher,
+			"where": where})
+	})
+	if err != nil {
+		return fmt.Errorf("record published: %w", err)
+	}
+	return nil
+}
+
 // SetProposalToken replaces the proposals-only token's hash.
 func (s *Store) SetProposalToken(ctx context.Context, hash string) error {
 	if hash == "" {

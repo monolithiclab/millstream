@@ -43,10 +43,11 @@ func withProposalEngine(rt *Runtime, st store.Store, fn func(*engine.Engine) err
 	if err != nil {
 		return err
 	}
-	bt := newBacktester(rt, env, st, arts, env.EffectiveMode(pipeline.ModeDevelopment), nil)
+	mode := env.EffectiveMode(pipeline.ModeDevelopment)
+	bt := newBacktester(rt, env, st, arts, mode, nil)
 	e, err := engine.New(engine.Options{Store: st, Env: rt.Env, Secrets: secrets(rt, env),
 		Resolver: resolver(rt, env, false), Check: checkOptions(rt, env), PackageDir: packageDir(rt, env),
-		Agents: agents(rt, env), Proposals: proposalOptions(rt, env, bt)})
+		Agents: agents(rt, env), Proposals: proposalOptions(rt, env, bt), Mode: mode})
 	if err != nil {
 		return err
 	}
