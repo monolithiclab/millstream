@@ -1,0 +1,33 @@
+# Gathers what a draft needs (spec section 11.3): the insight, its evidence and proposal hints, the reviewers' edits,
+# the reasons earlier proposals of the same idea were rejected, and the files the proposal may change, read through
+# the API. An insight's run gathers that insight; the weekly run and a manual run without one, every open insight
+# at or above minSeverity without an open proposal, and the lessons files near lessons.maxTokens. One output per idea.
+name: improve/gather-evidence
+version: 1.0.0
+description: Gathers an insight's evidence and the files a proposal may change, one output per idea
+kind: exec
+effects: none
+input: { type: object }
+config:
+  type: object
+  properties:
+    api: { type: string, minLength: 1 }
+    token: { type: string, minLength: 1 }
+    pipeline: { type: string, minLength: 1 }
+    lessonsMaxTokens: { type: integer, minimum: 1 }
+    maxFalseDrop: { type: number, minimum: 0, maximum: 1 }
+    minSeverity: { enum: [info, warning, error] }
+  required: [api, token]
+  additionalProperties: false
+output:
+  type: object
+  properties:
+    pipeline: { type: string }
+    baseRevision: { type: string }
+    kind: { enum: [lessons, prompt, config, topology] }
+    fingerprint: { type: string }
+    insights: { type: array, items: { type: string } }
+    hint: { type: object }
+    brief: { type: string }
+  required: [pipeline, baseRevision, kind, fingerprint, insights, brief]
+runtime: { exec: { command: [millstream, improve-action, gather-evidence] } }

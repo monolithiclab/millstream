@@ -1,6 +1,7 @@
 package backtest
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -14,15 +15,20 @@ import (
 const Tolerance = 0.02
 
 // Holds reports whether a backtest lets a proposal through (spec section 11.3), comparing the patched replay with
-// the base revision's over the whole sample: agreement with the historical outputs and agreement with the reviewers'
-// decisions each fall by at most Tolerance (an agreement with nothing to compare does not count), and the failure
-// rate does not rise at all.
-func (r *Report) Holds() bool {
+// the base revision's over the whole sample: agreement with the reviewers' decisions falls by at most Tolerance,
+// agreement with the historical outputs too unless the reviewers' rose (the outputs a proposal changes as the
+// reviewers corrected them are what it is for), an agreement with nothing to compare not counting; and the failure
+// rate does not rise at all; and the patched replay drops at most maxFalseDrop of the sample's approvals, items a
+// person approved that no longer reach their review (improve.filter.maxFalseDrop, spec section 11.6).
+func (r *Report) Holds(maxFalseDrop float64) bool {
 	b, a := r.Before, r.After
+	reviewed := b.Reviewed > 0
 	switch {
-	case b.Compared > 0 && a.Agreement < b.Agreement-Tolerance:
+	case a.Approved > 0 && float64(a.ApprovalsDropped-b.ApprovalsDropped) > maxFalseDrop*float64(a.Approved):
 		return false
-	case b.Reviewed > 0 && a.ReviewAgreement < b.ReviewAgreement-Tolerance:
+	case reviewed && a.ReviewAgreement < b.ReviewAgreement-Tolerance:
+		return false
+	case b.Compared > 0 && a.Agreement < b.Agreement-Tolerance && !(reviewed && a.ReviewAgreement > b.ReviewAgreement):
 		return false
 	}
 	return a.FailureRate <= b.FailureRate
@@ -33,9 +39,18 @@ func (r *Report) Holds() bool {
 // whose history never reaches the changed steps has nothing to regress (ErrNoHistory): its report samples nothing
 // and says so, and holds. Any other refusal (a spent budget, a production deployment, proposed exec code) is the
 // validation's failure.
-func ForProposals(r Runner) proposals.Backtester { return proposalBacktester{r} }
+// maxFalseDrop is improve.filter.maxFalseDrop, DefaultMaxFalseDrop when zero.
+func ForProposals(r Runner, maxFalseDrop float64) proposals.Backtester {
+	return proposalBacktester{r: r, maxFalseDrop: cmp.Or(maxFalseDrop, DefaultMaxFalseDrop)}
+}
 
-type proposalBacktester struct{ r Runner }
+// DefaultMaxFalseDrop is improve.filter.maxFalseDrop's default.
+const DefaultMaxFalseDrop = 0.01
+
+type proposalBacktester struct {
+	r            Runner
+	maxFalseDrop float64
+}
 
 func (b proposalBacktester) Backtest(ctx context.Context, req proposals.BacktestRequest) (proposals.BacktestResult,
 	error,
@@ -53,5 +68,5 @@ func (b proposalBacktester) Backtest(ctx context.Context, req proposals.Backtest
 	if err != nil {
 		return proposals.BacktestResult{}, err
 	}
-	return proposals.BacktestResult{Passed: rep.Holds(), Report: data}, nil
+	return proposals.BacktestResult{Passed: rep.Holds(b.maxFalseDrop), Report: data}, nil
 }

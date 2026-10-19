@@ -122,12 +122,24 @@ func (ExecLauncher) Command(spec Spec, workdir string) (*osexec.Cmd, error) {
 	if len(spec.Command) == 0 {
 		return nil, fmt.Errorf("action %s has no command", spec.Action)
 	}
+	prog := spec.Command[0]
+	if prog == SelfCommand { // the running binary (spec section 6.2): the improve package's actions are its own
+		self, err := os.Executable()
+		if err != nil {
+			return nil, fmt.Errorf("action %s runs %s, the running binary: %w", spec.Action, SelfCommand, err)
+		}
+		prog = self
+	}
 	// #nosec G204 -- the command comes from the operator's package manifest: running it is the runtime's job.
-	cmd := osexec.Command(spec.Command[0], spec.Command[1:]...)
+	cmd := osexec.Command(prog, spec.Command[1:]...)
 	cmd.Dir = spec.Dir
 	cmd.Env = append(append(make([]string, 0, len(spec.Env)+1), spec.Env...), "MILLSTREAM_WORKDIR="+workdir)
 	return cmd, nil
 }
+
+// SelfCommand is the program name an exec action's command gives the running millstream binary, whatever PATH
+// holds: the improve package's actions are the binary's improve-action subcommand.
+const SelfCommand = "millstream"
 
 // Kill implements Launcher: the process group was everything.
 func (ExecLauncher) Kill(Spec, string) {}

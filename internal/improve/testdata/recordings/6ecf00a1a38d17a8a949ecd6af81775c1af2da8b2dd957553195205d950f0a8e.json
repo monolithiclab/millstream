@@ -1,0 +1,12 @@
+{
+  "key": "6ecf00a1a38d17a8a949ecd6af81775c1af2da8b2dd957553195205d950f0a8e",
+  "harness": "api",
+  "model": "claude-sonnet-5-5",
+  "response": {
+    "text": "```json\n{\"kind\":\"lessons\",\"rationale\":\"Analysts lowered the score of every poor listing they reviewed by about 15 points: the score step underestimates hidden renovation costs. The rule now lowers a poor listing's score by 25 points.\",\"insights\":[\"in_9a22bc167848999b\"],\"files\":[{\"path\":\"lessons/score.yaml\",\"content\":\"# The second version of lessons/score.yaml: the end-to-end suite applies it and replays a day through score, and the\\n# recordings hold its answers too.\\nrules:\\n  - text: A listing in poor condition hides renovation costs, so lower its score by 25 points.\\n    source: proposal/p-0002\\n    added: 2026-10-08\\n\"}],\"patch\":\"\"}\n```",
+    "tokensIn": 1812,
+    "tokensOut": 162,
+    "turns": 1,
+    "transcript": null
+  }
+}

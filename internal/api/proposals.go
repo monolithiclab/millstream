@@ -91,6 +91,15 @@ var proposalRoutes = map[string]bool{
 	"POST /proposals/{proposal}/revalidate": true,
 	"POST /backtests":                       true, // spec section 11.3: the backtest endpoint the validate step calls
 	"GET /backtests/{backtest}":             true,
+	// The reads the improve pipeline gathers evidence with (spec section 11.3): insights, pipelines, revisions with
+	// their files, and items with their lineage. Never a decision, never a write elsewhere.
+	"GET /insights":             true,
+	"GET /pipelines":            true,
+	"GET /pipelines/{pipeline}": true,
+	"GET /pipelines/{pipeline}/revisions/{revision}":       true,
+	"GET /pipelines/{pipeline}/revisions/{revision}/files": true,
+	"GET /pipelines/{pipeline}/items/{item}":               true,
+	"GET /pipelines/{pipeline}/items/{item}/lineage":       true,
 }
 
 // proposalToken reports whether r bears the proposals-only token: its bearer token's SHA-256 is the one the store

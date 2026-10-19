@@ -69,6 +69,13 @@ type Revision struct {
 	Graph       *Graph    `json:"graph,omitempty"`
 }
 
+// RevisionFiles is a revision's package files: each text file's content by path, and the paths of the others.
+type RevisionFiles struct {
+	PackageHash string            `json:"packageHash"`
+	Files       map[string]string `json:"files"`
+	Binary      []string          `json:"binary"`
+}
+
 // Graph is a revision's steps, triggers and streams.
 type Graph struct {
 	Description string    `json:"description,omitempty"`

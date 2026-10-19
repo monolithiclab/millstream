@@ -11,8 +11,10 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"text/template"
 
 	"github.com/monolithiclab/millstream/internal/pipeline"
@@ -73,6 +75,26 @@ func Action(parent, name, lang string) (string, error) {
 		return "", err
 	}
 	return dir, write(dir, "action", files, data{Name: name, Bin: name, Module: name, Lang: lang})
+}
+
+// Files writes files, by slash-separated path, in a new directory named name under parent and returns its path: a
+// copy of a package to fork, such as the improve package.
+func Files(parent, name string, files map[string][]byte) (string, error) {
+	dir, err := target(parent, name)
+	if err != nil {
+		return "", err
+	}
+	for _, p := range slices.Sorted(maps.Keys(files)) {
+		dst := filepath.Join(dir, filepath.FromSlash(p))
+		if err := os.MkdirAll(filepath.Dir(dst), 0o750); err != nil {
+			return "", err
+		}
+		// #nosec G306 -- source files of the user's new package
+		if err := os.WriteFile(dst, files[p], 0o644); err != nil {
+			return "", err
+		}
+	}
+	return dir, nil
 }
 
 // ErrName and ErrExists are the scaffold's refusals.

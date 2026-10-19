@@ -44,6 +44,10 @@ and `make help` for every command.
   proposals stale; apply and rollback make proposals on another base stale. The proposals-only token is checked in
   `ServeHTTP` against `proposalRoutes` before routing (`internal/api/proposals.go`). Backtest jobs live in memory, not
   the store.
+- The `improve` pipeline (spec section 11.3) is an ordinary package embedded in `internal/improve/package`, loaded by
+  `run` (while serving) and `serve` when `improve.enabled` is set; its exec steps run the binary itself (the
+  program name `millstream` is the running binary, `millstream improve-action <step>`) and reach the API through
+  the `improveApi` and `improveToken` secrets the engine supplies. The engine holds no drafting logic.
 - Webhook triggers (`POST /hooks/{pipeline}/{trigger}`, `internal/api/hooks.go`) sit outside `/api/v1`, before the
   Host guard and outside `auth.token` and the Origin check, on purpose: the trigger's own token authenticates them.
   Trigger tokens are stored hashed and never logged.

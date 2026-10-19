@@ -83,8 +83,15 @@ func (c RunPackagesCmd) Run(rt *Runtime) error {
 	} else if c.Listen != "" {
 		return usageError("--listen: run --once does not serve the API")
 	}
+	// The improve pipeline runs while run serves the API its actions call (spec section 11.3).
+	var im *improveHost
+	if !c.Once {
+		if im, err = newImproveHost(rt, env, pipeline.ModeDevelopment); err != nil {
+			return err
+		}
+	}
 	actions := resolver(rt, env, false)
-	pkgs, err := c.load(rt, log, actions, checkOptions(rt, env))
+	pkgs, err := c.load(rt, log, actions, im.check(checkOptions(rt, env)), im.packages())
 	if err != nil {
 		return err
 	}
@@ -98,9 +105,9 @@ func (c RunPackagesCmd) Run(rt *Runtime) error {
 		mode := env.EffectiveMode(pipeline.ModeDevelopment)
 		bt := newBacktester(rt, env, st, arts, mode, log)
 		e, err := engine.New(engine.Options{
-			Store: st, Logger: log, LeaseTTL: c.LeaseTTL, Env: rt.Env, Secrets: secrets(rt, env), Flags: c.Var,
+			Store: st, Logger: log, LeaseTTL: c.LeaseTTL, Env: rt.Env, Secrets: im.secrets(secrets(rt, env)), Flags: c.Var,
 			NoCron: c.Once, Artifacts: arts, Resolver: actions, Agents: agents(rt, env),
-			Notifier: notes, PackageDir: packageDir(rt, env), Check: checkOptions(rt, env), Retention: env.Retention,
+			Notifier: notes, PackageDir: packageDir(rt, env), Check: im.check(checkOptions(rt, env)), Retention: env.Retention,
 			Leadership: engine.Leadership{ID: id}, Improve: env.Improve, Proposals: proposalOptions(rt, env, bt),
 		})
 		if err != nil {
@@ -112,6 +119,9 @@ func (c RunPackagesCmd) Run(rt *Runtime) error {
 				return err
 			}
 			printTokens(rt, a.Pipeline, api.AppliedOf(a).Tokens)
+		}
+		if err := im.start(ctx, e); err != nil {
+			return err
 		}
 		var runs []engine.RunRef
 		if c.Once {
@@ -140,7 +150,7 @@ func (c RunPackagesCmd) Run(rt *Runtime) error {
 		}
 		h := engineHost{listen: listen, sec: sec, embedded: true, slots: c.Slots, leaseTTL: c.LeaseTTL,
 			lead: leadership{identity: api.Identity{ID: id, Since: time.Now()}}, arts: arts, laptop: true,
-			mode: mode, backtests: bt}
+			mode: mode, backtests: bt, served: im.served}
 		if err := h.run(ctx, rt, env, st, e, notes, log, wait); err != nil {
 			return err
 		}
@@ -170,6 +180,8 @@ type engineHost struct {
 	mode string
 	// backtests runs the backtests of the API and of the engine's proposal validation, sharing one improve budget.
 	backtests *backtest.Backtester
+	// served, when set, learns the site's URL once it serves: the improve pipeline's API secret.
+	served func(url string)
 }
 
 // run runs the engine, its embedded node and the API server until ctx ends or wait, called once the engine is
@@ -227,6 +239,9 @@ func (h engineHost) run(ctx context.Context, rt *Runtime, env *pipeline.Environm
 	} else {
 		siteDone <- nil
 	}
+	if site != nil && h.served != nil {
+		h.served(site.url)
+	}
 	if site == nil {
 		serveDone <- nil
 	} else {
@@ -276,6 +291,7 @@ func announce(rt *Runtime, s *site) {
 // load loads and checks each package, logging each diagnostic, and fails on any check error and on a --var no
 // package declares.
 func (c RunPackagesCmd) load(rt *Runtime, log *slog.Logger, actions pipeline.ActionResolver, opts pipeline.CheckOptions,
+	extra []*pipeline.Package,
 ) ([]*pipeline.Package, error) {
 	dirs := c.Dirs
 	if len(dirs) == 0 {
@@ -296,6 +312,7 @@ func (c RunPackagesCmd) load(rt *Runtime, log *slog.Logger, actions pipeline.Act
 		}
 		pkgs = append(pkgs, pkg)
 	}
+	pkgs = append(pkgs, extra...)
 	failed := false
 	diags := checkPackages(rt, pkgs, actions, opts)
 	for _, pkg := range pkgs {

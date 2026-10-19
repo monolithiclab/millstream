@@ -132,6 +132,11 @@ type Metrics struct {
 	Reviewed        int     `json:"reviewed"`
 	ReviewAgreed    int     `json:"reviewAgreed"`
 	ReviewAgreement float64 `json:"reviewAgreement"`
+	// Approved counts the approvals among those reviews, and ApprovalsDropped the approved items the replay no
+	// longer brings to their review: what a filter would wrongly drop (improve.filter.maxFalseDrop, spec section
+	// 11.6).
+	Approved         int `json:"approved"`
+	ApprovalsDropped int `json:"approvalsDropped"`
 	// Ran counts the deliveries an action or builtin ran (not stubbed), Failed those that ended dead, and
 	// FailureRate is Failed / Ran, 0 when none.
 	Ran         int     `json:"ran"`

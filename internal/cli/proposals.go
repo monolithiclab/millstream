@@ -34,7 +34,7 @@ type ProposalsCmd struct {
 func proposalOptions(rt *Runtime, env *pipeline.Environment, bt backtest.Runner) engine.ProposalOptions {
 	return engine.ProposalOptions{Evals: proposals.Evals{Launchers: launchers(rt, env), Prices: env.Prices,
 		Env: func(name string) func(string) (string, bool) { return env.SecretEnvLookup(name, rt.Env) }},
-		Backtest: backtest.ForProposals(bt)}
+		Backtest: backtest.ForProposals(bt, env.Improve.FilterMaxFalseDrop)}
 }
 
 // withProposalEngine runs fn with an engine over a store written from this process, as apply builds it.

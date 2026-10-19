@@ -74,6 +74,12 @@ func measure(h *history, s sample, r *replayed, step string) Metrics {
 			continue
 		}
 		m.Reviewed++
+		if rv.Decision != store.DecisionReject {
+			m.Approved++
+			if _, reached := r.deliveries[hd.ID]; !reached {
+				m.ApprovalsDropped++
+			}
+		}
 		if reviewAgrees(h, r, rv, hd) {
 			m.ReviewAgreed++
 		}

@@ -19,6 +19,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/monolithiclab/millstream/internal/artifacts"
 	"github.com/monolithiclab/millstream/internal/engine"
@@ -258,6 +259,41 @@ func (s *Server) getRevision(w http.ResponseWriter, r *http.Request) error {
 	g := graph(p, nil)
 	out := toRevision(rev, active)
 	out.Graph = &g
+	writeJSON(w, http.StatusOK, out)
+	return nil
+}
+
+// getRevisionFiles answers a revision's package files as text, for the improve pipeline's drafts (spec section
+// 11.3): a file that is not UTF-8 text, a compiled action for one, is named under binary instead.
+func (s *Server) getRevisionFiles(w http.ResponseWriter, r *http.Request) error {
+	name := r.PathValue("pipeline")
+	id, err := strconv.ParseInt(r.PathValue("revision"), 10, 64)
+	if err != nil {
+		return invalidf("revision %q: want a number", r.PathValue("revision"))
+	}
+	rev, err := s.opts.Store.Revision(r.Context(), store.RevisionID(id))
+	if err != nil {
+		return err
+	}
+	if rev.Pipeline != name {
+		return fmt.Errorf("revision %d of %s: %w", id, name, store.ErrNotFound)
+	}
+	bundle, err := s.opts.Store.Package(r.Context(), rev.PackageHash)
+	if err != nil {
+		return err
+	}
+	files, err := pipeline.DecodeBundle(bundle)
+	if err != nil {
+		return fmt.Errorf("package %.12s: %w", rev.PackageHash, err)
+	}
+	out := RevisionFiles{PackageHash: rev.PackageHash, Files: map[string]string{}, Binary: []string{}}
+	for _, p := range slices.Sorted(maps.Keys(files)) {
+		if utf8.Valid(files[p]) {
+			out.Files[p] = string(files[p])
+		} else {
+			out.Binary = append(out.Binary, p)
+		}
+	}
 	writeJSON(w, http.StatusOK, out)
 	return nil
 }

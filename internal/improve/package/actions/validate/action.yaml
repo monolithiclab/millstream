@@ -1,0 +1,28 @@
+# Validates a draft (spec section 11.3): turns its files into a patch against the base revision (internal/patch),
+# then creates the proposal, which the engine validates (check, evals, a backtest holding a filter to
+# improve.filter.maxFalseDrop) before it answers. A suppressed idea or a refused patch is reported, not failed.
+name: improve/validate
+version: 1.0.0
+description: Creates the drafted proposal and reports the engine's validation
+kind: exec
+effects: none
+input: { type: object }
+config:
+  type: object
+  properties:
+    api: { type: string, minLength: 1 }
+    token: { type: string, minLength: 1 }
+    pipeline: { type: string, minLength: 1 }
+  required: [api, token, pipeline]
+  additionalProperties: false
+output:
+  type: object
+  properties:
+    outcome: { enum: [proposed, suppressed, refused, skipped] }
+    pipeline: { type: string }
+    kind: { type: string }
+    proposal: { type: string }
+    state: { type: string }
+    message: { type: string }
+  required: [outcome]
+runtime: { exec: { command: [millstream, improve-action, validate] } }

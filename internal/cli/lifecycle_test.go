@@ -116,7 +116,7 @@ func (t handlerTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 func Test_commandsThroughTheServer(t *testing.T) {
 	st := memoryStore(t)
 	eng, err := engine.New(engine.Options{Store: st, PackageDir: testdir.New(t),
-		Proposals: engine.ProposalOptions{Backtest: backtest.ForProposals(backtest.New(backtest.Options{Store: st}))}})
+		Proposals: engine.ProposalOptions{Backtest: backtest.ForProposals(backtest.New(backtest.Options{Store: st}), 0)}})
 	if err != nil {
 		t.Fatal(err)
 	}
