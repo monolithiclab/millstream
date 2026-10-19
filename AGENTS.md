@@ -157,6 +157,11 @@ below) for the reasoning, and `make help` for every command.
   `SOAK_DURATION` (30m), then checks the store's invariants and writes `build/soak/report.md`. It is `TestSoak` in
   `internal/e2e`, skipped unless `SOAK_DURATION` is set, so neither `make ci` nor `make test-e2e` runs it; it touches
   only its own Compose project, `millstream-soak`. Run it after touching failover, the node or the Compose files.
+- `make test-e2e`, `make test-ui-e2e` and `make soak` take a machine-wide lock first (`scripts/e2elock`, `flock` on
+  `$TMPDIR/millstream-e2e.lock`, since macOS has no `flock(1)`): runs from several checkouts or agents queue, the
+  waiting one printing "waiting for the e2e lock held by <pid> (<checkout>)", instead of loading the machine
+  together, under which the failover and partition tests time out. Each runs its `*-locked` twin under the lock;
+  call that twin directly only when nothing else can be running. `PKG=` runs take no lock.
 - `make test-e2e PKG=./internal/foo/...` is the iteration tier: `go test -tags e2e -count=1` of those packages alone,
   tagged and untagged, without `-race` or coverage. While working, run `make ci` and this for the packages a change
   touches; run the full `make test-e2e` once, when the change is done.

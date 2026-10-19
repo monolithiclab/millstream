@@ -50,11 +50,20 @@ lint: lint-sdk
 # build tag. test-e2e runs them all, tagged and untagged, under -race, and prints the coverage of the whole suite.
 # They run the built binaries, so the test cache cannot see changes to the code they exercise: -count=1.
 # PKG=<packages> runs those packages' tests alone, tagged and untagged, without -race or coverage: the iteration tier.
-.PHONY: test-e2e
+# The heavy suites (test-e2e, test-ui-e2e, soak) run under a machine-wide lock, a file in $TMPDIR taken by
+# scripts/e2elock (macOS has no flock(1)): several checkouts' runs queue, each saying whom it waits for, instead of
+# overloading the machine together. Each public target takes the lock and runs its *-locked twin.
+locked = @go run ./scripts/e2elock -- $(MAKE) --no-print-directory $@-locked
+
+.PHONY: test-e2e test-e2e-locked
 test-e2e: ## Run every test with -race, the e2e-tagged ones included, and print the full coverage; PKG=./internal/foo/... runs those alone, without -race
 ifdef PKG
 	@go test -tags e2e -count=1 $(PKG)
 else
+	$(locked)
+endif
+
+test-e2e-locked:
 	@mkdir -p build
 	@docker version >/dev/null 2>&1 || echo "Docker is unavailable: the Postgres tests skip (internal/store/postgres/pgtest)"
 	@go test -race -count=1 -tags e2e -coverpkg=./... -coverprofile=build/cover-e2e.out ./...
@@ -67,7 +76,6 @@ else
 	fi
 	@go tool cover -func=build/cover-e2e.out | awk '/^total:/ {print "Total coverage, e2e build: " $$NF}'
 	@cd $(SDK_DIR) && go test -race -count=1 -tags e2e ./...
-endif
 
 # The soak (internal/e2e/soak_test.go): the Compose deployment of deploy/compose, as its own project, runs three
 # pipelines for SOAK_DURATION while a chaos driver kills the active engine and the nodes every SOAK_CHAOS on average,
@@ -76,8 +84,11 @@ endif
 SOAK_DURATION ?= 30m
 SOAK_CHAOS ?= 2m
 
-.PHONY: soak
-soak: image ## Run the soak on the Compose deployment for SOAK_DURATION (30m), chaos every SOAK_CHAOS (2m); report in build/soak/report.md
+.PHONY: soak soak-locked
+soak: ## Run the soak on the Compose deployment for SOAK_DURATION (30m), chaos every SOAK_CHAOS (2m); report in build/soak/report.md
+	$(locked)
+
+soak-locked: image
 	@SOAK_DURATION=$(SOAK_DURATION) SOAK_CHAOS=$(SOAK_CHAOS) go test -tags e2e -count=1 -timeout 0 -v -run '^TestSoak$$' ./internal/e2e
 
 .PHONY: test-times
@@ -167,8 +178,11 @@ ui-demo-package:
 # test-ui-e2e runs every suite: every screen over ui/e2e/fixture (playwright.config.ts), the same server with auth.token
 # set (playwright.auth.config.ts), then the reference demo (playwright.demo.config.ts); test-ui-demo runs the demo
 # alone.
-.PHONY: test-ui-e2e
-test-ui-e2e: ui-e2e-bin ui-demo-package ## Playwright and axe: every screen in both themes, languages and widths, then the M3 reference demo (Playwright container)
+.PHONY: test-ui-e2e test-ui-e2e-locked
+test-ui-e2e: ## Playwright and axe: every screen in both themes, languages and widths, then the M3 reference demo (Playwright container)
+	$(locked)
+
+test-ui-e2e-locked: ui-e2e-bin ui-demo-package
 	@$(UI_PLAYWRIGHT)
 	@$(UI_PLAYWRIGHT) --config playwright.auth.config.ts
 	@$(UI_PLAYWRIGHT) --config playwright.demo.config.ts
