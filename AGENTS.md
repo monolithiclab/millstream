@@ -67,6 +67,14 @@ below) for the reasoning, and `make help` for every command.
   and the like); imported bundles live whole in the artifact store, recorded in `evidence_imports`, never in the
   deployment's own items. The API's `exportEvidence`/`importEvidence` and the CLI's `evidence export|import` call it;
   the retention job deletes expired imports (`engine.expireEvidence`).
+- Proposals (spec section 11.3): `internal/proposals` holds the rules, no store: `ApplyPatch` is the one entry point
+  of the patch format (a unified diff applied in memory, rendered again at the lines where it applied, which is its
+  rebase), `Prepare` adds the paths per kind of spec 11.7 and the steps touched, `Validator` runs check, the base
+  revision's evals before and after and the backtest through its `Backtester` interface. `engine/proposals.go`
+  calls them before the store's proposal units, whose Proposal acceptance unit (`sqlstore/proposals.go`) accepts on
+  the base revision only and makes overlapping open proposals stale; apply and rollback make proposals on another
+  base stale (`staleProposals`). The proposals-only token (`api/proposals.go`) is checked in `ServeHTTP` against
+  `proposalRoutes` before routing.
 - CLI writes (`internal/cli`): a command that changes state goes through `changeState`, which calls the served
   engine's API when `--server`/`MILLSTREAM_SERVER` names one (`remote.go`), else `withWriter` (SQLite, or Postgres
   with `--direct`); reads use `withStore`, engines (`run`, `serve`) `withStoreMode(engineStore)`. A new command that

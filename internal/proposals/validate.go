@@ -1,0 +1,310 @@
+package proposals
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"log/slog"
+	"maps"
+	"os"
+	"path/filepath"
+	"slices"
+	"strings"
+
+	"github.com/monolithiclab/millstream/internal/agent"
+	"github.com/monolithiclab/millstream/internal/eval"
+	"github.com/monolithiclab/millstream/internal/pipeline"
+	"github.com/monolithiclab/millstream/internal/runtime/exec"
+)
+
+// Validation (spec section 11.3) is the engine's, never an LLM's: check on the patched package, then the evals of
+// every affected action before and after, judged by the base revision's evals (a proposal that changes evals has
+// its new evals reported separately, so it cannot redefine its own success), then a backtest. A proposal is ready
+// when all three pass.
+
+// Backtester runs a backtest of a patch (spec section 11.3, POST /api/v1/backtests): the changed steps replayed on a
+// sample of past items in a scratch store, before and after. The engine's implementation adapts the backtest
+// package's runner; it says whether the after side holds up and gives its report as JSON.
+type Backtester interface {
+	Backtest(ctx context.Context, req BacktestRequest) (BacktestResult, error)
+}
+
+// BacktestRequest asks for a backtest of a patch on its base revision, of the steps it touches.
+type BacktestRequest struct {
+	Pipeline string
+	// BaseRevision is the package hash the patch applies to.
+	BaseRevision string
+	Patch        string
+	Steps        []string
+}
+
+// BacktestResult is a backtest's verdict and its report.
+type BacktestResult struct {
+	Passed bool
+	Report json.RawMessage
+}
+
+// Evals runs an action's eval cases as `millstream eval` does (eval.Run): the agent's harness calls in Mode, from
+// the recordings under the action's evals/recordings in replay and record modes.
+type Evals struct {
+	// Mode is the harness mode, agent.ModeReplay when empty.
+	Mode string
+	// Env looks up PATH, HOME, TMPDIR and the secrets of a pipeline; nil is an empty environment.
+	Env func(pipelineName string) func(string) (string, bool)
+	// Launchers start exec and container processes by kind (eval.Options); tests run actions in-process.
+	Launchers map[string]exec.Launcher
+	// Prices are the environment file's model prices.
+	Prices map[string]pipeline.Price
+	Logger *slog.Logger
+}
+
+// Validator validates prepared proposals.
+type Validator struct {
+	// Check checks a package as apply would, against the rest of the deployment.
+	Check func(ctx context.Context, pkg *pipeline.Package) []pipeline.Diagnostic
+	// Resolver resolves action references; nil means pipeline.Resolver{}.
+	Resolver pipeline.ActionResolver
+	Evals    Evals
+	// Backtest runs the backtest; nil reports it skipped, which does not hold a proposal back.
+	Backtest Backtester
+	// Scratch is where the packages are written for the evals, each under its content hash as the engine's package
+	// directory holds them (and prunes them); empty writes them in a temporary directory removed afterwards.
+	Scratch string
+}
+
+// Report is a validation report, recorded with the proposal as JSON.
+type Report struct {
+	Passed       bool   `json:"passed"`
+	BaseRevision string `json:"baseRevision"`
+	PatchSHA256  string `json:"patchSha256"`
+	Check        Check  `json:"check"`
+	// Evals compare each affected action before and after on the base revision's cases; NewEvals are the cases a
+	// patch adds or changes, run after, reported alone.
+	Evals    []EvalReport `json:"evals"`
+	NewEvals []EvalReport `json:"newEvals"`
+	Backtest Backtest     `json:"backtest"`
+}
+
+// Check is check's verdict on the patched package.
+type Check struct {
+	Passed      bool         `json:"passed"`
+	Diagnostics []Diagnostic `json:"diagnostics"`
+}
+
+// Diagnostic is a check finding, as the report spells it.
+type Diagnostic struct {
+	Severity string `json:"severity"`
+	Path     string `json:"path"`
+	Message  string `json:"message"`
+}
+
+// EvalReport is one action's evals: a step's action before (Action) and after (After, when the step runs another).
+type EvalReport struct {
+	Step   string     `json:"step"`
+	Action string     `json:"action"`
+	After  string     `json:"after,omitempty"`
+	Passed bool       `json:"passed"`
+	Cases  []EvalCase `json:"cases"`
+	// Error is why the cases could not run at all.
+	Error string `json:"error,omitempty"`
+}
+
+// EvalCase is one case's outcome before (nil for a new eval) and after.
+type EvalCase struct {
+	Case   string     `json:"case"`
+	Before *EvalScore `json:"before,omitempty"`
+	After  EvalScore  `json:"after"`
+}
+
+// EvalScore is a case's score on one side.
+type EvalScore struct {
+	Passed bool    `json:"passed"`
+	Score  float64 `json:"score"`
+	Error  string  `json:"error,omitempty"`
+}
+
+// Backtest is the backtest's verdict and report, or why it did not run.
+type Backtest struct {
+	Passed  bool            `json:"passed"`
+	Skipped string          `json:"skipped,omitempty"`
+	Report  json.RawMessage `json:"report,omitempty"`
+}
+
+// Validate validates a prepared proposal of a pipeline. Its error is a failure to run the validation, not a
+// proposal that fails it.
+func (v Validator) Validate(ctx context.Context, pipelineName string, p Prepared) (Report, error) {
+	r := Report{BaseRevision: p.Base.Hash, PatchSHA256: p.SHA256, Evals: []EvalReport{}, NewEvals: []EvalReport{}}
+	scratch := v.Scratch
+	if scratch == "" {
+		dir, err := os.MkdirTemp("", "millstream-proposal-")
+		if err != nil {
+			return r, err
+		}
+		defer func() { _ = os.RemoveAll(dir) }()
+		scratch = dir
+	}
+	base, err := pipeline.Materialize(scratch, p.Base.Files)
+	if err != nil {
+		return r, err
+	}
+	patched, err := pipeline.Materialize(scratch, p.Files)
+	if err != nil {
+		return r, err
+	}
+	diags := v.Check(ctx, patched)
+	r.Check = Check{Passed: !pipeline.HasErrors(diags), Diagnostics: make([]Diagnostic, len(diags))}
+	for i, d := range diags {
+		r.Check.Diagnostics[i] = Diagnostic{Severity: d.Severity, Path: d.Path, Message: d.Message}
+	}
+	if !r.Check.Passed {
+		r.Backtest.Skipped = "check failed"
+		return r, nil
+	}
+	r.Evals, r.NewEvals = v.evals(ctx, pipelineName, base, patched, p.Changes)
+	evalsPassed := !slices.ContainsFunc(r.Evals, func(e EvalReport) bool { return !e.Passed })
+	if v.Backtest == nil {
+		r.Backtest = Backtest{Passed: true, Skipped: "no backtest runner in this engine"}
+	} else {
+		res, err := v.Backtest.Backtest(ctx, BacktestRequest{Pipeline: pipelineName, BaseRevision: p.Base.Hash,
+			Patch: p.Patch, Steps: p.Steps})
+		switch {
+		case err != nil:
+			r.Backtest.Skipped = "the backtest failed: " + err.Error()
+		default:
+			r.Backtest = Backtest{Passed: res.Passed, Report: res.Report}
+		}
+	}
+	r.Passed = evalsPassed && r.Backtest.Passed
+	return r, nil
+}
+
+func (v Validator) resolver() pipeline.ActionResolver {
+	if v.Resolver == nil {
+		return pipeline.Resolver{}
+	}
+	return v.Resolver
+}
+
+// evals runs the base evals of each affected step's action, before on the base package and after on the patched
+// one, and the evals the patch adds or changes, after alone. A step is affected when its action changes, or the
+// patch changes its action's directory.
+func (v Validator) evals(ctx context.Context, pipelineName string, base, patched *pipeline.Package, changes []Change,
+) (affected, added []EvalReport) {
+	changedDirs, evalDirs := map[string]bool{}, map[string]bool{}
+	for _, c := range changes {
+		if dir, ok := actionDir(c.Path); ok {
+			changedDirs[dir] = true
+			if strings.HasPrefix(c.Path, "actions/"+dir+"/"+eval.Dir+"/") && c.Op != OpDelete {
+				evalDirs[dir] = true
+			}
+		}
+	}
+	affected, added = []EvalReport{}, []EvalReport{}
+	done := map[[2]string]bool{}
+	for _, name := range slices.Sorted(maps.Keys(base.Pipeline.Steps)) {
+		after, ok := patched.Pipeline.Steps[name]
+		before := base.Pipeline.Steps[name]
+		dir, local := localDir(before.Action)
+		if !ok || !local || (before.Action == after.Action && !changedDirs[dir]) {
+			continue
+		}
+		pair := [2]string{before.Action, after.Action}
+		if done[pair] {
+			continue
+		}
+		done[pair] = true
+		affected = append(affected, v.compare(ctx, pipelineName, name, base, patched, before.Action, after.Action))
+	}
+	for _, dir := range slices.Sorted(maps.Keys(evalDirs)) {
+		ref := "./actions/" + dir
+		rep := EvalReport{Action: ref, Cases: []EvalCase{}, Passed: true}
+		cases, act, err := v.cases(patched, ref)
+		if err == nil {
+			for _, c := range cases {
+				after := v.run(ctx, pipelineName, patched, ref, act, c)
+				rep.Cases = append(rep.Cases, EvalCase{Case: c.Name, After: after})
+				rep.Passed = rep.Passed && after.Passed
+			}
+		} else {
+			rep.Passed, rep.Error = false, err.Error()
+		}
+		added = append(added, rep)
+	}
+	return affected, added
+}
+
+// compare runs the base action's cases on the base action and on the step's action after the patch: it passes when
+// no case that passed before fails after.
+func (v Validator) compare(ctx context.Context, pipelineName, step string, base, patched *pipeline.Package,
+	beforeRef, afterRef string,
+) EvalReport {
+	rep := EvalReport{Step: step, Action: beforeRef, Cases: []EvalCase{}, Passed: true}
+	if afterRef != beforeRef {
+		rep.After = afterRef
+	}
+	fail := func(err error) EvalReport {
+		rep.Passed, rep.Error = false, err.Error()
+		return rep
+	}
+	cases, beforeAct, err := v.cases(base, beforeRef)
+	if err != nil {
+		return fail(err)
+	}
+	afterAct, err := v.resolver().Resolve(patched, afterRef)
+	if err != nil {
+		return fail(fmt.Errorf("resolve %s after the patch: %w", afterRef, err))
+	}
+	for _, c := range cases {
+		before := v.run(ctx, pipelineName, base, beforeRef, beforeAct, c)
+		after := v.run(ctx, pipelineName, patched, afterRef, afterAct, c)
+		rep.Cases = append(rep.Cases, EvalCase{Case: c.Name, Before: &before, After: after})
+		if before.Passed && !after.Passed {
+			rep.Passed = false
+		}
+	}
+	return rep
+}
+
+// cases loads the eval cases of a local action of pkg, with the action resolved.
+func (v Validator) cases(pkg *pipeline.Package, ref string) ([]*eval.Case, *pipeline.Action, error) {
+	act, err := v.resolver().Resolve(pkg, ref)
+	if err != nil {
+		return nil, nil, fmt.Errorf("resolve %s: %w", ref, err)
+	}
+	cases, err := eval.Load(filepath.Join(pkg.Dir, filepath.FromSlash(act.Dir)))
+	if err != nil {
+		return nil, nil, fmt.Errorf("the evals of %s: %w", ref, err)
+	}
+	return cases, act, nil
+}
+
+// run runs one case on an action of pkg.
+func (v Validator) run(ctx context.Context, pipelineName string, pkg *pipeline.Package, ref string,
+	act *pipeline.Action, c *eval.Case,
+) EvalScore {
+	e := v.Evals
+	opts := eval.Options{Package: pkg, Action: act, Ref: ref, Mode: e.Mode, Launchers: e.Launchers,
+		Logger: e.Logger, Env: func(string) (string, bool) { return "", false }}
+	if opts.Mode == "" {
+		opts.Mode = agent.ModeReplay
+	}
+	if opts.Mode != agent.ModeLive {
+		opts.Dir = filepath.Join(pkg.Dir, filepath.FromSlash(act.Dir), filepath.FromSlash(eval.RecordingsDir))
+	}
+	if e.Env != nil {
+		opts.Env = e.Env(pipelineName)
+	}
+	if act.Agent != nil {
+		if price, ok := e.Prices[act.Agent.Model]; ok {
+			opts.Price = &price
+		}
+	}
+	res := eval.Run(ctx, opts, c)
+	return EvalScore{Passed: res.Passes(), Score: res.Score, Error: res.Err}
+}
+
+// localDir returns the action directory of a local reference, ./actions/<dir>.
+func localDir(ref string) (string, bool) {
+	rest, ok := strings.CutPrefix(ref, "./actions/")
+	return rest, ok && rest != "" && !strings.Contains(rest, "/")
+}

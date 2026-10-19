@@ -100,6 +100,8 @@ type Options struct {
 	// Improve is the environment file's improve key: the default minSeverity of insight triggers and the settings
 	// the insights projector reads (spec sections 11.1, 11.5 and 11.6).
 	Improve pipeline.Improve
+	// Proposals are what proposals are validated with (spec section 11.3).
+	Proposals ProposalOptions
 	// Takeover makes every step's rate start empty, a full token's interval before its first lease, so that an
 	// engine taking a deployment over (serve) never causes a burst (spec section 5.9).
 	Takeover bool

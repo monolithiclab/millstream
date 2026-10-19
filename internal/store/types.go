@@ -184,6 +184,13 @@ const (
 	EventDeliveryFallback = "deliveryFallback"
 	// EventAuditEnded: a fallback audit ended, with its agreement or its error, and its cost (spec section 11.5).
 	EventAuditEnded = "auditEnded"
+	// Proposals (spec section 11.3): created, validated (ready or back to drafting), accepted, rejected, and made
+	// stale by an acceptance or a revision change.
+	EventProposalCreated   = "proposalCreated"
+	EventProposalValidated = "proposalValidated"
+	EventProposalAccepted  = "proposalAccepted"
+	EventProposalRejected  = "proposalRejected"
+	EventProposalStale     = "proposalStale"
 )
 
 // Budget scopes (spec section 7.5): budget.runUsd bounds the spend of one run, budget.dayUsd the spend of the
@@ -1252,3 +1259,109 @@ type EvidenceImport struct {
 
 // EvidenceType is the artifact type of a stored evidence bundle.
 const EvidenceType = "application/gzip"
+
+// ProposalKind is what a proposal changes (spec section 11.3).
+type ProposalKind string
+
+const (
+	ProposalConfig   ProposalKind = "config"
+	ProposalPrompt   ProposalKind = "prompt"
+	ProposalLessons  ProposalKind = "lessons"
+	ProposalTopology ProposalKind = "topology"
+	ProposalDistill  ProposalKind = "distill"
+)
+
+// ProposalKinds are the kinds, in the spec's order.
+var ProposalKinds = []ProposalKind{ProposalConfig, ProposalPrompt, ProposalLessons, ProposalTopology, ProposalDistill}
+
+// ProposalState is where a proposal is in its life (spec section 11.3).
+type ProposalState string
+
+const (
+	ProposalDrafting   ProposalState = "drafting"
+	ProposalValidating ProposalState = "validating"
+	ProposalReady      ProposalState = "ready"
+	ProposalAccepted   ProposalState = "accepted"
+	ProposalRejected   ProposalState = "rejected"
+	ProposalStale      ProposalState = "stale"
+)
+
+// Open reports whether a proposal in this state is still under way: drafting, validating or ready. An acceptance
+// makes the open proposals it overlaps stale.
+func (s ProposalState) Open() bool {
+	return s == ProposalDrafting || s == ProposalValidating || s == ProposalReady
+}
+
+// NewProposal is a proposal to create, its patch already checked against its kind's path rules by the engine.
+type NewProposal struct {
+	ID       string
+	Pipeline string
+	Kind     ProposalKind
+	// BaseRevision is the package hash of the revision the patch applies to: the pipeline's active one.
+	BaseRevision string
+	// Patch is the unified diff, PatchSHA256 its SHA-256 (hex).
+	Patch       string
+	PatchSHA256 string
+	// Paths are the package paths the patch touches and Steps the steps it touches, both sorted.
+	Paths []string
+	Steps []string
+	// Rationale says why, Insights are the ids of the insights it answers.
+	Rationale string
+	Insights  []string
+	// Fingerprint identifies the idea: a rejected proposal's fingerprint is suppressed (spec section 11.3).
+	Fingerprint string
+	CreatedBy   string
+}
+
+// Proposal is a reviewable change to a pipeline's package (spec section 11.3, the proposals table).
+type Proposal struct {
+	NewProposal
+	State ProposalState
+	// Report is the latest validation report (JSON), null before the first.
+	Report json.RawMessage
+	// DecidedBy and Reason record an acceptance or a rejection; Reason is required for a rejection, and shown to
+	// later drafts.
+	DecidedBy string
+	Reason    string
+	// RejectedSeverity is the highest severity of its insights when it was rejected: its fingerprint stays
+	// suppressed until one of them reaches twice that weight (SeverityWeight).
+	RejectedSeverity string
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
+	DecidedAt        time.Time
+}
+
+// ProposalFilter selects proposals; empty fields match everything. Proposals come newest first.
+type ProposalFilter struct {
+	Pipeline string
+	State    ProposalState
+}
+
+// Validation is the outcome of a proposal's validation (spec section 11.3) the engine records: the report, whether
+// every part passed, and, for a stale proposal revalidated on the current revision, its rebased patch.
+type Validation struct {
+	ID     string
+	Report json.RawMessage
+	Passed bool
+	// Rebase, when set, replaces the proposal's base revision, patch, hash, paths and steps: the patch rebased onto
+	// the pipeline's active revision.
+	Rebase *Rebase
+}
+
+// Rebase is a patch rebased onto another revision.
+type Rebase struct {
+	BaseRevision string
+	Patch        string
+	PatchSHA256  string
+	Paths        []string
+	Steps        []string
+}
+
+// SeverityWeight is an insight severity's weight: info 1, warning 2, error 4, so that a severity "doubles" by one
+// level (spec section 11.3). Anything else weighs 0.
+func SeverityWeight(severity string) int {
+	if r := pipeline.SeverityRank(severity); r >= 0 {
+		return 1 << r
+	}
+	return 0
+}

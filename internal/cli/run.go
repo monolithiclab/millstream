@@ -98,7 +98,7 @@ func (c RunPackagesCmd) Run(rt *Runtime) error {
 			Store: st, Logger: log, LeaseTTL: c.LeaseTTL, Env: rt.Env, Secrets: secrets(rt, env), Flags: c.Var,
 			NoCron: c.Once, Artifacts: arts, Resolver: actions, Agents: agents(rt, env),
 			Notifier: notes, PackageDir: packageDir(rt, env), Check: checkOptions(rt, env), Retention: env.Retention,
-			Leadership: engine.Leadership{ID: id}, Improve: env.Improve,
+			Leadership: engine.Leadership{ID: id}, Improve: env.Improve, Proposals: proposalOptions(rt, env),
 		})
 		if err != nil {
 			return err

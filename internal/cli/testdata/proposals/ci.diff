@@ -1,0 +1,4 @@
+--- /dev/null
++++ b/.github/workflows/ci.yaml
+@@ -0,0 +1 @@
++on: push

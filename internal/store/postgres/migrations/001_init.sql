@@ -511,3 +511,39 @@ CREATE TABLE evidence_imports (
     expires_at    timestamptz NOT NULL
 );
 CREATE INDEX evidence_imports_expiry ON evidence_imports (expires_at);
+
+-- Proposals (spec section 11.3): a reviewable patch of a pipeline's package, drafted against its base revision (the
+-- package hash it applies to). paths and steps are what the patch touches (JSON arrays, sorted): an acceptance makes
+-- every other open proposal sharing one stale. A rejection keeps its reason for later drafts and the highest severity
+-- of its insights, which suppresses its fingerprint until one of them doubles.
+CREATE TABLE proposals (
+    id                text PRIMARY KEY,
+    pipeline          text NOT NULL,
+    kind              text NOT NULL, -- config | prompt | lessons | topology | distill
+    base_revision     text NOT NULL,
+    patch             text NOT NULL, -- a unified diff
+    patch_sha256      text NOT NULL,
+    paths             text NOT NULL,
+    steps             text NOT NULL,
+    rationale         text NOT NULL,
+    insights          text NOT NULL, -- JSON array of insight ids
+    fingerprint       text NOT NULL,
+    state             text NOT NULL, -- drafting | validating | ready | accepted | rejected | stale
+    report            text NOT NULL, -- the latest validation report, null before the first
+    created_by        text NOT NULL,
+    decided_by        text NOT NULL DEFAULT '',
+    reason            text NOT NULL DEFAULT '',
+    rejected_severity text NOT NULL DEFAULT '',
+    created_at        timestamptz NOT NULL,
+    updated_at        timestamptz NOT NULL,
+    decided_at        timestamptz
+);
+CREATE INDEX proposals_pipeline ON proposals (pipeline, state);
+CREATE INDEX proposals_fingerprint ON proposals (pipeline, fingerprint);
+
+-- The proposals-only API token (spec section 11.3): one row, its SHA-256, replaced by each mint.
+CREATE TABLE proposal_token (
+    id         bigint PRIMARY KEY, -- always 1
+    hash       text NOT NULL,
+    created_at timestamptz NOT NULL
+);

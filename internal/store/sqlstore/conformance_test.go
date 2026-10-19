@@ -356,3 +356,19 @@ func TestEvidenceExports(t *testing.T) {
 func TestEvidenceImports(t *testing.T) {
 	storetest.TestEvidenceImports(t, memoryStore)
 }
+
+func TestProposalLifecycle(t *testing.T) {
+	storetest.TestProposalLifecycle(t, memoryStore)
+}
+
+func TestProposalMovedBase(t *testing.T) {
+	storetest.TestProposalMovedBase(t, memoryStore)
+}
+
+func TestProposalSuppression(t *testing.T) {
+	storetest.TestProposalSuppression(t, memoryStore)
+}
+
+func TestProposalUnitsFailpoints(t *testing.T) {
+	storetest.TestProposalUnitsFailpoints(t, memoryStore)
+}

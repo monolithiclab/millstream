@@ -119,35 +119,36 @@ type CLI struct {
 	Server  string `name:"server" placeholder:"URL" help:"Change state through the API of the engine serving at this URL (default: $MILLSTREAM_SERVER; token: $MILLSTREAM_TOKEN)."`
 	Direct  bool   `name:"direct" help:"Change state from this process, not through --server; on Postgres this takes the leadership lock, waiting while an engine runs."`
 
-	Run      RunCmd      `cmd:"" help:"Apply packages and run the engine with an embedded node; run report prints a run's report."`
-	Serve    ServeCmd    `cmd:"" help:"Run an engine from the environment file; a second one on the same Postgres store waits as the standby."`
-	Node     NodeCmd     `cmd:"" help:"Run a remote node that joins the engine with the node token; node drain drains it."`
-	Nodes    NodesCmd    `cmd:"" help:"List the remote nodes, or revoke one."`
-	Apply    ApplyCmd    `cmd:"" help:"Check packages against the whole deployment and upload them as new revisions."`
-	Rollback RollbackCmd `cmd:"" help:"Reactivate an earlier revision of a pipeline."`
-	Disable  DisableCmd  `cmd:"" help:"Disable a pipeline: its triggers stop firing and its deliveries wait until resume."`
-	Check    CheckCmd    `cmd:"" help:"Validate a pipeline package."`
-	Lock     LockCmd     `cmd:"" help:"Pin a package's container and registry actions by image digest in millstream.lock."`
-	Graph    GraphCmd    `cmd:"" help:"Print a package's graph as Mermaid or DOT."`
-	Vars     VarsCmd     `cmd:"" help:"Print a package's variables, values and sources."`
-	Status   StatusCmd   `cmd:"" help:"Show pipelines and recent runs."`
-	Tail     TailCmd     `cmd:"" help:"Print events as JSON lines."`
-	Trigger  TriggerCmd  `cmd:"" help:"Fire a trigger; trigger token --rotate replaces a webhook trigger's token."`
-	Cancel   CancelCmd   `cmd:"" help:"Cancel a run."`
-	Replay   ReplayCmd   `cmd:"" help:"Replay dead letters into their run, or a step over past items in a replay run."`
-	DLQ      DLQCmd      `cmd:"" name:"dlq" help:"List and discard dead letters."`
-	Purge    PurgeCmd    `cmd:"" help:"Erase the items with a key, or an item, with their descendants and their copies in other pipelines."`
-	Inbox    InboxCmd    `cmd:"" help:"List and decide reviews and review samples."`
-	Pause    PauseCmd    `cmd:"" help:"Pause a pipeline or one of its steps."`
-	Resume   ResumeCmd   `cmd:"" help:"Resume a pipeline or one of its steps."`
-	Init     InitCmd     `cmd:"" help:"Scaffold a pipeline package or an action."`
-	Test     TestCmd     `cmd:"" help:"Test a package against stubbed actions, or an action against golden outputs."`
-	Eval     EvalCmd     `cmd:"" help:"Run an action's evals and score them."`
-	Metrics  MetricsCmd  `cmd:"" help:"Print metric rollups, or their Prometheus exposition."`
-	Insights InsightsCmd `cmd:"" help:"List, acknowledge and mute insights."`
-	Evidence EvidenceCmd `cmd:"" help:"Export an evidence bundle in production; import it in development."`
-	Version  VersionCmd  `cmd:"" help:"Print the version."`
-	Agent    AgentCmd    `cmd:"" hidden:"" help:"Run the agent adapter: the action process of agent steps."`
+	Run       RunCmd       `cmd:"" help:"Apply packages and run the engine with an embedded node; run report prints a run's report."`
+	Serve     ServeCmd     `cmd:"" help:"Run an engine from the environment file; a second one on the same Postgres store waits as the standby."`
+	Node      NodeCmd      `cmd:"" help:"Run a remote node that joins the engine with the node token; node drain drains it."`
+	Nodes     NodesCmd     `cmd:"" help:"List the remote nodes, or revoke one."`
+	Apply     ApplyCmd     `cmd:"" help:"Check packages against the whole deployment and upload them as new revisions."`
+	Rollback  RollbackCmd  `cmd:"" help:"Reactivate an earlier revision of a pipeline."`
+	Disable   DisableCmd   `cmd:"" help:"Disable a pipeline: its triggers stop firing and its deliveries wait until resume."`
+	Check     CheckCmd     `cmd:"" help:"Validate a pipeline package."`
+	Lock      LockCmd      `cmd:"" help:"Pin a package's container and registry actions by image digest in millstream.lock."`
+	Graph     GraphCmd     `cmd:"" help:"Print a package's graph as Mermaid or DOT."`
+	Vars      VarsCmd      `cmd:"" help:"Print a package's variables, values and sources."`
+	Status    StatusCmd    `cmd:"" help:"Show pipelines and recent runs."`
+	Tail      TailCmd      `cmd:"" help:"Print events as JSON lines."`
+	Trigger   TriggerCmd   `cmd:"" help:"Fire a trigger; trigger token --rotate replaces a webhook trigger's token."`
+	Cancel    CancelCmd    `cmd:"" help:"Cancel a run."`
+	Replay    ReplayCmd    `cmd:"" help:"Replay dead letters into their run, or a step over past items in a replay run."`
+	DLQ       DLQCmd       `cmd:"" name:"dlq" help:"List and discard dead letters."`
+	Purge     PurgeCmd     `cmd:"" help:"Erase the items with a key, or an item, with their descendants and their copies in other pipelines."`
+	Inbox     InboxCmd     `cmd:"" help:"List and decide reviews and review samples."`
+	Pause     PauseCmd     `cmd:"" help:"Pause a pipeline or one of its steps."`
+	Resume    ResumeCmd    `cmd:"" help:"Resume a pipeline or one of its steps."`
+	Init      InitCmd      `cmd:"" help:"Scaffold a pipeline package or an action."`
+	Test      TestCmd      `cmd:"" help:"Test a package against stubbed actions, or an action against golden outputs."`
+	Eval      EvalCmd      `cmd:"" help:"Run an action's evals and score them."`
+	Metrics   MetricsCmd   `cmd:"" help:"Print metric rollups, or their Prometheus exposition."`
+	Insights  InsightsCmd  `cmd:"" help:"List, acknowledge and mute insights."`
+	Evidence  EvidenceCmd  `cmd:"" help:"Export an evidence bundle in production; import it in development."`
+	Proposals ProposalsCmd `cmd:"" help:"List, show, create, accept, reject and revalidate proposals."`
+	Version   VersionCmd   `cmd:"" help:"Print the version."`
+	Agent     AgentCmd     `cmd:"" hidden:"" help:"Run the agent adapter: the action process of agent steps."`
 }
 
 // Main runs the CLI and returns the process exit code.

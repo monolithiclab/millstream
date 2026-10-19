@@ -72,6 +72,9 @@ func (s *Store) ApplyRevision(ctx context.Context, pkg store.PackageRecord) (sto
 		if err := w.setImports(pkg.Pipeline); err != nil {
 			return err
 		}
+		if err := w.staleProposals(name, pkg.Hash); err != nil {
+			return err
+		}
 		for stepName, step := range pkg.Pipeline.Steps {
 			if !step.Paused {
 				continue
@@ -275,6 +278,9 @@ func (s *Store) Rollback(ctx context.Context, pipelineName string, to store.Revi
 			return err
 		}
 		if err := w.setImports(rev.p); err != nil {
+			return err
+		}
+		if err := w.staleProposals(pipelineName, rev.hash); err != nil {
 			return err
 		}
 		return w.event(pipelineName, "", store.EventRolledBack, map[string]any{"revision": id, "from": active})
