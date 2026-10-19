@@ -114,12 +114,12 @@ func script(a, b []string) []edit {
 			out = append(out, edit{kind: ' ', old: i, new: j})
 			i++
 			j++
-		case j < m && (i == n || lcs[i][j+1] >= lcs[i+1][j]):
-			out = append(out, edit{kind: '+', old: i, new: j})
-			j++
-		default:
+		case i < n && (j == m || lcs[i+1][j] >= lcs[i][j+1]): // removals first, as git writes them
 			out = append(out, edit{kind: '-', old: i, new: j})
 			i++
+		default:
+			out = append(out, edit{kind: '+', old: i, new: j})
+			j++
 		}
 	}
 	return out

@@ -1,8 +1,10 @@
 package engine
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"maps"
 	"slices"
 	"strings"
 	"testing"
@@ -284,6 +286,39 @@ func TestStubs(t *testing.T) {
 		if err != nil || len(items) != want {
 			t.Fatalf("%s: %d items (%v), want %d", stream, len(items), err, want)
 		}
+	}
+}
+
+// TestStubber: the stubber decides before Stubs: it filters one listing at score with its reason, and leaves the
+// other to the step's stub.
+func TestStubber(t *testing.T) {
+	src := manualPipeline("p", `
+  crawl: { action: ./actions/a, in: trigger.adhoc, out: [listings] }
+  score: { action: ./actions/a, in: listings, out: [scored] }
+`)
+	v := newEnv(t, Options{
+		Stubs: map[store.StepRef]Stub{
+			{Pipeline: "p", Step: "crawl"}: {Outputs: []store.Output{
+				{Key: "a", Payload: json.RawMessage(`{"n":1}`)}, {Key: "b", Payload: json.RawMessage(`{"n":2}`)},
+			}},
+			{Pipeline: "p", Step: "score"}: {Outputs: []store.Output{{Payload: json.RawMessage(`{"score":1}`)}}},
+		},
+		Stubber: func(_ context.Context, l store.Lease) (Stub, bool) {
+			return Stub{Filter: "notReplayed"}, l.Step == "score" && l.Item.Key == "b"
+		},
+	})
+	v.apply(newPackage(t, src, "a"))
+	id := v.fire("p", "adhoc", "k")
+	if got := v.pull(1); len(got) != 0 {
+		t.Fatalf("stubbed pull returned %v", got)
+	}
+	states := map[string]string{}
+	for _, d := range v.deliveries(id) {
+		states[d.Step+"/"+d.ItemID[:4]] = string(d.State) + " " + d.FilterReason
+	}
+	if r := v.run("p", id); r.State != store.RunSucceeded || len(states) != 3 ||
+		!slices.Contains(slices.Collect(maps.Values(states)), "filtered notReplayed") {
+		t.Fatalf("run %s, deliveries %v", r.State, states)
 	}
 }
 

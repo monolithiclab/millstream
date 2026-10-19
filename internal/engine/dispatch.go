@@ -61,7 +61,13 @@ func (e *Engine) PullWithin(ctx context.Context, owner string, maxN int, within 
 		}
 		completed := false
 		for _, l := range leases {
-			if stub, ok := e.opts.Stubs[store.StepRef{Pipeline: l.Pipeline, Step: l.Step}]; ok {
+			stub, ok := e.opts.Stubs[store.StepRef{Pipeline: l.Pipeline, Step: l.Step}]
+			if e.opts.Stubber != nil {
+				if s, stubbed := e.opts.Stubber(resolve, l); stubbed {
+					stub, ok = s, true
+				}
+			}
+			if ok {
 				e.completeStub(resolve, l, stub)
 				completed = true
 				continue
@@ -352,12 +358,18 @@ func (e *Engine) flightLog(ref store.LeaseRef, f flight) *slog.Logger {
 // completeStub completes a stubbed delivery with the stub's outcome.
 func (e *Engine) completeStub(ctx context.Context, l store.Lease, s Stub) {
 	var err error
-	if s.Err != nil {
+	switch {
+	case s.Filter != "":
+		ref := l.Ref()
+		err = e.complete(ref, func() (store.DeliveryState, error) {
+			return e.st.Filter(ctx, store.FilterRequest{LeaseRef: ref, Attempt: l.Attempt, Reason: s.Filter})
+		})
+	case s.Err != nil:
 		err = e.Fail(ctx, store.FailRequest{
 			LeaseRef: l.Ref(), Attempt: l.Attempt, Class: node.ClassAction, Message: s.Err.Message,
 			Retryable: s.Err.Retryable,
 		})
-	} else {
+	default:
 		err = e.Done(ctx, store.DoneRequest{LeaseRef: l.Ref(), Attempt: l.Attempt, Outputs: s.Outputs})
 	}
 	if err != nil {
