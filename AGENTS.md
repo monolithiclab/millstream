@@ -107,10 +107,18 @@ below) for the reasoning, and `make help` for every command.
   contend instead of overlapping. A table's subtests that take microseconds do not call `t.Parallel` either: pausing and
   resuming one costs more than running it.
 - The store tests are the conformance suite `internal/store/storetest`: exported functions taking an opener, one per
-  behaviour, run against SQLite in `internal/store/sqlstore`'s tests (one top-level wrapper each in
-  `conformance_test.go`, so test-times and coverage count them where the code lives) and against Postgres in
-  `internal/store/postgres` under the tag. A new store test goes in storetest, listed in `storetest.Tests` and
-  wrapped in sqlstore; `TestTestsListed` and `TestConformanceListed` name what is missing. A test that must reach
+  behaviour, run against SQLite Memory stores in the default build and against Postgres in `internal/store/postgres`
+  under the tag. The default build runs them from three packages by area, each with its own warmed process
+  (`sqlitetest.Main` as `TestMain`, `sqlitetest.Memory` as the opener), so that no package nears the 100 ms limit:
+  `internal/store/sqlstore/conformance/delivery` (revisions, firings, leases, done and fail, built-in steps, budgets,
+  dead letters, replays, the writer), `review` (reviews, audits and fallbacks, imports, insights, evals, the API
+  reads) and `retention` (retention, purges, rollups, evidence, nodes, missing tables). Each has one top-level wrapper
+  per test in its `conformance_test.go`, so test-times measures each. `make test` and `make test-e2e` pass
+  `-coverpkg=./...`, so their coverage counts in `internal/store/sqlstore`: coverage is cross-package, every test
+  crediting the statements it runs in any package. The e2e-only tests are wrapped in
+  `internal/store/sqlstore/conformance_e2e_test.go`. A new store test goes in storetest, listed in `storetest.Tests`
+  and wrapped in the package of its area (a package nearing 70 ms wall splits again);
+  `TestTestsListed` and `TestConformanceListed` name what is missing, or wrapped twice. A test that must reach
   behind the units uses the store's `Exec`, `Unit` or `QueryRow`, written with `?` placeholders.
 - Postgres tests (`internal/store/postgres`, `stores`, and the crash suite's Postgres half in `internal/e2e`) run
   under the e2e tag in Docker: `pgtest` starts one container of `pgtest.Image` (the official `postgres:17`, pinned by

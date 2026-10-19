@@ -8,7 +8,7 @@ import (
 	"github.com/monolithiclab/millstream/internal/store/storetest"
 )
 
-// The conformance tests only the e2e build runs: see conformance_test.go.
+// The conformance tests only the e2e build runs; the default build's run from the conformance/... packages.
 
 func init() { conformanceFiles = append(conformanceFiles, "conformance_e2e_test.go") }
 
@@ -130,4 +130,52 @@ func TestRetainKeepsSampledItems(t *testing.T) {
 
 func TestPurgeErasesReviewsAndDeadLetters(t *testing.T) {
 	storetest.TestPurgeErasesReviewsAndDeadLetters(t, memoryStore)
+}
+
+func TestPurgeAcrossImports(t *testing.T) {
+	storetest.TestPurgeAcrossImports(t, memoryStore)
+}
+
+func TestRunBudgetConcurrentLeases(t *testing.T) {
+	storetest.TestRunBudgetConcurrentLeases(t, memoryStore)
+}
+
+func TestConcurrentDone(t *testing.T) {
+	storetest.TestConcurrentDone(t, memoryStore)
+}
+
+func TestLeasePipelineSlots(t *testing.T) {
+	storetest.TestLeasePipelineSlots(t, memoryStore)
+}
+
+func TestLeaseSlotsAndExclusions(t *testing.T) {
+	storetest.TestLeaseSlotsAndExclusions(t, memoryStore)
+}
+
+func TestConcurrentReplaysTakeDistinctGenerations(t *testing.T) {
+	storetest.TestConcurrentReplaysTakeDistinctGenerations(t, memoryStore)
+}
+
+func TestReplayRestartsTheRetryBudget(t *testing.T) {
+	storetest.TestReplayRestartsTheRetryBudget(t, memoryStore)
+}
+
+func TestMetricAndEventFilters(t *testing.T) {
+	storetest.TestMetricAndEventFilters(t, memoryStore)
+}
+
+func TestRollupFailpoint(t *testing.T) {
+	storetest.TestRollupFailpoint(t, memoryStore)
+}
+
+func TestImportFollowsRollback(t *testing.T) {
+	storetest.TestImportFollowsRollback(t, memoryStore)
+}
+
+func TestBudgetLeavesUserPauses(t *testing.T) {
+	storetest.TestBudgetLeavesUserPauses(t, memoryStore)
+}
+
+func TestMetricTotalsSurviveRetention(t *testing.T) {
+	storetest.TestMetricTotalsSurviveRetention(t, memoryStore)
 }

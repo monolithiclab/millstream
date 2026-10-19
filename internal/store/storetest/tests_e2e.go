@@ -6,6 +6,18 @@ package storetest
 const e2eBuild = true
 
 var e2eTests = []Test{
+	{"TestMetricTotalsSurviveRetention", TestMetricTotalsSurviveRetention},
+	{"TestBudgetLeavesUserPauses", TestBudgetLeavesUserPauses},
+	{"TestImportFollowsRollback", TestImportFollowsRollback},
+	{"TestRollupFailpoint", TestRollupFailpoint},
+	{"TestMetricAndEventFilters", TestMetricAndEventFilters},
+	{"TestReplayRestartsTheRetryBudget", TestReplayRestartsTheRetryBudget},
+	{"TestConcurrentReplaysTakeDistinctGenerations", TestConcurrentReplaysTakeDistinctGenerations},
+	{"TestLeaseSlotsAndExclusions", TestLeaseSlotsAndExclusions},
+	{"TestLeasePipelineSlots", TestLeasePipelineSlots},
+	{"TestConcurrentDone", TestConcurrentDone},
+	{"TestRunBudgetConcurrentLeases", TestRunBudgetConcurrentLeases},
+	{"TestPurgeAcrossImports", TestPurgeAcrossImports},
 	{"TestRetainKeepsSampledItems", TestRetainKeepsSampledItems},
 	{"TestPurgeErasesReviewsAndDeadLetters", TestPurgeErasesReviewsAndDeadLetters},
 	{"TestImportReopens", TestImportReopens},
