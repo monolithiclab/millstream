@@ -487,3 +487,39 @@ CREATE TABLE evidence_imports (
     expires_at    TEXT NOT NULL
 );
 CREATE INDEX evidence_imports_expiry ON evidence_imports (expires_at);
+
+-- Proposals (spec section 11.3): a reviewable patch of a pipeline's package, drafted against its base revision (the
+-- package hash it applies to). paths and steps are what the patch touches (JSON arrays, sorted): an acceptance makes
+-- every other open proposal sharing one stale. A rejection keeps its reason for later drafts and the highest severity
+-- of its insights, which suppresses its fingerprint until one of them doubles.
+CREATE TABLE proposals (
+    id                TEXT PRIMARY KEY,
+    pipeline          TEXT NOT NULL,
+    kind              TEXT NOT NULL, -- config | prompt | lessons | topology | distill
+    base_revision     TEXT NOT NULL,
+    patch             TEXT NOT NULL, -- a unified diff
+    patch_sha256      TEXT NOT NULL,
+    paths             TEXT NOT NULL,
+    steps             TEXT NOT NULL,
+    rationale         TEXT NOT NULL,
+    insights          TEXT NOT NULL, -- JSON array of insight ids
+    fingerprint       TEXT NOT NULL,
+    state             TEXT NOT NULL, -- drafting | validating | ready | accepted | rejected | stale
+    report            TEXT NOT NULL, -- the latest validation report, null before the first
+    created_by        TEXT NOT NULL,
+    decided_by        TEXT NOT NULL DEFAULT '',
+    reason            TEXT NOT NULL DEFAULT '',
+    rejected_severity TEXT NOT NULL DEFAULT '',
+    created_at        TEXT NOT NULL,
+    updated_at        TEXT NOT NULL,
+    decided_at        TEXT
+);
+CREATE INDEX proposals_pipeline ON proposals (pipeline, state);
+CREATE INDEX proposals_fingerprint ON proposals (pipeline, fingerprint);
+
+-- The proposals-only API token (spec section 11.3): one row, its SHA-256, replaced by each mint.
+CREATE TABLE proposal_token (
+    id         INTEGER PRIMARY KEY, -- always 1
+    hash       TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);

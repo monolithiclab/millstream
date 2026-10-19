@@ -316,7 +316,42 @@ func crashInCommands(t *testing.T, b backend) {
 				t.Fatalf("status after rolling back:\n%s", st.stdout)
 			}
 		})
+
+		t.Run("acceptProposal."+phase, func(t *testing.T) {
+			t.Parallel()
+			db := b.newDB(t)
+			mustExit(t, 1, db, nil, runOnce(fixtureV1)...)
+			patch := proposalPatch(t)
+			id := strings.Fields(mustExit(t, 0, db, nil, "proposals", "create", patch, "--pipeline", pipelineName,
+				"--kind", "config", "--as", "ana").stdout)[0]
+			accept := []string{"proposals", "accept", id, "--as", "ana"}
+			mustExit(t, failpoint.ExitCode, db, failpointEnv("acceptProposal."+phase), accept...)
+			// Accepted before the crash, the rerun finds it accepted already: a conflict.
+			wantCode := map[string]int{"beforeCommit": 0, "afterCommit": 1}[phase]
+			mustExit(t, wantCode, db, nil, accept...)
+			if out := mustExit(t, 0, db, nil, "proposals", "show", id).stdout; !strings.Contains(out, " accepted ") {
+				t.Fatalf("after the crash %s:\n%s", phase, out)
+			}
+		})
 	}
+}
+
+// proposalPatch writes a config patch of the fixture's first revision, a comment appended to its pipeline file, and
+// returns its path.
+func proposalPatch(t *testing.T) string {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join(fixtureV1, "pipeline.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimSuffix(string(data), "\n"), "\n")
+	patch := fmt.Sprintf("--- a/pipeline.yaml\n+++ b/pipeline.yaml\n@@ -%d,1 +%d,2 @@\n %s\n+# proposed\n", len(lines),
+		len(lines), lines[len(lines)-1])
+	path := filepath.Join(t.TempDir(), "proposal.diff")
+	if err := os.WriteFile(path, []byte(patch), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
 }
 
 // onlyRun keeps the records of one run, and the reference counts, database-wide, of the artifacts its items carry.

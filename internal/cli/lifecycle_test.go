@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -205,6 +206,27 @@ func Test_commandsThroughTheServer(t *testing.T) {
 			got = err.Error()
 		}
 		if (err != nil) != step.err || !strings.Contains(got, step.out) {
+			t.Fatalf("%+v: %q, %v", step.cmd, out, err)
+		}
+	}
+	// Proposals through the server: created and validated, accepted at the hash the server reads, then refused.
+	out, err := call(ProposalsCreateCmd{Patch: fixture("proposals/false.diff"), Pipeline: "extra", Kind: "config",
+		reviewerFlag: reviewerFlag{As: "ana"}})
+	if err != nil || !strings.Contains(out, " config ready on extra ") {
+		t.Fatalf("proposals create: %q, %v", out, err)
+	}
+	id := strings.Fields(out)[0]
+	for _, step := range []struct {
+		cmd runner
+		out string // a prefix of what it prints, or of the error
+	}{
+		{ProposalsAcceptCmd{ID: id, reviewerFlag: reviewerFlag{As: "ana"}}, id + " config accepted"},
+		{ProposalsRevalidateCmd{ID: id}, "only a drafting, ready or stale one"},
+		{ProposalsRejectCmd{ID: id, Reason: "late", reviewerFlag: reviewerFlag{As: "ana"}}, "accepted already"},
+		{ProposalsTokenCmd{}, "mspr_"},
+	} {
+		out, err := call(step.cmd)
+		if !strings.Contains(out+fmt.Sprint(err), step.out) {
 			t.Fatalf("%+v: %q, %v", step.cmd, out, err)
 		}
 	}

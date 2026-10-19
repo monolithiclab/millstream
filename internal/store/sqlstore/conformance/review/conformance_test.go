@@ -7,8 +7,8 @@ import (
 )
 
 // The conformance suite's share of this package (store/storetest): reviews, audits and fallbacks, imports, insights,
-// evals and the API reads. One top-level test per function, so that test-times measures each; TestConformanceListed
-// (internal/store/sqlstore) keeps the shares in step with storetest.Tests.
+// evals, proposals and the API reads. One top-level test per function, so that test-times measures each;
+// TestConformanceListed (internal/store/sqlstore) keeps the shares in step with storetest.Tests.
 
 func TestEvalResults(t *testing.T) {
 	storetest.TestEvalResults(t, memoryStore)
@@ -92,4 +92,20 @@ func TestFallbackEdges(t *testing.T) {
 
 func TestAuditsSurfaceStoreErrors(t *testing.T) {
 	storetest.TestAuditsSurfaceStoreErrors(t, memoryStore)
+}
+
+func TestProposalLifecycle(t *testing.T) {
+	storetest.TestProposalLifecycle(t, memoryStore)
+}
+
+func TestProposalMovedBase(t *testing.T) {
+	storetest.TestProposalMovedBase(t, memoryStore)
+}
+
+func TestProposalSuppression(t *testing.T) {
+	storetest.TestProposalSuppression(t, memoryStore)
+}
+
+func TestProposalUnitsFailpoints(t *testing.T) {
+	storetest.TestProposalUnitsFailpoints(t, memoryStore)
 }

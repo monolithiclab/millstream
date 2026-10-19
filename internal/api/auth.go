@@ -67,6 +67,8 @@ const (
 	noCredential credential = iota
 	bearerCredential
 	cookieCredential
+	// proposalCredential is the proposals-only token (proposals.go): it reaches proposalRoutes alone.
+	proposalCredential
 )
 
 // Sessions are the UI's sessions, by the SHA-256 of their id, with their expiry.

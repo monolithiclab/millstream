@@ -74,6 +74,14 @@ below) for the reasoning, and `make help` for every command.
   historical inputs recorded) or lets it run. `backtest.Runner` is what proposals validate through; `Jobs` runs them
   in the background for `POST /api/v1/backtests` (in memory, not the store); `millstream backtest` runs one from its
   own process. The improve budget is a `backtest.Budget`, a per-process `Ledger` until the improve pipeline exists.
+- Proposals (spec section 11.3): `internal/proposals` holds the rules, no store: `ApplyPatch` is the one entry point
+  of the patch format (a unified diff applied in memory, rendered again at the lines where it applied, which is its
+  rebase), `Prepare` adds the paths per kind of spec 11.7 and the steps touched, `Validator` runs check, the base
+  revision's evals before and after and the backtest through its `Backtester` interface. `engine/proposals.go`
+  calls them before the store's proposal units, whose Proposal acceptance unit (`sqlstore/proposals.go`) accepts on
+  the base revision only and makes overlapping open proposals stale; apply and rollback make proposals on another
+  base stale (`staleProposals`). The proposals-only token (`api/proposals.go`) is checked in `ServeHTTP` against
+  `proposalRoutes` before routing.
 - CLI writes (`internal/cli`): a command that changes state goes through `changeState`, which calls the served
   engine's API when `--server`/`MILLSTREAM_SERVER` names one (`remote.go`), else `withWriter` (SQLite, or Postgres
   with `--direct`); reads use `withStore`, engines (`run`, `serve`) `withStoreMode(engineStore)`. A new command that

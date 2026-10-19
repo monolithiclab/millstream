@@ -1,0 +1,133 @@
+package api
+
+import (
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"strings"
+	"testing"
+
+	"github.com/monolithiclab/millstream/internal/engine"
+	"github.com/monolithiclab/millstream/internal/store/sqlite"
+	"github.com/monolithiclab/millstream/internal/testdir"
+)
+
+// proposalSrc is a pipeline of builtins, which check passes without any action: line 4 holds the filter.
+const proposalSrc = "pipeline: extra\n%striggers: { adhoc: { manual: {} } }\nsteps:\n" +
+	"  pass: { action: filter, in: trigger.adhoc, config: { expr: \"%s\" } }\n"
+
+// filterPatch changes the filter's expression from one to another, at line 4.
+func filterPatch(from, to string) string {
+	return fmt.Sprintf("--- a/pipeline.yaml\n+++ b/pipeline.yaml\n@@ -4 +4 @@\n"+
+		"-  pass: { action: filter, in: trigger.adhoc, config: { expr: %q } }\n"+
+		"+  pass: { action: filter, in: trigger.adhoc, config: { expr: %q } }\n", from, to)
+}
+
+func proposalBody(kind, patch string) string {
+	b, _ := json.Marshal(ProposalRequest{Pipeline: "extra", Kind: kind, Patch: patch, Rationale: "why not"})
+	return string(b)
+}
+
+// Proposals through the API on a store of their own: the proposals-only token creates and revalidates but never
+// accepts, or reaches anything else; a patch outside its kind's paths is invalid; an acceptance needs the patch's
+// hash and makes the overlapping proposal stale, not revalidated on the same base (engine's TestProposals covers the
+// rebase); a rejection needs a reason, listed with the rejected proposals.
+func TestProposalActions(t *testing.T) {
+	st, err := sqlite.Open(sqlite.Memory, sqlite.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	eng, err := engine.New(engine.Options{Store: st, PackageDir: testdir.New(t)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	h, err := New(Options{Store: st, Engine: eng, User: "tester"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	call := func(method, target, body, token string, want int) []byte {
+		t.Helper()
+		req := request{method: method, target: "/api/v1" + target, body: body}
+		if token != "" {
+			req.header = map[string]string{"Authorization": "Bearer " + token}
+		}
+		rec := do(t, h, req)
+		if rec.Code != want {
+			t.Fatalf("%s %s: %d %s, want %d", method, target, rec.Code, rec.Body.String(), want)
+		}
+		return rec.Body.Bytes()
+	}
+	proposal := func(data []byte) Proposal {
+		t.Helper()
+		var p Proposal
+		if err := json.Unmarshal(data, &p); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	call(http.MethodPost, "/revisions", applyBody("", fmt.Sprintf(proposalSrc, "", "true")), "", http.StatusOK)
+
+	var tok ProposalToken
+	if err := json.Unmarshal(call(http.MethodPost, "/proposal-token", `{}`, "", http.StatusCreated), &tok); err != nil ||
+		!strings.HasPrefix(tok.Token, "mspr_") {
+		t.Fatalf("token %q, %v", tok.Token, err)
+	}
+	p1 := proposal(call(http.MethodPost, "/proposals", proposalBody("config", filterPatch("true", "item.n > 1")),
+		tok.Token, http.StatusCreated))
+	if p1.State != "ready" || p1.CreatedBy != "improve" || p1.Steps[0] != "pass" || p1.Paths[0] != "pipeline.yaml" ||
+		!strings.Contains(string(p1.Report), `"passed":true`) {
+		t.Fatalf("created %+v", p1)
+	}
+	call(http.MethodPost, "/proposals/"+p1.ID+"/accept", `{"patchSha256":"`+p1.PatchSHA256+`"}`, tok.Token,
+		http.StatusForbidden)
+	call(http.MethodGet, "/pipelines", "", tok.Token, http.StatusForbidden)
+	call(http.MethodPost, "/proposal-token", `{}`, tok.Token, http.StatusForbidden)
+	p2 := proposal(call(http.MethodPost, "/proposals", proposalBody("topology", filterPatch("true", "item.n > 2")),
+		tok.Token, http.StatusCreated))
+	call(http.MethodGet, "/proposals/"+p2.ID, "", tok.Token, http.StatusOK)
+
+	for _, bad := range []struct{ kind, patch string }{
+		{"topology", "--- /dev/null\n+++ b/Makefile\n@@ -0,0 +1 @@\n+all:\n"},
+		{"lessons", "diff --git a/lessons/pass.yaml b/lessons/pass.yaml\nnew file mode 120000\n"},
+		{"config", "--- a/../pipeline.yaml\n+++ b/../pipeline.yaml\n@@ -1 +1 @@\n-a\n+b\n"},
+		{"nonsense", filterPatch("true", "false")},
+	} {
+		call(http.MethodPost, "/proposals", proposalBody(bad.kind, bad.patch), tok.Token, http.StatusBadRequest)
+	}
+	call(http.MethodPost, "/proposals", `{"pipeline":"nope","kind":"config","patch":"x"}`, "", http.StatusNotFound)
+	call(http.MethodPost, "/proposals", `{}`, "", http.StatusBadRequest)
+
+	call(http.MethodPost, "/proposals/"+p1.ID+"/accept", `{}`, "", http.StatusBadRequest)
+	call(http.MethodPost, "/proposals/"+p1.ID+"/accept", `{"patchSha256":"other"}`, "", http.StatusConflict)
+	accepted := proposal(call(http.MethodPost, "/proposals/"+p1.ID+"/accept", `{"patchSha256":"`+p1.PatchSHA256+`"}`,
+		"", http.StatusOK))
+	if accepted.State != "accepted" || accepted.DecidedBy != "tester" || accepted.DecidedAt == nil {
+		t.Fatalf("accepted %+v", accepted)
+	}
+	if p := proposal(call(http.MethodGet, "/proposals/"+p2.ID, "", "", http.StatusOK)); p.State != "stale" {
+		t.Fatalf("the overlapping proposal is %s", p.State)
+	}
+	call(http.MethodPost, "/proposals/"+p2.ID+"/revalidate", `{}`, tok.Token, http.StatusConflict) // base unchanged
+	broken := proposal(call(http.MethodPost, "/proposals", proposalBody("config", filterPatch("true", "item.n >")),
+		tok.Token, http.StatusCreated))
+	if broken.State != "drafting" || !strings.Contains(string(broken.Report), `"passed":false`) {
+		t.Fatalf("a proposal whose check fails: %+v", broken)
+	}
+	if p := proposal(call(http.MethodPost, "/proposals/"+broken.ID+"/revalidate", `{}`, tok.Token,
+		http.StatusOK)); p.State != "drafting" {
+		t.Fatalf("revalidated: %+v", p)
+	}
+
+	call(http.MethodPost, "/proposals/"+p2.ID+"/reject", `{}`, "", http.StatusBadRequest)
+	call(http.MethodPost, "/proposals/"+p2.ID+"/reject", `{"reason":"the filter is right"}`, "", http.StatusOK)
+	call(http.MethodPost, "/proposals/"+p2.ID+"/reject", `{"reason":"again"}`, "", http.StatusConflict)
+	call(http.MethodPost, "/proposals/nope/reject", `{"reason":"x"}`, "", http.StatusNotFound)
+	var rejected []Proposal
+	if err := json.Unmarshal(call(http.MethodGet, "/proposals?pipeline=extra&state=rejected", "", tok.Token,
+		http.StatusOK), &rejected); err != nil || len(rejected) != 1 || rejected[0].Reason != "the filter is right" {
+		t.Fatalf("rejected %+v, %v", rejected, err)
+	}
+	call(http.MethodGet, "/proposals?state=nope", "", "", http.StatusBadRequest)
+	call(http.MethodGet, "/proposals/nope", "", "", http.StatusNotFound)
+}

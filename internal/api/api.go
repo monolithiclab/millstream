@@ -75,6 +75,12 @@ type Engine interface {
 	// Unschedulable returns the steps whose pending deliveries no registered node can take (spec section 5.10).
 	Unschedulable(ctx context.Context) ([]engine.UnschedulableStep, error)
 	Purge(ctx context.Context, req engine.PurgeRequest) (store.Purge, bool, error)
+	// The proposal rules (spec section 11.3): creation and validation, revalidation, acceptance on the base
+	// revision, and the proposals-only token.
+	CreateProposal(ctx context.Context, req engine.ProposalRequest) (store.Proposal, error)
+	ValidateProposal(ctx context.Context, id string) (store.Proposal, error)
+	AcceptProposal(ctx context.Context, id, patchSHA256, by string) (store.Proposal, error)
+	MintProposalToken(ctx context.Context) (string, error)
 }
 
 // Deployment is what the server knows of its deployment's engines (spec section 5.9).
@@ -235,6 +241,13 @@ var routes = []route{
 	{http.MethodPost, "/evidence/imports", (*Server).importEvidence},
 	{http.MethodPost, "/backtests", (*Server).createBacktest},
 	{http.MethodGet, "/backtests/{backtest}", (*Server).getBacktest},
+	{http.MethodGet, "/proposals", (*Server).listProposals},
+	{http.MethodPost, "/proposals", (*Server).createProposal},
+	{http.MethodPost, "/proposal-token", (*Server).mintProposalToken},
+	{http.MethodGet, "/proposals/{proposal}", (*Server).getProposal},
+	{http.MethodPost, "/proposals/{proposal}/accept", (*Server).acceptProposal},
+	{http.MethodPost, "/proposals/{proposal}/reject", (*Server).rejectProposal},
+	{http.MethodPost, "/proposals/{proposal}/revalidate", (*Server).revalidateProposal},
 	{http.MethodPost, "/purges", (*Server).createPurge},
 	{http.MethodGet, "/purges/{purge}", (*Server).getPurge},
 	{http.MethodGet, "/nodes", (*Server).listNodes},
@@ -302,6 +315,14 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if s.opts.Auth != nil {
 		cred = s.credential(r)
 	}
+	if cred == noCredential && s.proposalToken(r) {
+		cred = proposalCredential
+		if _, pattern := apiMux().Handler(r); !proposalRoutes[strings.Replace(pattern, " "+Prefix, " ", 1)] {
+			writeErrorBody(w, http.StatusForbidden, codeForbidden, r.Method+" "+r.URL.Path+
+				": the proposals token reaches proposals only")
+			return
+		}
+	}
 	if !s.sameOrigin(r, cred) {
 		writeErrorBody(w, http.StatusForbidden, codeForbidden, r.Method+" from another origin: "+
 			strings.Join(r.Header.Values("Origin"), ", "))
@@ -311,7 +332,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeUnauthorized(w, "sign in: send the token as Authorization: Bearer <token>, or sign in through the UI")
 		return
 	}
-	s.serve(apiMux(), w, r)
+	rc := withCredential(r, cred)
+	s.serve(apiMux(), w, rc)
+	r.Pattern = rc.Pattern
 }
 
 // serverKey carries the Server a request is for to the handlers of the process's muxes.

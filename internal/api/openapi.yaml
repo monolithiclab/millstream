@@ -17,7 +17,9 @@ info:
     "Authorization: Bearer <token>" or the session cookie POST /session sets (unauthorized otherwise, signing in and
     out aside); the server also answers ui.baseUrl's host and its listen address's; a request authenticated by the
     cookie that changes state must name its origin; and every decision is recorded under auth.user, whatever the
-    request says.
+    request says. A bearer token that is the proposals-only token (POST /proposal-token) reaches only listing,
+    reading, creating and revalidating proposals and running backtests (forbidden otherwise), with or without
+    auth.token: the improve package calls the API with it.
 
     On Postgres a standby engine serves the reads and the UI from a read-only connection: every POST it answers
     503 unavailable, with the active engine's id in the X-Millstream-Active-Engine header and its API address in
@@ -927,6 +929,152 @@ paths:
               schema: { $ref: "#/components/schemas/Backtest" }
         "404": { $ref: "#/components/responses/Error" }
         "503": { $ref: "#/components/responses/Error" }
+  /proposals:
+    get:
+      operationId: listProposals
+      summary: Proposals, newest first (spec section 11.3); a rejected one carries its reason, given to later drafts.
+      parameters:
+        - { name: pipeline, in: query, schema: { type: string } }
+        - { name: state, in: query, schema: { $ref: "#/components/schemas/ProposalState" } }
+      responses:
+        default: { $ref: "#/components/responses/Error" }
+        "200":
+          description: The proposals.
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/Proposal" } }
+        "400": { $ref: "#/components/responses/Error" }
+    post:
+      operationId: createProposal
+      summary: Create a proposal on the pipeline's active revision and validate it (spec section 11.3).
+      description: |
+        The patch, a unified diff of the package, is checked against its kind's paths (spec section 11.7): a path its
+        kind does not allow, a symbolic link, a file mode change or a path outside the package is invalid. The engine
+        then validates it before answering: check on the patched package, the base revision's evals of every affected
+        action before and after, and the backtest. The proposal comes back ready when all pass, drafting with its
+        report otherwise. A fingerprint a rejection suppresses (until an insight it answers doubles in severity) is a
+        conflict.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ProposalRequest" }
+      responses:
+        default: { $ref: "#/components/responses/Error" }
+        "415": { $ref: "#/components/responses/Error" }
+        "201":
+          description: The proposal, validated.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Proposal" }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+  /proposal-token:
+    post:
+      operationId: mintProposalToken
+      summary: Mint the proposals-only token, replacing the earlier one, and answer it once (spec section 11.3).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: false }
+      responses:
+        default: { $ref: "#/components/responses/Error" }
+        "415": { $ref: "#/components/responses/Error" }
+        "201":
+          description: The token; the store keeps only its SHA-256.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [token]
+                additionalProperties: false
+                properties:
+                  token: { type: string }
+        "403": { $ref: "#/components/responses/Error" }
+  /proposals/{proposal}:
+    parameters: [{ $ref: "#/components/parameters/proposal" }]
+    get:
+      operationId: getProposal
+      summary: A proposal with its patch and its latest validation report.
+      responses:
+        default: { $ref: "#/components/responses/Error" }
+        "200":
+          description: The proposal.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Proposal" }
+        "404": { $ref: "#/components/responses/Error" }
+  /proposals/{proposal}/accept:
+    parameters: [{ $ref: "#/components/parameters/proposal" }]
+    post:
+      operationId: acceptProposal
+      summary: Accept a ready proposal on its base revision (spec sections 5.11 and 11.3).
+      description: |
+        patchSha256 names the patch the decider saw: another is a conflict. The patch is checked against its kind's
+        paths again. The acceptance succeeds only while the pipeline's active revision is the proposal's base, and
+        makes every other open proposal touching one of its paths or steps stale; when the base moved, the proposal
+        becomes stale and the answer is a conflict.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ProposalDecision" }
+      responses:
+        default: { $ref: "#/components/responses/Error" }
+        "415": { $ref: "#/components/responses/Error" }
+        "200":
+          description: The proposal, accepted.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Proposal" }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+  /proposals/{proposal}/reject:
+    parameters: [{ $ref: "#/components/parameters/proposal" }]
+    post:
+      operationId: rejectProposal
+      summary: Reject an open or stale proposal with a reason, required; its fingerprint is suppressed.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ProposalDecision" }
+      responses:
+        default: { $ref: "#/components/responses/Error" }
+        "415": { $ref: "#/components/responses/Error" }
+        "200":
+          description: The proposal, rejected.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Proposal" }
+        "400": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+  /proposals/{proposal}/revalidate:
+    parameters: [{ $ref: "#/components/parameters/proposal" }]
+    post:
+      operationId: revalidateProposal
+      summary: Validate a proposal again; a stale one is first rebased onto the active revision (a conflict when it does not rebase).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: false }
+      responses:
+        default: { $ref: "#/components/responses/Error" }
+        "415": { $ref: "#/components/responses/Error" }
+        "200":
+          description: The proposal, validated.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Proposal" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
   /purges:
     post:
       operationId: createPurge
@@ -1078,6 +1226,7 @@ components:
     item: { name: item, in: path, required: true, schema: { type: string } }
     delivery: { name: delivery, in: path, required: true, schema: { type: string } }
     insight: { name: insight, in: path, required: true, schema: { type: string } }
+    proposal: { name: proposal, in: path, required: true, schema: { type: string } }
     node: { name: node, in: path, required: true, schema: { type: string } }
     trigger: { name: trigger, in: path, required: true, schema: { type: string } }
     artifactName: { name: name, in: path, required: true, schema: { type: string } }
@@ -1657,6 +1806,116 @@ components:
         trigger: { type: string, description: The pipeline's first manual trigger by default. }
         payload: { description: "The trigger item's payload; {} by default." }
         requestId: { type: string, description: Firing the same request id again returns the same run. }
+    ProposalState: { type: string, enum: [drafting, validating, ready, accepted, rejected, stale] }
+    ProposalKind: { type: string, enum: [config, prompt, lessons, topology, distill] }
+    ProposalRequest:
+      type: object
+      required: [pipeline, kind, patch]
+      additionalProperties: false
+      properties:
+        pipeline: { type: string }
+        kind: { $ref: "#/components/schemas/ProposalKind" }
+        patch: { type: string, description: A unified diff of the package, as git diff writes it. }
+        rationale: { type: string }
+        insights: { type: array, items: { type: string }, description: The ids of the insights it answers. }
+        fingerprint: { type: string, description: Names the idea; derived from the pipeline, kind, insights and paths when empty. }
+    ProposalDecision:
+      type: object
+      additionalProperties: false
+      properties:
+        patchSha256: { type: string, description: Accepting, the hash of the patch the decider saw. }
+        reason: { type: string, description: Rejecting, why; required. }
+    Proposal:
+      type: object
+      required: [id, pipeline, kind, state, baseRevision, patch, patchSha256, paths, steps, rationale, insights,
+        fingerprint, report, createdBy, createdAt, updatedAt]
+      additionalProperties: false
+      properties:
+        id: { type: string }
+        pipeline: { type: string }
+        kind: { $ref: "#/components/schemas/ProposalKind" }
+        state: { $ref: "#/components/schemas/ProposalState" }
+        baseRevision: { type: string, description: The package hash of the revision the patch applies to. }
+        patch: { type: string }
+        patchSha256: { type: string }
+        paths: { type: array, items: { type: string }, description: The package paths the patch touches. }
+        steps: { type: array, items: { type: string }, description: The steps the patch touches. }
+        rationale: { type: string }
+        insights: { type: array, items: { type: string } }
+        fingerprint: { type: string }
+        report:
+          description: The latest validation report, null before the first.
+          oneOf:
+            - { type: "null" }
+            - { $ref: "#/components/schemas/ValidationReport" }
+        createdBy: { type: string }
+        decidedBy: { type: string }
+        reason: { type: string, description: Why it was rejected. }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        decidedAt: { type: string, format: date-time }
+    ValidationReport:
+      type: object
+      required: [passed, baseRevision, patchSha256]
+      properties:
+        passed: { type: boolean }
+        baseRevision: { type: string }
+        patchSha256: { type: string }
+        error: { type: string, description: Why the validation could not run. }
+        check:
+          type: object
+          required: [passed, diagnostics]
+          properties:
+            passed: { type: boolean }
+            diagnostics:
+              type: array
+              items:
+                type: object
+                required: [severity, path, message]
+                properties:
+                  severity: { type: string, enum: [error, warning] }
+                  path: { type: string }
+                  message: { type: string }
+        evals:
+          type: array
+          description: Each affected action on the base revision's cases, before and after.
+          items: { $ref: "#/components/schemas/EvalReport" }
+        newEvals:
+          type: array
+          description: The cases the patch adds or changes, after alone, reported apart.
+          items: { $ref: "#/components/schemas/EvalReport" }
+        backtest:
+          type: object
+          required: [passed]
+          properties:
+            passed: { type: boolean }
+            skipped: { type: string }
+            report: { description: The backtest's report. }
+    EvalReport:
+      type: object
+      required: [step, action, passed, cases]
+      properties:
+        step: { type: string }
+        action: { type: string }
+        after: { type: string, description: The step's action after the patch, when it changes. }
+        passed: { type: boolean }
+        error: { type: string }
+        cases:
+          type: array
+          items:
+            type: object
+            required: [case, after]
+            properties:
+              case: { type: string }
+              before: { $ref: "#/components/schemas/EvalScore" }
+              after: { $ref: "#/components/schemas/EvalScore" }
+    EvalScore:
+      type: object
+      required: [passed, score]
+      properties:
+        passed: { type: boolean }
+        score: { type: number }
+        error: { type: string }
     PurgeRequest:
       type: object
       description: Exactly one of key and item.

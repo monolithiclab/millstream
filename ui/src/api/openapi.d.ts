@@ -966,6 +966,131 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/proposals': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Proposals, newest first (spec section 11.3); a rejected one carries its reason, given to later drafts. */
+    get: operations['listProposals'];
+    put?: never;
+    /**
+     * Create a proposal on the pipeline's active revision and validate it (spec section 11.3).
+     * @description The patch, a unified diff of the package, is checked against its kind's paths (spec section 11.7): a path its
+     *     kind does not allow, a symbolic link, a file mode change or a path outside the package is invalid. The engine
+     *     then validates it before answering: check on the patched package, the base revision's evals of every affected
+     *     action before and after, and the backtest. The proposal comes back ready when all pass, drafting with its
+     *     report otherwise. A fingerprint a rejection suppresses (until an insight it answers doubles in severity) is a
+     *     conflict.
+     */
+    post: operations['createProposal'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/proposal-token': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Mint the proposals-only token, replacing the earlier one, and answer it once (spec section 11.3). */
+    post: operations['mintProposalToken'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/proposals/{proposal}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        proposal: components['parameters']['proposal'];
+      };
+      cookie?: never;
+    };
+    /** A proposal with its patch and its latest validation report. */
+    get: operations['getProposal'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/proposals/{proposal}/accept': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        proposal: components['parameters']['proposal'];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Accept a ready proposal on its base revision (spec sections 5.11 and 11.3).
+     * @description patchSha256 names the patch the decider saw: another is a conflict. The patch is checked against its kind's
+     *     paths again. The acceptance succeeds only while the pipeline's active revision is the proposal's base, and
+     *     makes every other open proposal touching one of its paths or steps stale; when the base moved, the proposal
+     *     becomes stale and the answer is a conflict.
+     */
+    post: operations['acceptProposal'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/proposals/{proposal}/reject': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        proposal: components['parameters']['proposal'];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Reject an open or stale proposal with a reason, required; its fingerprint is suppressed. */
+    post: operations['rejectProposal'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/proposals/{proposal}/revalidate': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        proposal: components['parameters']['proposal'];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Validate a proposal again; a stale one is first rebased onto the active revision (a conflict when it does not rebase). */
+    post: operations['revalidateProposal'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/purges': {
     parameters: {
       query?: never;
@@ -1590,6 +1715,100 @@ export interface components {
       /** @description Firing the same request id again returns the same run. */
       requestId?: string;
     };
+    /** @enum {string} */
+    ProposalState: 'drafting' | 'validating' | 'ready' | 'accepted' | 'rejected' | 'stale';
+    /** @enum {string} */
+    ProposalKind: 'config' | 'prompt' | 'lessons' | 'topology' | 'distill';
+    ProposalRequest: {
+      pipeline: string;
+      kind: components['schemas']['ProposalKind'];
+      /** @description A unified diff of the package */
+      patch: string;
+      rationale?: string;
+      /** @description The ids of the insights it answers. */
+      insights?: string[];
+      /** @description Names the idea; derived from the pipeline */
+      fingerprint?: string;
+    };
+    ProposalDecision: {
+      /** @description Accepting */
+      patchSha256?: string;
+      /** @description Rejecting */
+      reason?: string;
+    };
+    Proposal: {
+      id: string;
+      pipeline: string;
+      kind: components['schemas']['ProposalKind'];
+      state: components['schemas']['ProposalState'];
+      /** @description The package hash of the revision the patch applies to. */
+      baseRevision: string;
+      patch: string;
+      patchSha256: string;
+      /** @description The package paths the patch touches. */
+      paths: string[];
+      /** @description The steps the patch touches. */
+      steps: string[];
+      rationale: string;
+      insights: string[];
+      fingerprint: string;
+      /** @description The latest validation report, null before the first. */
+      report: null | components['schemas']['ValidationReport'];
+      createdBy: string;
+      decidedBy?: string;
+      /** @description Why it was rejected. */
+      reason?: string;
+      /** Format: date-time */
+      createdAt: string;
+      /** Format: date-time */
+      updatedAt: string;
+      /** Format: date-time */
+      decidedAt?: string;
+    };
+    ValidationReport: {
+      passed: boolean;
+      baseRevision: string;
+      patchSha256: string;
+      /** @description Why the validation could not run. */
+      error?: string;
+      check?: {
+        passed: boolean;
+        diagnostics: {
+          /** @enum {string} */
+          severity: 'error' | 'warning';
+          path: string;
+          message: string;
+        }[];
+      };
+      /** @description Each affected action on the base revision's cases, before and after. */
+      evals?: components['schemas']['EvalReport'][];
+      /** @description The cases the patch adds or changes, after alone, reported apart. */
+      newEvals?: components['schemas']['EvalReport'][];
+      backtest?: {
+        passed: boolean;
+        skipped?: string;
+        /** @description The backtest's report. */
+        report?: unknown;
+      };
+    };
+    EvalReport: {
+      step: string;
+      action: string;
+      /** @description The step's action after the patch */
+      after?: string;
+      passed: boolean;
+      error?: string;
+      cases: {
+        case: string;
+        before?: components['schemas']['EvalScore'];
+        after: components['schemas']['EvalScore'];
+      }[];
+    };
+    EvalScore: {
+      passed: boolean;
+      score: number;
+      error?: string;
+    };
     /** @description Exactly one of key and item. */
     PurgeRequest: {
       /** @description Every item with this key. */
@@ -2067,6 +2286,7 @@ export interface components {
     item: string;
     delivery: string;
     insight: string;
+    proposal: string;
     node: string;
     trigger: string;
     artifactName: string;
@@ -3553,6 +3773,207 @@ export interface operations {
       };
       404: components['responses']['Error'];
       503: components['responses']['Error'];
+      default: components['responses']['Error'];
+    };
+  };
+  listProposals: {
+    parameters: {
+      query?: {
+        pipeline?: string;
+        state?: components['schemas']['ProposalState'];
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The proposals. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Proposal'][];
+        };
+      };
+      400: components['responses']['Error'];
+      default: components['responses']['Error'];
+    };
+  };
+  createProposal: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ProposalRequest'];
+      };
+    };
+    responses: {
+      /** @description The proposal, validated. */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Proposal'];
+        };
+      };
+      400: components['responses']['Error'];
+      403: components['responses']['Error'];
+      404: components['responses']['Error'];
+      409: components['responses']['Error'];
+      415: components['responses']['Error'];
+      default: components['responses']['Error'];
+    };
+  };
+  mintProposalToken: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': Record<string, unknown>;
+      };
+    };
+    responses: {
+      /** @description The token; the store keeps only its SHA-256. */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            token: string;
+          };
+        };
+      };
+      403: components['responses']['Error'];
+      415: components['responses']['Error'];
+      default: components['responses']['Error'];
+    };
+  };
+  getProposal: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        proposal: components['parameters']['proposal'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The proposal. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Proposal'];
+        };
+      };
+      404: components['responses']['Error'];
+      default: components['responses']['Error'];
+    };
+  };
+  acceptProposal: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        proposal: components['parameters']['proposal'];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ProposalDecision'];
+      };
+    };
+    responses: {
+      /** @description The proposal, accepted. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Proposal'];
+        };
+      };
+      400: components['responses']['Error'];
+      403: components['responses']['Error'];
+      404: components['responses']['Error'];
+      409: components['responses']['Error'];
+      415: components['responses']['Error'];
+      default: components['responses']['Error'];
+    };
+  };
+  rejectProposal: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        proposal: components['parameters']['proposal'];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ProposalDecision'];
+      };
+    };
+    responses: {
+      /** @description The proposal, rejected. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Proposal'];
+        };
+      };
+      400: components['responses']['Error'];
+      404: components['responses']['Error'];
+      409: components['responses']['Error'];
+      415: components['responses']['Error'];
+      default: components['responses']['Error'];
+    };
+  };
+  revalidateProposal: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        proposal: components['parameters']['proposal'];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': Record<string, unknown>;
+      };
+    };
+    responses: {
+      /** @description The proposal, validated. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Proposal'];
+        };
+      };
+      404: components['responses']['Error'];
+      409: components['responses']['Error'];
+      415: components['responses']['Error'];
       default: components['responses']['Error'];
     };
   };

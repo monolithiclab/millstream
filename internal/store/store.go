@@ -208,6 +208,28 @@ type Store interface {
 	// ExpireEvidence deletes the evidence imports expired by the store clock, dropping their references, and returns
 	// them: the retention job then deletes their files.
 	ExpireEvidence(ctx context.Context) ([]EvidenceImport, error)
+	// CreateProposal is the creation of a proposal (spec section 11.3), drafting: its base must be the pipeline's
+	// active revision (ErrConflict otherwise), and its fingerprint must not be suppressed: a rejected proposal with
+	// the same fingerprint suppresses it until an insight it answers reaches twice the severity weight it had at
+	// the rejection (ErrConflict). A proposal answering no insight is never suppressed. It records proposalCreated.
+	CreateProposal(ctx context.Context, p NewProposal) (Proposal, error)
+	// StartValidation moves a drafting, ready or stale proposal to validating; any other state is ErrConflict.
+	StartValidation(ctx context.Context, id string) (Proposal, error)
+	// RecordValidation records the report of a validating proposal: ready when it passed, else drafting again. A
+	// rebase replaces its base and patch; the base must then be the pipeline's active revision. A proposal whose base
+	// is no longer the active revision becomes stale instead. It records proposalValidated.
+	RecordValidation(ctx context.Context, v Validation) (Proposal, error)
+	// AcceptProposal is the Proposal acceptance unit (spec section 5.11): a ready proposal whose patch hash is the
+	// one named is accepted only when the pipeline's active revision is still its base, and every other open
+	// proposal of the pipeline touching one of its paths or steps becomes stale in the same transaction. When the
+	// base moved, the proposal becomes stale, committed, and the call answers it with ErrConflict. A proposal not
+	// ready, or whose hash differs, is ErrConflict and left as it is.
+	AcceptProposal(ctx context.Context, id, patchSHA256, by string) (Proposal, error)
+	// RejectProposal rejects an open or stale proposal with a reason, required (ErrInvalid without), recording the
+	// highest severity of its insights for the suppression of its fingerprint.
+	RejectProposal(ctx context.Context, id, reason, by string) (Proposal, error)
+	// SetProposalToken replaces the hash (SHA-256, hex) of the proposals-only API token (spec section 11.3).
+	SetProposalToken(ctx context.Context, hash string) error
 	// DeleteArtifacts removes the artifact store entries named that no item or attempt references any more (their
 	// reference count is zero): the artifact sweep, once their files are gone. It returns how many it removed.
 	DeleteArtifacts(ctx context.Context, keys []ArtifactKey) (int, error)
@@ -275,6 +297,12 @@ type Store interface {
 	// EvidenceExports returns the evidence exports of a pipeline (every pipeline when empty), oldest first, with the
 	// item keys they still hold.
 	EvidenceExports(ctx context.Context, pipeline string) ([]EvidenceExport, error)
+	// Proposal returns a proposal.
+	Proposal(ctx context.Context, id string) (Proposal, error)
+	// Proposals returns the proposals f selects, newest first.
+	Proposals(ctx context.Context, f ProposalFilter) ([]Proposal, error)
+	// ProposalTokenHash returns the hash of the proposals-only API token, ErrNotFound when none was minted.
+	ProposalTokenHash(ctx context.Context) (string, error)
 	// Purge returns a purge.
 	Purge(ctx context.Context, id string) (Purge, error)
 	// Purges returns the purges not yet done, oldest first: what the engine resumes.

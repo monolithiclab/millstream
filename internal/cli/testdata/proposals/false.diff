@@ -1,0 +1,5 @@
+--- a/pipeline.yaml
++++ b/pipeline.yaml
+@@ -3 +3 @@
+-steps: { pass: { action: filter, in: trigger.adhoc, config: { expr: "true" } } }
++steps: { pass: { action: filter, in: trigger.adhoc, config: { expr: "false" } } }

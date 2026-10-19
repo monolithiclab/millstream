@@ -32,6 +32,11 @@ earlier designs are in the git history of the spec.
   touching exec actions are refused until distilled code runs in the network-less container sandbox (spec 15.3).
   Replays of runs a replay or an import opened, and of evidence (which carries no run variables, resolved anew), are
   left out or approximated.
+- Proposals: the validation's backtest goes through `proposals.Backtester`; until the backtest runner is wired into
+  the engine (`engine.ProposalOptions.Backtest`), reports say it was skipped and do not hold a proposal back. The
+  evals of a `prompt` proposal replay the action's recordings, which a changed prompt misses: the `improve` package
+  validates in its harness's live or record mode. The improve package receives the proposals-only token when it runs
+  (`engine.MintProposalToken`), and an accepted proposal reaches a revision through the publish actions.
 
 - Audits: an audit whose run's revision is neither active nor has unsettled runs leases without a budget
   reservation (the engine's reservations cover those revisions only); and audits keep their outputs' payloads, not
