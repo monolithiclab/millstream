@@ -361,6 +361,18 @@ func CheckPath(p string) error {
 
 // Apply returns files with the patch applied, files left unchanged.
 func (p *Patch) Apply(files map[string][]byte) (map[string][]byte, error) {
+	return p.apply(files, false)
+}
+
+// Rebase applies the patch to files that moved since its base, as a stale proposal's revalidation does (spec section
+// 11.3): each hunk where its context and removed lines now are, exactly, at the line it names or the nearest offset,
+// never with fuzz. Format renders the result as the rebased patch.
+func (p *Patch) Rebase(files map[string][]byte) (map[string][]byte, error) {
+	return p.apply(files, true)
+}
+
+// apply applies the patch, each hunk at its lines or, when near, at the nearest offset where it matches.
+func (p *Patch) apply(files map[string][]byte, near bool) (map[string][]byte, error) {
 	out := maps.Clone(files)
 	for _, f := range p.Files {
 		old, exists := files[f.Path]
@@ -378,7 +390,7 @@ func (p *Patch) Apply(files map[string][]byte) (map[string][]byte, error) {
 				return nil, errorf("%s: modified, but it does not exist", f.Path)
 			}
 		}
-		body, err := apply(old, f.Hunks)
+		body, err := applyHunks(old, f.Hunks, near)
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", f.Path, err)
 		}
@@ -394,8 +406,9 @@ func (p *Patch) Apply(files map[string][]byte) (map[string][]byte, error) {
 	return out, nil
 }
 
-// apply applies hunks to a file's content, each at the lines it names.
-func apply(content []byte, hunks []Hunk) ([]byte, error) {
+// applyHunks applies hunks to a file's content, each at the lines it names or, when near, at the nearest offset
+// where its context and removed lines match.
+func applyHunks(content []byte, hunks []Hunk, near bool) ([]byte, error) {
 	lines := split(content)
 	var b bytes.Buffer
 	at := 0 // lines consumed so far
@@ -403,6 +416,12 @@ func apply(content []byte, hunks []Hunk) ([]byte, error) {
 		start := h.OldStart - 1
 		if h.OldLines == 0 { // an insertion after line OldStart
 			start = h.OldStart
+		}
+		if near {
+			var ok bool
+			if start, ok = nearest(lines, h, at, start); !ok {
+				return nil, errorf("the hunk at line %d matches nowhere after line %d", h.OldStart, at)
+			}
 		}
 		if start < at || start > len(lines) {
 			return nil, errorf("the hunk at line %d is out of order or past the end", h.OldStart)
@@ -429,4 +448,25 @@ func apply(content []byte, hunks []Hunk) ([]byte, error) {
 		b.WriteString(l)
 	}
 	return b.Bytes(), nil
+}
+
+// nearest returns where hunk h's context and removed lines appear in lines at or after from, the nearest to want.
+func nearest(lines []string, h Hunk, from, want int) (int, bool) {
+	var old []string
+	for _, l := range h.Lines {
+		if l.Kind != '+' {
+			old = append(old, l.Text)
+		}
+	}
+	last := len(lines) - len(old)
+	match := func(at int) bool { return at >= from && at <= last && slices.Equal(lines[at:at+len(old)], old) }
+	for d := 0; want-d >= from || want+d <= last; d++ {
+		if match(want - d) {
+			return want - d, true
+		}
+		if match(want + d) {
+			return want + d, true
+		}
+	}
+	return 0, false
 }

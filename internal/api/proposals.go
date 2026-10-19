@@ -90,6 +90,7 @@ var proposalRoutes = map[string]bool{
 	"GET /proposals/{proposal}":             true,
 	"POST /proposals/{proposal}/revalidate": true,
 	"POST /backtests":                       true, // spec section 11.3: the backtest endpoint the validate step calls
+	"GET /backtests/{backtest}":             true,
 }
 
 // proposalToken reports whether r bears the proposals-only token: its bearer token's SHA-256 is the one the store

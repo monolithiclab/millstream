@@ -2,12 +2,15 @@ package engine
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
 	"testing"
 
+	"github.com/monolithiclab/millstream/internal/patch"
 	"github.com/monolithiclab/millstream/internal/pipeline"
+	"github.com/monolithiclab/millstream/internal/proposals"
 	"github.com/monolithiclab/millstream/internal/store"
 	"github.com/monolithiclab/millstream/internal/store/sqlite"
 	"github.com/monolithiclab/millstream/internal/testdir"
@@ -27,7 +30,7 @@ func TestProposals(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = st.Close() })
-	e, err := New(Options{Store: st, PackageDir: testdir.New(t)})
+	e, err := New(Options{Store: st, PackageDir: testdir.New(t), Proposals: ProposalOptions{Backtest: passing{}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -41,7 +44,7 @@ func TestProposals(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	patch := func(at int, to string) string {
+	diff := func(at int, to string) string {
 		return fmt.Sprintf("--- a/pipeline.yaml\n+++ b/pipeline.yaml\n@@ -%d +%d @@\n"+
 			"-  pass: { action: filter, in: trigger.adhoc, config: { expr: \"true\" } }\n"+
 			"+  pass: { action: filter, in: trigger.adhoc, config: { expr: %q } }\n", at, at, to)
@@ -56,9 +59,9 @@ func TestProposals(t *testing.T) {
 		return got
 	}
 	apply("", "true")
-	first, second := create(patch(4, "false")), create(patch(4, "item.n > 1"))
+	first, second := create(diff(4, "false")), create(diff(4, "item.n > 1"))
 	if _, err := e.CreateProposal(ctx, ProposalRequest{Pipeline: "extra", Kind: store.ProposalLessons,
-		Patch: patch(4, "false")}); !errors.Is(err, store.ErrInvalid) {
+		Patch: diff(4, "false")}); !errors.Is(err, store.ErrInvalid) {
 		t.Fatalf("a lessons proposal changing pipeline.yaml: %v", err)
 	}
 	if p, err := e.AcceptProposal(ctx, first.ID, first.PatchSHA256, "ana"); err != nil || p.State != store.ProposalAccepted {
@@ -69,7 +72,8 @@ func TestProposals(t *testing.T) {
 	}
 	apply("description: moved\n", "true")
 	p, err := e.ValidateProposal(ctx, second.ID)
-	if err != nil || p.State != store.ProposalReady || !strings.Contains(p.Patch, "@@ -5,1 +5,1 @@") {
+	if err != nil || p.State != store.ProposalReady || !strings.HasPrefix(p.Patch, patch.BaseTrailer+": "+p.BaseRevision+"\n") ||
+		!strings.Contains(p.Patch, "@@ -2,4 +2,4 @@") {
 		t.Fatalf("rebased = %+v, %v", p, err)
 	}
 	apply("description: moved\n", "false")
@@ -108,4 +112,11 @@ func TestProposals(t *testing.T) {
 	if h, err := st.ProposalTokenHash(ctx); err != nil || h != TriggerTokenHash(token) {
 		t.Fatalf("stored hash %q, %v", h, err)
 	}
+}
+
+// passing is a backtester whose backtests all pass (the real one, package backtest, drives an engine).
+type passing struct{}
+
+func (passing) Backtest(context.Context, proposals.BacktestRequest) (proposals.BacktestResult, error) {
+	return proposals.BacktestResult{Passed: true, Report: json.RawMessage(`{}`)}, nil
 }

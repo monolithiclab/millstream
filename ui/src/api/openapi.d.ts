@@ -1786,8 +1786,9 @@ export interface components {
       newEvals?: components['schemas']['EvalReport'][];
       backtest?: {
         passed: boolean;
+        /** @description Why the backtest did not run (check failed */
         skipped?: string;
-        /** @description The backtest's report. */
+        /** @description The backtest's report, as GET /backtests/{backtest} answers it. */
         report?: unknown;
       };
     };

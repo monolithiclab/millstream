@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/monolithiclab/millstream/internal/backtest"
 	"github.com/monolithiclab/millstream/internal/engine"
 	"github.com/monolithiclab/millstream/internal/store/sqlite"
 	"github.com/monolithiclab/millstream/internal/testdir"
@@ -38,7 +39,9 @@ func TestProposalActions(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = st.Close() })
-	eng, err := engine.New(engine.Options{Store: st, PackageDir: testdir.New(t)})
+	// The real backtest runner: the pipeline has no history, so the backtests sample nothing and pass.
+	eng, err := engine.New(engine.Options{Store: st, PackageDir: testdir.New(t),
+		Proposals: engine.ProposalOptions{Backtest: backtest.ForProposals(backtest.New(backtest.Options{Store: st}))}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -86,6 +89,8 @@ func TestProposalActions(t *testing.T) {
 	p2 := proposal(call(http.MethodPost, "/proposals", proposalBody("topology", filterPatch("true", "item.n > 2")),
 		tok.Token, http.StatusCreated))
 	call(http.MethodGet, "/proposals/"+p2.ID, "", tok.Token, http.StatusOK)
+	// The backtest routes pass the token's gate: this server runs no backtests.
+	call(http.MethodGet, "/backtests/bt_nope", "", tok.Token, http.StatusServiceUnavailable)
 
 	for _, bad := range []struct{ kind, patch string }{
 		{"topology", "--- /dev/null\n+++ b/Makefile\n@@ -0,0 +1 @@\n+all:\n"},

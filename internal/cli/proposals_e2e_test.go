@@ -54,7 +54,7 @@ func Test_proposalsLifecycle(t *testing.T) {
 		t.Fatalf("rejected: %q", out)
 	}
 	if _, errOut := mustRun(t, 1, "--db", db, "proposals", "create", fixture("proposals/ci.diff"), "--pipeline", "extra",
-		"--kind", "topology"); !strings.Contains(errOut, "may not add .github/workflows/ci.yaml") {
+		"--kind", "topology"); !strings.Contains(errOut, "may not create .github/workflows/ci.yaml") {
 		t.Fatalf("a path outside the kind's: %q", errOut)
 	}
 	if out := run(0, "proposals", "token"); !strings.HasPrefix(out, "mspr_") {

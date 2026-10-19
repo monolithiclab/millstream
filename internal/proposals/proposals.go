@@ -1,61 +1,103 @@
-// Package proposals holds the engine's proposal rules (spec section 11.3): a proposal's patch applied to its base
-// revision's files (ApplyPatch), the paths each kind may touch (spec section 11.7), the steps a patch touches, the
-// fingerprint a rejection suppresses, and the validation the engine runs before a proposal is ready: check on the
-// patched package, the base revision's evals before and after, and a backtest.
+// Package proposals holds the engine's proposal rules (spec section 11.3): a proposal's patch (the patch format of
+// internal/patch) applied to its base revision's files, or rebased onto a newer one, the paths each kind may touch
+// (spec section 11.7), the steps a patch touches, the fingerprint a rejection suppresses, and the validation the
+// engine runs before a proposal is ready: check on the patched package, the base revision's evals before and after,
+// and a backtest.
 //
 // The store's units keep the states (store.Store's CreateProposal through RejectProposal); the engine
-// (engine/proposals.go) calls this package before them.
+// (engine/proposals.go) calls this package before them. Every refusal of a patch wraps patch.ErrPatch.
 package proposals
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"reflect"
 	"slices"
 	"strings"
 
+	"github.com/monolithiclab/millstream/internal/patch"
 	"github.com/monolithiclab/millstream/internal/pipeline"
 	"github.com/monolithiclab/millstream/internal/store"
 )
 
 // Prepared is a patch checked against its kind's path rules and applied to its base: what a proposal records.
 type Prepared struct {
-	Applied
-	// Patch is the patch as given, which SHA256 hashes.
-	Patch string
+	// Patch is the patch, which SHA256 hashes (patch.Hash).
+	Patch  string
+	SHA256 string
+	// Changes are the files it changes, in the order it lists them.
+	Changes []patch.File
 	// Base and Patched are the packages before and after the patch, their Dir empty: nothing is on disk yet.
 	Base, Patched *pipeline.Package
-	SHA256        string
 	Steps         []string
 }
 
-// Prepare applies a patch to the base package's files, refusing any path its kind does not allow (spec section
-// 11.7), and derives the steps it touches. It is called when a proposal is drafted, when it is rebased and again when
-// it is accepted. The patched package must parse; check is the validation's.
-func Prepare(kind store.ProposalKind, base *pipeline.Package, patch string) (Prepared, error) {
+// Paths returns the paths the patch touches, sorted.
+func (p Prepared) Paths() []string { return (&patch.Patch{Files: p.Changes}).Paths() }
+
+// Prepare applies a patch to the base package's files, exactly at its lines (patch.Patch.Apply), refusing any path its
+// kind does not allow (spec section 11.7), and derives the steps it touches. It is called when a proposal is drafted
+// and again when it is accepted. A patch naming a base revision (its Millstream-Base trailer) applies only to that
+// one. The patched package must parse; check is the validation's.
+func Prepare(kind store.ProposalKind, base *pipeline.Package, text string) (Prepared, error) {
 	if !slices.Contains(store.ProposalKinds, kind) {
-		return Prepared{}, fmt.Errorf("%w: kind %q is not one of %v", ErrPatch, kind, store.ProposalKinds)
+		return Prepared{}, fmt.Errorf("%w: kind %q is not one of %v", patch.ErrPatch, kind, store.ProposalKinds)
 	}
-	a, err := ApplyPatch(base.Files, patch)
+	p, err := patch.Parse([]byte(text))
 	if err != nil {
 		return Prepared{}, err
 	}
-	if err := allowed(kind, base, a.Changes); err != nil {
+	if p.Base != "" && p.Base != base.Hash {
+		return Prepared{}, fmt.Errorf("%w: the patch is written against revision %.12s, not %.12s", patch.ErrPatch,
+			p.Base, base.Hash)
+	}
+	files, err := p.Apply(base.Files)
+	if err != nil {
 		return Prepared{}, err
 	}
-	patched, err := pipeline.FromFiles("", a.Files)
-	if err != nil {
-		return Prepared{}, fmt.Errorf("%w: the patched package does not parse: %w", ErrPatch, err)
-	}
-	return Prepared{Applied: a, Patch: patch, Base: base, Patched: patched, SHA256: Hash(patch),
-		Steps: touchedSteps(base.Pipeline, patched.Pipeline, a.Changes)}, nil
+	return prepared(kind, base, text, p, files)
 }
 
-// Hash is a patch's content hash: the SHA-256 of its text, hex.
-func Hash(patch string) string {
-	sum := sha256.Sum256([]byte(patch))
-	return hex.EncodeToString(sum[:])
+// prepared checks a parsed patch against its kind's path rules and builds what it prepared, files the patched
+// package's.
+func prepared(kind store.ProposalKind, base *pipeline.Package, text string, p *patch.Patch, files map[string][]byte,
+) (Prepared, error) {
+	if err := allowed(kind, base, p.Files); err != nil {
+		return Prepared{}, err
+	}
+	patched, err := pipeline.FromFiles("", files)
+	if err != nil {
+		return Prepared{}, fmt.Errorf("%w: the patched package does not parse: %w", patch.ErrPatch, err)
+	}
+	return Prepared{Patch: text, SHA256: patch.Hash([]byte(text)), Changes: p.Files, Base: base, Patched: patched,
+		Steps: touchedSteps(base.Pipeline, patched.Pipeline, p.Files)}, nil
+}
+
+// Rebase moves a stale proposal's patch onto a newer base (spec section 11.3): each hunk applies where its context
+// now is (patch.Patch.Rebase), and the patch rendered from the base to the result, with the base's Millstream-Base
+// trailer, is checked as Prepare checks a patch: it becomes the proposal's patch, with a new hash.
+func Rebase(kind store.ProposalKind, base *pipeline.Package, text string) (Prepared, error) {
+	if !slices.Contains(store.ProposalKinds, kind) {
+		return Prepared{}, fmt.Errorf("%w: kind %q is not one of %v", patch.ErrPatch, kind, store.ProposalKinds)
+	}
+	p, err := patch.Parse([]byte(text))
+	if err != nil {
+		return Prepared{}, err
+	}
+	files, err := p.Rebase(base.Files)
+	if err != nil {
+		return Prepared{}, err
+	}
+	rebased, err := patch.Format(base.Hash, base.Files, files)
+	switch {
+	case err != nil:
+		return Prepared{}, err
+	case rebased == nil:
+		return Prepared{}, fmt.Errorf("%w: the revision already holds the patch's changes", patch.ErrPatch)
+	}
+	if p, err = patch.Parse(rebased); err != nil {
+		return Prepared{}, err
+	}
+	return prepared(kind, base, string(rebased), p, files)
 }
 
 // Fingerprint identifies a proposal's idea when its drafter names none: its pipeline, kind, the insights it answers
@@ -63,8 +105,8 @@ func Hash(patch string) string {
 func Fingerprint(pipelineName string, kind store.ProposalKind, insights, paths []string) string {
 	ins := slices.Sorted(slices.Values(insights))
 	ps := slices.Sorted(slices.Values(paths))
-	return Hash(strings.Join([]string{pipelineName, string(kind), strings.Join(ins, ","), strings.Join(ps, ",")},
-		"\x00"))[:32]
+	return patch.Hash([]byte(strings.Join([]string{pipelineName, string(kind), strings.Join(ins, ","),
+		strings.Join(ps, ",")}, "\x00")))[:32]
 }
 
 // allowed checks each change against its kind's paths (spec section 11.7):
@@ -73,14 +115,14 @@ func Fingerprint(pipelineName string, kind store.ProposalKind, insights, paths [
 //	prompt             actions/<action>/prompt.md, for an action directory of the base revision, never deleted
 //	config, topology   pipeline.yaml, changed
 //	distill            pipeline.yaml changed, and files added under one new actions/<name>/ directory
-func allowed(kind store.ProposalKind, base *pipeline.Package, changes []Change) error {
+func allowed(kind store.ProposalKind, base *pipeline.Package, changes []patch.File) error {
 	newDir := ""
 	for _, c := range changes {
 		refuse := func(why string) error {
-			return fmt.Errorf("%w: a %s proposal may not %s %s: %s", ErrPatch, kind, c.Op, c.Path, why)
+			return fmt.Errorf("%w: a %s proposal may not %s %s: %s", patch.ErrPatch, kind, c.Op, c.Path, why)
 		}
 		if c.Path == pipeline.FileName {
-			if c.Op != OpModify {
+			if c.Op != patch.OpModify {
 				return refuse("the pipeline file is only changed")
 			}
 			if kind == store.ProposalConfig || kind == store.ProposalTopology || kind == store.ProposalDistill {
@@ -100,7 +142,7 @@ func allowed(kind store.ProposalKind, base *pipeline.Package, changes []Change) 
 			if !ok || !hasDir(base.Files, "actions/"+action+"/") {
 				return refuse("want actions/<action>/prompt.md of an action of the package")
 			}
-			if c.Op == OpDelete {
+			if c.Op == patch.OpDelete {
 				return refuse("an agent action needs its prompt")
 			}
 		case store.ProposalDistill:
@@ -112,8 +154,8 @@ func allowed(kind store.ProposalKind, base *pipeline.Package, changes []Change) 
 				return refuse("actions/" + dir + "/ exists: a distill adds a new action")
 			case newDir != "" && newDir != dir:
 				return refuse("a distill adds one action directory, and adds " + newDir + " already")
-			case c.Op != OpAdd:
-				return refuse("the new action's files are added")
+			case c.Op != patch.OpCreate:
+				return refuse("the new action's files are created")
 			}
 			newDir = dir
 		default:
@@ -121,7 +163,7 @@ func allowed(kind store.ProposalKind, base *pipeline.Package, changes []Change) 
 		}
 	}
 	if kind == store.ProposalDistill && newDir == "" {
-		return fmt.Errorf("%w: a distill proposal adds a new actions/<name>/ directory", ErrPatch)
+		return fmt.Errorf("%w: a distill proposal adds a new actions/<name>/ directory", patch.ErrPatch)
 	}
 	return nil
 }
@@ -150,7 +192,7 @@ func hasDir(files map[string][]byte, prefix string) bool {
 
 // touchedSteps returns the steps a patch touches, sorted: those added, removed or changed in the pipeline file, those
 // whose action or fallback is an action directory it changes, and those whose lessons file it changes.
-func touchedSteps(base, patched *pipeline.Pipeline, changes []Change) []string {
+func touchedSteps(base, patched *pipeline.Pipeline, changes []patch.File) []string {
 	set := map[string]bool{}
 	for name, s := range base.Steps {
 		if p, ok := patched.Steps[name]; !ok || !reflect.DeepEqual(s, p) {

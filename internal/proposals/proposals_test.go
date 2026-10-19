@@ -2,10 +2,12 @@ package proposals
 
 import (
 	"errors"
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
 
+	"github.com/monolithiclab/millstream/internal/patch"
 	"github.com/monolithiclab/millstream/internal/pipeline"
 	"github.com/monolithiclab/millstream/internal/store"
 )
@@ -20,6 +22,23 @@ steps:
     in: trigger.adhoc
     out: [scored]
 `
+
+// newFile is the patch adding a file of these lines.
+func newFile(p string, lines ...string) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "diff --git a/%s b/%s\nnew file mode 100644\n--- /dev/null\n+++ b/%s\n@@ -0,0 +1,%d @@\n", p, p, p,
+		len(lines))
+	for _, l := range lines {
+		b.WriteString("+" + l + "\n")
+	}
+	return b.String()
+}
+
+// edit is the patch replacing line at (1-based) of p, between a line of context on each side, with repl.
+func edit(p string, at int, before, old, repl, after string) string {
+	return fmt.Sprintf("diff --git a/%s b/%s\nindex 1111111..2222222 100644\n--- a/%s\n+++ b/%s\n@@ -%d,3 +%d,3 @@\n"+
+		" %s\n-%s\n+%s\n %s\n", p, p, p, p, at-1, at-1, before, old, repl, after)
+}
 
 // manifest is an exec action running the fake action, whose rules mode (exectest) emits one output as an action
 // named anything but *-fallback and a second one, on a disagreeing input, under such a name.
@@ -96,16 +115,18 @@ func TestPrepare(t *testing.T) {
 		{"other", lessonsPatch, nil, "is not one of"},
 		{store.ProposalConfig, strings.Replace(configPatch, "concurrency: 2", "concurrency: [", 1), nil, "does not parse"},
 		{store.ProposalLessons, "diff --git a/lessons/score.yaml b/lessons/score.yaml\nnew file mode 120000\n", nil,
-			"symbolic links"},
+			"symlinks"},
 		{store.ProposalConfig, "diff --git a/pipeline.yaml b/pipeline.yaml\nold mode 100644\nnew mode 100755\n", nil,
 			"mode change"},
-		{store.ProposalLessons, newFile("lessons/../../etc/x", "x"), nil, "diff --git"},
+		{store.ProposalLessons, newFile("lessons/../../etc/x", "x"), nil, "not a clean relative path"},
+		{store.ProposalLessons, "Millstream-Base: " + strings.Repeat("0", 64) + "\n\n" + lessonsPatch, nil,
+			"written against revision 000000000000"},
 	}
 	for _, tt := range tests {
 		t.Run(string(tt.kind)+" "+tt.why, func(t *testing.T) {
 			p, err := Prepare(tt.kind, base, tt.patch)
 			if tt.why != "" {
-				if !errors.Is(err, ErrPatch) || !strings.Contains(err.Error(), tt.why) {
+				if !errors.Is(err, patch.ErrPatch) || !strings.Contains(err.Error(), tt.why) {
 					t.Fatalf("Prepare = %v, want a refusal saying %q", err, tt.why)
 				}
 				return
@@ -113,7 +134,7 @@ func TestPrepare(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if !slices.Equal(p.Steps, tt.steps) || p.SHA256 != Hash(tt.patch) || p.Patched == nil || len(p.Paths()) == 0 {
+			if !slices.Equal(p.Steps, tt.steps) || p.SHA256 != patch.Hash([]byte(tt.patch)) || p.Patched == nil || len(p.Paths()) == 0 {
 				t.Fatalf("prepared: steps %v sha %s", p.Steps, p.SHA256)
 			}
 		})

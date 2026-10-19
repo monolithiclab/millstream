@@ -42,7 +42,7 @@ func Test_proposalsCommands(t *testing.T) {
 	call(ProposalsListCmd{State: "rejected"}, "one change at a time")
 	call(ProposalsShowCmd{ID: second}, "decided by ana: one change at a time")
 	if _, _, err := s.call(env, ProposalsCreateCmd{Patch: fixture("proposals/ci.diff"), Pipeline: "extra",
-		Kind: "topology"}); err == nil || !strings.Contains(err.Error(), "may not add .github/workflows/ci.yaml") {
+		Kind: "topology"}); err == nil || !strings.Contains(err.Error(), "may not create .github/workflows/ci.yaml") {
 		t.Fatalf("a path outside the kind's: %v", err)
 	}
 	call(ProposalsTokenCmd{}, "mspr_")

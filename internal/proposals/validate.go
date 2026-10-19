@@ -3,6 +3,7 @@ package proposals
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"maps"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/monolithiclab/millstream/internal/agent"
 	"github.com/monolithiclab/millstream/internal/eval"
+	"github.com/monolithiclab/millstream/internal/patch"
 	"github.com/monolithiclab/millstream/internal/pipeline"
 	"github.com/monolithiclab/millstream/internal/runtime/exec"
 )
@@ -65,7 +67,7 @@ type Validator struct {
 	// Resolver resolves action references; nil means pipeline.Resolver{}.
 	Resolver pipeline.ActionResolver
 	Evals    Evals
-	// Backtest runs the backtest; nil reports it skipped, which does not hold a proposal back.
+	// Backtest runs the backtest (backtest.ForProposals); without one, every backtest fails.
 	Backtest Backtester
 	// Scratch is where the packages are written for the evals, each under its content hash as the engine's package
 	// directory holds them (and prunes them); empty writes them in a temporary directory removed afterwards.
@@ -147,7 +149,7 @@ func (v Validator) Validate(ctx context.Context, pipelineName string, p Prepared
 	if err != nil {
 		return r, err
 	}
-	patched, err := pipeline.Materialize(scratch, p.Files)
+	patched, err := pipeline.Materialize(scratch, p.Patched.Files)
 	if err != nil {
 		return r, err
 	}
@@ -162,20 +164,28 @@ func (v Validator) Validate(ctx context.Context, pipelineName string, p Prepared
 	}
 	r.Evals, r.NewEvals = v.evals(ctx, pipelineName, base, patched, p.Changes)
 	evalsPassed := !slices.ContainsFunc(r.Evals, func(e EvalReport) bool { return !e.Passed })
-	if v.Backtest == nil {
-		r.Backtest = Backtest{Passed: true, Skipped: "no backtest runner in this engine"}
+	// The touched steps the patched pipeline still has: a removed step has nothing to replay.
+	steps := slices.DeleteFunc(slices.Clone(p.Steps), func(s string) bool {
+		_, ok := p.Patched.Pipeline.Steps[s]
+		return !ok
+	})
+	res, err := v.backtest(ctx, BacktestRequest{Pipeline: pipelineName, BaseRevision: p.Base.Hash, Patch: p.Patch,
+		Steps: steps})
+	if err != nil {
+		r.Backtest.Skipped = "the backtest failed: " + err.Error()
 	} else {
-		res, err := v.Backtest.Backtest(ctx, BacktestRequest{Pipeline: pipelineName, BaseRevision: p.Base.Hash,
-			Patch: p.Patch, Steps: p.Steps})
-		switch {
-		case err != nil:
-			r.Backtest.Skipped = "the backtest failed: " + err.Error()
-		default:
-			r.Backtest = Backtest{Passed: res.Passed, Report: res.Report}
-		}
+		r.Backtest = Backtest{Passed: res.Passed, Report: res.Report}
 	}
 	r.Passed = evalsPassed && r.Backtest.Passed
 	return r, nil
+}
+
+// backtest runs the backtest; an engine without a runner fails it.
+func (v Validator) backtest(ctx context.Context, req BacktestRequest) (BacktestResult, error) {
+	if v.Backtest == nil {
+		return BacktestResult{}, errors.New("this engine has no backtest runner")
+	}
+	return v.Backtest.Backtest(ctx, req)
 }
 
 func (v Validator) resolver() pipeline.ActionResolver {
@@ -188,13 +198,13 @@ func (v Validator) resolver() pipeline.ActionResolver {
 // evals runs the base evals of each affected step's action, before on the base package and after on the patched
 // one, and the evals the patch adds or changes, after alone. A step is affected when its action changes, or the
 // patch changes its action's directory.
-func (v Validator) evals(ctx context.Context, pipelineName string, base, patched *pipeline.Package, changes []Change,
+func (v Validator) evals(ctx context.Context, pipelineName string, base, patched *pipeline.Package, changes []patch.File,
 ) (affected, added []EvalReport) {
 	changedDirs, evalDirs := map[string]bool{}, map[string]bool{}
 	for _, c := range changes {
 		if dir, ok := actionDir(c.Path); ok {
 			changedDirs[dir] = true
-			if strings.HasPrefix(c.Path, "actions/"+dir+"/"+eval.Dir+"/") && c.Op != OpDelete {
+			if strings.HasPrefix(c.Path, "actions/"+dir+"/"+eval.Dir+"/") && c.Op != patch.OpDelete {
 				evalDirs[dir] = true
 			}
 		}

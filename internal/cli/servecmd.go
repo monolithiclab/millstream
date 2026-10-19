@@ -231,16 +231,18 @@ func (s *server) standby(ctx context.Context, since time.Time) {
 // term runs one term of the engine on st, until ctx ends or the store loses its write connection
 // (errSteppedDown).
 func (s *server) term(ctx context.Context, st store.Store, lead leadership) error {
+	mode := s.env.EffectiveMode(pipeline.ModeProduction)
 	s.log.Info("leading the deployment", "engine", s.id, "epoch", lead.identity.Epoch, "listen", s.site.url,
-		"embeddedNode", s.env.NodeEmbedded, "mode", s.env.EffectiveMode(pipeline.ModeProduction))
+		"embeddedNode", s.env.NodeEmbedded, "mode", mode)
 	rt, env := s.rt, s.env
 	notes := notifier(rt, env, s.log)
+	bt := newBacktester(rt, env, st, s.arts, mode, s.log)
 	e, err := engine.New(engine.Options{
 		Store: st, Logger: s.log, LeaseTTL: s.cmd.LeaseTTL, Env: rt.Env, Secrets: secrets(rt, env),
 		Artifacts: s.arts, Resolver: resolver(rt, env, false), Agents: agents(rt, env),
 		Notifier: notes, PackageDir: packageDir(rt, env), Check: checkOptions(rt, env),
 		Leadership: engine.Leadership{ID: s.id, Epoch: lead.identity.Epoch}, Takeover: true, Retention: env.Retention,
-		Improve: env.Improve, Proposals: proposalOptions(rt, env),
+		Improve: env.Improve, Proposals: proposalOptions(rt, env, bt),
 	})
 	if err != nil {
 		return err
@@ -263,7 +265,7 @@ func (s *server) term(ctx context.Context, st store.Store, lead leadership) erro
 		}
 	}
 	h := engineHost{site: s.site, sec: s.sec, embedded: env.NodeEmbedded, slots: s.cmd.Slots, leaseTTL: s.cmd.LeaseTTL,
-		lead: lead, arts: s.arts, nodeToken: s.nodeToken, mode: env.EffectiveMode(pipeline.ModeProduction)}
+		lead: lead, arts: s.arts, nodeToken: s.nodeToken, mode: mode, backtests: bt}
 	return h.run(ctx, rt, env, st, e, notes, s.log, wait)
 }
 

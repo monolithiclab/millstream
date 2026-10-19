@@ -74,14 +74,15 @@ below) for the reasoning, and `make help` for every command.
   historical inputs recorded) or lets it run. `backtest.Runner` is what proposals validate through; `Jobs` runs them
   in the background for `POST /api/v1/backtests` (in memory, not the store); `millstream backtest` runs one from its
   own process. The improve budget is a `backtest.Budget`, a per-process `Ledger` until the improve pipeline exists.
-- Proposals (spec section 11.3): `internal/proposals` holds the rules, no store: `ApplyPatch` is the one entry point
-  of the patch format (a unified diff applied in memory, rendered again at the lines where it applied, which is its
-  rebase), `Prepare` adds the paths per kind of spec 11.7 and the steps touched, `Validator` runs check, the base
-  revision's evals before and after and the backtest through its `Backtester` interface. `engine/proposals.go`
-  calls them before the store's proposal units, whose Proposal acceptance unit (`sqlstore/proposals.go`) accepts on
-  the base revision only and makes overlapping open proposals stale; apply and rollback make proposals on another
-  base stale (`staleProposals`). The proposals-only token (`api/proposals.go`) is checked in `ServeHTTP` against
-  `proposalRoutes` before routing.
+- Proposals (spec section 11.3): `internal/proposals` holds the rules, no store: `Prepare` applies the patch with
+  `internal/patch` (exactly, at its lines) and adds the paths per kind of spec 11.7 and the steps touched; `Rebase`
+  moves a stale proposal's patch with `patch.Patch.Rebase` (nearest offset) and renders it with `patch.Format`;
+  `Validator` runs check, the base revision's evals before and after and the backtest through its `Backtester`, which
+  `backtest.ForProposals` adapts from the engine's runner (pass rule `backtest.Report.Holds`). `engine/proposals.go`
+  calls them before the store's proposal units, whose Proposal acceptance unit (`sqlstore/proposals.go`) accepts on the
+  base revision only and makes overlapping open proposals stale; apply and rollback make proposals on another base stale
+  (`staleProposals`). The proposals-only token (`api/proposals.go`) is checked in `ServeHTTP` against `proposalRoutes`
+  before routing.
 - CLI writes (`internal/cli`): a command that changes state goes through `changeState`, which calls the served
   engine's API when `--server`/`MILLSTREAM_SERVER` names one (`remote.go`), else `withWriter` (SQLite, or Postgres
   with `--direct`); reads use `withStore`, engines (`run`, `serve`) `withStoreMode(engineStore)`. A new command that
@@ -126,15 +127,15 @@ below) for the reasoning, and `make help` for every command.
   under the tag. The default build runs them from three packages by area, each with its own warmed process
   (`sqlitetest.Main` as `TestMain`, `sqlitetest.Memory` as the opener), so that no package nears the 100 ms limit:
   `internal/store/sqlstore/conformance/delivery` (revisions, firings, leases, done and fail, built-in steps, budgets,
-  dead letters, replays, the writer), `review` (reviews, audits and fallbacks, imports, insights, evals, the API
-  reads) and `retention` (retention, purges, rollups, evidence, nodes, missing tables). Each has one top-level wrapper
-  per test in its `conformance_test.go`, so test-times measures each. `make test` and `make test-e2e` pass
+  dead letters, replays, the writer), `review` (reviews, audits and fallbacks, imports, insights, evals, proposals, the
+  API reads) and `retention` (retention, purges, rollups, evidence, nodes, missing tables). Each has one top-level
+  wrapper per test in its `conformance_test.go`, so test-times measures each. `make test` and `make test-e2e` pass
   `-coverpkg=./...`, so their coverage counts in `internal/store/sqlstore`: coverage is cross-package, every test
   crediting the statements it runs in any package. The e2e-only tests are wrapped in
-  `internal/store/sqlstore/conformance_e2e_test.go`. A new store test goes in storetest, listed in `storetest.Tests`
-  and wrapped in the package of its area (a package nearing 70 ms wall splits again);
-  `TestTestsListed` and `TestConformanceListed` name what is missing, or wrapped twice. A test that must reach
-  behind the units uses the store's `Exec`, `Unit` or `QueryRow`, written with `?` placeholders.
+  `internal/store/sqlstore/conformance_e2e_test.go`. A new store test goes in storetest, listed in `storetest.Tests` and
+  wrapped in the package of its area (a package nearing 70 ms wall splits again); `TestTestsListed` and
+  `TestConformanceListed` name what is missing, or wrapped twice. A test that must reach behind the units uses the
+  store's `Exec`, `Unit` or `QueryRow`, written with `?` placeholders.
 - Postgres tests (`internal/store/postgres`, `stores`, and the crash suite's Postgres half in `internal/e2e`) run
   under the e2e tag in Docker: `pgtest` starts one container of `pgtest.Image` (the official `postgres:17`, pinned by
   digest) per test binary on first use, its data directory a tmpfs (no volume outlives it), migrates a template

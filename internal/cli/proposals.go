@@ -11,6 +11,7 @@ import (
 	"text/tabwriter"
 
 	"github.com/monolithiclab/millstream/internal/api"
+	"github.com/monolithiclab/millstream/internal/backtest"
 	"github.com/monolithiclab/millstream/internal/engine"
 	"github.com/monolithiclab/millstream/internal/pipeline"
 	"github.com/monolithiclab/millstream/internal/proposals"
@@ -29,21 +30,23 @@ type ProposalsCmd struct {
 }
 
 // proposalOptions are what an engine validates proposals with: the evals of the affected actions run as eval runs
-// them, with the launchers, secrets and prices of the environment.
-func proposalOptions(rt *Runtime, env *pipeline.Environment) engine.ProposalOptions {
+// them, with the launchers, secrets and prices of the environment, and the backtests run by bt.
+func proposalOptions(rt *Runtime, env *pipeline.Environment, bt backtest.Runner) engine.ProposalOptions {
 	return engine.ProposalOptions{Evals: proposals.Evals{Launchers: launchers(rt, env), Prices: env.Prices,
-		Env: func(name string) func(string) (string, bool) { return env.SecretEnvLookup(name, rt.Env) }}}
+		Env: func(name string) func(string) (string, bool) { return env.SecretEnvLookup(name, rt.Env) }},
+		Backtest: backtest.ForProposals(bt)}
 }
 
 // withProposalEngine runs fn with an engine over a store written from this process, as apply builds it.
 func withProposalEngine(rt *Runtime, st store.Store, fn func(*engine.Engine) error) error {
-	env, err := environment(rt)
+	env, arts, err := localArtifacts(rt)
 	if err != nil {
 		return err
 	}
+	bt := newBacktester(rt, env, st, arts, env.EffectiveMode(pipeline.ModeDevelopment), nil)
 	e, err := engine.New(engine.Options{Store: st, Env: rt.Env, Secrets: secrets(rt, env),
 		Resolver: resolver(rt, env, false), Check: checkOptions(rt, env), PackageDir: packageDir(rt, env),
-		Agents: agents(rt, env), Proposals: proposalOptions(rt, env)})
+		Agents: agents(rt, env), Proposals: proposalOptions(rt, env, bt)})
 	if err != nil {
 		return err
 	}

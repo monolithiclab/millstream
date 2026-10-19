@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/monolithiclab/millstream/internal/api"
+	"github.com/monolithiclab/millstream/internal/backtest"
 	"github.com/monolithiclab/millstream/internal/engine"
 	"github.com/monolithiclab/millstream/internal/pipeline"
 	"github.com/monolithiclab/millstream/internal/store"
@@ -114,7 +115,8 @@ func (t handlerTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 // reviewer.
 func Test_commandsThroughTheServer(t *testing.T) {
 	st := memoryStore(t)
-	eng, err := engine.New(engine.Options{Store: st, PackageDir: testdir.New(t)})
+	eng, err := engine.New(engine.Options{Store: st, PackageDir: testdir.New(t),
+		Proposals: engine.ProposalOptions{Backtest: backtest.ForProposals(backtest.New(backtest.Options{Store: st}))}})
 	if err != nil {
 		t.Fatal(err)
 	}

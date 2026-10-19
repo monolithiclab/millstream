@@ -70,7 +70,7 @@ func TestValidate(t *testing.T) {
 					t.Fatalf("backtest %+v", r.Backtest)
 				}
 			}},
-		{"no backtest runner", store.ProposalConfig, configPatch, nil, true, func(t *testing.T, r Report) {
+		{"no backtest runner", store.ProposalConfig, configPatch, nil, false, func(t *testing.T, r Report) {
 			if r.Backtest.Skipped == "" {
 				t.Fatalf("backtest %+v", r.Backtest)
 			}

@@ -95,11 +95,13 @@ func (c RunPackagesCmd) Run(rt *Runtime) error {
 	return withStoreMode(rt, engineStore, postgres.Options{}, func(st store.Store) error {
 		notes := notifier(rt, env, log)
 		id := newEngineID()
+		mode := env.EffectiveMode(pipeline.ModeDevelopment)
+		bt := newBacktester(rt, env, st, arts, mode, log)
 		e, err := engine.New(engine.Options{
 			Store: st, Logger: log, LeaseTTL: c.LeaseTTL, Env: rt.Env, Secrets: secrets(rt, env), Flags: c.Var,
 			NoCron: c.Once, Artifacts: arts, Resolver: actions, Agents: agents(rt, env),
 			Notifier: notes, PackageDir: packageDir(rt, env), Check: checkOptions(rt, env), Retention: env.Retention,
-			Leadership: engine.Leadership{ID: id}, Improve: env.Improve, Proposals: proposalOptions(rt, env),
+			Leadership: engine.Leadership{ID: id}, Improve: env.Improve, Proposals: proposalOptions(rt, env, bt),
 		})
 		if err != nil {
 			return err
@@ -138,7 +140,7 @@ func (c RunPackagesCmd) Run(rt *Runtime) error {
 		}
 		h := engineHost{listen: listen, sec: sec, embedded: true, slots: c.Slots, leaseTTL: c.LeaseTTL,
 			lead: leadership{identity: api.Identity{ID: id, Since: time.Now()}}, arts: arts, laptop: true,
-			mode: env.EffectiveMode(pipeline.ModeDevelopment)}
+			mode: mode, backtests: bt}
 		if err := h.run(ctx, rt, env, st, e, notes, log, wait); err != nil {
 			return err
 		}
@@ -166,6 +168,8 @@ type engineHost struct {
 	laptop bool
 	// mode is the environment's effective mode (spec section 11.2): run defaults to development, serve to production.
 	mode string
+	// backtests runs the backtests of the API and of the engine's proposal validation, sharing one improve budget.
+	backtests *backtest.Backtester
 }
 
 // run runs the engine, its embedded node and the API server until ctx ends or wait, called once the engine is
@@ -229,7 +233,7 @@ func (h engineHost) run(ctx context.Context, rt *Runtime, env *pipeline.Environm
 		srv, err := newAPIServer(st, e, notes, logs, apiExtras{rt: rt, arts: h.arts, nodes: nodes, nodeAPI: nodeAPI,
 			leaseTTL: h.leaseTTL, mode: h.mode, evidence: api.EvidenceSettings{Mode: h.mode, Sample: env.Improve.EvidenceSample,
 				TTL: env.Improve.EvidenceTTL},
-			backtests: backtest.NewJobs(runCtx, newBacktester(rt, env, st, h.arts, h.mode, log), nil)}, h.lead, h.sec, log)
+			backtests: backtest.NewJobs(runCtx, h.backtests, nil)}, h.lead, h.sec, log)
 		if err != nil {
 			cancel(nil)
 			return errors.Join(err, <-siteDone)

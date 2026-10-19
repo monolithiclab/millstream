@@ -163,3 +163,38 @@ func TestParseDiffU(t *testing.T) {
 		t.Errorf("Base = %q", p.Base)
 	}
 }
+
+// TestRebase: a hunk whose lines moved applies at the nearest offset where its context and removed lines match
+// exactly, which Apply refuses; one whose lines changed matches nowhere.
+func TestRebase(t *testing.T) {
+	moved := map[string][]byte{"a.txt": []byte("zero\none\ntwo\nthree\nfour\n")}
+	for name, tt := range map[string]struct{ text, want string }{
+		"moved down": {"--- a/a.txt\n+++ b/a.txt\n@@ -1,3 +1,3 @@\n one\n-two\n+TWO\n three\n",
+			"zero\none\nTWO\nthree\nfour\n"},
+		"moved up": {"--- a/a.txt\n+++ b/a.txt\n@@ -9,2 +9,2 @@\n three\n-four\n+FOUR\n",
+			"zero\none\ntwo\nthree\nFOUR\n"},
+		"insertion past the end": {"--- a/a.txt\n+++ b/a.txt\n@@ -9,0 +10 @@\n+five\n",
+			"zero\none\ntwo\nthree\nfour\nfive\n"},
+	} {
+		p, err := Parse([]byte(tt.text))
+		if err != nil {
+			t.Fatalf("%s: Parse: %v", name, err)
+		}
+		if name != "insertion past the end" {
+			if _, err := p.Apply(moved); !errors.Is(err, ErrPatch) {
+				t.Errorf("%s: Apply = %v, want ErrPatch: Apply takes no offset", name, err)
+			}
+		}
+		got, err := p.Rebase(moved)
+		if err != nil || string(got["a.txt"]) != tt.want {
+			t.Errorf("%s: Rebase = %q, %v, want %q", name, got["a.txt"], err, tt.want)
+		}
+	}
+	p, err := Parse([]byte("--- a/a.txt\n+++ b/a.txt\n@@ -1,2 +1,2 @@\n one\n-TWO\n+2\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.Rebase(moved); !errors.Is(err, ErrPatch) {
+		t.Fatalf("Rebase of changed lines = %v, want ErrPatch", err)
+	}
+}

@@ -1889,8 +1889,8 @@ components:
           required: [passed]
           properties:
             passed: { type: boolean }
-            skipped: { type: string }
-            report: { description: The backtest's report. }
+            skipped: { type: string, description: Why the backtest did not run (check failed, or the backtest was refused); it did not pass. }
+            report: { description: "The backtest's report, as GET /backtests/{backtest} answers it." }
     EvalReport:
       type: object
       required: [step, action, passed, cases]

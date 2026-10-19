@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/monolithiclab/millstream/internal/patch"
 	"github.com/monolithiclab/millstream/internal/pipeline"
 	"github.com/monolithiclab/millstream/internal/proposals"
 	"github.com/monolithiclab/millstream/internal/store"
@@ -24,7 +25,7 @@ type ProposalOptions struct {
 	// Evals runs the evals of the affected actions; its Env defaults to the engine's Env and its Prices to the
 	// agents'.
 	Evals proposals.Evals
-	// Backtest runs the backtests; nil reports them skipped.
+	// Backtest runs the backtests (backtest.ForProposals); without one, every proposal fails its validation.
 	Backtest proposals.Backtester
 }
 
@@ -69,7 +70,7 @@ func (e *Engine) CreateProposal(ctx context.Context, req ProposalRequest) (store
 	if err != nil {
 		return store.Proposal{}, err
 	}
-	prep, err := e.prepare(ctx, req.Kind, rev.PackageHash, req.Patch)
+	prep, err := e.prepare(ctx, false, req.Kind, rev.PackageHash, req.Patch)
 	if err != nil {
 		return store.Proposal{}, err
 	}
@@ -110,7 +111,7 @@ func (e *Engine) ValidateProposal(ctx context.Context, id string) (store.Proposa
 		}
 		base = rev.PackageHash
 	}
-	prep, err := e.prepare(ctx, p.Kind, base, p.Patch)
+	prep, err := e.prepare(ctx, p.State == store.ProposalStale, p.Kind, base, p.Patch)
 	switch {
 	case err != nil && p.State == store.ProposalStale:
 		return p, fmt.Errorf("proposal %s does not rebase onto the active revision of %s, so it stays stale: %w: %w",
@@ -118,7 +119,6 @@ func (e *Engine) ValidateProposal(ctx context.Context, id string) (store.Proposa
 	case err != nil:
 		return p, err
 	case p.State == store.ProposalStale:
-		prep.Patch, prep.SHA256 = prep.Rebased, proposals.Hash(prep.Rebased)
 		rebase = &store.Rebase{BaseRevision: base, Patch: prep.Patch, PatchSHA256: prep.SHA256, Paths: prep.Paths(),
 			Steps: prep.Steps}
 	}
@@ -178,15 +178,16 @@ func (e *Engine) AcceptProposal(ctx context.Context, id, patchSHA256, by string)
 	if err != nil {
 		return p, err
 	}
-	if _, err := e.prepare(ctx, p.Kind, p.BaseRevision, p.Patch); err != nil {
+	if _, err := e.prepare(ctx, false, p.Kind, p.BaseRevision, p.Patch); err != nil {
 		return p, err
 	}
 	return e.st.AcceptProposal(ctx, id, patchSHA256, by)
 }
 
-// prepare applies a patch to the package stored under hash, under its kind's path rules; a refusal is
-// store.ErrInvalid.
-func (e *Engine) prepare(ctx context.Context, kind store.ProposalKind, hash, patch string) (proposals.Prepared, error) {
+// prepare applies a patch to the package stored under hash (proposals.Prepare), or rebases it there
+// (proposals.Rebase), under its kind's path rules; a refusal is store.ErrInvalid.
+func (e *Engine) prepare(ctx context.Context, rebase bool, kind store.ProposalKind, hash, text string,
+) (proposals.Prepared, error) {
 	bundle, err := e.st.Package(ctx, hash)
 	if err != nil {
 		return proposals.Prepared{}, err
@@ -199,8 +200,12 @@ func (e *Engine) prepare(ctx context.Context, kind store.ProposalKind, hash, pat
 	if err != nil {
 		return proposals.Prepared{}, fmt.Errorf("package %.12s: %w", hash, err)
 	}
-	prep, err := proposals.Prepare(kind, base, patch)
-	if errors.Is(err, proposals.ErrPatch) {
+	prepare := proposals.Prepare
+	if rebase {
+		prepare = proposals.Rebase
+	}
+	prep, err := prepare(kind, base, text)
+	if errors.Is(err, patch.ErrPatch) {
 		return prep, fmt.Errorf("%w: %w", store.ErrInvalid, err)
 	}
 	return prep, err
@@ -209,7 +214,7 @@ func (e *Engine) prepare(ctx context.Context, kind store.ProposalKind, hash, pat
 // proposal reads a proposal whose stored patch still hashes to its recorded hash.
 func (e *Engine) proposal(ctx context.Context, id string) (store.Proposal, error) {
 	p, err := e.st.Proposal(ctx, id)
-	if err == nil && proposals.Hash(p.Patch) != p.PatchSHA256 {
+	if err == nil && patch.Hash([]byte(p.Patch)) != p.PatchSHA256 {
 		err = fmt.Errorf("proposal %s: its patch no longer hashes to %.12s: %w", id, p.PatchSHA256, store.ErrConflict)
 	}
 	return p, err
