@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -52,10 +53,27 @@ func TestMain(m *testing.M) {
 	if seeded, historyHash, err = seedHistory(); err != nil {
 		panic(err)
 	}
+	warm()
 	code := m.Run()
 	_ = st.Close()
 	_ = seeded.Close()
 	os.Exit(code)
+}
+
+// warm runs one backtest of the seeded history, as a process does its first (the engine's and the replay's first
+// statements, the builtins' CEL): outside the budget, as TestMain's.
+func warm() {
+	files := fixtureFiles()
+	after := fixtureFiles()
+	after[pipeline.FileName] = []byte(strings.Replace(fixturePipeline, "bonus: 0", "bonus: 1", 1))
+	data, err := patch.Format(historyHash, files, after)
+	if err != nil {
+		panic(err)
+	}
+	if _, err := New(Options{Store: seeded, Launchers: launchers()}).Run(context.Background(),
+		Request{Pipeline: "bt", BaseRevision: historyHash, Patch: data, Sample: 1}); err != nil {
+		panic(err)
+	}
 }
 
 // TestPrepareRefusals: what Prepare refuses before reading anything, each with the error the API maps.

@@ -2,7 +2,6 @@ package cli
 
 import (
 	"bytes"
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -21,44 +20,41 @@ const scoreErrorPatch = `--- a/pipeline.yaml
 +vars: { count: 3, scoreMode: error }
 `
 
-// TestBacktestCommand: a patch making the scorer fail replays run r1's three listings through score, which fails
-// them all after and none before; the report prints as text or JSON, and a patch naming an unknown base or not
-// parsing is refused.
-func TestBacktestCommand(t *testing.T) {
-	t.Parallel()
-	s := newState(t, false)
-	dir := testdir.New(t)
-	write := func(name, body string) string {
-		p := filepath.Join(dir, name)
-		if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
-			t.Fatal(err)
-		}
-		return p
-	}
-	file := write("score.patch", scoreErrorPatch)
-	out, _ := s.must(0, "backtest", file, "--json")
-	var rep backtest.Report
-	if err := json.Unmarshal([]byte(out), &rep); err != nil {
-		t.Fatalf("%v\n%s", err, out)
-	}
-	if strings.Join(rep.ChangedSteps, ",") != "score" || rep.Sampled != 3 || rep.Runs != 1 ||
-		rep.Before.FailureRate != 0 || rep.After.FailureRate != 1 || rep.After.Failed != 3 {
-		t.Fatalf("report:\n%s", out)
-	}
-	var text bytes.Buffer
-	if err := printBacktest(&text, &rep); err != nil {
+// writeFile writes a file in a directory of the test's own and returns its path.
+func writeFile(t *testing.T, name, body string) string {
+	t.Helper()
+	p := filepath.Join(testdir.New(t), name)
+	if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"backtest of listings", "3 deliveries sampled from local history", "changed: score",
-		"failure rate", "100% of 3"} {
+	return p
+}
+
+// TestBacktestReport prints a report: the sample by stratum, before and after overall and per step, the cost and
+// the warnings; and the command refuses a patch naming an unknown base, one that does not parse, and an unknown
+// pipeline (TestBacktestCommand, under the e2e tag, runs a backtest through it).
+func TestBacktestReport(t *testing.T) {
+	t.Parallel()
+	rep := &backtest.Report{Pipeline: "listings", PatchHash: strings.Repeat("a", 64), Source: backtest.SourceLocal,
+		ChangedSteps: []string{"score"}, Sampled: 3, Strata: map[string]int{"done": 2, "dead": 1}, Runs: 1,
+		After: backtest.Metrics{Ran: 3, Failed: 3, FailureRate: 1, Compared: 3},
+		Steps: []backtest.StepReport{{Step: "score"}}, Warnings: []string{"diverged"}, CostUSD: 0.5}
+	var text bytes.Buffer
+	if err := printBacktest(&text, rep); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"backtest of listings: patch aaaaaaaaaaaa", "3 deliveries sampled from local history",
+		"(done 2, dead 1)", "changed: score", "failure rate", "100% of 3", "cost 0.5000 USD", "warning: diverged"} {
 		if !strings.Contains(text.String(), want) {
 			t.Errorf("text report lacks %q:\n%s", want, text.String())
 		}
 	}
-	unknown := write("unknown.patch", "Millstream-Base: "+strings.Repeat("ab", 32)+"\n"+scoreErrorPatch)
+	s := newState(t, false)
+	file := writeFile(t, "score.patch", scoreErrorPatch)
 	s.checkRefusals(t, nil, []refusal{
-		{cmd: BacktestCmd{Patch: unknown}, want: "no pipeline has revision abababababab"},
-		{cmd: BacktestCmd{Patch: write("bad.patch", "nothing here\n")}, want: "invalid patch"},
+		{cmd: BacktestCmd{Patch: writeFile(t, "unknown.patch", "Millstream-Base: "+strings.Repeat("ab", 32)+"\n"+
+			scoreErrorPatch)}, want: "no pipeline has revision abababababab"},
+		{cmd: BacktestCmd{Patch: writeFile(t, "bad.patch", "nothing here\n")}, want: "invalid patch"},
 		{cmd: BacktestCmd{Patch: file, Pipeline: "nope"}, want: "nope"},
 	})
 }
