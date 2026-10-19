@@ -146,6 +146,7 @@ type CLI struct {
 	Metrics  MetricsCmd  `cmd:"" help:"Print metric rollups, or their Prometheus exposition."`
 	Insights InsightsCmd `cmd:"" help:"List, acknowledge and mute insights."`
 	Evidence EvidenceCmd `cmd:"" help:"Export an evidence bundle in production; import it in development."`
+	Backtest BacktestCmd `cmd:"" help:"Validate a patch against past items: replay the steps it changes, before and after."`
 	Version  VersionCmd  `cmd:"" help:"Print the version."`
 	Agent    AgentCmd    `cmd:"" hidden:"" help:"Run the agent adapter: the action process of agent steps."`
 }

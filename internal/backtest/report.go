@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/monolithiclab/millstream/internal/evidence"
+	"github.com/monolithiclab/millstream/internal/pipeline"
 	"github.com/monolithiclab/millstream/internal/review"
 	"github.com/monolithiclab/millstream/internal/store"
 )
@@ -139,8 +140,7 @@ func reviewAgrees(h *history, r *replayed, rv store.Review, hd store.Delivery) b
 }
 
 func decode(raw json.RawMessage) any {
-	var v any
-	_ = json.Unmarshal(raw, &v)
+	v, _ := pipeline.DecodeValue(string(raw))
 	return v
 }
 

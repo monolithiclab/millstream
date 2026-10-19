@@ -332,7 +332,7 @@ func stratify(ds []store.Delivery, reviews map[string]store.Review, step string,
 		}
 	}
 	alloc := map[string]int{}
-	open := slices.DeleteFunc(slices.Clone(strata), func(s string) bool { return len(pop[s]) == 0 })
+	open := slices.DeleteFunc(slices.Clone(Strata), func(s string) bool { return len(pop[s]) == 0 })
 	for left := n; left > 0 && len(open) > 0; {
 		share := max(left/len(open), 1)
 		next := open[:0]
@@ -347,7 +347,7 @@ func stratify(ds []store.Delivery, reviews map[string]store.Review, step string,
 		open = next
 	}
 	out := []Sampled{}
-	for _, s := range strata {
+	for _, s := range Strata {
 		in := pop[s]
 		slices.SortFunc(in, func(a, b store.Delivery) int {
 			return cmp.Or(a.FinishedAt.Compare(b.FinishedAt), strings.Compare(a.ID, b.ID))

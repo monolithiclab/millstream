@@ -64,6 +64,9 @@ func (s *stubber) stub(_ context.Context, l store.Lease) (engine.Stub, bool) {
 		s.decide(l.DeliveryID, offSample)
 		return cut, true
 	}
+	if s.changed[l.Step] && !s.external[l.Step] && !s.review[l.Step] {
+		return engine.Stub{}, false // a changed step runs, whatever its history
+	}
 	var outcome engine.Stub
 	has := false
 	if inHistory && canon(h.Payload) == canon(l.Item.Payload) {
@@ -108,31 +111,29 @@ type replayed struct {
 	costUSD    float64
 }
 
-// replayOptions are one replay's: the package to replay, the runs to fire, the steps to run, and the budget left.
+// replayOptions are one replay's: the package to replay, the runs to fire, the stubber deciding its deliveries, and
+// what it may spend when limited.
 type replayOptions struct {
-	pkg      *pipeline.Package
-	firings  []firing
-	stubber  *stubber
-	budget   float64 // what the replay may spend; zero means no limit
-	spent    float64 // what the backtest spent before it, counted against budget
-	workDir  string
-	deadline time.Duration
+	pkg     *pipeline.Package
+	firings []firing
+	stubber *stubber
+	limit   float64
+	limited bool
 }
 
-// replay fires the runs again in a scratch store on o.pkg and waits until they settle.
-func (b *Backtester) replay(ctx context.Context, o replayOptions) (*replayed, error) {
-	ctx, cancel := context.WithTimeout(ctx, o.deadline)
+// replay fires the runs again in a scratch store on o.pkg, its artifacts under work, and waits until they settle.
+func (b *Backtester) replay(ctx context.Context, work string, o replayOptions) (*replayed, error) {
+	ctx, cancel := context.WithTimeout(ctx, b.opts.Timeout)
 	defer cancel()
 	st, err := sqlite.Open(sqlite.Memory, sqlite.Options{})
 	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = st.Close() }()
-	artsDir, err := os.MkdirTemp(o.workDir, "artifacts-")
+	artsDir, err := os.MkdirTemp(work, "artifacts-")
 	if err != nil {
 		return nil, err
 	}
-	o.stubber.decisions = map[string]decision{}
 	e, err := engine.New(engine.Options{Store: st, Env: b.opts.Env, Secrets: b.opts.Secrets, NoCron: true,
 		Resolver: b.opts.Resolver, Artifacts: artifacts.New(artsDir), Agents: b.opts.Agents, Stubber: o.stubber.stub,
 		Logger: b.log})
@@ -161,7 +162,7 @@ func (b *Backtester) replay(ctx context.Context, o replayOptions) (*replayed, er
 	runCtx, stop := context.WithCancel(ctx)
 	nodeDone := make(chan error, 1)
 	go func() { nodeDone <- n.Run(runCtx) }()
-	waitErr := wait(ctx, e, st, refs, o.budget-o.spent)
+	waitErr := wait(ctx, e, st, refs, o.limit, o.limited)
 	stop()
 	if err := <-nodeDone; err != nil && waitErr == nil {
 		waitErr = err
@@ -174,31 +175,40 @@ func (b *Backtester) replay(ctx context.Context, o replayOptions) (*replayed, er
 	return r, waitErr
 }
 
-// wait waits until the runs settle (or wait only on reviews), or their cost passes limit (when positive).
-func wait(ctx context.Context, e *engine.Engine, st store.Store, refs []engine.RunRef, limit float64) error {
+// wait waits until the runs settle (or wait only on reviews), or, when limited, their cost passes limit: checked on
+// each tick and once settled, rather than at every change, which every delivery ending makes.
+func wait(ctx context.Context, e *engine.Engine, st store.Store, refs []engine.RunRef, limit float64,
+	limited bool,
+) error {
 	poll := time.NewTicker(50 * time.Millisecond)
 	defer poll.Stop()
-	budgeted := limit > 0
+	overspent := func() error {
+		if !limited {
+			return nil
+		}
+		cost, err := runsCost(ctx, st, refs[0].Pipeline)
+		if err == nil && cost > limit {
+			err = fmt.Errorf("%w: the replay spent %.4f USD", ErrBudget, cost)
+		}
+		return err
+	}
 	for {
 		changed := e.Changes()
 		settled, err := e.Settled(ctx, refs)
-		if err != nil || settled {
+		if err != nil {
 			return err
 		}
-		if budgeted {
-			cost, err := runsCost(ctx, st, refs[0].Pipeline)
-			if err != nil {
-				return err
-			}
-			if cost > limit {
-				return fmt.Errorf("%w: the replay spent %.4f USD", ErrBudget, cost)
-			}
+		if settled {
+			return overspent()
 		}
 		select {
 		case <-ctx.Done():
 			return fmt.Errorf("replay: %w", ctx.Err())
 		case <-changed:
 		case <-poll.C:
+			if err := overspent(); err != nil {
+				return err
+			}
 		}
 	}
 }

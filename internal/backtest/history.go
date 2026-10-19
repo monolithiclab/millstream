@@ -1,7 +1,6 @@
 package backtest
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -133,7 +132,7 @@ func (h *history) delivery(step, itemID string) (store.Delivery, bool) {
 
 // ended reports whether a delivery has an outcome a replay can take: done, filtered or dead.
 func ended(d store.Delivery) bool {
-	return d.State == store.DeliveryDone || d.State == store.DeliveryFiltered || d.State == store.DeliveryDead
+	return d.State.Terminal() && d.State != store.DeliveryCancelled
 }
 
 // outputs returns what a delivery published: its step's children of its item in its run, one per key (an output
@@ -142,11 +141,10 @@ func outputs(children map[string][]store.Item, d store.Delivery) []store.Output 
 	var out []store.Output
 	seen := map[string]bool{}
 	for _, it := range children[d.ItemID] {
-		if it.Step != d.Step || it.RunID != d.RunID || it.Generation != d.Generation ||
-			strings.HasSuffix(it.Stream, ".dlq") {
+		if it.Step != d.Step || it.RunID != d.RunID || it.Generation != d.Generation {
 			continue
 		}
-		k := it.Key + "\x00" + canon(it.Payload)
+		k := outputKey(store.Output{Key: it.Key, Payload: it.Payload})
 		if seen[k] {
 			continue
 		}
@@ -158,23 +156,24 @@ func outputs(children map[string][]store.Item, d store.Delivery) []store.Output 
 
 // sameOutputs compares two deliveries' outputs as sets of keys and canonical payloads.
 func sameOutputs(a, b []store.Output) bool {
-	key := func(os []store.Output) []string {
+	keys := func(os []store.Output) []string {
 		out := make([]string, len(os))
 		for i, o := range os {
-			out[i] = o.Key + "\x00" + canon(o.Payload)
+			out[i] = outputKey(o)
 		}
 		slices.Sort(out)
 		return out
 	}
-	return slices.Equal(key(a), key(b))
+	return slices.Equal(keys(a), keys(b))
 }
+
+// outputKey identifies an output by its key and canonical payload.
+func outputKey(o store.Output) string { return o.Key + "\x00" + canon(o.Payload) }
 
 // canon is a JSON document's canonical text, object keys sorted; what does not decode stays as it is.
 func canon(raw json.RawMessage) string {
-	dec := json.NewDecoder(bytes.NewReader(raw))
-	dec.UseNumber()
-	var v any
-	if err := dec.Decode(&v); err != nil {
+	v, err := pipeline.DecodeValue(string(raw))
+	if err != nil {
 		return string(raw)
 	}
 	b, err := json.Marshal(v)

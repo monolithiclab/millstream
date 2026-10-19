@@ -22,13 +22,9 @@ func Format(base string, before, after map[string][]byte) ([]byte, error) {
 		fmt.Fprintf(&b, "%s: %s\n\n", BaseTrailer, base)
 	}
 	changed := false
-	paths := slices.Sorted(maps.Keys(before))
-	for p := range after {
-		if _, ok := before[p]; !ok {
-			paths = append(paths, p)
-		}
-	}
-	slices.Sort(paths)
+	union := maps.Clone(before)
+	maps.Copy(union, after)
+	paths := slices.Sorted(maps.Keys(union))
 	for _, p := range paths {
 		old, inOld := before[p]
 		cur, inNew := after[p]

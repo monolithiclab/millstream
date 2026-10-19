@@ -20,12 +20,14 @@ import (
 type actionInfo struct {
 	dirs     map[string][]string // step -> action directories, slash-separated, with a trailing slash
 	external map[string]bool
+	review   map[string]bool // the review steps
 	execDirs []string
 }
 
 func resolveActions(pkg *pipeline.Package, r pipeline.ActionResolver) (actionInfo, error) {
-	info := actionInfo{dirs: map[string][]string{}, external: map[string]bool{}}
+	info := actionInfo{dirs: map[string][]string{}, external: map[string]bool{}, review: map[string]bool{}}
 	for name, s := range pkg.Pipeline.Steps {
+		info.review[name] = s.Action == pipeline.BuiltinReview
 		refs := []string{s.Action}
 		if s.Fallback != nil {
 			refs = append(refs, s.Fallback.Action)
@@ -98,12 +100,12 @@ func changedSteps(base, patched *pipeline.Package, touched, extra []string, base
 	}
 	for name, s := range patched.Pipeline.Steps {
 		old, ok := base.Pipeline.Steps[name]
+		dirs := slices.Concat(baseInfo.dirs[name], patchedInfo.dirs[name])
 		switch {
 		case !ok || !reflect.DeepEqual(definition(old), definition(s)):
 			changed[name] = true
 		case slices.ContainsFunc(touched, func(p string) bool {
-			return p == s.Lessons || slices.ContainsFunc(append(slices.Clone(baseInfo.dirs[name]),
-				patchedInfo.dirs[name]...), func(dir string) bool { return strings.HasPrefix(p, dir) })
+			return p == s.Lessons || slices.ContainsFunc(dirs, func(dir string) bool { return strings.HasPrefix(p, dir) })
 		}):
 			changed[name] = true
 		case slices.ContainsFunc(s.In, func(in string) bool { return removedOut[in] }):
@@ -134,11 +136,7 @@ func definition(s pipeline.Step) pipeline.Step {
 
 // outStreams are the streams a step publishes to: its outputs' and its dead letters'.
 func outStreams(s pipeline.Step) []string {
-	out := slices.Clone(s.Out.Streams)
-	for _, r := range s.Out.Routes {
-		out = append(out, r.Out)
-	}
-	return append(out, cmp.Or(s.DLQ, pipeline.DefaultDLQ(s.Name)))
+	return append(s.Out.Targets(), cmp.Or(s.DLQ, pipeline.DefaultDLQ(s.Name)))
 }
 
 // affected returns the steps whose past deliveries a change may alter: the changed steps, the steps that read
@@ -199,7 +197,7 @@ func draw(h *history, steps map[string]bool, n int) sample {
 			continue
 		}
 		root, ok := h.root(d.ItemID)
-		if _, local := h.runs[root.RunID]; !ok || h.runs != nil && !local {
+		if _, run := h.runs[root.RunID]; !ok || h.source == SourceLocal && !run {
 			s.excluded++
 			continue
 		}

@@ -8,7 +8,6 @@ import (
 	"maps"
 	"os"
 	"slices"
-	"strings"
 	"sync"
 	"time"
 
@@ -178,10 +177,11 @@ func (b *Backtester) Run(ctx context.Context, req Request) (*Report, error) {
 	if err != nil {
 		return nil, fmt.Errorf("patched package: %w: %w", err, store.ErrInvalid)
 	}
-	if err := untrusted(p.Paths(), baseInfo, patchedInfo); err != nil {
+	touched := p.Paths()
+	if err := untrusted(touched, baseInfo, patchedInfo); err != nil {
 		return nil, err
 	}
-	changed, err := changedSteps(base, patched, p.Paths(), req.Steps, baseInfo, patchedInfo)
+	changed, err := changedSteps(base, patched, touched, req.Steps, baseInfo, patchedInfo)
 	if err != nil {
 		return nil, err
 	}
@@ -218,30 +218,28 @@ func (b *Backtester) Run(ctx context.Context, req Request) (*Report, error) {
 		isChanged[c] = true
 	}
 	var spent float64
+	defer func() { b.opts.Budget.Charge(b.opts.Now(), spent) }()
+	limit, limited := b.remaining()
 	replays := make([]*replayed, 2)
-	for i, pkg := range []*pipeline.Package{base, patched} {
-		info := []actionInfo{baseInfo, patchedInfo}[i]
-		firings, err := b.firings(h, s, pkg.Pipeline)
+	for i, side := range []struct {
+		pkg  *pipeline.Package
+		info actionInfo
+	}{{base, baseInfo}, {patched, patchedInfo}} {
+		firings, err := b.firings(h, s, side.pkg.Pipeline)
 		if err != nil {
 			return nil, err
 		}
-		review := map[string]bool{}
-		for name, st := range pkg.Pipeline.Steps {
-			review[name] = st.Action == pipeline.BuiltinReview
-		}
-		r, err := b.replay(ctx, replayOptions{pkg: pkg, firings: firings, workDir: work, deadline: b.opts.Timeout,
-			budget: b.remaining(), spent: spent, stubber: &stubber{h: h, keep: s.keep, changed: isChanged,
-				external: info.external, review: review}})
+		r, err := b.replay(ctx, work, replayOptions{pkg: side.pkg, firings: firings, limit: limit - spent,
+			limited: limited, stubber: &stubber{h: h, keep: s.keep, changed: isChanged, external: side.info.external,
+				review: side.info.review, decisions: map[string]decision{}}})
 		if r != nil {
 			spent += r.costUSD
 		}
 		if err != nil {
-			b.opts.Budget.Charge(b.opts.Now(), spent)
 			return nil, err
 		}
 		replays[i] = r
 	}
-	b.opts.Budget.Charge(b.opts.Now(), spent)
 	rep.CostUSD = spent
 	rep.Before, rep.After = measure(h, s, replays[0], ""), measure(h, s, replays[1], "")
 	for _, step := range changed {
@@ -252,13 +250,10 @@ func (b *Backtester) Run(ctx context.Context, req Request) (*Report, error) {
 	return rep, nil
 }
 
-// remaining is what is left of today's improve budget, 0 for no limit.
-func (b *Backtester) remaining() float64 {
+// remaining is what is left of today's improve budget, and whether there is a limit at all.
+func (b *Backtester) remaining() (float64, bool) {
 	limit := b.opts.Improve.BudgetDayUSD
-	if limit <= 0 {
-		return 0
-	}
-	return max(limit-b.opts.Budget.Spent(b.opts.Now()), 1e-9)
+	return limit - b.opts.Budget.Spent(b.opts.Now()), limit > 0
 }
 
 // packages returns the base revision's package and the patched one, in memory under work, the patched one checked.
@@ -302,14 +297,11 @@ func (b *Backtester) packages(ctx context.Context, req Request, p *patch.Patch, 
 		check.Secrets = b.opts.Secrets
 	}
 	if diags := pipeline.Check(patched, b.opts.Resolver, b.opts.Env, check); pipeline.HasErrors(diags) {
-		var msgs []string
-		for _, d := range diags {
-			if d.Severity == pipeline.SeverityError {
-				msgs = append(msgs, d.String())
-			}
+		findings := make([]engine.Finding, len(diags))
+		for i, d := range diags {
+			findings[i] = engine.Finding{Pipeline: req.Pipeline, Diagnostic: d}
 		}
-		return nil, nil, fmt.Errorf("the patched package fails check: %s: %w", strings.Join(msgs, "; "),
-			store.ErrInvalid)
+		return nil, nil, fmt.Errorf("the patched package: %w", &engine.CheckError{Findings: findings})
 	}
 	return base, patched, nil
 }

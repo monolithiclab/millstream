@@ -30,6 +30,8 @@ import (
 	"strconv"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/monolithiclab/millstream/internal/pipeline"
 )
 
 // BaseTrailer is the preamble trailer naming the patch's base revision by its package hash.
@@ -114,11 +116,7 @@ func Parse(data []byte) (*Patch, error) {
 	if !utf8.Valid(data) {
 		return nil, errorf("not UTF-8 text")
 	}
-	lines := strings.SplitAfter(string(data), "\n")
-	if lines[len(lines)-1] == "" {
-		lines = lines[:len(lines)-1]
-	}
-	p := &parser{lines: lines}
+	p := &parser{lines: split(data)}
 	return p.parse()
 }
 
@@ -355,7 +353,7 @@ func CheckPath(p string) error {
 		return errorf("%q climbs out of the package", p)
 	}
 	first, _, _ := strings.Cut(p, "/")
-	if first == ".git" || first == ".millstream" || p == "millstream.yaml" {
+	if first == ".git" || first == ".millstream" || p == pipeline.EnvironmentFile {
 		return errorf("%q is not part of a package", p)
 	}
 	return nil
@@ -371,10 +369,13 @@ func (p *Patch) Apply(files map[string][]byte) (map[string][]byte, error) {
 			if exists {
 				return nil, errorf("%s: created, but it exists", f.Path)
 			}
-		case OpDelete, OpModify:
+		case OpDelete:
 			if !exists {
-				return nil, errorf("%s: %s, but it does not exist", f.Path, map[Op]string{OpDelete: "deleted",
-					OpModify: "modified"}[f.Op])
+				return nil, errorf("%s: deleted, but it does not exist", f.Path)
+			}
+		case OpModify:
+			if !exists {
+				return nil, errorf("%s: modified, but it does not exist", f.Path)
 			}
 		}
 		body, err := apply(old, f.Hunks)
@@ -395,10 +396,7 @@ func (p *Patch) Apply(files map[string][]byte) (map[string][]byte, error) {
 
 // apply applies hunks to a file's content, each at the lines it names.
 func apply(content []byte, hunks []Hunk) ([]byte, error) {
-	lines := strings.SplitAfter(string(content), "\n")
-	if lines[len(lines)-1] == "" {
-		lines = lines[:len(lines)-1]
-	}
+	lines := split(content)
 	var b bytes.Buffer
 	at := 0 // lines consumed so far
 	for _, h := range hunks {
