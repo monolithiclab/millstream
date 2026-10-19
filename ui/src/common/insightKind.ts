@@ -9,6 +9,9 @@ export function useInsightKindLabel() {
     cost: t('insights.kind.cost'),
     reviewPattern: t('insights.kind.reviewPattern'),
     unschedulable: t('insights.kind.unschedulable'),
+    waste: t('insights.kind.waste'),
+    drift: t('insights.kind.drift'),
+    distillable: t('insights.kind.distillable'),
   };
   return (kind: string) => labels[kind] ?? kind;
 }

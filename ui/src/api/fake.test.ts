@@ -101,6 +101,74 @@ describe('FakeApi', () => {
     expect((await api.listInbox()).items.map((r) => r.deliveryId)).not.toContain('dl_4b2e');
   });
 
+  it('lists proposals newest first and decides them as the engine does', async () => {
+    const api = new FakeApi();
+    expect((await api.listProposals({ pipeline: 'listings-daily' })).map((p) => p.state)).toEqual([
+      'validating',
+      'drafting',
+      'ready',
+      'ready',
+      'rejected',
+      'stale',
+      'accepted',
+    ]);
+    expect(await api.listProposals({ state: 'stale' })).toHaveLength(1);
+    await expect(api.getProposal('nope')).rejects.toMatchObject({ status: 404 });
+    const ready = await api.getProposal('p-0151');
+    expect(ready.report?.patchSha256).toBe(ready.patchSha256);
+
+    // A wrong patch hash and a proposal not ready are conflicts; the right one accepts and stales its neighbours.
+    await expect(api.acceptProposal('p-0151', { patchSha256: 'old' })).rejects.toMatchObject({ status: 409 });
+    await expect(api.acceptProposal('p-0153', { patchSha256: 'x' })).rejects.toMatchObject({
+      message: 'proposal p-0153 is validating, not ready',
+    });
+    expect(await api.acceptProposal('p-0151', { patchSha256: ready.patchSha256 })).toMatchObject({
+      state: 'accepted',
+      decidedBy: 'demo',
+    });
+    expect((await api.getProposal('p-0150')).state).toBe('stale');
+    expect((await api.getProposal('p-0152')).state).toBe('stale');
+
+    // A reason is required; a decided proposal cannot be rejected.
+    await expect(api.rejectProposal('p-0153', { reason: ' ' })).rejects.toMatchObject({ status: 400 });
+    expect(await api.rejectProposal('p-0153', { reason: 'too early' })).toMatchObject({
+      state: 'rejected',
+      reason: 'too early',
+    });
+    await expect(api.rejectProposal('p-0142', { reason: 'no' })).rejects.toMatchObject({ status: 409 });
+
+    // Revalidating a stale proposal rebases it onto the active revision, with a new patch hash.
+    const stale = await api.getProposal('p-0149');
+    const rebased = await api.revalidateProposal('p-0149');
+    expect(rebased).toMatchObject({ state: 'ready', baseRevision: 'sha256:9f2c41d07a' });
+    expect(rebased.patchSha256).not.toBe(stale.patchSha256);
+    await expect(api.revalidateProposal('nope')).rejects.toMatchObject({ status: 404 });
+  });
+
+  it('makes a proposal stale when its base moved, and answers the conflicts it is given', async () => {
+    const revisions = demoFixtures.revisions.map((r) => ({ ...r, active: r.id === 13 }));
+    const api = new FakeApi({ ...demoFixtures, revisions, conflicts: { 'p-0150': 'p-0151 was accepted first' } });
+    const ready = await api.getProposal('p-0151');
+    await expect(api.acceptProposal('p-0151', { patchSha256: ready.patchSha256 })).rejects.toMatchObject({
+      status: 409,
+      message: expect.stringContaining('it is stale') as unknown,
+    });
+    expect((await api.getProposal('p-0151')).state).toBe('stale');
+    await expect(api.acceptProposal('p-0150', { patchSha256: '' })).rejects.toMatchObject({
+      message: 'p-0151 was accepted first',
+    });
+    await expect(api.revalidateProposal('p-0150')).rejects.toMatchObject({ status: 409 });
+    expect(await api.revalidateProposal('p-0152')).toMatchObject({ state: 'drafting' });
+    await expect(api.acceptProposal('nope', { patchSha256: '' })).rejects.toMatchObject({ status: 404 });
+    await expect(api.rejectProposal('nope', { reason: 'x' })).rejects.toMatchObject({ status: 404 });
+  });
+
+  it('reports the environment it is given', async () => {
+    expect((await new FakeApi(demoFixtures, { environment: 'production' }).getSession()).environment).toBe(
+      'production',
+    );
+  });
+
   it('drains and revokes remote nodes, refusing the embedded one and a standby', async () => {
     const api = new FakeApi();
     await api.drainNode('gpu-01');

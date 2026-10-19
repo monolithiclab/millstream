@@ -83,6 +83,13 @@ export const statuses = {
   // An item's tombstone (spec section 9.3): a clock for retention, a struck square for a purge.
   expired: { tone: 'mute', d: SH.circle, mark: SH.hands },
   erased: { tone: 'mute', d: SH.square, mark: SH.slash },
+  // A proposal (spec 11.3): drafted, being validated, ready to decide, then accepted, rejected or stale.
+  drafting: { tone: 'mute', d: SH.circle, mark: SH.half, markFill: true },
+  validating: { tone: 'accent', d: SH.circle, mark: SH.half, markFill: true },
+  ready: { tone: 'human', d: SH.diamond, filled: true },
+  accepted: { tone: 'ok', d: SH.check },
+  rejected: { tone: 'bad', d: SH.circle, mark: SH.x },
+  stale: { tone: 'warn', d: SH.tri },
 } satisfies Record<string, Glyph>;
 
 export type StatusKey = keyof typeof statuses;
@@ -123,6 +130,12 @@ const labels: Record<StatusKey, `status.${StatusKey}`> = {
   lost: 'status.lost',
   expired: 'status.expired',
   erased: 'status.erased',
+  drafting: 'status.drafting',
+  validating: 'status.validating',
+  ready: 'status.ready',
+  accepted: 'status.accepted',
+  rejected: 'status.rejected',
+  stale: 'status.stale',
 };
 
 export function isStatus(value: string): value is StatusKey {

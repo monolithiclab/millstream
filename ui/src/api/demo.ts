@@ -5,8 +5,11 @@ import type {
   Insight,
   Item,
   MetricSeries,
+  BacktestMetrics,
+  BacktestReport,
   Pipeline,
   PipelineSnapshot,
+  Proposal,
   Review,
   Revision,
   Run,
@@ -1032,6 +1035,94 @@ const demoInsights: Insight[] = [
       sampledAgreement: 0.95,
       interventionRate: 0.38,
       samples: ['it_4c11ab90', 'it_70e2d5c3', 'it_b8f6031e'],
+      // From M5: each edit's author, and the proposals the patterns of spec 11.6 call for.
+      attribution: [
+        { pointer: '/marginPct', step: 'score', edits: 6 },
+        { pointer: '/notes', step: null, edits: 2 },
+      ],
+      unattributedEdits: 2,
+      proposals: [
+        {
+          kind: 'topology',
+          pattern: 'predictableRejections',
+          pointer: '/priceEur',
+          condition: 'item.priceEur <= 520000',
+          after: 'parse',
+          before: 'score',
+          rejections: 5,
+          falseDrops: 0,
+          approvals: 18,
+        },
+        {
+          kind: 'lessons',
+          pattern: 'recurringEdits',
+          step: 'score',
+          pointer: '/marginPct',
+          edits: 6,
+          alternative: 'prompt',
+        },
+        { kind: 'reasons', pattern: 'uncoveredReasons', step: 'analyst-review', rejections: 3 },
+      ],
+    },
+  }),
+  // M5's kinds, acknowledged so the graph's open badges stay those of M3.
+  insight('in_drift_score', {
+    kind: 'drift',
+    scope: 'score',
+    state: 'acknowledged',
+    openedAt: '2026-10-14T09:00:00Z',
+    summary: 'the fallback disagreed with the primary on 4 of 39 audits (10%)',
+    evidence: {
+      source: 'audits',
+      audits: 40,
+      agreed: 35,
+      disagreed: 4,
+      failed: 1,
+      agreement: 0.9,
+      disagreementShare: 0.1,
+      threshold: 0.05,
+      samples: ['it_9d02e6b3', 'it_c41e0b88'],
+    },
+  }),
+  insight('in_waste_score', {
+    kind: 'waste',
+    scope: 'score',
+    severity: 'info',
+    state: 'acknowledged',
+    openedAt: '2026-10-14T09:00:00Z',
+    summary: '14 discarded items cost $0.27 at score (4% of its cost)',
+    evidence: {
+      discardedItems: 14,
+      wastedCostUsd: 0.27,
+      costUsd: 7.62,
+      wasteShare: 0.035,
+      byStep: [
+        { step: 'analyst-review', kind: 'review', items: 9 },
+        { step: 'dedupe', kind: 'dedupe', items: 5 },
+      ],
+      suggestion: null,
+      samples: ['it_4c11ab90', 'it_70e2d5c3'],
+    },
+  }),
+  insight('in_distill_score', {
+    kind: 'distillable',
+    scope: 'score',
+    severity: 'info',
+    state: 'acknowledged',
+    openedAt: '2026-10-14T09:00:00Z',
+    summary: 'score could be code: 80% of its fields bounded or copied, p95 2 turns, $228.60 a month',
+    evidence: {
+      deliveries: 412,
+      turnsP95: 2,
+      tools: 0,
+      boundedShare: 0.8,
+      fields: { bounded: ['/score', '/marginPct', '/reason'], copied: ['/title'], free: ['/notes'] },
+      reviewedDecisions: 53,
+      reviewerAgreement: 0.96,
+      costUsd: 7.62,
+      monthlySavingUsd: 228.6,
+      rank: 1,
+      samples: ['it_88a1c3f0', 'it_2b90d7e4'],
     },
   }),
   insight('in_cost_score', {
@@ -1066,6 +1157,492 @@ const demoInsights: Insight[] = [
       lastSeen: '2026-10-12T06:24:00Z',
       samples: ['it_0f3e9a71'],
     },
+  }),
+];
+
+// Proposals (spec 11.3): one in every state, on the revisions above. The improve pipeline that drafts them is
+// exported apart, so the pipelines every other screen shows stay the same: tests add it to show improve as on.
+
+export const demoImprovePipeline: Pipeline = {
+  name: 'improve',
+  description: 'Proposals drafted from insights and evidence',
+  state: 'active',
+  revision: 1,
+  steps: [
+    step('gather-evidence', 'improve.gather', ['trigger'], ['evidence']),
+    step('draft', 'improve.draft', ['evidence'], ['drafts'], { concurrency: 1 }),
+    step('validate', 'improve.validate', ['drafts'], ['validated']),
+    step('propose', 'improve.propose', ['validated'], ['proposals']),
+    step('publish', 'improve.publish', ['proposals'], []),
+  ],
+  triggers: [
+    { name: 'insights', kind: 'insight', stream: 'trigger' },
+    { name: 'weekly', kind: 'cron', schedule: '0 7 * * 1', stream: 'trigger' },
+    { name: 'propose', kind: 'manual', stream: 'trigger' },
+  ],
+  streams: ['trigger', 'evidence', 'drafts', 'validated', 'proposals'],
+  openDeadLetters: 0,
+  openReviews: 0,
+};
+
+const R14 = 'sha256:9f2c41d07a';
+const R13 = 'sha256:51c0e8d4b3';
+const base = (hash: string) => `Millstream-Base: ${hash}\n\n`;
+
+const metrics = (m: Partial<BacktestMetrics>): BacktestMetrics => ({
+  compared: 200,
+  agreed: 160,
+  agreement: 0.8,
+  newlyReached: 0,
+  noLongerReached: 0,
+  reviewed: 100,
+  reviewAgreed: 70,
+  reviewAgreement: 0.7,
+  ran: 200,
+  failed: 4,
+  failureRate: 0.02,
+  costUsd: 3.8,
+  latencyMs: 2400,
+  ...m,
+});
+
+const backtest = (baseRevision: string, extra: Partial<BacktestReport>): BacktestReport => ({
+  pipeline: PIPELINE,
+  baseRevision,
+  patchHash: '',
+  patchedRevision: 'sha256:0d1e2f3a4b',
+  source: 'evidence',
+  bundles: ['ev_20261014_a1'],
+  changedSteps: ['score'],
+  sampled: 200,
+  strata: { done: 96, approved: 58, edited: 30, rejected: 12, dead: 4 },
+  runs: 188,
+  before: metrics({}),
+  after: metrics({}),
+  steps: [],
+  divergence: [],
+  warnings: [],
+  costUsd: 7.75,
+  startedAt: '2026-10-14T21:02:00Z',
+  finishedAt: '2026-10-14T21:09:00Z',
+  ...extra,
+});
+
+// A proposal; its report names its patch, as the engine's does.
+function proposal(id: string, extra: Partial<Proposal> & Pick<Proposal, 'kind' | 'state' | 'patch'>): Proposal {
+  const p: Proposal = {
+    id,
+    pipeline: PIPELINE,
+    baseRevision: R14,
+    patchSha256: `${id.replace('p-', '')}a7c3e9f1b5d2e8c4a6f0b3d7e1c9a5f2b8d4e0c6a3f7b1d5e9c2a8f4b0d6e3c`,
+    paths: [],
+    steps: ['score'],
+    rationale: '',
+    insights: [],
+    fingerprint: `fp_${id}`,
+    report: null,
+    createdBy: 'improve',
+    createdAt: '2026-10-14T21:00:00Z',
+    updatedAt: '2026-10-14T21:10:00Z',
+    ...extra,
+  };
+  if (p.report) {
+    p.report.patchSha256 = p.patchSha256;
+    const report = p.report.backtest?.report as BacktestReport | undefined;
+    if (report) report.patchHash = p.patchSha256;
+  }
+  return p;
+}
+
+const lessonsPatch = `${base(R14)}diff --git a/lessons/score.yaml b/lessons/score.yaml
+index 3f1a2b4..8c9d0e1 100644
+--- a/lessons/score.yaml
++++ b/lessons/score.yaml
+@@ -6,6 +6,10 @@ rules:
+   - text: Above the 3rd floor without a lift, lower the expected resale value by 4 %.
+     source: insight/in_review_analyst
+     added: 2026-10-14
+   - text: Ignore the agency fee when it is not stated in the listing.
++  - text: Cap marginPct at 16 when the listing mentions renovation work.
++    source: insight/in_review_analyst
++    added: 2026-10-15
++    # Reviewers lowered marginPct on 6 of 18 approvals.
+ examples:
+   - input:
+       title: T2 · 41 m² · Paris 11e
+`;
+
+const promptPatch = `${base(R14)}diff --git a/actions/score/prompt.md b/actions/score/prompt.md
+index 1a2b3c4..5d6e7f8 100644
+--- a/actions/score/prompt.md
++++ b/actions/score/prompt.md
+@@ -1,8 +1,9 @@
+ # Score a listing
+ 
+ Score this listing for a buy-to-let investor, from 0 to 100.
+-Use \`get_comparables\` for the price per m² of the area.
++Use \`get_comparables\` for the price per m² of the area, and **only** listings
++sold in the last 12 months.
+ 
+ ## Output
+ 
+ Return \`score\`, \`marginPct\` and a short \`reason\`.
+`;
+
+const configPatch = `${base(R14)}diff --git a/pipeline.yaml b/pipeline.yaml
+index 7b8c9d0..e1f2a3b 100644
+--- a/pipeline.yaml
++++ b/pipeline.yaml
+@@ -31,7 +31,7 @@ steps:
+   score:
+     action: agent.score
+     in: enriched
+-    concurrency: 2
++    concurrency: 4
+     retry: { attempts: 3, backoff: 2s }
+     timeout: 90s
+     out: scored
+`;
+
+const topologyPatch = `${base(R13)}diff --git a/pipeline.yaml b/pipeline.yaml
+index 2c3d4e5..f6a7b8c 100644
+--- a/pipeline.yaml
++++ b/pipeline.yaml
+@@ -24,5 +24,10 @@ steps:
+   enrich:
+     action: listing.enrich
+     in: located
+-    out: enriched
++    out: enriched.all
++  surface-check:
++    action: filter
++    in: enriched.all
++    out: enriched
++    config: { expr: 'item.priceEur <= 520000' }
+   score:
+`;
+
+const distillPatch = `${base(R14)}diff --git a/pipeline.yaml b/pipeline.yaml
+index 7b8c9d0..a9b8c7d 100644
+--- a/pipeline.yaml
++++ b/pipeline.yaml
+@@ -30,4 +30,5 @@ steps:
+   score:
+-    action: agent.score
++    action: score-code
++    fallback: { action: agent.score }
+     in: enriched
+     concurrency: 2
+diff --git a/actions/score-code/action.yaml b/actions/score-code/action.yaml
+new file mode 100644
+--- /dev/null
++++ b/actions/score-code/action.yaml
+@@ -0,0 +1,3 @@
++name: score-code
++version: 0.1.0
++kind: container
+diff --git a/actions/score-code/main.go b/actions/score-code/main.go
+new file mode 100644
+--- /dev/null
++++ b/actions/score-code/main.go
+@@ -0,0 +1,14 @@
++// Command score-code scores a listing from its figures, abstaining when unsure.
++package main
++
++import "github.com/monolithiclab/millstream/sdk"
++
++func main() {
++	sdk.Run(func(in Listing) (Score, error) {
++		if in.SurfaceM2 == 0 {
++			return Score{}, sdk.Abstain("no surface")
++		}
++		margin := 100 * (in.RentEstimate * 12 / in.PriceEur)
++		return Score{Score: int(margin * 6), MarginPct: margin}, nil
++	})
++}
+`;
+
+const acceptedPatch = `${base(R13)}diff --git a/lessons/score.yaml b/lessons/score.yaml
+index 0a1b2c3..3f1a2b4 100644
+--- a/lessons/score.yaml
++++ b/lessons/score.yaml
+@@ -1,2 +1,5 @@
+ rules:
++  - text: Listings without a surface area are not scored; return score 0 and reason "missingSurface".
++    source: proposal/p-0142
++    added: 2026-10-03
+   - text: Ignore the agency fee when it is not stated in the listing.
+`;
+
+const autoApprovePatch = `${base(R14)}diff --git a/pipeline.yaml b/pipeline.yaml
+index 7b8c9d0..c4d5e6f 100644
+--- a/pipeline.yaml
++++ b/pipeline.yaml
+@@ -38,6 +38,8 @@ steps:
+   analyst-review:
+     action: review
+     in: scored
+     out: approved
+     config:
+       inbox: analysts
++      autoApprove: 'item.score >= 85'
++      sampleRate: 0.1
+`;
+
+const passedCheck = { passed: true, diagnostics: [] };
+// score's three base cases, before and after: each [passed, score] of after.
+const scoreCases: [string, number][] = [
+  ['renovation-flat', 0.92],
+  ['ground-floor-main-road', 0.88],
+  ['missing-surface', 1],
+];
+const scoreEvals = (after: [boolean, number][]) => [
+  {
+    step: 'score',
+    action: 'agent.score',
+    passed: after.every(([ok]) => ok),
+    cases: after.map(([passed, score], i) => {
+      const [name = '', before = 0] = scoreCases[i] ?? [];
+      return { case: name, before: { passed: true, score: before }, after: { passed, score } };
+    }),
+  },
+];
+
+const demoProposals: Proposal[] = [
+  proposal('p-0153', {
+    kind: 'config',
+    state: 'validating',
+    patch: configPatch,
+    paths: ['pipeline.yaml'],
+    rationale: 'Raise score’s concurrency to 4: it holds a third of the critical path, waiting in its queue.',
+    insights: ['in_slow_enrich'],
+    createdAt: '2026-10-15T06:10:00Z',
+    updatedAt: '2026-10-15T06:10:00Z',
+  }),
+  proposal('p-0152', {
+    kind: 'prompt',
+    state: 'drafting',
+    patch: promptPatch,
+    paths: ['actions/score/prompt.md'],
+    rationale: 'Ask score for recent sales only: reviewers lower marginPct when the comparables are old.',
+    insights: ['in_review_analyst'],
+    createdAt: '2026-10-15T05:40:00Z',
+    updatedAt: '2026-10-15T05:52:00Z',
+    report: {
+      passed: false,
+      baseRevision: R14,
+      patchSha256: '',
+      check: passedCheck,
+      evals: scoreEvals([
+        [false, 0.41],
+        [true, 0.9],
+        [true, 1],
+      ]),
+      newEvals: [
+        {
+          step: 'score',
+          action: 'agent.score',
+          passed: true,
+          cases: [{ case: 'recent-sales-only', after: { passed: true, score: 0.9 } }],
+        },
+      ],
+      backtest: {
+        passed: false,
+        report: backtest(R14, {
+          after: metrics({ agreed: 150, agreement: 0.75, reviewAgreed: 66, reviewAgreement: 0.66, costUsd: 4.1 }),
+        }),
+      },
+    },
+  }),
+  proposal('p-0151', {
+    kind: 'lessons',
+    state: 'ready',
+    patch: lessonsPatch,
+    paths: ['lessons/score.yaml'],
+    rationale:
+      'Reviewers lowered marginPct on 6 of 18 approvals, each time on a listing that mentions renovation work. A rule caps it at 16 there.',
+    insights: ['in_review_analyst', 'in_drift_score'],
+    createdAt: '2026-10-14T21:00:00Z',
+    updatedAt: '2026-10-14T21:10:00Z',
+    report: {
+      passed: true,
+      baseRevision: R14,
+      patchSha256: '',
+      check: passedCheck,
+      evals: scoreEvals([
+        [true, 0.95],
+        [true, 0.9],
+        [true, 1],
+      ]),
+      newEvals: [],
+      backtest: {
+        passed: true,
+        report: backtest(R14, {
+          after: metrics({
+            agreed: 168,
+            agreement: 0.84,
+            reviewAgreed: 82,
+            reviewAgreement: 0.82,
+            failed: 3,
+            failureRate: 0.015,
+            costUsd: 3.95,
+            latencyMs: 2450,
+          }),
+          steps: [
+            {
+              step: 'score',
+              before: metrics({}),
+              after: metrics({ agreed: 168, agreement: 0.84, reviewAgreed: 82, reviewAgreement: 0.82 }),
+            },
+          ],
+        }),
+      },
+    },
+  }),
+  proposal('p-0150', {
+    kind: 'distill',
+    state: 'ready',
+    patch: distillPatch,
+    paths: ['pipeline.yaml', 'actions/score-code/action.yaml', 'actions/score-code/main.go'],
+    rationale:
+      'score has become predictable: code covers 64% of the holdout with 98.6% agreement, and the agent stays as its fallback.',
+    insights: ['in_distill_score'],
+    createdAt: '2026-10-14T20:00:00Z',
+    updatedAt: '2026-10-14T20:30:00Z',
+    report: {
+      passed: true,
+      baseRevision: R14,
+      patchSha256: '',
+      check: {
+        passed: true,
+        diagnostics: [
+          {
+            severity: 'warning',
+            path: 'pipeline.yaml',
+            message: 'step score: lessons given to a step that is not an agent step',
+          },
+        ],
+      },
+      evals: scoreEvals([
+        [true, 0.93],
+        [true, 0.88],
+        [true, 1],
+      ]),
+      newEvals: [],
+      backtest: {
+        passed: true,
+        report: backtest(R14, {
+          source: 'evidence',
+          after: metrics({ agreed: 197, agreement: 0.985, costUsd: 0.41, latencyMs: 180 }),
+          before: metrics({ agreed: 198, agreement: 0.99 }),
+          divergence: [{ packageHash: 'sha256:c7e19a05f2', sampled: 40 }],
+          warnings: ['the development package has diverged from the evidence bundle’s production revision'],
+        }),
+      },
+    },
+  }),
+  proposal('p-0149', {
+    kind: 'topology',
+    state: 'stale',
+    baseRevision: R13,
+    patch: topologyPatch,
+    paths: ['pipeline.yaml'],
+    steps: ['enrich', 'surface-check'],
+    rationale: 'Drop listings above €520k before score: analysts rejected every one of them as overpriced.',
+    insights: ['in_review_analyst'],
+    createdAt: '2026-10-12T21:00:00Z',
+    updatedAt: '2026-10-13T06:40:00Z',
+    report: {
+      passed: true,
+      baseRevision: R13,
+      patchSha256: '',
+      check: passedCheck,
+      evals: [],
+      newEvals: [],
+      backtest: {
+        passed: true,
+        report: backtest(R13, {
+          source: 'local',
+          bundles: [],
+          changedSteps: ['score'],
+          after: metrics({ agreed: 158, agreement: 0.79, noLongerReached: 9, costUsd: 3.6 }),
+        }),
+      },
+    },
+  }),
+  proposal('p-0147', {
+    kind: 'config',
+    state: 'rejected',
+    patch: autoApprovePatch,
+    paths: ['pipeline.yaml'],
+    steps: ['analyst-review'],
+    rationale: 'Approve listings scored 85 or more without a person, sampling one in ten.',
+    insights: ['in_review_analyst'],
+    createdAt: '2026-10-13T21:00:00Z',
+    updatedAt: '2026-10-14T08:15:00Z',
+    decidedAt: '2026-10-14T08:15:00Z',
+    decidedBy: 'claire',
+    reason: 'Analysts want to see every listing above €500k, whatever its score.',
+    report: {
+      passed: true,
+      baseRevision: R14,
+      patchSha256: '',
+      check: passedCheck,
+      evals: [],
+      newEvals: [],
+      backtest: {
+        passed: true,
+        report: backtest(R14, {
+          source: 'local',
+          bundles: [],
+          changedSteps: ['analyst-review'],
+          sampled: 0,
+          strata: {},
+          runs: 0,
+          before: metrics({
+            compared: 0,
+            agreed: 0,
+            agreement: 0,
+            reviewed: 0,
+            reviewAgreed: 0,
+            reviewAgreement: 0,
+            ran: 0,
+            failed: 0,
+            failureRate: 0,
+            costUsd: 0,
+            latencyMs: 0,
+          }),
+          after: metrics({
+            compared: 0,
+            agreed: 0,
+            agreement: 0,
+            reviewed: 0,
+            reviewAgreed: 0,
+            reviewAgreement: 0,
+            ran: 0,
+            failed: 0,
+            failureRate: 0,
+            costUsd: 0,
+            latencyMs: 0,
+          }),
+          warnings: ['no past delivery reaches the changed steps: the sample is empty'],
+          costUsd: 0,
+        }),
+      },
+    },
+  }),
+  proposal('p-0142', {
+    kind: 'lessons',
+    state: 'accepted',
+    baseRevision: R13,
+    patch: acceptedPatch,
+    paths: ['lessons/score.yaml'],
+    rationale: 'score failed on listings without a surface area; a rule tells it to return 0 with a reason instead.',
+    insights: ['in_fail_score'],
+    createdAt: '2026-10-02T21:00:00Z',
+    updatedAt: '2026-10-03T08:00:00Z',
+    decidedAt: '2026-10-03T08:00:00Z',
+    decidedBy: 'nicolas',
   }),
 ];
 
@@ -1320,6 +1897,7 @@ export const demoFixtures: Fixtures = {
   reports: demoReports,
   revisions: demoRevisions,
   insights: demoInsights,
+  proposals: demoProposals,
   lessons: demoLessons,
   metricNames: demoMetricNames,
   metrics: demoMetrics,

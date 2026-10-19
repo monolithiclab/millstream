@@ -13,6 +13,10 @@ describe('LessonsScreen', () => {
     expect(rules).toHaveLength(3);
     expect(rules[0]).toHaveTextContent('Listings without a surface area are not scored');
     expect(rules[0]).toHaveTextContent('from proposal p-0142added 2026-10-03');
+    expect(within(rules[0]!).getByRole('link', { name: 'from proposal p-0142' })).toHaveAttribute(
+      'href',
+      '/p/listings-daily/improve/p-0142',
+    );
     expect(within(rules[1]!).getByRole('link', { name: 'from insight in_review_analyst' })).toHaveAttribute(
       'href',
       '/p/listings-daily/insights#in_review_analyst',
