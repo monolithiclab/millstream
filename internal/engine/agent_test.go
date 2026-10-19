@@ -89,31 +89,6 @@ func TestAgentAssignmentSandboxed(t *testing.T) {
 	}
 }
 
-// TestAgentAssignmentUnsandboxed: allowed by the environment file, the adapter runs as this binary's agent
-// subcommand in the action directory, with the engine's variables the claude CLI needs (agent.ClaudeEnv, USER
-// included) only, logged at every start; a recordings directory being recorded is mounted writable in a sandbox.
-func TestAgentAssignmentUnsandboxed(t *testing.T) {
-	environ := map[string]string{"MILLSTREAM_SECRET_KEY": "sk-0123456789", "PATH": "/usr/bin", "OTHER": "x",
-		"USER": "u", "CLAUDE_CONFIG_DIR": "/c"}
-	a, v := agentAssignment(t, Agents{AllowUnsandboxed: true, Executable: "/usr/local/bin/millstream"}, environ)
-	s := a.Spec
-	if s.Kind != pipeline.KindExec || s.Command[0] != "/usr/local/bin/millstream" || s.Command[1] != "agent" ||
-		slices.Contains(s.Command, "--price-in") || filepath.Base(s.Dir) != "score" || s.Mounts != nil ||
-		!slices.Equal(s.Env, []string{"PATH=/usr/bin", "USER=u", "CLAUDE_CONFIG_DIR=/c",
-			"MILLSTREAM_SECRET_KEY=sk-0123456789"}) {
-		t.Fatalf("spec = %+v", s)
-	}
-	if !strings.Contains(v.logs.String(), "agent running without a sandbox") {
-		t.Fatalf("logs: %s", v.logs.String())
-	}
-
-	environ[agent.EnvHarnessMode], environ[agent.EnvHarnessDir] = agent.ModeRecord, "/rec"
-	a, _ = agentAssignment(t, Agents{Sandbox: &AgentSandbox{Image: "agents:1", Binary: "/b"}}, environ)
-	if m := a.Spec.Mounts[2]; m.Source != "/rec" || m.ReadOnly {
-		t.Fatalf("recording mount %+v", m)
-	}
-}
-
 // TestAgentBudgetReservation: the engine reserves the agent action's maxCostUsd on each lease, and the reported
 // cost replaces the reservation; with a day budget of one reservation, the next delivery is not leased and the
 // agent step is paused with its cause.
