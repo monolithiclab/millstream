@@ -4,82 +4,28 @@ package backtest
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"testing"
 	"time"
 
-	"github.com/monolithiclab/millstream/internal/artifacts"
-	"github.com/monolithiclab/millstream/internal/engine"
-	"github.com/monolithiclab/millstream/internal/node"
 	"github.com/monolithiclab/millstream/internal/pipeline"
-	"github.com/monolithiclab/millstream/internal/runtime/exec"
 	"github.com/monolithiclab/millstream/internal/store"
-	"github.com/monolithiclab/millstream/internal/store/sqlite"
 )
 
-// recordHistory runs the fixture twice (three listings scored 40, 50 and 60 each time: the first filtered out) in
-// a store and returns it with the revision's package hash.
+// recordHistory returns a store of its own holding the fixture's history (seedHistory).
 func recordHistory(t *testing.T) (store.Store, string) {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
-	defer cancel()
-	st, err := sqlite.Open(sqlite.Memory, sqlite.Options{})
+	st, hash, err := seedHistory()
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = st.Close() })
-	pkg, err := pipeline.Materialize(t.TempDir(), fixtureFiles())
-	if err != nil {
-		t.Fatal(err)
-	}
-	e, err := engine.New(engine.Options{Store: st, NoCron: true, Artifacts: artifacts.New(t.TempDir())})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := e.Apply(ctx, pkg); err != nil {
-		t.Fatal(err)
-	}
-	var refs []engine.RunRef
-	for _, key := range []string{"day1", "day2"} {
-		id, _, err := e.Fire(ctx, "bt", "adhoc", key, json.RawMessage(`{"n":3,"base":40}`))
-		if err != nil {
-			t.Fatal(err)
-		}
-		refs = append(refs, engine.RunRef{Pipeline: "bt", ID: id})
-	}
-	pool := exec.NewPool(exec.PoolOptions{Options: exec.Options{Launchers: launchers()}})
-	defer func() { _ = pool.Close() }()
-	n, err := node.New(e, node.Options{Owner: "history", Slots: 4, Pool: pool, PullInterval: 10 * time.Millisecond})
-	if err != nil {
-		t.Fatal(err)
-	}
-	runCtx, stop := context.WithCancel(ctx)
-	done := make(chan error, 1)
-	go func() { done <- n.Run(runCtx) }()
-	werr := e.WaitSettled(ctx, refs)
-	stop()
-	if err := <-done; err != nil || werr != nil {
-		t.Fatal(err, werr)
-	}
-	crmCalls.Store(0)
-	return st, pkg.Hash
+	return st, hash
 }
 
 // newBacktester returns a Backtester over st running the fixture's actions in-process.
 func newBacktester(st store.Store, improve pipeline.Improve) *Backtester {
 	return New(Options{Store: st, Launchers: launchers(), Improve: improve, Timeout: time.Minute})
-}
-
-func stepReport(t *testing.T, rep *Report, step string) StepReport {
-	t.Helper()
-	for _, s := range rep.Steps {
-		if s.Step == step {
-			return s
-		}
-	}
-	t.Fatalf("no report for step %s in %+v", step, rep.Steps)
-	return StepReport{}
 }
 
 // TestConfigChange: a bonus on score changes every score: the base replay agrees with history and the patched one
@@ -88,7 +34,7 @@ func stepReport(t *testing.T, rep *Report, step string) StepReport {
 func TestConfigChange(t *testing.T) {
 	st, hash := recordHistory(t)
 	_, data := edit(t, hash, fixtureFiles(), "mode: score, bonus: 0", "mode: score, bonus: 15")
-	rep, err := newBacktester(st, pipeline.Improve{}).Run(context.Background(),
+	rep, err := New(Options{Store: st, Launchers: launchers(), Timeout: time.Minute}).Run(context.Background(),
 		Request{Pipeline: "bt", BaseRevision: hash, Patch: data})
 	if err != nil {
 		t.Fatal(err)

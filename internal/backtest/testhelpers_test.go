@@ -3,17 +3,26 @@ package backtest
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"maps"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
+	"github.com/monolithiclab/millstream/internal/artifacts"
+	"github.com/monolithiclab/millstream/internal/engine"
+	"github.com/monolithiclab/millstream/internal/node"
 	"github.com/monolithiclab/millstream/internal/patch"
 	"github.com/monolithiclab/millstream/internal/pipeline"
 	"github.com/monolithiclab/millstream/internal/protocol"
 	"github.com/monolithiclab/millstream/internal/runtime/exec"
+	"github.com/monolithiclab/millstream/internal/store"
+	"github.com/monolithiclab/millstream/internal/store/sqlite"
 )
 
 // The fixture: crawl emits listings with scores, score adds its config's bonus, keep filters on vars.minScore,
@@ -115,4 +124,70 @@ func serve(_ context.Context, args, _ []string, stdin io.Reader, stdout, _ io.Wr
 		}
 		_ = w.Write(protocol.Done{Delivery: it.Delivery})
 	}
+}
+
+// seedHistory runs the fixture twice (three listings scored 40, 50 and 60 each time: the first filtered out) in a
+// store of its own and returns it with the revision's package hash; the external action's calls are then reset.
+func seedHistory() (store.Store, string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	st, err := sqlite.Open(sqlite.Memory, sqlite.Options{})
+	if err != nil {
+		return nil, "", err
+	}
+	fail := func(err error) (store.Store, string, error) {
+		_ = st.Close()
+		return nil, "", err
+	}
+	dir, err := os.MkdirTemp("", "backtest-history-")
+	if err != nil {
+		return fail(err)
+	}
+	defer func() { _ = os.RemoveAll(dir) }()
+	pkg, err := pipeline.Materialize(dir, fixtureFiles())
+	if err != nil {
+		return fail(err)
+	}
+	e, err := engine.New(engine.Options{Store: st, NoCron: true, Artifacts: artifacts.New(filepath.Join(dir, "a"))})
+	if err != nil {
+		return fail(err)
+	}
+	if _, err := e.Apply(ctx, pkg); err != nil {
+		return fail(err)
+	}
+	var refs []engine.RunRef
+	for _, key := range []string{"day1", "day2"} {
+		id, _, err := e.Fire(ctx, "bt", "adhoc", key, json.RawMessage(`{"n":3,"base":40}`))
+		if err != nil {
+			return fail(err)
+		}
+		refs = append(refs, engine.RunRef{Pipeline: "bt", ID: id})
+	}
+	pool := exec.NewPool(exec.PoolOptions{Options: exec.Options{Launchers: launchers()}})
+	defer func() { _ = pool.Close() }()
+	n, err := node.New(e, node.Options{Owner: "history", Slots: 4, Pool: pool, PullInterval: 10 * time.Millisecond})
+	if err != nil {
+		return fail(err)
+	}
+	runCtx, stop := context.WithCancel(ctx)
+	done := make(chan error, 1)
+	go func() { done <- n.Run(runCtx) }()
+	werr := e.WaitSettled(ctx, refs)
+	stop()
+	if err := errors.Join(<-done, werr); err != nil {
+		return fail(err)
+	}
+	crmCalls.Store(0)
+	return st, pkg.Hash, nil
+}
+
+func stepReport(t *testing.T, rep *Report, step string) StepReport {
+	t.Helper()
+	for _, s := range rep.Steps {
+		if s.Step == step {
+			return s
+		}
+	}
+	t.Fatalf("no report for step %s in %+v", step, rep.Steps)
+	return StepReport{}
 }
