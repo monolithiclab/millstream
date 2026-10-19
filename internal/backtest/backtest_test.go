@@ -331,18 +331,3 @@ func TestJobs(t *testing.T) {
 		t.Errorf("Start of an invalid request = %v", err)
 	}
 }
-
-// TestConfigChangeSampled: a bonus on score, backtested on a sample of one: the base replay agrees with history and
-// the patched one does not, and the external action never runs (TestConfigChange, under the e2e tag, replays it all).
-func TestConfigChangeSampled(t *testing.T) {
-	_, data := edit(t, historyHash, fixtureFiles(), "mode: score, bonus: 0", "mode: score, bonus: 15")
-	rep, err := New(Options{Store: seeded, Launchers: launchers(), Timeout: time.Minute}).Run(context.Background(),
-		Request{Pipeline: "bt", BaseRevision: historyHash, Patch: data, Sample: 1})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if rep.Sampled != 1 || rep.Runs != 1 || rep.Before.Agreement != 1 || rep.After.Agreement == 1 || crmCalls.Load() != 0 ||
-		len(rep.Steps) != 1 || rep.Steps[0].Step != "score" {
-		t.Errorf("report = %+v", rep)
-	}
-}

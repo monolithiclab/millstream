@@ -39,12 +39,11 @@ func TestHolds(t *testing.T) {
 }
 
 // TestForProposals: a proposal's validation backtests through the real runner on the seeded history, in a scratch
-// store: a lessons file the exec step ignores changes no outcome and passes; a bonus changing every score lowers the
-// agreement and fails. A pipeline without history to replay passes, its report saying so.
+// store: a lessons file the exec step ignores changes no outcome, and passes. A pipeline without history to replay
+// passes, its report saying so. (A regression failing it is TestHolds; the replay's own measures are TestConfigChange,
+// under the e2e tag.)
 func TestForProposals(t *testing.T) {
 	ctx := context.Background()
-	bt := ForProposals(New(Options{Store: seeded, Launchers: launchers(), Timeout: time.Minute,
-		Improve: pipeline.Improve{BacktestSample: 1}}))
 	files := fixtureFiles()
 	lessons := map[string][]byte{"lessons/score.yaml": []byte("rules:\n  - text: Score 0 without a surface.\n")}
 	maps.Copy(lessons, files)
@@ -52,22 +51,18 @@ func TestForProposals(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, regressing := edit(t, historyHash, files, "mode: score, bonus: 0", "mode: score, bonus: 15")
-	for name, tt := range map[string]struct {
-		patch []byte
-		want  bool
-	}{"harmless": {harmless, true}, "regressing": {regressing, false}} {
-		res, err := bt.Backtest(ctx, proposals.BacktestRequest{Pipeline: "bt", BaseRevision: historyHash,
-			Patch: string(tt.patch), Steps: []string{"score"}})
-		var rep Report
-		if err != nil || json.Unmarshal(res.Report, &rep) != nil || rep.Sampled != 1 || res.Passed != tt.want {
-			t.Errorf("%s: Backtest = %+v (%s), %v; want passed %v", name, res, res.Report, err, tt.want)
-		}
+	res, err := ForProposals(New(Options{Store: seeded, Launchers: launchers(), Timeout: time.Minute,
+		Improve: pipeline.Improve{BacktestSample: 1}})).Backtest(ctx, proposals.BacktestRequest{Pipeline: "bt",
+		BaseRevision: historyHash, Patch: string(harmless), Steps: []string{"score"}})
+	var rep Report
+	if err != nil || !res.Passed || json.Unmarshal(res.Report, &rep) != nil || rep.Sampled != 1 ||
+		rep.After.Agreement != rep.Before.Agreement {
+		t.Errorf("Backtest = %+v (%s), %v", res, res.Report, err)
 	}
 	_, data := edit(t, fixtureHash, files, "mode: score, bonus: 0", "mode: score, bonus: 15")
-	res, err := ForProposals(New(Options{Store: revisionOnly, Launchers: launchers()})).Backtest(ctx,
+	res, err = ForProposals(New(Options{Store: revisionOnly, Launchers: launchers()})).Backtest(ctx,
 		proposals.BacktestRequest{Pipeline: "bt", BaseRevision: fixtureHash, Patch: string(data)})
-	var rep Report
+	rep = Report{}
 	if err != nil || !res.Passed || json.Unmarshal(res.Report, &rep) != nil || rep.Sampled != 0 || len(rep.Warnings) != 1 {
 		t.Errorf("without history: %+v (%s), %v", res, res.Report, err)
 	}
