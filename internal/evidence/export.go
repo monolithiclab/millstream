@@ -312,6 +312,12 @@ func stratum(d store.Delivery, reviews map[string]store.Review) string {
 	return ""
 }
 
+// Stratify samples n of the deliveries that ended as an export does (spec section 11.2): backtests sample their
+// past items so too (spec section 11.3).
+func Stratify(ds []store.Delivery, reviews map[string]store.Review, n int) []Sampled {
+	return stratify(ds, reviews, "", n)
+}
+
 // stratify samples n of the deliveries that ended (those of step alone when it names one of their steps): an equal
 // share of n for each stratum, a stratum with fewer handing what it leaves to the others, and within a stratum
 // deliveries evenly spaced in the order they finished, so the sample spans the window.
@@ -326,7 +332,7 @@ func stratify(ds []store.Delivery, reviews map[string]store.Review, step string,
 		}
 	}
 	alloc := map[string]int{}
-	open := slices.DeleteFunc(slices.Clone(strata), func(s string) bool { return len(pop[s]) == 0 })
+	open := slices.DeleteFunc(slices.Clone(Strata), func(s string) bool { return len(pop[s]) == 0 })
 	for left := n; left > 0 && len(open) > 0; {
 		share := max(left/len(open), 1)
 		next := open[:0]
@@ -341,7 +347,7 @@ func stratify(ds []store.Delivery, reviews map[string]store.Review, step string,
 		open = next
 	}
 	out := []Sampled{}
-	for _, s := range strata {
+	for _, s := range Strata {
 		in := pop[s]
 		slices.SortFunc(in, func(a, b store.Delivery) int {
 			return cmp.Or(a.FinishedAt.Compare(b.FinishedAt), strings.Compare(a.ID, b.ID))

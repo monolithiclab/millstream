@@ -33,6 +33,7 @@ import (
 	"time"
 
 	"github.com/monolithiclab/millstream/internal/artifacts"
+	"github.com/monolithiclab/millstream/internal/backtest"
 	"github.com/monolithiclab/millstream/internal/engine"
 	"github.com/monolithiclab/millstream/internal/pipeline"
 	"github.com/monolithiclab/millstream/internal/store"
@@ -150,6 +151,8 @@ type Options struct {
 	// Evidence is the deployment's evidence settings (spec section 11.2): its environment's mode, which refuses
 	// imports in production, and improve.evidence.
 	Evidence EvidenceSettings
+	// Backtests runs the backtests POST /backtests starts (spec section 11.3); nil answers them unavailable.
+	Backtests *backtest.Jobs
 }
 
 // EvidenceSettings are what evidence export and import read from the environment file: the effective mode, the
@@ -230,6 +233,8 @@ var routes = []route{
 	{http.MethodGet, "/metrics/names", (*Server).listMetricNames},
 	{http.MethodPost, "/pipelines/{pipeline}/evidence", (*Server).exportEvidence},
 	{http.MethodPost, "/evidence/imports", (*Server).importEvidence},
+	{http.MethodPost, "/backtests", (*Server).createBacktest},
+	{http.MethodGet, "/backtests/{backtest}", (*Server).getBacktest},
 	{http.MethodPost, "/purges", (*Server).createPurge},
 	{http.MethodGet, "/purges/{purge}", (*Server).getPurge},
 	{http.MethodGet, "/nodes", (*Server).listNodes},

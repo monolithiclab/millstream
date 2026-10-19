@@ -15,6 +15,7 @@ import (
 
 	"github.com/monolithiclab/millstream/internal/api"
 	"github.com/monolithiclab/millstream/internal/artifacts"
+	"github.com/monolithiclab/millstream/internal/backtest"
 	"github.com/monolithiclab/millstream/internal/engine"
 	"github.com/monolithiclab/millstream/internal/pipeline"
 	"github.com/monolithiclab/millstream/internal/review"
@@ -54,7 +55,7 @@ func newAPIServer(st store.Store, e *engine.Engine, notes *review.Notifier, logs
 		Nodes: x.nodes, Version: x.rt.Version, User: identity(x.rt), Auth: sec.auth, Logger: log,
 		Identity: lead.identity, Deployment: lead.deployment, NotificationFailures: notes.Failures,
 		NodeAPI: x.nodeAPI, LeaseTTL: x.leaseTTL, Environment: x.mode,
-		Evidence: x.evidence})
+		Evidence: x.evidence, Backtests: x.backtests})
 	if err != nil {
 		return nil, err
 	}
@@ -71,6 +72,8 @@ type apiExtras struct {
 	leaseTTL time.Duration
 	mode     string // the deployment's environment
 	evidence api.EvidenceSettings
+	// backtests runs the API's backtests (spec section 11.3).
+	backtests *backtest.Jobs
 }
 
 // apiSecurity is what the API server reads from the environment, auth.token and tls: run and serve read it before

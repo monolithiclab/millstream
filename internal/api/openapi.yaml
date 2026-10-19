@@ -884,6 +884,49 @@ paths:
         "400": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }
         "503": { $ref: "#/components/responses/Error" }
+  /backtests:
+    post:
+      operationId: createBacktest
+      summary: Start a backtest of a patch against past items, in a development deployment (spec section 11.3).
+      description: |
+        The patch, a unified diff against the base revision's package, is applied to a scratch copy; the steps it
+        changes are replayed on a stratified sample of past deliveries (local history, else imported evidence) in a
+        scratch store, once on the base revision and once patched, with every effects external action stubbed. The
+        answer comes at once: the backtest runs in the background, its state and report at its Location. A malformed
+        or unapplicable request, a production deployment and a spent improve budget are refused at once.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/BacktestRequest" }
+      responses:
+        default: { $ref: "#/components/responses/Error" }
+        "415": { $ref: "#/components/responses/Error" }
+        "202":
+          description: The backtest, started.
+          headers:
+            Location: { schema: { type: string }, description: Where its state is read. }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Backtest" }
+        "400": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+  /backtests/{backtest}:
+    parameters: [{ name: backtest, in: path, required: true, schema: { type: string } }]
+    get:
+      operationId: getBacktest
+      summary: A backtest's state, and its report once done.
+      description: Backtests live in the engine process's memory, the last 100 kept; a restart forgets them.
+      responses:
+        default: { $ref: "#/components/responses/Error" }
+        "200":
+          description: The backtest.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Backtest" }
+        "404": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
   /purges:
     post:
       operationId: createPurge
@@ -1663,6 +1706,88 @@ components:
         productionRevision: { type: string, description: The package hash of the revision the bundle was exported on. }
         localRevision: { type: string, description: The package hash of this deployment's active revision, empty when the pipeline is not applied. }
         diverged: { type: boolean, description: The two revisions differ. }
+    BacktestRequest:
+      type: object
+      required: [pipeline, baseRevision, patch]
+      additionalProperties: false
+      properties:
+        pipeline: { type: string }
+        baseRevision: { type: string, description: The package hash of the revision the patch applies to; a patch whose Millstream-Base trailer names another is refused. }
+        patch: { type: string, description: The unified diff against the base revision's package files. }
+        sample: { type: integer, minimum: 0, description: The past deliveries to sample; improve.backtest.sample (200) by default. }
+        steps: { type: array, items: { type: string }, description: Steps replayed besides those the patch changes. }
+        source: { type: string, enum: [local, evidence], description: Where the sample comes from; local history when it reaches the changed steps, else imported evidence, by default. }
+    Backtest:
+      type: object
+      required: [id, pipeline, state, createdAt]
+      additionalProperties: false
+      properties:
+        id: { type: string }
+        pipeline: { type: string }
+        state: { type: string, enum: [running, done, failed] }
+        createdAt: { type: string, format: date-time }
+        finishedAt: { type: string, format: date-time }
+        error: { $ref: "#/components/schemas/Error/properties/error" }
+        report: { $ref: "#/components/schemas/BacktestReport" }
+    BacktestReport:
+      type: object
+      required: [pipeline, baseRevision, patchHash, patchedRevision, source, changedSteps, sampled, strata, runs, before, after, steps, costUsd, startedAt, finishedAt]
+      additionalProperties: false
+      properties:
+        pipeline: { type: string }
+        baseRevision: { type: string }
+        patchHash: { type: string, description: The hex SHA-256 of the patch. }
+        patchedRevision: { type: string, description: The patched package's hash. }
+        source: { type: string, enum: [local, evidence] }
+        bundles: { type: array, items: { type: string }, description: The evidence bundles read. }
+        changedSteps: { type: array, items: { type: string } }
+        sampled: { type: integer }
+        strata: { type: object, additionalProperties: { type: integer }, description: The sample by outcome (done, filtered, dead, approved, rejected, edited). }
+        runs: { type: integer, description: The historical runs fired again. }
+        before: { $ref: "#/components/schemas/BacktestMetrics" }
+        after: { $ref: "#/components/schemas/BacktestMetrics" }
+        steps:
+          type: array
+          items:
+            type: object
+            required: [step, before, after]
+            additionalProperties: false
+            properties:
+              step: { type: string }
+              before: { $ref: "#/components/schemas/BacktestMetrics" }
+              after: { $ref: "#/components/schemas/BacktestMetrics" }
+        divergence:
+          type: array
+          description: The revisions the sample was recorded on other than the base.
+          items:
+            type: object
+            required: [packageHash, sampled]
+            additionalProperties: false
+            properties:
+              packageHash: { type: string }
+              sampled: { type: integer }
+        warnings: { type: array, items: { type: string } }
+        costUsd: { type: number, description: What both replays cost, charged to improve.budget.dayUsd. }
+        startedAt: { type: string, format: date-time }
+        finishedAt: { type: string, format: date-time }
+    BacktestMetrics:
+      type: object
+      required: [compared, agreed, agreement, newlyReached, noLongerReached, reviewed, reviewAgreed, reviewAgreement, ran, failed, failureRate, costUsd, latencyMs]
+      additionalProperties: false
+      properties:
+        compared: { type: integer, description: Deliveries with a historical counterpart (the same step and input item). }
+        agreed: { type: integer, description: Those that ended alike, the same state and outputs. }
+        agreement: { type: number, description: agreed / compared, 0 when none. }
+        newlyReached: { type: integer, description: Deliveries without a historical counterpart, items the patch admits. }
+        noLongerReached: { type: integer, description: Historical deliveries on the sampled lineages the replay never made. }
+        reviewed: { type: integer, description: Decided reviews on the sampled lineages. }
+        reviewAgreed: { type: integer, description: "Those the replay agrees with: approved still reaching the review, edited reaching it with the edited values, rejected no longer reaching it." }
+        reviewAgreement: { type: number }
+        ran: { type: integer, description: Deliveries an action or builtin ran, not stubbed. }
+        failed: { type: integer }
+        failureRate: { type: number }
+        costUsd: { type: number }
+        latencyMs: { type: number, description: The mean latency (queue wait and work) of the deliveries that ran. }
     ReplayRequest:
       type: object
       description: Exactly one of step (a replay run of the step over past items) and stream (a back-fill of an imported stream from the producer's retained items).

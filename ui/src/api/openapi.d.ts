@@ -920,6 +920,52 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/backtests': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Start a backtest of a patch against past items, in a development deployment (spec section 11.3).
+     * @description The patch, a unified diff against the base revision's package, is applied to a scratch copy; the steps it
+     *     changes are replayed on a stratified sample of past deliveries (local history, else imported evidence) in a
+     *     scratch store, once on the base revision and once patched, with every effects external action stubbed. The
+     *     answer comes at once: the backtest runs in the background, its state and report at its Location. A malformed
+     *     or unapplicable request, a production deployment and a spent improve budget are refused at once.
+     */
+    post: operations['createBacktest'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/backtests/{backtest}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        backtest: string;
+      };
+      cookie?: never;
+    };
+    /**
+     * A backtest's state, and its report once done.
+     * @description Backtests live in the engine process's memory, the last 100 kept; a restart forgets them.
+     */
+    get: operations['getBacktest'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/purges': {
     parameters: {
       query?: never;
@@ -1600,6 +1646,97 @@ export interface components {
       localRevision: string;
       /** @description The two revisions differ. */
       diverged: boolean;
+    };
+    BacktestRequest: {
+      pipeline: string;
+      /** @description The package hash of the revision the patch applies to; a patch whose Millstream-Base trailer names another is refused. */
+      baseRevision: string;
+      /** @description The unified diff against the base revision's package files. */
+      patch: string;
+      /** @description The past deliveries to sample; improve.backtest.sample (200) by default. */
+      sample?: number;
+      /** @description Steps replayed besides those the patch changes. */
+      steps?: string[];
+      /**
+       * @description Where the sample comes from; local history when it reaches the changed steps
+       * @enum {string}
+       */
+      source?: 'local' | 'evidence';
+    };
+    Backtest: {
+      id: string;
+      pipeline: string;
+      /** @enum {string} */
+      state: 'running' | 'done' | 'failed';
+      /** Format: date-time */
+      createdAt: string;
+      /** Format: date-time */
+      finishedAt?: string;
+      error?: components['schemas']['Error']['error'];
+      report?: components['schemas']['BacktestReport'];
+    };
+    BacktestReport: {
+      pipeline: string;
+      baseRevision: string;
+      /** @description The hex SHA-256 of the patch. */
+      patchHash: string;
+      /** @description The patched package's hash. */
+      patchedRevision: string;
+      /** @enum {string} */
+      source: 'local' | 'evidence';
+      /** @description The evidence bundles read. */
+      bundles?: string[];
+      changedSteps: string[];
+      sampled: number;
+      /** @description The sample by outcome (done */
+      strata: {
+        [key: string]: number;
+      };
+      /** @description The historical runs fired again. */
+      runs: number;
+      before: components['schemas']['BacktestMetrics'];
+      after: components['schemas']['BacktestMetrics'];
+      steps: {
+        step: string;
+        before: components['schemas']['BacktestMetrics'];
+        after: components['schemas']['BacktestMetrics'];
+      }[];
+      /** @description The revisions the sample was recorded on other than the base. */
+      divergence?: {
+        packageHash: string;
+        sampled: number;
+      }[];
+      warnings?: string[];
+      /** @description What both replays cost */
+      costUsd: number;
+      /** Format: date-time */
+      startedAt: string;
+      /** Format: date-time */
+      finishedAt: string;
+    };
+    BacktestMetrics: {
+      /** @description Deliveries with a historical counterpart (the same step and input item). */
+      compared: number;
+      /** @description Those that ended alike */
+      agreed: number;
+      /** @description agreed / compared */
+      agreement: number;
+      /** @description Deliveries without a historical counterpart */
+      newlyReached: number;
+      /** @description Historical deliveries on the sampled lineages the replay never made. */
+      noLongerReached: number;
+      /** @description Decided reviews on the sampled lineages. */
+      reviewed: number;
+      /** @description Those the replay agrees with: approved still reaching the review, edited reaching it with the edited values, rejected no longer reaching it. */
+      reviewAgreed: number;
+      reviewAgreement: number;
+      /** @description Deliveries an action or builtin ran */
+      ran: number;
+      failed: number;
+      failureRate: number;
+      costUsd: number;
+      /** @description The mean latency (queue wait and work) of the deliveries that ran. */
+      latencyMs: number;
     };
     /** @description Exactly one of step (a replay run of the step over past items) and stream (a back-fill of an imported stream from the producer's retained items). */
     ReplayRequest: {
@@ -3359,6 +3496,62 @@ export interface operations {
       400: components['responses']['Error'];
       409: components['responses']['Error'];
       415: components['responses']['Error'];
+      503: components['responses']['Error'];
+      default: components['responses']['Error'];
+    };
+  };
+  createBacktest: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['BacktestRequest'];
+      };
+    };
+    responses: {
+      /** @description The backtest, started. */
+      202: {
+        headers: {
+          /** @description Where its state is read. */
+          Location?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Backtest'];
+        };
+      };
+      400: components['responses']['Error'];
+      409: components['responses']['Error'];
+      415: components['responses']['Error'];
+      503: components['responses']['Error'];
+      default: components['responses']['Error'];
+    };
+  };
+  getBacktest: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        backtest: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The backtest. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Backtest'];
+        };
+      };
+      404: components['responses']['Error'];
       503: components['responses']['Error'];
       default: components['responses']['Error'];
     };

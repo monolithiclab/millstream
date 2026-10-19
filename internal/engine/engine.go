@@ -73,6 +73,9 @@ type Options struct {
 	// Stubs complete the deliveries of the steps they name with fixed outcomes instead of running the action
 	// (millstream test pipeline).
 	Stubs map[store.StepRef]Stub
+	// Stubber decides each leased delivery before Stubs and the builtins do: ok true completes it with the stub,
+	// false lets it run as it would (a backtest's replay, package backtest).
+	Stubber func(ctx context.Context, l store.Lease) (s Stub, ok bool)
 	// Resolver resolves action references; nil means pipeline.Resolver{}.
 	Resolver pipeline.ActionResolver
 	// Artifacts is the artifact store nodes move artifacts through; nil fails every delivery that has any.
@@ -123,10 +126,12 @@ type Agents struct {
 // AgentSandbox is the container the adapter runs in (node.AgentSandbox).
 type AgentSandbox = node.AgentSandbox
 
-// Stub is the fixed outcome of a stubbed step: its outputs, or an action error when Err is set.
+// Stub is the fixed outcome of a stubbed step: its outputs, an action error when Err is set, or the delivery
+// filtered for that reason when Filter is set.
 type Stub struct {
 	Outputs []store.Output
 	Err     *exec.ActionError
+	Filter  string
 }
 
 // RunRef names a run.

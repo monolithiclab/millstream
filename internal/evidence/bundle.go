@@ -56,8 +56,8 @@ const (
 	StratumEdited   = "edited"
 )
 
-// strata lists them in the order allocation visits them.
-var strata = []string{StratumDone, StratumFiltered, StratumDead, StratumApproved, StratumRejected, StratumEdited}
+// Strata lists them in the order allocation visits them.
+var Strata = []string{StratumDone, StratumFiltered, StratumDead, StratumApproved, StratumRejected, StratumEdited}
 
 // Manifest describes a bundle.
 type Manifest struct {

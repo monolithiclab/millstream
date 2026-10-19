@@ -17,6 +17,7 @@ import (
 
 	"github.com/monolithiclab/millstream/internal/api"
 	"github.com/monolithiclab/millstream/internal/artifacts"
+	"github.com/monolithiclab/millstream/internal/backtest"
 	"github.com/monolithiclab/millstream/internal/engine"
 	"github.com/monolithiclab/millstream/internal/node"
 	"github.com/monolithiclab/millstream/internal/nodeapi"
@@ -227,7 +228,8 @@ func (h engineHost) run(ctx context.Context, rt *Runtime, env *pipeline.Environm
 	} else {
 		srv, err := newAPIServer(st, e, notes, logs, apiExtras{rt: rt, arts: h.arts, nodes: nodes, nodeAPI: nodeAPI,
 			leaseTTL: h.leaseTTL, mode: h.mode, evidence: api.EvidenceSettings{Mode: h.mode, Sample: env.Improve.EvidenceSample,
-				TTL: env.Improve.EvidenceTTL}}, h.lead, h.sec, log)
+				TTL: env.Improve.EvidenceTTL},
+			backtests: backtest.NewJobs(runCtx, newBacktester(rt, env, st, h.arts, h.mode, log), nil)}, h.lead, h.sec, log)
 		if err != nil {
 			cancel(nil)
 			return errors.Join(err, <-siteDone)

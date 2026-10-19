@@ -67,6 +67,13 @@ below) for the reasoning, and `make help` for every command.
   and the like); imported bundles live whole in the artifact store, recorded in `evidence_imports`, never in the
   deployment's own items. The API's `exportEvidence`/`importEvidence` and the CLI's `evidence export|import` call it;
   the retention job deletes expired imports (`engine.expireEvidence`).
+- Backtests (spec section 11.3): `patch` parses, applies and writes the unified diffs proposals and backtests share
+  (`Millstream-Base` trailer, strict paths, exact hunks); `backtest` replays a patch's changed steps on sampled
+  history, base then patched, each in a `sqlite.Memory` store driven by an engine whose `Options.Stubber` settles
+  every delivery from history (off-sample cut, external and unchanged reviews recorded or cut, unchanged steps on
+  historical inputs recorded) or lets it run. `backtest.Runner` is what proposals validate through; `Jobs` runs them
+  in the background for `POST /api/v1/backtests` (in memory, not the store); `millstream backtest` runs one from its
+  own process. The improve budget is a `backtest.Budget`, a per-process `Ledger` until the improve pipeline exists.
 - CLI writes (`internal/cli`): a command that changes state goes through `changeState`, which calls the served
   engine's API when `--server`/`MILLSTREAM_SERVER` names one (`remote.go`), else `withWriter` (SQLite, or Postgres
   with `--direct`); reads use `withStore`, engines (`run`, `serve`) `withStoreMode(engineStore)`. A new command that
