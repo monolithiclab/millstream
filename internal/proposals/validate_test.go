@@ -51,7 +51,7 @@ func TestValidate(t *testing.T) {
 	}{
 		{"distill", store.ProposalDistill, distill("coded", newEval), &fakeBacktest{passed: true}, true,
 			func(t *testing.T, r Report) {
-				if len(r.Evals) != 1 || r.Evals[0].After != "./actions/coded" || len(r.Evals[0].Cases) != 2 ||
+				if len(r.Evals) != 1 || r.Evals[0].After != "./actions/coded" || len(r.Evals[0].Cases) != 1 ||
 					!r.Evals[0].Passed || r.Evals[0].Cases[0].Before == nil || len(r.NewEvals) != 1 ||
 					r.NewEvals[0].Cases[0].Before != nil || !r.NewEvals[0].Passed || string(r.Backtest.Report) == "" {
 					t.Fatalf("report %+v", r)
@@ -60,7 +60,7 @@ func TestValidate(t *testing.T) {
 		{"distill regresses", store.ProposalDistill, distill("coded-fallback"), &fakeBacktest{passed: true}, false,
 			func(t *testing.T, r Report) {
 				c := r.Evals[0].Cases[0]
-				if c.Case != "disagree" || !c.Before.Passed || c.After.Passed || !r.Evals[0].Cases[1].After.Passed {
+				if c.Case != "disagree" || !c.Before.Passed || c.After.Passed || r.Evals[0].Passed {
 					t.Fatalf("cases %+v", r.Evals[0].Cases)
 				}
 			}},

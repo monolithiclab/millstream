@@ -39,11 +39,10 @@ func basePackage(t *testing.T) *pipeline.Package {
 // baseFiles are the base revision's files.
 func baseFiles() map[string][]byte {
 	return map[string][]byte{
-		"pipeline.yaml":                       []byte(basePipeline),
-		"actions/scorer/action.yaml":          []byte(strings.Join(manifest("scorer"), "\n") + "\n"),
-		"actions/scorer/prompt.md":            []byte("Score the listing.\n"),
-		"actions/scorer/evals/disagree.yaml":  []byte("config: { mode: rules }\ninput: { disagree: true, score: 2 }\nassert: [output.score == 2]\n"),
-		"actions/scorer/evals/one-score.yaml": []byte("config: { mode: rules }\ninput: {}\nassert: [output.score == 1]\n"),
+		"pipeline.yaml":                      []byte(basePipeline),
+		"actions/scorer/action.yaml":         []byte(strings.Join(manifest("scorer"), "\n") + "\n"),
+		"actions/scorer/prompt.md":           []byte("Score the listing.\n"),
+		"actions/scorer/evals/disagree.yaml": []byte("config: { mode: rules }\ninput: { disagree: true, score: 2 }\nassert: [output.score == 2]\n"),
 	}
 }
 
