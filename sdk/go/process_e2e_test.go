@@ -19,6 +19,9 @@ func TestMain(m *testing.M) {
 	case "map":
 		Map(score)
 		os.Exit(0)
+	case "abstain":
+		Map(rules)
+		os.Exit(0)
 	case "mapKeyed":
 		MapKeyed(split)
 		os.Exit(0)
