@@ -119,7 +119,8 @@ earlier designs are in the git history of the spec.
 - Lease renewal: a pull returns once a third of the lease has passed (engine.Pull), because the node heartbeats
   between pulls and builtins run inside them. Heartbeats on a goroutine of their own in the node, or builtins on an
   engine worker rather than in Pull, would remove the bound and its tie to the heartbeat interval.
-- Test budget (M4): `make test-times` is at 485 ms against the 400 ms working target. Unit execution in the store
+- Test budget: `make test-times` was 562 ms after M5 Tasks 4–5, under the 750 ms budget and above the 600 ms target
+  (raised from 500/400 ms during M5). Unit execution in the store
   (about 100 µs a unit through the writer goroutine) dominates; running a unit inline when the connection is free
   would help every store-backed package, and would let the store tests drop their one-processor setting.
 - Failover (M4 Task 3): the leadership row records the engine's bound `listen` address, which a standby names to
