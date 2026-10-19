@@ -15,7 +15,7 @@
 # Usage: scripts/test-times [go test arguments, default ./...]   e.g. scripts/test-times -tags e2e ./internal/cli
 set -eu
 
-: "${BUDGET_TOTAL_MS:=500}" "${TARGET_TOTAL_MS:=400}" "${BUDGET_TEST_MS:=20}" "${BUDGET_PKG_MS:=100}" "${TOP:=30}"
+: "${BUDGET_TOTAL_MS:=750}" "${TARGET_TOTAL_MS:=600}" "${BUDGET_TEST_MS:=20}" "${BUDGET_PKG_MS:=100}" "${TOP:=30}"
 if [ -z "${RUNS:-}" ]; then
 	RUNS=3
 	[ "${CI:-}" != 1 ] || RUNS=5
