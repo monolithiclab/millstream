@@ -519,6 +519,7 @@ func TestSummaryMissingValues(t *testing.T) {
 		{pipeline.InsightSlowStep, `{"criticalPathShare":0.5,"queueWaitShare":0.1,"workShare":0.4,"backoffShare":0,` +
 			`"p95Seconds":2.5}`, "50% of the critical path (queue 10%, work 40%, backoff 0%); p95 2.5s, no baseline"},
 		{pipeline.InsightSlowStep, `{"p95Seconds":2.5,"baselineP95Seconds":1}`, "p95 2.5s, baseline 1s"},
+		{pipeline.InsightSlowStep, `{"backoffShare":0,"reviewShare":0.9}`, "backoff 0%, review 90%)"},
 		{pipeline.InsightCost, `{"costUsd":0.1,"outputs":2,"costPerOutput":0.05}`, "$0.1 for 2 outputs ($0.05 each, none approved)"},
 		{pipeline.InsightReviewPattern, `{}`, "p50 decision -"},
 	} {

@@ -630,9 +630,13 @@ func Summary(in store.Insight) string {
 	secs := func(k string) string { return unit(k, "", "s", "-") }
 	switch in.Kind {
 	case pipeline.InsightSlowStep:
-		return fmt.Sprintf("%s of the critical path (queue %s, work %s, backoff %s); p95 %s, %s",
-			p("criticalPathShare"), p("queueWaitShare"), p("workShare"), p("backoffShare"),
-			secs("p95Seconds"), unit("baselineP95Seconds", "baseline ", "s", "no baseline"))
+		review := "" // a review step's time waiting on people
+		if ev["reviewShare"] != nil {
+			review = ", review " + p("reviewShare")
+		}
+		return fmt.Sprintf("%s of the critical path (queue %s, work %s, backoff %s%s); p95 %s, %s",
+			p("criticalPathShare"), p("queueWaitShare"), p("workShare"), p("backoffShare"), review, secs("p95Seconds"),
+			unit("baselineP95Seconds", "baseline ", "s", "no baseline"))
 	case pipeline.InsightFailureCluster:
 		return fmt.Sprintf("%s failures (%s of attempts), %s recovered on retry: %s: %s", f("count"), p("rate"),
 			p("retrySuccessShare"), f("class"), f("message"))
