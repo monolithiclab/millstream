@@ -5,6 +5,7 @@ package e2e
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"testing"
@@ -70,7 +71,8 @@ func TestM2Backtest(t *testing.T) {
 		t.Fatalf("score: before %+v, after %+v; want %d of %d changed", score.Before, score.After, wantChanged,
 			len(listings))
 	}
-	if score.Before.CostUSD <= 0 || score.After.CostUSD <= 0 || rep.CostUSD != rep.Before.CostUSD+rep.After.CostUSD {
+	// The total sums the runs' costs and each side the deliveries', in map order: equal up to float rounding.
+	if score.Before.CostUSD <= 0 || score.After.CostUSD <= 0 || math.Abs(rep.CostUSD-(rep.Before.CostUSD+rep.After.CostUSD)) > 1e-9 {
 		t.Errorf("costs: before %v, after %v, total %v", score.Before.CostUSD, score.After.CostUSD, rep.CostUSD)
 	}
 	shortlistBefore := m2Counts(listings, lessonsV1Penalty)["listings.shortlist"]
