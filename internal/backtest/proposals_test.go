@@ -3,6 +3,7 @@ package backtest
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"maps"
 	"testing"
 	"time"
@@ -81,5 +82,34 @@ func TestForProposals(t *testing.T) {
 	rep = Report{}
 	if err != nil || !res.Passed || json.Unmarshal(res.Report, &rep) != nil || rep.Sampled != 0 || len(rep.Warnings) != 1 {
 		t.Errorf("without history: %+v (%s), %v", res, res.Report, err)
+	}
+}
+
+// TestReserve: a running backtest holds what is left of the day's budget, so a concurrent one is refused instead of
+// spending it again; released, what it did not spend is free again.
+func TestReserve(t *testing.T) {
+	now := time.Date(2026, 10, 20, 9, 0, 0, 0, time.UTC)
+	ledger := &Ledger{}
+	ledger.Charge(now, 1)
+	b := New(Options{Budget: ledger, Now: func() time.Time { return now }, Improve: pipeline.Improve{BudgetDayUSD: 5}})
+	left, limited, release, err := b.reserve()
+	if err != nil || !limited || left != 4 {
+		t.Fatalf("reserve = %v, %v, %v", left, limited, err)
+	}
+	if _, _, _, err := b.reserve(); !errors.Is(err, ErrBudget) {
+		t.Fatalf("a concurrent reservation: %v", err)
+	}
+	if left, _ := b.remaining(); left > 0 {
+		t.Fatalf("%v left while the budget is held: Prepare would start another backtest", left)
+	}
+	ledger.Charge(now, 1.5)
+	release()
+	if left, _, release, err := b.reserve(); err != nil || left != 2.5 {
+		t.Fatalf("after release: %v, %v", left, err)
+	} else {
+		release()
+	}
+	if _, limited, _, err := New(Options{}).reserve(); err != nil || limited {
+		t.Fatalf("without a budget: %v, %v", limited, err)
 	}
 }

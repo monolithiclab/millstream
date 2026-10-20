@@ -104,6 +104,9 @@ type Backtester struct {
 	// distill proposal's holdout may start no earlier.
 	mu     sync.Mutex
 	served map[[2]string]time.Time
+	// reserved is what the running backtests hold of the day's improve budget: each reserves what is left when it
+	// starts, so concurrent ones never spend it several times over.
+	reserved float64
 }
 
 var _ Runner = (*Backtester)(nil)
@@ -154,8 +157,9 @@ func (b *Backtester) Prepare(req Request) (*patch.Patch, error) {
 	if p.Base != "" && p.Base != req.BaseRevision {
 		return nil, fmt.Errorf("the patch applies to %s, not %s: %w", p.Base, req.BaseRevision, store.ErrInvalid)
 	}
-	if limit := b.opts.Improve.BudgetDayUSD; limit > 0 && b.opts.Budget.Spent(b.opts.Now()) >= limit {
-		return nil, fmt.Errorf("%w: %.2f USD spent today", ErrBudget, limit)
+	if left, limited := b.remaining(); limited && left <= 0 {
+		return nil, fmt.Errorf("%w: %.2f USD spent or held by running backtests today", ErrBudget,
+			b.opts.Improve.BudgetDayUSD)
 	}
 	return p, nil
 }
@@ -241,9 +245,15 @@ func (b *Backtester) Run(ctx context.Context, req Request) (*Report, error) {
 	for _, c := range changed {
 		isChanged[c] = true
 	}
+	limit, limited, release, err := b.reserve()
+	if err != nil {
+		return nil, err
+	}
 	var spent float64
-	defer func() { b.opts.Budget.Charge(b.opts.Now(), spent) }()
-	limit, limited := b.remaining()
+	defer func() {
+		b.opts.Budget.Charge(b.opts.Now(), spent)
+		release()
+	}()
 	replays := make([]*replayed, 2)
 	for i, side := range []struct {
 		pkg       *pipeline.Package
@@ -281,7 +291,30 @@ func (b *Backtester) Run(ctx context.Context, req Request) (*Report, error) {
 // remaining is what is left of today's improve budget, and whether there is a limit at all.
 func (b *Backtester) remaining() (float64, bool) {
 	limit := b.opts.Improve.BudgetDayUSD
-	return limit - b.opts.Budget.Spent(b.opts.Now()), limit > 0
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return limit - b.opts.Budget.Spent(b.opts.Now()) - b.reserved, limit > 0
+}
+
+// reserve holds what is left of the day's improve budget for a backtest until release: a concurrent backtest finds
+// nothing left meanwhile (ErrBudget). Without a budget it holds nothing.
+func (b *Backtester) reserve() (limit float64, limited bool, release func(), err error) {
+	limit = b.opts.Improve.BudgetDayUSD
+	if limit <= 0 {
+		return 0, false, func() {}, nil
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	left := limit - b.opts.Budget.Spent(b.opts.Now()) - b.reserved
+	if left <= 0 {
+		return 0, true, nil, fmt.Errorf("%w: %.2f USD spent or held by running backtests today", ErrBudget, limit)
+	}
+	b.reserved += left
+	return left, true, func() {
+		b.mu.Lock()
+		b.reserved -= left
+		b.mu.Unlock()
+	}, nil
 }
 
 // packages returns the base revision's package and the patched one, in memory under work, the patched one checked.
