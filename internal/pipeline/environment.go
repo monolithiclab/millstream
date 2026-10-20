@@ -151,16 +151,29 @@ func (e *Environment) RequireDevelopment(def, what string) error {
 	return nil
 }
 
+// ErrSecretUnset marks a secret lookup that failed for want of a value only: the name is mapped for the pipeline
+// (without an environment file, every name is, to MILLSTREAM_SECRET_<NAME>) but its source holds nothing. check,
+// apply and firings accept it: only a dispatch needs the value (spec section 4.5).
+var ErrSecretUnset = errors.New("secret unset")
+
+// unsetError is a lookup error that is ErrSecretUnset.
+type unsetError struct{ err error }
+
+func (u unsetError) Error() string      { return u.err.Error() }
+func (u unsetError) Unwrap() error      { return u.err }
+func (unsetError) Is(target error) bool { return target == ErrSecretUnset }
+
 // SecretLookup returns how a pipeline's secrets resolve (spec section 4.5): through the secrets key, which is also
 // the grant, when the file has one, an unmapped name resolving to nothing; else from MILLSTREAM_SECRET_<NAME>
-// through env. The error of a mapped source that cannot be read names the source, never a value.
+// through env. The error of a mapped source that cannot be read names the source, never a value, and is
+// ErrSecretUnset.
 func (e *Environment) SecretLookup(pipelineName string, env func(string) (string, bool)) SecretLookup {
 	if e == nil || e.Secrets == nil {
 		return func(name string) (string, error) {
 			if v, ok := env(SecretEnv(name)); ok {
 				return v, nil
 			}
-			return "", fmt.Errorf("secret %s is not set: set %s", name, SecretEnv(name))
+			return "", unsetError{fmt.Errorf("secret %s is not set: set %s", name, SecretEnv(name))}
 		}
 	}
 	sources := e.Secrets[pipelineName]
@@ -172,7 +185,7 @@ func (e *Environment) SecretLookup(pipelineName string, env func(string) (string
 		}
 		v, err := src.Value(env)
 		if err != nil {
-			return "", fmt.Errorf("secret %s: %w", name, err)
+			return "", unsetError{fmt.Errorf("secret %s: %w", name, err)}
 		}
 		return v, nil
 	}

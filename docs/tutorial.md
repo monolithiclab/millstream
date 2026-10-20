@@ -782,19 +782,15 @@ budget:
 ```
 
 A pipeline names its secrets; their values come from the environment. Without an environment file mapping them, a
-secret reads `MILLSTREAM_SECRET_<NAME>`. `check`, `apply`, `run` and `test pipeline` refuse an unset secret, even when
-no call will use it, so set a placeholder in every terminal you use:
+secret reads `MILLSTREAM_SECRET_<NAME>`. `check`, `apply` and `test pipeline` need a secret declared (and, with an
+environment file, mapped), not its value: the engine reads the value when it dispatches a delivery that needs it, and
+a delivery that finds it unset fails, naming the variable to set.
 
 ```sh
-millstream check
-export MILLSTREAM_SECRET_MODEL_KEY=unused
 millstream check
 ```
 
 ```text
-error secrets[0]: secret modelKey is not set: set MILLSTREAM_SECRET_MODEL_KEY
-...
-listings: 1 error, 2 warnings
 warning steps.affordable.out[1].out: stream listings.ready is written by step affordable but no step reads it
 warning steps.keep-good.out: stream listings.shortlist is written by step keep-good but no step reads it
 listings: 0 errors, 2 warnings
@@ -859,10 +855,11 @@ assert:
   - output.id == input.id
 ```
 
-`eval` replays by default, from `actions/score/evals/recordings`; record the case once while the stand-in runs:
+`eval` replays by default, from `actions/score/evals/recordings`; record the case once while the stand-in runs. The
+`api` harness sends a key whenever it calls a model, so give it the placeholder:
 
 ```sh
-millstream eval actions/score --harness-mode record
+MILLSTREAM_SECRET_MODEL_KEY=unused millstream eval actions/score --harness-mode record
 ```
 
 ```text
@@ -876,10 +873,11 @@ score: compare prompts and models before they ship.
 
 ### Replay offline
 
-Stop the engine (Ctrl-C) and the stand-in model. Restart the engine in replay mode:
+Stop the engine (Ctrl-C) and the stand-in model. Restart the engine in replay mode, without the key:
 
 ```sh
-export MILLSTREAM_SECRET_MODEL_KEY=unused MILLSTREAM_HARNESS_MODE=replay MILLSTREAM_HARNESS_DIR=$PWD/recordings
+unset MILLSTREAM_SECRET_MODEL_KEY
+export MILLSTREAM_HARNESS_MODE=replay MILLSTREAM_HARNESS_DIR=$PWD/recordings
 millstream run 2>../engine.log
 ```
 
@@ -895,8 +893,8 @@ cheap-flat  2/2         -      $0.0018  1.00
 TOTAL                                   1.00
 ```
 
-The replay run succeeds with no model running. A replay needs no key; `eval` in replay mode does not even need the
-secret set. A prompt that changed misses its recording, and the delivery fails without retry, naming the key:
+The replay run succeeds with no model running and no key: a replay never calls the model. A prompt that changed
+misses its recording, and the delivery fails without retry, naming the key:
 
 ```text
 cheap-flat: error: the action failed: replay: no recording 627ebf3b880e…3c6b for harness api and model fake-scorer in /Users/you/millstream-tutorial/listings/actions/score/evals/recordings: record it with MILLSTREAM_HARNESS_MODE=record

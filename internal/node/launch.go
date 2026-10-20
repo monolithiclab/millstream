@@ -172,7 +172,9 @@ func (l Launch) agentSpec(spec *exec.Spec, h Host, a *pipeline.Action, pkgDir, d
 	}
 	for _, name := range al.Secrets {
 		args = append(args, "--secret", name)
-		env = append(env, pipeline.SecretEnv(name)+"="+secrets[name])
+		if v, ok := secrets[name]; ok { // an unset one stays unset: the adapter says so if its harness needs it
+			env = append(env, pipeline.SecretEnv(name)+"="+v)
+		}
 	}
 	if al.PriceIn != nil && al.PriceOut != nil {
 		args = append(args, "--price-in", strconv.FormatFloat(*al.PriceIn, 'f', -1, 64),

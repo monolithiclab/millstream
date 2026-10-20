@@ -52,11 +52,10 @@ func Test_checkCommand(t *testing.T) {
 		{"reserved-prefix", nil, 1, []string{
 			"error streams.trigger.weekly: the trigger. prefix is reserved for trigger streams and there is no trigger weekly",
 		}, "p: 1 error, 0 warnings\n"},
-		{"secrets", nil, 1, []string{
-			"error secrets[0]: secret portalToken is not set: set MILLSTREAM_SECRET_PORTAL_TOKEN",
+		{"secrets", nil, 1, []string{ // portalToken is declared but unset: only a dispatch needs its value
 			"warning steps.a.config: action ./actions/a declares no config schema: config is not checked",
 			"error steps.a.config.other: secret apiKey is not declared under secrets",
-		}, "p: 2 errors, 1 warning\n"},
+		}, "p: 1 error, 1 warning\n"},
 		{"cycle", nil, 1, []string{"error steps.a: cycle in the step graph: a -> b -> c -> a"}, "p: 1 error, 0 warnings\n"},
 		{"config-schema", secret, 1, []string{
 			"error steps.a.config: does not match the config schema of ./actions/a: additional properties 'unexpected' not allowed",
@@ -82,7 +81,7 @@ func Test_checkCommand(t *testing.T) {
 	}
 	// The default build checks a sample, enough for what the command owns: the exit code, the diagnostic lines and
 	// the summary. The pipeline package tests the diagnostics themselves; the e2e build checks every fixture.
-	sample := map[string]bool{"valid": true, "no-in": true, "unknown-action": true, "unread-output": true}
+	sample := map[string]bool{"valid": true, "no-in": true, "unknown-action": true, "unread-output": true, "secrets": true}
 	for _, tt := range tests {
 		if !e2eBuild && !sample[tt.fixture] {
 			continue

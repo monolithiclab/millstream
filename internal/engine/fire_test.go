@@ -84,8 +84,6 @@ func TestFireErrors(t *testing.T) {
 	}{
 		{"required variable", map[string]string{"MILLSTREAM_SECRET_API_TOKEN": "t"}, "listings", "adhoc",
 			"variable maxPrice is required", nil},
-		{"missing secret", map[string]string{"MILLSTREAM_VAR_MAX_PRICE": "1"}, "listings", "adhoc",
-			"secret apiToken is not set", nil},
 		{"unknown trigger", full, "listings", "weekly", `has no trigger "weekly"`, store.ErrInvalid},
 		{"unknown pipeline", full, "nope", "adhoc", "pipeline nope", store.ErrNotFound},
 	}
@@ -107,6 +105,11 @@ func TestFireErrors(t *testing.T) {
 				t.Fatalf("runs = %v, %v; want none", rs, err)
 			}
 		})
+	}
+	// An unset secret does not stop a firing: only a delivery whose config reads it needs the value.
+	environ = map[string]string{"MILLSTREAM_VAR_MAX_PRICE": "1"}
+	if _, _, err := v.e.Fire(v.ctx, "listings", "adhoc", "", nil); err != nil {
+		t.Fatalf("fire with an unset secret: %v", err)
 	}
 }
 

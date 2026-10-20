@@ -182,8 +182,8 @@ func (a *adapter) setup(secrets map[string]string) error {
 	if name := act.Agent.APIKeySecret; name != "" {
 		v, ok := secrets[name]
 		if !ok && mode != ModeReplay { // a replay never calls the harness
-			return fmt.Errorf("runtime.agent.apiKeySecret: secret %s is not one of the pipeline's secrets, or is "+
-				"not set", name)
+			return fmt.Errorf("runtime.agent.apiKeySecret: secret %s is not set: set %s where the engine runs, or "+
+				"map it in the environment file (a replay needs none)", name, pipeline.SecretEnv(name))
 		}
 		apiKey = v
 	}

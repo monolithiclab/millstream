@@ -101,10 +101,17 @@ func (e *Engine) assign(ctx context.Context, owner string, l store.Lease) (node.
 	if err != nil {
 		return node.Assignment{}, dispatchErr(ClassEngine, true, "read run %s: %w", l.RunID, err)
 	}
+	// An unset secret is left out: the delivery fails on it only when its config reads it, and an agent's adapter
+	// when its harness needs the key (a replay does not).
 	secrets := map[string]string{}
+	var unset []error
 	lookup := e.secrets(rev.p.Name)
 	for _, name := range rev.p.Secrets {
 		v, err := lookup(name)
+		if errors.Is(err, pipeline.ErrSecretUnset) {
+			unset = append(unset, err)
+			continue
+		}
 		if err != nil {
 			return node.Assignment{}, dispatchErr(ClassConfig, false, "%w", err)
 		}
@@ -115,7 +122,8 @@ func (e *Engine) assign(ctx context.Context, owner string, l store.Lease) (node.
 	runInfo := expr.Run{ID: run.ID, Trigger: run.Trigger, StartedAt: run.StartedAt, Revision: rev.hash}
 	config, err := expr.Interpolate(step.Config, expr.InterpCtx{Vars: run.Vars, Run: runInfo, Secrets: secrets})
 	if err != nil {
-		return node.Assignment{}, dispatchErr(ClassConfig, false, "interpolate config of step %s: %w", l.Step, err)
+		return node.Assignment{}, dispatchErr(ClassConfig, false, "interpolate config of step %s: %w", l.Step,
+			errors.Join(append([]error{err}, unset...)...))
 	}
 	if act.config != nil {
 		// Validation sees JSON values, as the action will: the round trip turns Go types (time.Time) into them.

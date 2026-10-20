@@ -142,7 +142,7 @@ func TestSecretLookup(t *testing.T) {
 	if v, err := bare("apiKey"); v != "from-default" || err != nil {
 		t.Fatalf("without a secrets key: %q, %v", v, err)
 	}
-	if _, err := bare("other"); err == nil || !strings.Contains(err.Error(), "MILLSTREAM_SECRET_OTHER") {
+	if _, err := bare("other"); !errors.Is(err, ErrSecretUnset) || !strings.Contains(err.Error(), "MILLSTREAM_SECRET_OTHER") {
 		t.Fatalf("unset: %v", err)
 	}
 	env := &Environment{Secrets: map[string]map[string]SecretSource{"p": {"token": {Env: "HOMESITE"}, "gone": {Env: "NOPE"}}}}
@@ -150,10 +150,11 @@ func TestSecretLookup(t *testing.T) {
 	if v, err := mapped("token"); v != "mapped" || err != nil {
 		t.Fatalf("mapped: %q, %v", v, err)
 	}
-	if _, err := mapped("apiKey"); err == nil || !strings.Contains(err.Error(), "not mapped for pipeline p") {
+	if _, err := mapped("apiKey"); err == nil || errors.Is(err, ErrSecretUnset) ||
+		!strings.Contains(err.Error(), "not mapped for pipeline p") {
 		t.Fatalf("unmapped, the default variable set: %v", err)
 	}
-	if _, err := mapped("gone"); err == nil || !strings.Contains(err.Error(), "NOPE is not set") {
+	if _, err := mapped("gone"); !errors.Is(err, ErrSecretUnset) || !strings.Contains(err.Error(), "NOPE is not set") {
 		t.Fatalf("mapped to an unset variable: %v", err)
 	}
 	if _, err := env.SecretLookup("q", lookup)("token"); err == nil {

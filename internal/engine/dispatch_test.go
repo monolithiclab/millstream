@@ -207,7 +207,8 @@ func TestUndispatchableDeliveriesFail(t *testing.T) {
 		}
 	}
 	v.apply(pkg)
-	v.apply(newPackage(t, strings.Replace(manualPipeline("q", "  s: { action: ./actions/a, in: trigger.adhoc }\n"),
+	v.apply(newPackage(t, strings.Replace(manualPipeline("q", "  s: { action: ./actions/a, in: trigger.adhoc, "+
+		"config: { token: \"${secrets.token}\" } }\n  free: { action: ./actions/a, in: trigger.adhoc }\n"),
 		"triggers:", "secrets: [token]\ntriggers:", 1), "a"))
 
 	check := func(id, step, class, message string) {
@@ -234,12 +235,13 @@ func TestUndispatchableDeliveriesFail(t *testing.T) {
 		t.Fatalf("run state = %s", r.State)
 	}
 
+	// An unset secret fails the deliveries whose config reads it, naming it; the others run.
+	delete(environ, "MILLSTREAM_SECRET_TOKEN")
 	id = v.fire("q", "adhoc", "k")
-	delete(environ, "MILLSTREAM_SECRET_TOKEN") // set when firing, unset at dispatch
-	if got := v.pull(5); len(got) != 0 {
+	if got := v.pull(5); len(got) != 1 || got[0] != "q/free" {
 		t.Fatalf("assignments = %v", got)
 	}
-	check(id, "s", ClassConfig, "secret token is not set")
+	check(id, "s", ClassConfig, "secret token is not set: set MILLSTREAM_SECRET_TOKEN")
 }
 
 func TestPackageNotLoadedRetries(t *testing.T) {

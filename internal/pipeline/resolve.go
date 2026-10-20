@@ -1,6 +1,7 @@
 package pipeline
 
 import (
+	"errors"
 	"fmt"
 	"maps"
 	"slices"
@@ -56,7 +57,7 @@ func ResolveVars(p *Pipeline, flags map[string]string, env func(string) (string,
 }
 
 // ResolveVarsWith is ResolveVars with the pipeline's secrets resolved through secrets: the environment file's
-// mapping (Environment.SecretLookup).
+// mapping (Environment.SecretLookup). An unmapped secret is a problem, an unset one is left out of Secrets.
 func ResolveVarsWith(p *Pipeline, flags map[string]string, env func(string) (string, bool), secrets SecretLookup,
 ) (Resolved, error) {
 	r := Resolved{Vars: map[string]any{}, Sources: map[string]string{}, Secrets: map[string]string{}}
@@ -92,6 +93,9 @@ func ResolveVarsWith(p *Pipeline, flags map[string]string, env func(string) (str
 	}
 	for _, name := range p.Secrets {
 		v, err := secrets(name)
+		if errors.Is(err, ErrSecretUnset) { // only a dispatch needs the value, and says so
+			continue
+		}
 		if err != nil {
 			problems = append(problems, err.Error())
 			continue

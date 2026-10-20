@@ -106,18 +106,22 @@ func TestResolveSecrets(t *testing.T) {
 		t.Errorf("secrets = %v, want %v", r.Secrets, want)
 	}
 
+	// An unset secret is left out, not a problem: only a dispatch needs its value. An unmapped one is.
 	r, err = ResolveVars(p, nil, envOf(map[string]string{"MILLSTREAM_SECRET_API_KEY": "k"}))
-	assertErr(t, err, "secret portalToken is not set: set MILLSTREAM_SECRET_PORTAL_TOKEN")
-	if r.Secrets["apiKey"] != "k" {
-		t.Errorf("partial secrets = %v", r.Secrets)
+	if want := map[string]string{"apiKey": "k"}; err != nil || !reflect.DeepEqual(r.Secrets, want) {
+		t.Errorf("partial secrets = %v, %v; want %v", r.Secrets, err, want)
 	}
+	env := &Environment{Secrets: map[string]map[string]SecretSource{"p": {"apiKey": {Env: "KEY"}}}}
+	_, err = ResolveVarsWith(p, nil, envOf(nil), env.SecretLookup("p", envOf(nil)))
+	assertErr(t, err, "secret portalToken is not mapped for pipeline p")
 }
 
 func TestResolveReportsEveryProblem(t *testing.T) {
 	t.Parallel()
 	p := &Pipeline{Name: "p", Vars: map[string]any{"a": nil, "b": nil}, Secrets: []string{"c"}}
-	_, err := ResolveVars(p, nil, envOf(nil))
-	for _, want := range []string{"variable a is required", "variable b is required", "secret c is not set"} {
+	grant := &Environment{Secrets: map[string]map[string]SecretSource{"p": {}}}
+	_, err := ResolveVarsWith(p, nil, envOf(nil), grant.SecretLookup("p", envOf(nil)))
+	for _, want := range []string{"variable a is required", "variable b is required", "secret c is not mapped"} {
 		assertErr(t, err, want)
 	}
 }

@@ -87,7 +87,6 @@ steps:
   a: { action: ./actions/notify, in: [trigger.ghost, nowhere], out: [trigger.go, written], dlq: trigger.x }
 `,
 			want: []string{
-				"error secrets[0]: secret missing is not set: set MILLSTREAM_SECRET_MISSING",
 				"error steps.a.dlq: stream trigger.x is a trigger stream: only its trigger writes it",
 				"error steps.a.in[0]: there is no trigger ghost",
 				"error steps.a.in[1]: stream nowhere is read but no step writes it",

@@ -1,5 +1,7 @@
 pipeline: listings
 vars: { count: 3, scoreMode: echo }
+# Never set in the tests: no step reads it, so test pipeline needs no value.
+secrets: [modelKey]
 triggers:
   adhoc: { manual: {} }
 steps:

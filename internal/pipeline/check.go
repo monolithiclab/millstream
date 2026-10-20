@@ -48,7 +48,7 @@ type CheckOptions struct {
 	// LessonsMaxTokens is lessons.maxTokens; zero means DefaultLessonsMaxTokens.
 	LessonsMaxTokens int
 	// Secrets resolves the package's secrets, the environment file's grant (Environment.SecretLookup); nil reads
-	// MILLSTREAM_SECRET_<NAME> through Check's env.
+	// MILLSTREAM_SECRET_<NAME> through Check's env. Check needs a name mapped, not its value (ErrSecretUnset).
 	Secrets func(pipelineName string) SecretLookup
 }
 
@@ -107,7 +107,8 @@ func (c *checker) errorf(at, format string, args ...any) { c.add(SeverityError, 
 
 func (c *checker) warnf(at, format string, args ...any) { c.add(SeverityWarning, at, format, args...) }
 
-// checkSecrets fails on a declared secret the environment cannot resolve: unmapped for the pipeline, or unset.
+// checkSecrets fails on a declared secret the environment does not map for the pipeline. An unset value passes:
+// only a dispatch needs it, and a stubbed or replayed step never does.
 func (c *checker) checkSecrets() {
 	secrets := c.opts.Secrets
 	if secrets == nil {
@@ -115,7 +116,7 @@ func (c *checker) checkSecrets() {
 	}
 	lookup := secrets(c.p.Name)
 	for i, name := range c.p.Secrets {
-		if _, err := lookup(name); err != nil {
+		if _, err := lookup(name); err != nil && !errors.Is(err, ErrSecretUnset) {
 			c.errorf(indexPath("secrets", i), "%v", err)
 		}
 	}
