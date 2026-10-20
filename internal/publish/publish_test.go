@@ -191,7 +191,8 @@ func TestGitPR(t *testing.T) {
 			!slices.Contains(f.env, "MS_FORGE="+strings.TrimPrefix(forge, "git-pr-")) {
 			t.Fatalf("%s: published %q with %q", forge, f.published, f.env)
 		}
-		if !strings.HasSuffix(f.message, "\n\nMillstream-Proposal: pr_1\n") || strings.Contains(f.message, "pr_forged") ||
+		if !strings.HasSuffix(f.message, "\n\nMillstream-Proposal: pr_1\nMillstream-Patch: "+acc.PatchSHA256+"\n") ||
+			strings.Contains(f.message, "pr_forged") ||
 			!strings.Contains(f.body, `"passed": true`) || !strings.Contains(f.body, "is the base revision") {
 			t.Fatalf("%s: message %q body %q", forge, f.message, f.body)
 		}
@@ -221,17 +222,22 @@ func TestGitPR(t *testing.T) {
 	}
 }
 
-// fakeForge runs the git jobs in-process: the clone writes files (and a symlink link to real.yaml) under the work
-// directory's repo, and the publication records what it would push.
+// fakeForge runs the git jobs in-process: the search for an earlier publication answers resume, the clone writes
+// files (and a symlink link to real.yaml) under the work directory's repo, and the publication records what it would
+// push.
 type fakeForge struct {
 	files                    map[string]string
 	link                     string
+	resume                   string
 	env                      []string
 	published, message, body string
 }
 
 func (f *fakeForge) run(_ context.Context, j gitJob) (string, error) {
 	repo := filepath.Join(j.work, "repo")
+	if j.script == resumeScript {
+		return f.resume, nil
+	}
 	if j.script == cloneScript {
 		for p, src := range f.files {
 			if err := os.MkdirAll(filepath.Dir(filepath.Join(repo, p)), 0o750); err != nil {
@@ -260,6 +266,39 @@ func (f *fakeForge) run(_ context.Context, j gitJob) (string, error) {
 	f.published = read(filepath.Join(repo, dir, "pipeline.yaml"))
 	f.message, f.body = read(filepath.Join(j.work, "message")), read(filepath.Join(j.work, "body.md"))
 	return "Creating pull request\nhttps://forge.example/pr/1\n", nil
+}
+
+// TestGitPRResumes: a publication that stopped after its push resumes from the proposal's branch: its pull request
+// when one is open, else one opened without pushing again; a branch holding another patch is refused.
+func TestGitPRResumes(t *testing.T) {
+	t.Parallel()
+	_, packages, acc := fixture(t)
+	for name, c := range map[string]struct {
+		resume, want string
+		pushed       bool
+	}{
+		"pull request open":       {"patch " + acc.PatchSHA256 + "\nurl https://forge.example/pr/9\n", "https://forge.example/pr/9", false},
+		"pushed, no pull request": {"patch " + acc.PatchSHA256 + "\nurl\n", "https://forge.example/pr/1", true},
+		"another patch":           {"patch 0123456789ab\nurl https://forge.example/pr/9\n", "", false},
+		"no branch":               {"", "https://forge.example/pr/1", false},
+	} {
+		f := &fakeForge{files: map[string]string{"pipeline.yaml": baseSrc}, resume: c.resume}
+		p, err := New(pipeline.Improve{Publish: pipeline.PublishGitPRGH, Git: pipeline.GitConfig{Repo: "r", Image: "i"}},
+			Deps{Packages: packages, jobs: f})
+		if err != nil {
+			t.Fatal(err)
+		}
+		res, err := p.Publish(t.Context(), acc)
+		if c.want == "" {
+			if !errors.Is(err, ErrRefused) || f.published != "" {
+				t.Fatalf("%s: %v, published %q", name, err, f.published)
+			}
+			continue
+		}
+		if err != nil || res.RevisionOrURL != c.want || slices.Contains(f.env, "MS_PUSHED=1") != c.pushed {
+			t.Fatalf("%s: Publish = %+v, %v; env %q", name, res, err, f.env)
+		}
+	}
 }
 
 // TestTrailers: only the last paragraph's Millstream-Proposal lines with a proposal id count, each once.
@@ -304,6 +343,13 @@ func TestProposal(t *testing.T) {
 	}
 	if a.base == "" {
 		t.Fatal("never applied")
+	}
+	// apply stopped between its revision and the record: the proposalApplied event counts as the publication.
+	a.base, st.events = "", []store.Event{{Kind: store.EventProposalApplied,
+		Data: json.RawMessage(`{"id":"` + acc.ProposalID + `","revision":8,"validated":true}`)}}
+	res, again, err := Proposal(t.Context(), st, p, acc.ProposalID, acc.PatchSHA256)
+	if err != nil || !again || res.RevisionOrURL != "8" || a.base != "" || len(st.events) != 2 {
+		t.Fatalf("after an interrupted apply = %+v, again %v, %v; applied again %v", res, again, err, a.base != "")
 	}
 }
 

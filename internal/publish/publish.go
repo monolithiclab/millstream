@@ -124,7 +124,8 @@ type ProposalStore interface {
 
 // Proposal publishes the accepted proposal id with p, the patch the caller saw being patchSHA256, and records where
 // it went (proposalPublished): what POST /proposals/{id}/publish runs for the improve package's publish step. A
-// proposal published already is not published again: its earlier result comes back, again true.
+// proposal published already is not published again: its earlier result comes back, again true. So does one apply
+// published without the record (the engine stopped in between): its proposalApplied event counts, and is recorded.
 func Proposal(ctx context.Context, st ProposalStore, p Publisher, id, patchSHA256 string) (res Result, again bool,
 	err error,
 ) {
@@ -140,15 +141,28 @@ func Proposal(ctx context.Context, st ProposalStore, p Publisher, id, patchSHA25
 			id, patchSHA256, prop.PatchSHA256)
 	}
 	evs, err := st.PipelineEvents(ctx, store.EventFilter{Pipeline: prop.Pipeline,
-		Kinds: []string{store.EventProposalPublished}})
+		Kinds: []string{store.EventProposalPublished, store.EventProposalApplied}})
 	if err != nil {
 		return Result{}, false, err
 	}
+	var applied *Result
 	for _, ev := range evs {
-		var done struct{ ID, Publisher, Where string }
-		if json.Unmarshal(ev.Data, &done) == nil && done.ID == id {
-			return Result{Publisher: done.Publisher, RevisionOrURL: done.Where}, true, nil
+		var done struct {
+			ID, Publisher, Where string
+			Revision             json.Number
 		}
+		if json.Unmarshal(ev.Data, &done) != nil || done.ID != id {
+			continue
+		}
+		switch {
+		case ev.Kind == store.EventProposalPublished:
+			return Result{Publisher: done.Publisher, RevisionOrURL: done.Where}, true, nil
+		case p.Name() == pipeline.PublishApply && applied == nil:
+			applied = &Result{Publisher: pipeline.PublishApply, RevisionOrURL: done.Revision.String()}
+		}
+	}
+	if applied != nil {
+		return *applied, true, st.RecordPublished(ctx, id, applied.Publisher, applied.RevisionOrURL)
 	}
 	if res, err = p.Publish(ctx, FromProposal(prop)); err != nil {
 		return res, false, err
