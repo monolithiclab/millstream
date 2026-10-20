@@ -159,9 +159,14 @@ func seed(dir string) *seeded {
 			}
 		}
 	}
-	if err := st.RecordInsights(ctx, store.InsightReport{Pipeline: "listings", Kinds: []string{"failureCluster"},
+	// The insights' evidence quotes redacted values too: an error's example, a filter condition on a phone.
+	if err := st.RecordInsights(ctx, store.InsightReport{Pipeline: "listings",
+		Kinds: []string{"failureCluster", "reviewPattern"},
 		Insights: []store.Insight{{ID: "in1", Kind: "failureCluster", Scope: "score", Severity: "error",
-			Evidence: json.RawMessage(`{"samples":["it_gone"]}`), WindowStart: t0, WindowEnd: clock}}}); err != nil {
+			Evidence:    json.RawMessage(`{"samples":["it_gone"],"example":"cannot read ` + phones[3] + `"}`),
+			WindowStart: t0, WindowEnd: clock}, {ID: "in2", Kind: "reviewPattern", Scope: "gate", Severity: "info",
+			Evidence:    json.RawMessage(`{"filters":[{"condition":"payload.seller.phone != \"` + phones[2] + `\""}]}`),
+			WindowStart: t0, WindowEnd: clock}}}); err != nil {
 		panic(err)
 	}
 	return &seeded{st: st, arts: arts, now: clock.Add(time.Hour)}

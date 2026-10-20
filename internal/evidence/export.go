@@ -128,6 +128,14 @@ func (x *exporter) build(ctx context.Context, now time.Time) (*Bundle, error) {
 		r.collect(ptrs[id], x.items[id].Payload)
 	}
 	r.finish()
+	// An insight's evidence quotes payloads too (an error's example, a filter's condition): redacted as one.
+	for i, in := range insights {
+		ev, err := r.Payload(nil, in.Evidence)
+		if err != nil {
+			return nil, fmt.Errorf("insight %s: %w", in.ID, err)
+		}
+		insights[i].Evidence = ev
+	}
 	b := &Bundle{
 		Manifest: Manifest{Format: Format, Version: Version, ID: newID(now), Pipeline: name,
 			Revision:   Revision{ID: int64(rev.ID), PackageHash: rev.PackageHash, AppliedAt: rev.AppliedAt},
