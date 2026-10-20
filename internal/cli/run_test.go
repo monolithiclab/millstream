@@ -8,14 +8,38 @@ import (
 	"time"
 )
 
+// runOnceSummary is what run --once of testdata/run prints.
+const runOnceSummary = "listings run_r1_adhoc succeeded\n  listings 3\n  trigger.adhoc 1\n"
+
+// Test_runOnce runs testdata/run named by its directory, twice: the e2e build. The default build runs it from its
+// directory instead (Test_runOnceCurrentDir), with the same checks.
 func Test_runOnce(t *testing.T) {
+	if !e2eBuild {
+		t.Skip("Test_runOnceCurrentDir runs the package in the default build")
+	}
 	t.Parallel()
 	pkg, s := sharedPackage(t, "run"), newEmptyState(t)
 	out, errOut := s.must(0, "run", "--once", "--request-id", "r1", pkg)
-	want := "listings run_r1_adhoc succeeded\n  listings 3\n  trigger.adhoc 1\n"
-	if out != want {
-		t.Fatalf("summary:\n%s\nwant:\n%s", out, want)
+	if out != runOnceSummary {
+		t.Fatalf("summary:\n%s\nwant:\n%s", out, runOnceSummary)
 	}
+	checkRunLogs(t, errOut)
+
+	// A rerun with the same request id resumes the same run instead of firing a new one: a second engine run.
+	out, _ = s.must(0, "run", "--once", "--request-id", "r1", pkg)
+	if out != runOnceSummary {
+		t.Fatalf("rerun summary:\n%s", out)
+	}
+	status, _ := s.must(0, "status")
+	if strings.Count(status, "run_") != 1 {
+		t.Fatalf("status after the rerun lists other runs:\n%s", status)
+	}
+}
+
+// checkRunLogs checks run's stderr: JSON lines, a first dispatch under the engine id, and deliveries logged with
+// their ids.
+func checkRunLogs(t *testing.T, errOut string) {
+	t.Helper()
 	logged, dispatched := false, false
 	for _, line := range splitLines(errOut) {
 		var m map[string]any
@@ -40,19 +64,6 @@ func Test_runOnce(t *testing.T) {
 	}
 	if !logged || !dispatched {
 		t.Fatalf("no delivery or no first dispatch logged:\n%s", errOut)
-	}
-
-	if !e2eBuild {
-		return
-	}
-	// A rerun with the same request id resumes the same run instead of firing a new one: a second engine run.
-	out, _ = s.must(0, "run", "--once", "--request-id", "r1", pkg)
-	if out != want {
-		t.Fatalf("rerun summary:\n%s", out)
-	}
-	status, _ := s.must(0, "status")
-	if strings.Count(status, "run_") != 1 {
-		t.Fatalf("status after the rerun lists other runs:\n%s", status)
 	}
 }
 
