@@ -19,10 +19,11 @@ steps:
     config: { expr: "item.score >= vars.min_score" }
 ```
 
-**Status:** under construction, not yet released. M1 (the core engine: pipeline files, the SQLite store, the `exec`
-runtime, the embedded node, crash-safe runs) is complete; M2 (agents, containers, budgets, evals, lessons, dedupe,
-replay, insights) is implemented and in review. The web UI (M3) and server deployment (M4) come next. The name is
-chosen, pending a trademark search ([naming note](docs/research/20261014.naming.md)).
+**Status:** a proof of concept, not yet released. The five milestones are built, each on its branch: M1 the core
+engine, M2 agents, containers, budgets and evals, M3 review and the web UI, M4 server deployment with remote nodes
+and failover, M5 insights and self-improvement (`m5-improve` holds them all). [Getting started](docs/tutorial.md)
+walks through what works today, and [the post-mortem](docs/20261020.postmortem.md) says what building it taught. The
+name is chosen, pending a trademark search ([naming note](docs/research/20261014.naming.md)).
 
 ## Documentation
 
