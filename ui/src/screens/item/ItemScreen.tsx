@@ -41,13 +41,14 @@ export function itemTitle(item: Item): string {
   return item.key !== '' ? item.key : item.id;
 }
 
-// Where the item stands now: its live deliveries first (in review, running, waiting, dead), else done.
+// Where the item stands now: its live deliveries first (in review, running, waiting, dead), else done. An item with
+// no delivery is done too: deliveries are created with the item, so none means no step reads its stream.
 function currentState(deliveries: Delivery[]): { status: StatusKey; step?: string } {
   for (const state of ['awaitingReview', 'leased', 'pending', 'dead'] as const) {
     const d = deliveries.find((x) => x.state === state);
     if (d !== undefined) return { status: state, step: d.step };
   }
-  return { status: deliveries.length === 0 ? 'pending' : 'done' };
+  return { status: 'done' };
 }
 
 // The deliveries of the item's journey: those of its ancestors that produced the next item of its lineage, then
