@@ -1005,7 +1005,7 @@
     },
     "backtest": {
       "title": "Backtest, before and after",
-      "rule": "The changed steps replayed on past items, once on the base revision and once patched. It passes when the agreement with reviewers and the history agreement of the lineages nobody reviewed fall by at most 2 points, the history agreement of the reviewed lineages by at most 2 points more than the share changed as reviewers corrected, the failure rate does not rise, and the patch drops at most improve.filter.maxFalseDrop (1% by default) of the items reviewers approved.",
+      "rule": "The changed steps replayed on past items, once on the base revision and once patched. It passes when the agreement with reviewers falls by at most 2 points, the history agreement, of the reviewed lineages and of those nobody reviewed alike, by at most 2 points more than the share of reviewed lineages changed as reviewers corrected, the failure rate does not rise, and the patch drops at most improve.filter.maxFalseDrop (1% by default) of the items reviewers approved.",
       "skipped": "Did not run: {{reason}}",
       "sample": "Sample",
       "fromEvidence": "{{count}} deliveries from imported evidence, {{runs}} runs",

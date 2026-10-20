@@ -38,6 +38,15 @@ func TestHolds(t *testing.T) {
 			m.ReviewedAgreement, m.TowardReviewers, m.TowardReviewersShare, m.ReviewAgreement = 0.8, 1, 0.1, 0.9
 			m.UnreviewedAgreement, m.Agreement = 0.3, 0.4
 		}, false},
+		// What a lessons or prompt change is for: what the reviewers did to their items, done to the unreviewed ones.
+		"reviewers' corrections generalised to unreviewed outputs": {func(m *Metrics) {
+			m.ReviewedAgreement, m.TowardReviewers, m.TowardReviewersShare, m.ReviewAgreement = 0.4, 5, 0.5, 1
+			m.UnreviewedAgreement = 0.5
+		}, true},
+		"unreviewed outputs changed beyond the corrections": {func(m *Metrics) {
+			m.ReviewedAgreement, m.TowardReviewers, m.TowardReviewersShare, m.ReviewAgreement = 0.4, 5, 0.5, 1
+			m.UnreviewedAgreement = 0.35
+		}, false},
 		"approvals dropped within maxFalseDrop": {func(m *Metrics) { m.Approved, m.ApprovalsDropped = 10, 1 }, true},
 		"approvals dropped over maxFalseDrop":   {func(m *Metrics) { m.Approved, m.ApprovalsDropped = 10, 2 }, false},
 		"failure rate up":                       {func(m *Metrics) { m.FailureRate = 0.11 }, false},

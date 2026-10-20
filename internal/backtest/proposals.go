@@ -16,10 +16,12 @@ const Tolerance = 0.02
 
 // Holds reports whether a backtest lets a proposal through (spec section 11.3), comparing the patched replay with
 // the base revision's over the whole sample: agreement with the reviewers' decisions falls by at most Tolerance;
-// agreement with the historical outputs of the lineages no review lies below falls by at most Tolerance; on the
-// reviewed lineages it may fall further only by the share of deliveries that moved toward the reviewers' truth
-// (TowardReviewersShare: what a proposal correcting outputs as reviewers did is for), so fixing one reviewed item
-// never pays for wrecking the outputs nobody reviewed; an agreement with nothing to compare does not count. The
+// agreement with the historical outputs, on the reviewed lineages and on those no review lies below alike, falls by
+// at most the share of reviewed-lineage deliveries that moved toward the reviewers' truth (TowardReviewersShare)
+// plus Tolerance. A lessons or prompt change is meant to do to the unreviewed items what reviewers did to theirs, so
+// its unreviewed outputs may move as far as its reviewed ones moved toward the reviewers; a patch fixing one
+// reviewed item and wrecking the rest still fails, its share being tiny. An agreement with nothing to compare does
+// not count. The
 // failure rate does not rise at all, and the patched replay drops at most maxFalseDrop of the sample's approvals,
 // items a person approved that no longer reach their review (improve.filter.maxFalseDrop, spec section 11.6).
 func (r *Report) Holds(maxFalseDrop float64) bool {
@@ -29,7 +31,7 @@ func (r *Report) Holds(maxFalseDrop float64) bool {
 		return false
 	case b.Reviewed > 0 && a.ReviewAgreement < b.ReviewAgreement-Tolerance:
 		return false
-	case b.UnreviewedCompared > 0 && a.UnreviewedAgreement < b.UnreviewedAgreement-Tolerance:
+	case b.UnreviewedCompared > 0 && a.UnreviewedAgreement < b.UnreviewedAgreement-a.TowardReviewersShare-Tolerance:
 		return false
 	case b.ReviewedCompared > 0 && a.ReviewedAgreement < b.ReviewedAgreement-a.TowardReviewersShare-Tolerance:
 		return false
