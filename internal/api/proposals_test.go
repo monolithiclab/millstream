@@ -162,4 +162,21 @@ func TestProposalActions(t *testing.T) {
 		}
 	}
 	call(http.MethodPost, "/proposals/"+p2.ID+"/publish", pubBody, tok.Token, http.StatusConflict)
+	// The proposal says where it went, read alone or listed; an unpublished one says nothing.
+	var one Proposal
+	if err := json.Unmarshal(call(http.MethodGet, "/proposals/"+p1.ID, "", tok.Token, http.StatusOK), &one); err != nil ||
+		one.Published == nil || one.Published.Publisher != "apply" || one.Published.Location != "2" ||
+		one.Published.At.IsZero() {
+		t.Fatalf("published proposal %+v, %v", one.Published, err)
+	}
+	var all []Proposal
+	if err := json.Unmarshal(call(http.MethodGet, "/proposals?pipeline=extra", "", tok.Token, http.StatusOK),
+		&all); err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range all {
+		if (p.ID == p1.ID) != (p.Published != nil) {
+			t.Fatalf("listed %s published %+v", p.ID, p.Published)
+		}
+	}
 }

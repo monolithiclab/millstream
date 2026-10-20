@@ -125,6 +125,7 @@ describe('ProposalScreen', () => {
     await vi.waitFor(() => expect(screen.getAllByText('Accepted')[0]).toBeInTheDocument());
     expect(screen.queryByRole('button', { name: 'Accept…' })).not.toBeInTheDocument();
     expect(section('History')).toHaveTextContent('Accepted by demo');
+    expect(section('What and why')).toHaveTextContent('PublishedNot yet: the improve pipeline publishes it');
   });
 
   it('keeps the server’s refusal on the page when the base moved, the proposal now stale', async () => {
@@ -232,6 +233,9 @@ describe('ProposalScreen', () => {
     await open('p-0142', api);
     expect(section('Validation')).toHaveTextContent('Not validated yet.');
     expect(section('History')).toHaveTextContent(/Accepted by nicolas, /);
+    expect(section('What and why')).toHaveTextContent(
+      /Publishedby git-pr-gh, .*: https:\/\/git\.example\/pipelines\/pull\/12/,
+    );
     expect(
       await within(section('Evidence')).findByRole('link', { name: 'Insight in_fail_score, no longer listed' }),
     ).toBeInTheDocument();

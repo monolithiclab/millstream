@@ -1950,6 +1950,15 @@ components:
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
         decidedAt: { type: string, format: date-time }
+        published:
+          type: object
+          description: Where its publish action put an accepted proposal (its proposalPublished event); absent until then.
+          required: [publisher, location, at]
+          additionalProperties: false
+          properties:
+            publisher: { type: string, description: "improve.publish's action: apply, patch-file, git-pr-gh or git-pr-glab." }
+            location: { type: string, description: The revision apply created, the file patch-file wrote, or the pull request opened. }
+            at: { type: string, format: date-time }
     ValidationReport:
       type: object
       required: [passed, baseRevision, patchSha256]

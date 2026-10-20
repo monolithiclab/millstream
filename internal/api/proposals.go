@@ -43,6 +43,16 @@ type Proposal struct {
 	CreatedAt    time.Time       `json:"createdAt"`
 	UpdatedAt    time.Time       `json:"updatedAt"`
 	DecidedAt    *time.Time      `json:"decidedAt,omitempty"`
+	// Published is where its publish action put an accepted proposal, from its proposalPublished event; nil until
+	// then.
+	Published *Publication `json:"published,omitempty"`
+}
+
+// Publication is where a publish action put a proposal: a revision, a patch file or a pull request.
+type Publication struct {
+	Publisher string    `json:"publisher"`
+	Location  string    `json:"location"`
+	At        time.Time `json:"at"`
 }
 
 // ToProposal is the API's view of a stored proposal: the store gives its lists non-nil and its report null before
@@ -164,9 +174,9 @@ func (s *Server) listProposals(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	out := make([]Proposal, 0, len(ps))
-	for _, p := range ps {
-		out = append(out, ToProposal(p))
+	out, err := s.withPublications(r.Context(), ps...)
+	if err != nil {
+		return err
 	}
 	writeJSON(w, http.StatusOK, out)
 	return nil
@@ -177,8 +187,43 @@ func (s *Server) getProposal(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	writeJSON(w, http.StatusOK, ToProposal(p))
+	out, err := s.withPublications(r.Context(), p)
+	if err != nil {
+		return err
+	}
+	writeJSON(w, http.StatusOK, out[0])
 	return nil
+}
+
+// withPublications returns the API's view of proposals, the accepted ones with where they were published: the
+// proposalPublished events of their pipelines.
+func (s *Server) withPublications(ctx context.Context, ps ...store.Proposal) ([]Proposal, error) {
+	out := make([]Proposal, len(ps))
+	byPipeline := map[string]map[string]*Publication{}
+	for i, p := range ps {
+		out[i] = ToProposal(p)
+		if p.State != store.ProposalAccepted {
+			continue
+		}
+		pubs, ok := byPipeline[p.Pipeline]
+		if !ok {
+			evs, err := s.opts.Store.PipelineEvents(ctx, store.EventFilter{Pipeline: p.Pipeline,
+				Kinds: []string{store.EventProposalPublished}})
+			if err != nil {
+				return nil, err
+			}
+			pubs = map[string]*Publication{}
+			for _, ev := range evs {
+				var d struct{ ID, Publisher, Where string }
+				if json.Unmarshal(ev.Data, &d) == nil && pubs[d.ID] == nil {
+					pubs[d.ID] = &Publication{Publisher: d.Publisher, Location: d.Where, At: ev.TS}
+				}
+			}
+			byPipeline[p.Pipeline] = pubs
+		}
+		out[i].Published = pubs[p.ID]
+	}
+	return out, nil
 }
 
 // createProposal creates a proposal and validates it before answering: 201 with the proposal, ready or drafting

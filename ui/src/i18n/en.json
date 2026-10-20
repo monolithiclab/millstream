@@ -949,7 +949,10 @@
       "paths": "Files",
       "patch": "Patch SHA-256",
       "created": "Created",
-      "createdValue": "by {{who}}, {{when}}"
+      "createdValue": "by {{who}}, {{when}}",
+      "published": "Published",
+      "publishedValue": "by {{publisher}}, {{when}}:",
+      "notPublished": "Not yet: the improve pipeline publishes it as improve.publish says"
     },
     "refused": "Not done",
     "conflict": "{{message}}. The proposal was read again.",

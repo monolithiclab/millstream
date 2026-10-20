@@ -949,7 +949,10 @@
       "paths": "Fichiers",
       "patch": "SHA-256 du patch",
       "created": "Créée",
-      "createdValue": "par {{who}}, {{when}}"
+      "createdValue": "par {{who}}, {{when}}",
+      "published": "Publiée",
+      "publishedValue": "par {{publisher}}, {{when}} :",
+      "notPublished": "Pas encore : le pipeline improve la publie comme le dit improve.publish"
     },
     "refused": "Non effectué",
     "conflict": "{{message}}. La proposition a été relue.",
