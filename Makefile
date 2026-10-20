@@ -3,7 +3,9 @@ include common.go.mk
 
 VULNCHECK_PACKAGES = ./cmd/... ./internal/...
 # The default build's coverage (make test enforces it); test-e2e prints the whole suite's, real processes included.
-COVERAGE_MIN = 89
+# 88 since M5: the Docker and git paths of publishing and the sandbox (internal/publish, internal/runtime/sandbox)
+# are covered by the e2e build only.
+COVERAGE_MIN = 88
 
 # make test runs the default build without -race, to stay within its budget (scripts/test-times): the race detector
 # runs in test-e2e. Coverage counts every package's statements in every test binary (-coverpkg): the store's
