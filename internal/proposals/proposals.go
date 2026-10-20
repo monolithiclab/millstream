@@ -70,6 +70,9 @@ func prepared(kind store.ProposalKind, base *pipeline.Package, text string, p *p
 	if err != nil {
 		return Prepared{}, fmt.Errorf("%w: the patched package does not parse: %w", patch.ErrPatch, err)
 	}
+	if err := semantic(kind, base.Pipeline, patched.Pipeline); err != nil {
+		return Prepared{}, err
+	}
 	return Prepared{Kind: kind, Patch: text, SHA256: patch.Hash([]byte(text)), Changes: p.Files, Base: base,
 		Patched: patched, Steps: touchedSteps(base.Pipeline, patched.Pipeline, p.Files)}, nil
 }

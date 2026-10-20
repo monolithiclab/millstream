@@ -153,7 +153,7 @@ func testValidate(t *testing.T, distillCases bool) {
 				t.Fatalf("backtest %+v", r.Backtest)
 			}
 		}, nil},
-		{"check fails", store.ProposalConfig, brokenPatch, &fakeBacktest{passed: true}, false, nil, nil},
+		{"check fails", store.ProposalTopology, brokenPatch, &fakeBacktest{passed: true}, false, nil, nil},
 		{"distill without a sandbox", store.ProposalDistill, distillPatch("coded", newEval), &fakeBacktest{passed: true}, false,
 			func(t *testing.T, r Report) {
 				if c := r.Evals[0].Cases[0]; !c.Before.Passed || !strings.Contains(c.After.Error, "container sandbox") ||
