@@ -67,6 +67,9 @@ type Recorder struct {
 	RecordHint string
 }
 
+// FlagRecordHint is the RecordHint of the commands that take the mode as a flag.
+const FlagRecordHint = "--harness-mode " + ModeRecord
+
 // Recording is a stored harness response with what it was recorded for.
 type Recording struct {
 	Key      string   `json:"key"`

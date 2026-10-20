@@ -157,6 +157,17 @@ func TestSecretLookup(t *testing.T) {
 	if _, err := mapped("gone"); !errors.Is(err, ErrSecretUnset) || !strings.Contains(err.Error(), "NOPE is not set") {
 		t.Fatalf("mapped to an unset variable: %v", err)
 	}
+	// A missing file holds no value yet; an unreadable one (here a directory) is a misconfiguration.
+	dir := testdir.New(t)
+	files := &Environment{Secrets: map[string]map[string]SecretSource{"p": {
+		"missing": {File: dir + "/nope"}, "broken": {File: dir},
+	}}}
+	if _, err := files.SecretLookup("p", lookup)("missing"); !errors.Is(err, ErrSecretUnset) {
+		t.Fatalf("missing file: %v", err)
+	}
+	if _, err := files.SecretLookup("p", lookup)("broken"); err == nil || errors.Is(err, ErrSecretUnset) {
+		t.Fatalf("unreadable file: %v", err)
+	}
 	if _, err := env.SecretLookup("q", lookup)("token"); err == nil {
 		t.Fatal("another pipeline's grant: no error")
 	}

@@ -125,8 +125,14 @@ func Load(ctx context.Context, st store.Store, pipelineName string, now time.Tim
 		return r.SettledAt.IsZero() || r.SettledAt.Before(d.windowStart()) || r.SettledAt.After(now)
 	})
 	slices.SortStableFunc(runs, func(a, b store.Run) int { return b.SettledAt.Compare(a.SettledAt) })
+	reviews := map[store.RevisionID]map[string]bool{} // the review steps of each revision, read once
 	for _, r := range runs[:min(len(runs), pathRuns)] {
-		p, err := runPath(ctx, st, r, now)
+		if reviews[r.Revision] == nil {
+			if reviews[r.Revision], err = reviewSteps(ctx, st, r.Revision); err != nil {
+				return nil, fmt.Errorf("insights of %s: %w", pipelineName, err)
+			}
+		}
+		p, err := runPath(ctx, st, r, reviews[r.Revision], now)
 		if err != nil {
 			return nil, fmt.Errorf("insights of %s: %w", pipelineName, err)
 		}
@@ -138,17 +144,13 @@ func Load(ctx context.Context, st store.Store, pipelineName string, now time.Tim
 	return d, nil
 }
 
-// runPath reads a run's deliveries and items and returns its critical path.
-func runPath(ctx context.Context, st store.Store, r store.Run, now time.Time) (Path, error) {
+// runPath reads a run's deliveries and items and returns its critical path, given its revision's review steps.
+func runPath(ctx context.Context, st store.Store, r store.Run, review map[string]bool, now time.Time) (Path, error) {
 	ds, err := st.Deliveries(ctx, store.DeliveryFilter{Pipeline: r.Pipeline, RunID: r.ID})
 	if err != nil {
 		return Path{}, err
 	}
 	items, err := st.Items(ctx, store.ItemFilter{Pipeline: r.Pipeline, RunID: r.ID})
-	if err != nil {
-		return Path{}, err
-	}
-	review, err := reviewSteps(ctx, st, r.Revision)
 	if err != nil {
 		return Path{}, err
 	}
@@ -624,17 +626,19 @@ func Summary(in store.Insight) string {
 		}
 		return prefix + f(k) + suffix
 	}
+	usd := func(k string) string { return unit(k, "$", "", "-") }
+	secs := func(k string) string { return unit(k, "", "s", "-") }
 	switch in.Kind {
 	case pipeline.InsightSlowStep:
 		return fmt.Sprintf("%s of the critical path (queue %s, work %s, backoff %s); p95 %s, %s",
 			p("criticalPathShare"), p("queueWaitShare"), p("workShare"), p("backoffShare"),
-			unit("p95Seconds", "", "s", "-"), unit("baselineP95Seconds", "baseline ", "s", "no baseline"))
+			secs("p95Seconds"), unit("baselineP95Seconds", "baseline ", "s", "no baseline"))
 	case pipeline.InsightFailureCluster:
 		return fmt.Sprintf("%s failures (%s of attempts), %s recovered on retry: %s: %s", f("count"), p("rate"),
 			p("retrySuccessShare"), f("class"), f("message"))
 	case pipeline.InsightCost:
 		return fmt.Sprintf("%s for %s outputs (%s each, %s), %s turns per delivery, %s schema failures",
-			unit("costUsd", "$", "", "-"), f("outputs"), unit("costPerOutput", "$", "", "-"),
+			usd("costUsd"), f("outputs"), usd("costPerOutput"),
 			unit("costPerApprovedItem", "$", " per approved item", "none approved"), f("turnsPerDelivery"),
 			f("schemaFailures"))
 	case pipeline.InsightUnschedulable:
@@ -647,15 +651,15 @@ func Summary(in store.Insight) string {
 			p("disagreementShare"), f("audits"), f("disagreed"), f("failed"))
 	case pipeline.InsightWaste:
 		return fmt.Sprintf("%s items discarded downstream, %s of %s wasted (%s)", f("discardedItems"),
-			unit("wastedCostUsd", "$", "", "-"), unit("costUsd", "$", "", "-"), p("wasteShare"))
+			usd("wastedCostUsd"), usd("costUsd"), p("wasteShare"))
 	case pipeline.InsightDistillable:
 		return fmt.Sprintf("candidate #%s for code: %s deliveries, %s bounded output, p95 %s turns, reviewer "+
 			"agreement %s; saves about %s a month", f("rank"), f("deliveries"), p("boundedShare"), f("turnsP95"),
-			p("reviewerAgreement"), unit("monthlySavingUsd", "$", "", "-"))
+			p("reviewerAgreement"), usd("monthlySavingUsd"))
 	case pipeline.InsightReviewPattern:
 		return fmt.Sprintf("%s rejected, %s edited, %s auto-approved, sampled agreement %s, intervention %s, p50 "+
 			"decision %s", p("rejectionRate"), p("editRate"), p("autoApprovalRate"), p("sampledAgreement"),
-			p("interventionRate"), unit("timeToDecisionP50Seconds", "", "s", "-"))
+			p("interventionRate"), secs("timeToDecisionP50Seconds"))
 	}
 	return string(in.Evidence)
 }

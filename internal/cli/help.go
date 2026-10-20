@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"bytes"
 	"fmt"
 	"slices"
 
@@ -17,45 +16,37 @@ func helpPrinter(opts kong.HelpOptions, ctx *kong.Context) error {
 	if sel == nil || sel.DefaultCmd == nil || !sel.DefaultCmd.Tag.Has("implicit") || opts.Summary {
 		return kong.DefaultHelpPrinter(opts, ctx)
 	}
-	var buf bytes.Buffer
 	dctx := *ctx
 	dctx.Path = append(slices.Clone(ctx.Path), &kong.Path{Command: sel.DefaultCmd})
-	out := ctx.Stdout
-	ctx.Stdout = &buf
-	err := kong.DefaultHelpPrinter(opts, &dctx)
-	ctx.Stdout = out
-	if err != nil {
+	if err := kong.DefaultHelpPrinter(opts, &dctx); err != nil {
 		return err
 	}
-	buf.WriteString("\nCommands:\n")
+	fmt.Fprint(ctx.Stdout, "\nCommands:\n")
 	for _, c := range sel.Children {
 		if c != sel.DefaultCmd && !c.Hidden {
-			fmt.Fprintf(&buf, "  %s\n    %s\n", c.Summary(), c.Help)
+			fmt.Fprintf(ctx.Stdout, "  %s\n    %s\n", c.Summary(), c.Help)
 		}
 	}
-	_, err = out.Write(buf.Bytes())
-	return err
+	return nil
 }
 
 // unnameImplicit blanks the names of the implicit commands under n, so that help prints their paths as their
 // parent's, and returns the function restoring them.
 func unnameImplicit(n *kong.Node) (restore func()) {
-	var named []*kong.Node
-	var names []string
+	saved := map[*kong.Node]string{}
 	var walk func(*kong.Node)
 	walk = func(n *kong.Node) {
 		for _, c := range n.Children {
 			if c.Tag.Has("implicit") {
-				named, names = append(named, c), append(names, c.Name)
-				c.Name = ""
+				saved[c], c.Name = c.Name, ""
 			}
 			walk(c)
 		}
 	}
 	walk(n)
 	return func() {
-		for i, c := range named {
-			c.Name = names[i]
+		for c, name := range saved {
+			c.Name = name
 		}
 	}
 }

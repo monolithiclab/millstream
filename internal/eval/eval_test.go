@@ -131,7 +131,7 @@ func TestRunAgentRecordReplay(t *testing.T) {
 		!strings.Contains(r.Err, "record it with MILLSTREAM_HARNESS_MODE=record (") {
 		t.Fatalf("unrecorded = %+v", r)
 	}
-	opts.RecordHint = "--harness-mode record"
+	opts.RecordHint = agent.FlagRecordHint
 	if r := Run(t.Context(), opts, c); !strings.Contains(r.Err, "record it with --harness-mode record (") {
 		t.Fatalf("unrecorded, with a hint = %+v", r)
 	}

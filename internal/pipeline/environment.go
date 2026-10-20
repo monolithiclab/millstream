@@ -165,8 +165,8 @@ func (unsetError) Is(target error) bool { return target == ErrSecretUnset }
 
 // SecretLookup returns how a pipeline's secrets resolve (spec section 4.5): through the secrets key, which is also
 // the grant, when the file has one, an unmapped name resolving to nothing; else from MILLSTREAM_SECRET_<NAME>
-// through env. The error of a mapped source that cannot be read names the source, never a value, and is
-// ErrSecretUnset.
+// through env. The error of a mapped source that cannot be read names the source, never a value; it is
+// ErrSecretUnset when the source holds nothing (an unset variable, a missing or empty file).
 func (e *Environment) SecretLookup(pipelineName string, env func(string) (string, bool)) SecretLookup {
 	if e == nil || e.Secrets == nil {
 		return func(name string) (string, error) {
@@ -185,7 +185,7 @@ func (e *Environment) SecretLookup(pipelineName string, env func(string) (string
 		}
 		v, err := src.Value(env)
 		if err != nil {
-			return "", unsetError{fmt.Errorf("secret %s: %w", name, err)}
+			return "", fmt.Errorf("secret %s: %w", name, err)
 		}
 		return v, nil
 	}
@@ -359,17 +359,20 @@ func (s SecretSource) Value(lookup func(string) (string, bool)) (string, error) 
 	if s.Env != "" {
 		v, ok := lookup(s.Env)
 		if !ok || v == "" {
-			return "", fmt.Errorf("environment variable %s is not set", s.Env)
+			return "", unsetError{fmt.Errorf("environment variable %s is not set", s.Env)}
 		}
 		return v, nil
 	}
 	b, err := os.ReadFile(s.File) // #nosec G304 -- the operator names the secret's file
-	if err != nil {
+	if errors.Is(err, fs.ErrNotExist) {
+		return "", unsetError{fmt.Errorf("read secret file: %w", err)}
+	}
+	if err != nil { // unreadable: a misconfiguration, not a value still to come
 		return "", fmt.Errorf("read secret file: %w", err)
 	}
 	v := strings.TrimRight(string(b), "\r\n")
 	if v == "" {
-		return "", fmt.Errorf("secret file %s is empty", s.File)
+		return "", unsetError{fmt.Errorf("secret file %s is empty", s.File)}
 	}
 	return v, nil
 }
