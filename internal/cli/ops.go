@@ -19,7 +19,7 @@ import (
 // TriggerCmd is "millstream trigger": "trigger <pipeline> <trigger>" fires a trigger, "trigger token" rotates a
 // webhook trigger's token.
 type TriggerCmd struct {
-	Fire  TriggerFireCmd  `cmd:"" default:"withargs" hidden:"" help:"Fire a trigger by hand."`
+	Fire  TriggerFireCmd  `cmd:"" default:"withargs" implicit:"" help:"Fire a trigger by hand."`
 	Token TriggerTokenCmd `cmd:"" help:"Replace a webhook trigger's token (--rotate) and print the new one, once."`
 }
 

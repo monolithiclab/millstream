@@ -30,7 +30,7 @@ import (
 
 // RunCmd is "millstream run": "run [dir…]" runs packages, "run report" prints a run's report.
 type RunCmd struct {
-	Packages RunPackagesCmd `cmd:"" default:"withargs" hidden:"" help:"Apply packages and run the engine with an embedded node."`
+	Packages RunPackagesCmd `cmd:"" default:"withargs" implicit:"" help:"Apply packages and run the engine with an embedded node."`
 	Report   RunReportCmd   `cmd:"" help:"Print a run's report: critical path, slowest steps, failures, cost, comparison."`
 }
 

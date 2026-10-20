@@ -233,6 +233,7 @@ func takeParser(rt *Runtime) (*parser, error) {
 			kong.Name("millstream"),
 			kong.Description("Pipelines of actions connected by persisted streams."),
 			kong.Exit(func(c int) { panic(exitSignal(c)) }),
+			kong.Help(helpPrinter),
 			kong.BindToProvider(func() (context.Context, error) { return p.rt.Ctx, nil }),
 			kong.BindToProvider(func() (*Runtime, error) { return p.rt, nil }),
 		)

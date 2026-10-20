@@ -30,7 +30,7 @@ const NodeTokenEnv = "MILLSTREAM_NODE_TOKEN" // #nosec G101 -- the variable's na
 
 // NodeCmd is "millstream node": "node --join <url>" runs a remote node, "node drain" drains the one running here.
 type NodeCmd struct {
-	Run   NodeRunCmd   `cmd:"" default:"withargs" hidden:"" help:"Join the engine with the node token and run deliveries."`
+	Run   NodeRunCmd   `cmd:"" default:"withargs" implicit:"" help:"Join the engine with the node token and run deliveries."`
 	Drain NodeDrainCmd `cmd:"" help:"Drain the node running from the state directory: it stops pulling, finishes or releases its deliveries within its drain timeout, and exits."`
 }
 
