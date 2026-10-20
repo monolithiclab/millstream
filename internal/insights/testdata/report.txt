@@ -3,10 +3,10 @@ Started 2026-10-15T10:00:00Z, settled 2026-10-15T10:00:31Z, 31.1s, cost $0.0400
 Items: pages 2, publish.dlq 1, score.dlq 1, scored 1, trigger.adhoc 1
 
 Critical path (31.1s):
-  STEP     DELIVERY                             LATENCY  WAIT  WORK   BACKOFF  SHARE
-  crawl    dl_82bbe92e6eed04142259c9f90c8a0315  1s       0s    1s     0s       3%
-  score    dl_b0ae0d819aeda0802b7d84f490c4b15f  30s      10s   20s    0s       96%
-  publish  dl_73aabedfa3e32cde9cf5ce98e040bc2d  100ms    0s    100ms  0s       0%
+  STEP     DELIVERY                             LATENCY  WAIT  WORK   BACKOFF  REVIEW  SHARE
+  crawl    dl_82bbe92e6eed04142259c9f90c8a0315  1s       0s    1s     0s       0s      3%
+  score    dl_b0ae0d819aeda0802b7d84f490c4b15f  30s      10s   20s    0s       0s      96%
+  publish  dl_73aabedfa3e32cde9cf5ce98e040bc2d  100ms    0s    100ms  0s       0s      0%
 
 Slowest steps:
   STEP     DELIVERIES  FAILED  P50    P95    MAX    WAIT  WORK   COST

@@ -55,6 +55,7 @@ type ReportPathStep struct {
 	WaitSeconds    float64 `json:"waitSeconds"`
 	WorkSeconds    float64 `json:"workSeconds"`
 	BackoffSeconds float64 `json:"backoffSeconds"`
+	ReviewSeconds  float64 `json:"reviewSeconds"`
 	Share          float64 `json:"share"`
 }
 
@@ -136,7 +137,11 @@ func BuildReport(ctx context.Context, st store.Store, pipelineName, runID string
 			r.Items[p.Stream]++
 		}
 	}
-	r.CriticalPath = reportPath(CriticalPath(ds, items, now))
+	review, err := reviewSteps(ctx, st, run.Revision)
+	if err != nil {
+		return nil, err
+	}
+	r.CriticalPath = reportPath(CriticalPath(ds, items, review, now))
 	runAttempts := slices.DeleteFunc(slices.Clone(attempts), func(a Attempt) bool { return a.RunID != runID })
 	r.Steps = stepReports(ds, runAttempts, now)
 	r.Failures = runFailures(ds, runAttempts)
@@ -172,7 +177,8 @@ func reportPath(p Path) ReportPath {
 	for _, s := range p.Steps {
 		out.Steps = append(out.Steps, ReportPathStep{
 			Step: s.Step, Delivery: s.Delivery, LatencySeconds: seconds(s.Latency), WaitSeconds: seconds(s.Wait),
-			WorkSeconds: seconds(s.Work), BackoffSeconds: seconds(s.Backoff), Share: round(ratio(s.Latency, p.Total)),
+			WorkSeconds: seconds(s.Work), BackoffSeconds: seconds(s.Backoff), ReviewSeconds: seconds(s.Review),
+			Share: round(ratio(s.Latency, p.Total)),
 		})
 	}
 	return out
@@ -346,10 +352,10 @@ func (r *Report) WriteText(w io.Writer, now time.Time) error {
 	fmt.Fprintf(tw, "Items: %s\n", orNone(strings.Join(parts, ", ")))
 
 	fmt.Fprintf(tw, "\nCritical path (%s):\n", dur(r.CriticalPath.TotalSeconds))
-	fmt.Fprintln(tw, "  STEP\tDELIVERY\tLATENCY\tWAIT\tWORK\tBACKOFF\tSHARE")
+	fmt.Fprintln(tw, "  STEP\tDELIVERY\tLATENCY\tWAIT\tWORK\tBACKOFF\tREVIEW\tSHARE")
 	for _, s := range r.CriticalPath.Steps {
-		fmt.Fprintf(tw, "  %s\t%s\t%s\t%s\t%s\t%s\t%s\n", s.Step, s.Delivery, dur(s.LatencySeconds),
-			dur(s.WaitSeconds), dur(s.WorkSeconds), dur(s.BackoffSeconds), pct(s.Share))
+		fmt.Fprintf(tw, "  %s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", s.Step, s.Delivery, dur(s.LatencySeconds),
+			dur(s.WaitSeconds), dur(s.WorkSeconds), dur(s.BackoffSeconds), dur(s.ReviewSeconds), pct(s.Share))
 	}
 
 	fmt.Fprintln(tw, "\nSlowest steps:")

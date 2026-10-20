@@ -1533,6 +1533,8 @@ export interface components {
               waitSeconds: number;
               workSeconds: number;
               backoffSeconds: number;
+              /** @description Time a review step's delivery waited on people. */
+              reviewSeconds: number;
               share: number;
             }[]
           | null;

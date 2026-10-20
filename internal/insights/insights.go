@@ -148,7 +148,11 @@ func runPath(ctx context.Context, st store.Store, r store.Run, now time.Time) (P
 	if err != nil {
 		return Path{}, err
 	}
-	return CriticalPath(ds, items, now), nil
+	review, err := reviewSteps(ctx, st, r.Revision)
+	if err != nil {
+		return Path{}, err
+	}
+	return CriticalPath(ds, items, review, now), nil
 }
 
 // Project runs the projector for a pipeline at now and records what it finds for the kinds its insights key leaves
@@ -213,9 +217,9 @@ func (d *Data) insight(kind, scope, severity string, evidence map[string]any, id
 }
 
 // slowSteps finds the step holding more than half of the recent runs' critical paths, with how their time splits
-// into queue wait, work and backoff, and the steps whose p95 latency regressed against the baseline.
+// into queue wait, work, backoff and review, and the steps whose p95 latency regressed against the baseline.
 func slowSteps(d *Data) []store.Insight {
-	type share struct{ latency, wait, work, backoff time.Duration }
+	type share struct{ latency, wait, work, backoff, review time.Duration }
 	onPath := map[string]*share{}
 	var total time.Duration
 	samples := map[string][]string{}
@@ -231,6 +235,7 @@ func slowSteps(d *Data) []store.Insight {
 			sh.wait += s.Wait
 			sh.work += s.Work
 			sh.backoff += s.Backoff
+			sh.review += s.Review
 			samples[s.Step] = appendSample(samples[s.Step], s.Item)
 		}
 	}
@@ -261,7 +266,10 @@ func slowSteps(d *Data) []store.Insight {
 			ev["queueWaitShare"] = round(ratio(sh.wait, sh.latency))
 			ev["workShare"] = round(ratio(sh.work, sh.latency))
 			ev["backoffShare"] = round(ratio(sh.backoff, sh.latency))
-			ev["slowestPart"] = slowestPart(sh.wait, sh.work, sh.backoff)
+			if sh.review > 0 {
+				ev["reviewShare"] = round(ratio(sh.review, sh.latency))
+			}
+			ev["slowestPart"] = slowestPart(sh.wait, sh.work, sh.backoff, sh.review)
 			bottleneck = len(onPath) > 1 && frac > pathShare
 		}
 		regression := false
@@ -291,14 +299,16 @@ func slowSteps(d *Data) []store.Insight {
 
 // slowestPart names the largest part of a step's time on the critical path: queue (raise concurrency), work (the
 // action is slow) or backoff (retries).
-func slowestPart(wait, work, backoff time.Duration) string {
+func slowestPart(wait, work, backoff, review time.Duration) string {
 	switch {
-	case wait >= work && wait >= backoff:
+	case wait >= work && wait >= backoff && wait >= review:
 		return "queue"
-	case work >= backoff:
+	case work >= backoff && work >= review:
 		return "work"
+	case backoff >= review:
+		return "backoff"
 	}
-	return "backoff"
+	return "review"
 }
 
 // cluster is a group of failed attempts.

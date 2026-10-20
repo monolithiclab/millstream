@@ -1567,7 +1567,8 @@ components:
               type: [array, "null"]
               items:
                 type: object
-                required: [step, delivery, latencySeconds, waitSeconds, workSeconds, backoffSeconds, share]
+                required: [step, delivery, latencySeconds, waitSeconds, workSeconds, backoffSeconds, reviewSeconds,
+                  share]
                 additionalProperties: false
                 properties:
                   step: { type: string }
@@ -1576,6 +1577,7 @@ components:
                   waitSeconds: { type: number }
                   workSeconds: { type: number }
                   backoffSeconds: { type: number }
+                  reviewSeconds: { type: number, description: "Time a review step's delivery waited on people." }
                   share: { type: number }
         steps:
           type: [array, "null"]

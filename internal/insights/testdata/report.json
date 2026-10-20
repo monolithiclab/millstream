@@ -24,6 +24,7 @@
         "waitSeconds": 0,
         "workSeconds": 1,
         "backoffSeconds": 0,
+        "reviewSeconds": 0,
         "share": 0.032
       },
       {
@@ -33,6 +34,7 @@
         "waitSeconds": 10,
         "workSeconds": 20,
         "backoffSeconds": 0,
+        "reviewSeconds": 0,
         "share": 0.965
       },
       {
@@ -42,6 +44,7 @@
         "waitSeconds": 0,
         "workSeconds": 0.1,
         "backoffSeconds": 0,
+        "reviewSeconds": 0,
         "share": 0.003
       }
     ]
