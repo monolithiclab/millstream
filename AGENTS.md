@@ -127,6 +127,7 @@ and `make help` for every command.
 | `docs/decisions.md` | Architecture decisions D1 onward |
 | `docs/protocol.md` | The action protocol, for action authors and SDKs |
 | `docs/deploy.md` | Deployment: the image, Compose, systemd, security, backups and upgrades |
+| `docs/tutorial.md` | The getting-started tutorial: every command and output in it is run for real |
 | `docs/testing.md` | The test suites: budget mechanics, fixtures, Postgres, end-to-end and UI suites |
 | `docs/soak.md` | The soak test |
 | `docs/design/` | The web UI's design brief and the Claude Design canvas snapshot |

@@ -28,6 +28,7 @@ chosen, pending a trademark search ([naming note](docs/research/20261014.naming.
 
 | Document | Content |
 | --- | --- |
+| [Getting started](docs/tutorial.md) | A tutorial: from nothing to a running pipeline with an agent step and a review, on a laptop |
 | [Platform design](docs/specs/20261014.platform-design.md) | The full specification: concepts, pipeline file, execution model, actions, agents, UI, deployment, milestones |
 | [Decisions](docs/decisions.md) | Key architecture decisions and their reasoning |
 | [Action protocol](docs/protocol.md) | How the engine and an action process talk, for writing actions without an SDK |
