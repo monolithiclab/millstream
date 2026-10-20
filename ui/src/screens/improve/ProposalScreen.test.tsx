@@ -47,6 +47,9 @@ describe('ProposalScreen', () => {
     );
     expect(within(backtest).getByRole('row', { name: /Agreement with reviewers/ })).toHaveTextContent('70%82%+12 pts');
     expect(within(backtest).getByRole('row', { name: /Failure rate/ })).toHaveTextContent('2%1.5%−0.5 pts');
+    expect(within(backtest).getByRole('row', { name: /Past approvals dropped/ })).toHaveTextContent(
+      'Past approvals dropped000',
+    );
     expect(within(backtest).getByRole('row', { name: /Cost/ })).toHaveTextContent('$3.80$3.95+$0.15');
     expect(within(backtest).getByRole('row', { name: /Mean latency/ })).toHaveTextContent('2.4 s2.4 s+50 ms');
     expect(validation).toHaveTextContent('200 deliveries from imported evidence, 188 runs · done 96, approved 58');

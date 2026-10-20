@@ -217,6 +217,12 @@ function useRows(f: Format): Row[] {
       regressed: (b, a) => a > b,
     },
     {
+      label: t('improve.backtest.approvalsDropped'),
+      value: (m) => m.approvalsDropped,
+      format: (v) => f.num(v),
+      change: (d) => signed(d, (x) => f.num(x)),
+    },
+    {
       label: t('improve.backtest.cost'),
       value: (m) => m.costUsd,
       format: f.money,

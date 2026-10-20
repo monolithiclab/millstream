@@ -1002,7 +1002,7 @@
     },
     "backtest": {
       "title": "Backtest, before and after",
-      "rule": "The changed steps replayed on past items, once on the base revision and once patched. It passes when each agreement falls by at most 2 points and the failure rate does not rise.",
+      "rule": "The changed steps replayed on past items, once on the base revision and once patched. It passes when each agreement falls by at most 2 points, the failure rate does not rise, and the patch drops at most improve.filter.maxFalseDrop (1% by default) of the items reviewers approved.",
       "skipped": "Did not run: {{reason}}",
       "sample": "Sample",
       "fromEvidence": "{{count}} deliveries from imported evidence, {{runs}} runs",
@@ -1018,6 +1018,7 @@
       "change": "Change",
       "agreement": "Agreement with history",
       "reviewAgreement": "Agreement with reviewers",
+      "approvalsDropped": "Past approvals dropped",
       "failureRate": "Failure rate",
       "cost": "Cost",
       "latency": "Mean latency",
