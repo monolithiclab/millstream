@@ -33,7 +33,7 @@ Action to engine:
 {"type":"emit","delivery":"dl_1","payload":{"greeting":"Hello, Ada!"}}
 {"type":"metric","delivery":"dl_1","name":"names_greeted","value":1}
 {"type":"done","delivery":"dl_1"}
-{"type":"error","delivery":"dl_1","message":"the item has no name","retryable":false}
+{"type":"error","delivery":"dl_1","message":"config.greeting must be a string","retryable":false}
 ```
 
 1. Answer `hello` with `ready`, within 10 seconds.

@@ -178,23 +178,14 @@ millstream run --once 2>/dev/null
 ```
 
 ```text
-listings run_20261020T162508Z-f9927400_adhoc completedWithErrors
-  greet.dlq 1
+listings run_20261020T162508Z-f9927400_adhoc succeeded
+  greetings 1
   trigger.adhoc 1
 ```
 
-It failed, on purpose. `run --once` fires the trigger with an empty payload, `{}`, and `greet`'s input schema
-requires a `name`. The engine refused the item before running the action and moved it to the step's **dead-letter
-stream**, `greet.dlq`, where it waits to be replayed or discarded:
-
-```sh
-millstream dlq list
-```
-
-```text
-ID                                   PIPELINE  RUN                                  STEP   KIND  STATE  ERROR
-it_73e90e50ff565e444d90e071f4e2e2eb  listings  run_20261020T162508Z-f9927400_adhoc  greet  dead  open   inputSchema: item it_a17f4f6051eae069ad1b1f092cfa8b8e does not match the input …
-```
+`run --once` fires the trigger with an empty payload, `{}`. `greet`'s input schema makes `name` optional and the
+action greets the world when there is none; an item that failed the schema would have gone to the step's
+**dead-letter stream**, `greet.dlq`, to wait there to be replayed or discarded (section 6 shows one).
 
 State lives in `.millstream/millstream.db`, a SQLite database in the current directory. Every command reads it,
 whether or not an engine is running.
@@ -229,17 +220,15 @@ Back in the first terminal:
 
 ```sh
 millstream status
-millstream dlq discard --pipeline listings it_73e90e50ff565e444d90e071f4e2e2eb
 ```
 
 ```text
 PIPELINE  STATE   REVISION  PAUSED STEPS
 listings  active  1         -
 
-RUN                                  PIPELINE  STATE                STARTED               ITEMS  OPEN DEAD LETTERS
-run_20261020T162512Z-a8bab96e_adhoc  listings  succeeded            2026-10-20T16:25:12Z  2      0
-run_20261020T162508Z-f9927400_adhoc  listings  completedWithErrors  2026-10-20T16:25:08Z  2      1
-1 dead letter discarded
+RUN                                  PIPELINE  STATE      STARTED               ITEMS  OPEN DEAD LETTERS
+run_20261020T162512Z-a8bab96e_adhoc  listings  succeeded  2026-10-20T16:25:12Z  2      0
+run_20261020T162508Z-f9927400_adhoc  listings  succeeded  2026-10-20T16:25:08Z  2      0
 ```
 
 Open <http://127.0.0.1:7070/> and look at:
@@ -564,7 +553,6 @@ millstream dlq list --state all
 listings revision 3 83b5897356a1
 1 dead letter replayed
 ID                                   PIPELINE  RUN                                  STEP        KIND  STATE      ERROR
-it_73e90e50ff565e444d90e071f4e2e2eb  listings  run_20261020T162508Z-f9927400_adhoc  greet       dead  discarded  inputSchema: item it_a17f4f6051eae069ad1b1f092cfa8b8e does not match the input …
 it_88a91b75434734f59cc9057087b7f59d  listings  run_20261020T162558Z-7559f3e7_adhoc  affordable  dead  replayed   expr: filter of step affordable: evaluate "item.priceEur <= vars.maxPrice": no …
 ```
 

@@ -1,14 +1,13 @@
 # The manifest of the {{.Name}} action (platform design, section 6.1).
 name: {{.Name}}
 version: 0.1.0
-description: Greets the name of each item
+description: Greets the name of each item, or the world when it names nobody
 kind: exec
 effects: none
 input:
   type: object
   properties:
     name: { type: string, minLength: 1 }
-  required: [name]
 output:
   type: object
   properties:

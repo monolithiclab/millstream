@@ -81,14 +81,14 @@ func Test_testAction(t *testing.T) {
 			"expect: { error: { retryable: false } }\n",
 		"tests/retry.yaml": "input: { name: Ada }\nconfig: { greeting: 3 }\nexpect: { error: { retryable: true } }\n",
 		"tests/none.yaml":  "input: { name: Ada }\nexpect: { outputs: [] }\n",
-		"tests/fails.yaml": "input: {}\nexpect: { outputs: [] }\n",
+		"tests/fails.yaml": "input: { name: Ada }\nconfig: { greeting: 3 }\nexpect: { outputs: [] }\n",
 		"tests/err.yaml":   "input: { name: Ada }\nexpect: { error: { retryable: false } }\n",
 	})
 	out, errOut = mustRun(t, 1, "test", "action", dir)
 	for _, want := range []string{
 		"PASS config of the wrong type\n",
 		"FAIL err\n  want an error (retryable false), got done with 1 output(s)\n",
-		"FAIL fails\n  want done, got an error (retryable false): the item has no name\n",
+		"FAIL fails\n  want done, got an error (retryable false): decode config:",
 		"PASS greets by name\n",
 		"FAIL none\n  outputs differ (- want, + got):\n    - []\n    + [\n",
 		"FAIL retry\n  want an error with retryable true, got retryable false: decode config:",

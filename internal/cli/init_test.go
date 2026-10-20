@@ -36,6 +36,14 @@ func Test_initPipeline(t *testing.T) {
 		}
 	}
 
+	if !e2eBuild { // the in-process action stands in for the unbuilt one: what matters is the engine's input check
+		// run --once fires the manual trigger with {}: the scaffolded action takes it, nothing is dead-lettered.
+		out, _ := newEmptyState(t).must(0, "run", "--once", pkg)
+		if !strings.Contains(out, " succeeded\n") || strings.Contains(out, "dlq") {
+			t.Fatalf("run --once of the scaffold:\n%s", out)
+		}
+	}
+
 	if _, errOut := mustRun(t, 2, "init", "action", "x", "--lang", "sh", "--dir", parent); !strings.Contains(errOut,
 		"--lang") {
 		t.Errorf("--lang sh: stderr %q", errOut)

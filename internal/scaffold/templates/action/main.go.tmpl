@@ -1,4 +1,5 @@
-// Command {{.Bin}} is the {{.Name}} action: it greets the name of each item with the greeting of its config. Build
+// Command {{.Bin}} is the {{.Name}} action: it greets the name of each item (the world when it has none) with the
+// greeting of its config. Build
 // it where its manifest's command finds it (go.mod says how to reach the SDK):
 //
 //	go build -o bin/$(go env GOOS)-$(go env GOARCH)/{{.Bin}} .
@@ -8,7 +9,7 @@
 package main
 
 import (
-	"errors"
+	"cmp"
 
 	millstream "github.com/monolithiclab/millstream/sdk/go"
 )
@@ -34,10 +35,7 @@ func main() {
 		if err := c.ConfigInto(&cfg); err != nil {
 			return nil, err // not retryable: the same config fails again
 		}
-		if in.Name == "" {
-			return nil, errors.New("the item has no name")
-		}
-		out := Output{Greeting: cfg.Greeting + ", " + in.Name + "!"}
+		out := Output{Greeting: cfg.Greeting + ", " + cmp.Or(in.Name, "world") + "!"}
 		return []Output{out}, nil
 	})
 }
