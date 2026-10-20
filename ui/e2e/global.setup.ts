@@ -1,5 +1,5 @@
 import { expect, test as setup } from '@playwright/test';
-import { descriptionPatch, proposals } from './proposals';
+import { proposals, reasonsPatch } from './proposals';
 
 // Seeds the e2e server (millstream run over e2e/fixture) through the API: four listings that park in the analysts
 // and triage inboxes, one the shortlist filters out, so a run settles, and one whose surface is 0, which dies at
@@ -71,12 +71,12 @@ setup('seed runs with parked reviews and a dead letter', async ({ request }) => 
 });
 
 setup('seed two ready proposals', async ({ request }) => {
-  for (const { fingerprint, description, rationale } of proposals) {
+  for (const { fingerprint, reasons, rationale } of proposals) {
     const response = await request.post('/api/v1/proposals', {
       data: {
         pipeline: 'listings-daily',
         kind: 'config',
-        patch: descriptionPatch(description),
+        patch: reasonsPatch(reasons),
         rationale,
         fingerprint,
       },

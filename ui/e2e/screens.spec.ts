@@ -330,7 +330,7 @@ test('open a proposal, read its diff and validation, reject one with a reason, a
   const patch = page.getByRole('region', { name: 'Patch' });
   await expect(patch.getByRole('navigation', { name: 'Files changed' })).toContainText('pipeline.yaml');
   await expect(patch.getByRole('region', { name: 'pipeline.yaml, after' })).toContainText(
-    `description: ${toReject.description}`,
+    `reasons: ${toReject.reasons}`,
   );
   const validation = page.getByRole('region', { name: 'Validation' });
   await expect(validation).toContainText('Judged by the base revision’s evals');
