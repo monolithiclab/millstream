@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/monolithiclab/millstream/internal/artifacts"
+	"github.com/monolithiclab/millstream/internal/distill"
 	"github.com/monolithiclab/millstream/internal/evidence"
 	"github.com/monolithiclab/millstream/internal/ids"
 	"github.com/monolithiclab/millstream/internal/pipeline"
@@ -168,20 +169,7 @@ func sameOutputs(a, b []store.Output) bool {
 }
 
 // outputKey identifies an output by its key and canonical payload.
-func outputKey(o store.Output) string { return o.Key + "\x00" + canon(o.Payload) }
-
-// canon is a JSON document's canonical text, object keys sorted; what does not decode stays as it is.
-func canon(raw json.RawMessage) string {
-	v, err := pipeline.DecodeValue(string(raw))
-	if err != nil {
-		return string(raw)
-	}
-	b, err := json.Marshal(v)
-	if err != nil {
-		return string(raw)
-	}
-	return string(b)
-}
+func outputKey(o store.Output) string { return o.Key + "\x00" + distill.Canon(o.Payload) }
 
 // root returns the trigger item an item descends from, false when its lineage leaves the history, crosses a
 // tombstone (a payload replay cannot read, spec section 5.7) or holds no trigger item.

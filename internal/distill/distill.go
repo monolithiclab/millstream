@@ -86,7 +86,7 @@ func SplitPairs(pairs []Pair, share float64) (Split, error) {
 		from = e.first
 	}
 	s := Split{HoldoutFrom: from}
-	s.Train, s.Holdout = partition(pairs, from)
+	s.Train, s.Holdout = partition(pairs, ents, from)
 	if len(s.Train) == 0 || len(s.Holdout) == 0 {
 		return Split{}, ErrNoSplit
 	}
@@ -96,13 +96,13 @@ func SplitPairs(pairs []Pair, share float64) (Split, error) {
 // Holdout returns the pairs of the entities first seen at or after from: the holdout of a split made at from,
 // together with the entities first seen since.
 func Holdout(pairs []Pair, from time.Time) []Pair {
-	_, holdout := partition(pairs, from)
+	_, holdout := partition(pairs, entities(pairs), from)
 	return holdout
 }
 
-// partition splits pairs by their entity's first sighting against from, keeping their order.
-func partition(pairs []Pair, from time.Time) (train, holdout []Pair) {
-	for _, e := range entities(pairs) {
+// partition splits pairs by their entity's first sighting against from.
+func partition(pairs []Pair, ents []entity, from time.Time) (train, holdout []Pair) {
+	for _, e := range ents {
 		for _, i := range e.pairs {
 			if e.first.Before(from) {
 				train = append(train, pairs[i])
@@ -172,6 +172,9 @@ func entities(pairs []Pair) []entity {
 // agent: an example whose source is a review of the pair's truth (review/<delivery id>) or the pair's input item
 // (item/<id>), or whose input matches the pair's input on every field the example keeps.
 func Withheld(examples []pipeline.LessonExample, holdout []Pair) []int {
+	if len(examples) == 0 {
+		return nil
+	}
 	sources := map[string]bool{}
 	inputs := make([]any, 0, len(holdout))
 	for _, p := range holdout {
@@ -179,24 +182,27 @@ func Withheld(examples []pipeline.LessonExample, holdout []Pair) []int {
 		for _, r := range p.Reviews {
 			sources["review/"+r] = true
 		}
-		var v any
-		if json.Unmarshal(p.Input, &v) == nil {
+		if v, err := pipeline.DecodeValue(string(p.Input)); err == nil {
 			inputs = append(inputs, v)
 		}
 	}
 	var out []int
 	for i, ex := range examples {
-		if sources[ex.Source] || slices.ContainsFunc(inputs, func(in any) bool { return excerpt(ex.Input, in) }) {
+		if sources[ex.Source] {
+			out = append(out, i)
+			continue
+		}
+		in := jsonValue(ex.Input)
+		if slices.ContainsFunc(inputs, func(v any) bool { return excerpt(in, v) }) {
 			out = append(out, i)
 		}
 	}
 	return out
 }
 
-// excerpt reports whether ex is an excerpt of v: an object whose every field v holds with an equal value (as
-// excerpts, recursively), or a value equal to v. An empty object is an excerpt of nothing.
+// excerpt reports whether ex is an excerpt of v, both as JSON decodes them: an object whose every field v holds
+// with an equal value (as excerpts, recursively), or a value equal to v. An empty object is an excerpt of nothing.
 func excerpt(ex, v any) bool {
-	ex, v = jsonValue(ex), jsonValue(v)
 	em, ok := ex.(map[string]any)
 	if !ok {
 		return reflect.DeepEqual(ex, v)
@@ -214,18 +220,32 @@ func excerpt(ex, v any) bool {
 	return true
 }
 
-// jsonValue is v as a JSON document decodes to, so that a value read from YAML (ints) compares with one decoded
-// from JSON (float64).
+// jsonValue is v as pipeline.DecodeValue reads it back from JSON, so that a value read from YAML compares with a
+// decoded payload.
 func jsonValue(v any) any {
 	data, err := json.Marshal(v)
 	if err != nil {
 		return v
 	}
-	var out any
-	if json.Unmarshal(data, &out) != nil {
+	out, err := pipeline.DecodeValue(string(data))
+	if err != nil {
 		return v
 	}
 	return out
+}
+
+// Canon is a JSON document's canonical text, object keys sorted and numbers as pipeline.DecodeValue reads them;
+// what does not decode stays as it is.
+func Canon(raw json.RawMessage) string {
+	v, err := pipeline.DecodeValue(string(raw))
+	if err != nil {
+		return string(raw)
+	}
+	b, err := json.Marshal(v)
+	if err != nil {
+		return string(raw)
+	}
+	return string(b)
 }
 
 // Agree reports whether the code's outputs on an item are the truth's: the same keys (an output without one takes
@@ -234,13 +254,7 @@ func Agree(truth, got []Output, itemKey string) bool {
 	canon := func(os []Output) []string {
 		out := make([]string, len(os))
 		for i, o := range os {
-			var v any
-			payload := string(o.Payload)
-			if json.Unmarshal(o.Payload, &v) == nil {
-				b, _ := json.Marshal(v)
-				payload = string(b)
-			}
-			out[i] = cmp.Or(o.Key, itemKey) + "\x00" + payload
+			out[i] = cmp.Or(o.Key, itemKey) + "\x00" + Canon(o.Payload)
 		}
 		slices.Sort(out)
 		return out

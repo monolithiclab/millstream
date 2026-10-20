@@ -89,7 +89,14 @@ func checker(_ context.Context, pkg *pipeline.Package) []pipeline.Diagnostic {
 // Validation runs check, the base revision's evals of each affected action before and after (real evals of the fake
 // action), and the backtest: a distill whose code breaks a base case fails however its own new evals
 // score, and a check error stops it before the evals and the backtest.
-func TestValidate(t *testing.T) {
+func TestValidate(t *testing.T) { testValidate(t, false) }
+
+// TestValidateDistill runs TestValidate's distill cases, split off to keep each test within its time budget.
+func TestValidateDistill(t *testing.T) { testValidate(t, true) }
+
+// testValidate runs the cases of distill proposals, or of the other kinds.
+func testValidate(t *testing.T, distillCases bool) {
+	t.Helper()
 	base := basePackage(t)
 	newEval := newFile("actions/coded/evals/mine.yaml", "config: { mode: rules }", "input: {}", "assert: [output.score == 1]")
 	tests := []struct {
@@ -156,6 +163,9 @@ func TestValidate(t *testing.T) {
 	}
 	scratch := t.TempDir()
 	for _, tt := range tests {
+		if (tt.kind == store.ProposalDistill) != distillCases {
+			continue
+		}
 		t.Run(tt.name, func(t *testing.T) {
 			p, err := Prepare(tt.kind, base, tt.patch)
 			if err != nil {

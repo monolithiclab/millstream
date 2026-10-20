@@ -146,12 +146,12 @@ backtest. Its prompt is the brief `gather-evidence` writes from that run, so a c
 or schema, the improve package's variables or the fixture misses the recording: `make recordings` (or the test with
 `-update`) runs the scenario once, records the fake drafter's answer (the M2 fixture's second lessons version) for
 the brief it finds, and runs it again. The default build tests the package's files, check and triggers, and each
-step against an in-process fake API (`internal/improve`). `TestDistill` (`internal/e2e/distill_test.go`) does the same for a
-`distill` proposal on the M5 distill fixture (`examples/m5-distill`, two days of 270 listings through an agent
-tiering them by price per square metre): it records the tier agent at test time against a fake model applying
+step against an in-process fake API (`internal/improve`). `TestDistill` (`internal/e2e/distill_test.go`) does the
+same for a `distill` proposal on the M5 distill fixture (`examples/m5-distill`, two days of 270 listings through an
+agent tiering them by price per square metre): it records the tier agent at test time against a fake model applying
 `tiers.Tier`, replays the drafter's answer (the code in `examples/m5-distill/testdata/tier-rules`) from
-`internal/improve/testdata/recordings/distill`, and validates the proposal in the container sandbox on the
-holdout; it skips without Docker. `-update` rewrites that recording too.
+`internal/improve/testdata/recordings/distill`, and validates the proposal in the container sandbox on the holdout;
+it skips without Docker. `make recordings` and `-update` rewrite that recording too.
 
 The live smoke test runs the M2 fixture's score action through the `claude-code` harness against the real `claude` CLI
 (installed, logged in) on two listings, recording into a temporary directory, and spends a few cents:

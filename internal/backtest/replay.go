@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/monolithiclab/millstream/internal/artifacts"
+	"github.com/monolithiclab/millstream/internal/distill"
 	"github.com/monolithiclab/millstream/internal/engine"
 	"github.com/monolithiclab/millstream/internal/node"
 	"github.com/monolithiclab/millstream/internal/pipeline"
@@ -69,7 +70,7 @@ func (s *stubber) stub(_ context.Context, l store.Lease) (engine.Stub, bool) {
 	}
 	var outcome engine.Stub
 	has := false
-	if inHistory && canon(h.Payload) == canon(l.Item.Payload) {
+	if inHistory && distill.Canon(h.Payload) == distill.Canon(l.Item.Payload) {
 		if d, ok := s.h.delivery(l.Step, l.Item.ID); ok && ended(d) {
 			outcome, has = s.recorded(d), true
 		}
