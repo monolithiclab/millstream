@@ -107,8 +107,8 @@ millstream.Map(func(c millstream.Context, in Input) ([]Output, error) {
 	if err := c.ConfigInto(&cfg); err != nil {
 		return nil, err // not retryable: the same config fails again
 	}
-	...
-	return []Output{{Greeting: cfg.Greeting + ", " + in.Name + "!"}}, nil
+	out := Output{Greeting: cfg.Greeting + ", " + cmp.Or(in.Name, "world") + "!"}
+	return []Output{out}, nil
 })
 ```
 
@@ -552,8 +552,8 @@ millstream dlq list --state all
 ```text
 listings revision 3 83b5897356a1
 1 dead letter replayed
-ID                                   PIPELINE  RUN                                  STEP        KIND  STATE      ERROR
-it_88a91b75434734f59cc9057087b7f59d  listings  run_20261020T162558Z-7559f3e7_adhoc  affordable  dead  replayed   expr: filter of step affordable: evaluate "item.priceEur <= vars.maxPrice": no …
+ID                                   PIPELINE  RUN                                  STEP        KIND  STATE     ERROR
+it_88a91b75434734f59cc9057087b7f59d  listings  run_20261020T162558Z-7559f3e7_adhoc  affordable  dead  replayed  expr: filter of step affordable: evaluate "item.priceEur <= vars.maxPrice": no …
 ```
 
 `replay` has two forms, `--from dlq` for dead letters and `--step` (next section), and takes one of them. The day 1
@@ -577,8 +577,8 @@ Started 2026-10-20T16:26:20Z, settled 2026-10-20T16:26:21Z, 540ms, cost $0.0000
 Items: listings.ready 1, listings.renovate 1
 
 Critical path (540ms):
-  STEP        DELIVERY                             LATENCY  WAIT   WORK  BACKOFF  SHARE
-  affordable  dl_719ce262d713c5774527c64ea86e39e2  540ms    540ms  0s    0s       100%
+  STEP        DELIVERY                             LATENCY  WAIT   WORK  BACKOFF  REVIEW  SHARE
+  affordable  dl_719ce262d713c5774527c64ea86e39e2  540ms    539ms  1ms   0s       0s      100%
 ...
 ```
 
@@ -785,7 +785,7 @@ listings: 0 errors, 2 warnings
 ```
 
 Stub the agent in the package test too, so `test pipeline` never calls a model. Add to `tests/example.yaml`'s
-`stubs`, and expect the shortlist:
+`stubs`, expect the shortlist, and rename the test `a cheap poor listing is scored and shortlisted`:
 
 ```yaml
   score:
@@ -1000,19 +1000,39 @@ RUN                                   PIPELINE  STATE      STARTED              
 run_replay_20261020T162814Z-cc272e1e  listings  succeeded  2026-10-20T16:28:14Z  11     0
 ```
 
-Its report shows three listings approved and the time the run spent waiting on the reviewer on its critical path.
+Its report shows three listings approved, and the time the run spent waiting on the reviewer as `REVIEW` on its
+critical path:
+
+```sh
+millstream run report listings run_replay_20261020T162814Z-cc272e1e
+```
+
+```text
+Run run_replay_20261020T162814Z-cc272e1e of listings (replay): succeeded
+Started 2026-10-20T16:28:14Z, settled 2026-10-20T16:28:33Z, 19.184s, cost $0.0072
+Items: listings.approved 3, listings.scored 4, listings.shortlist 4
+
+Critical path (19.184s):
+  STEP            DELIVERY                             LATENCY  WAIT   WORK  BACKOFF  REVIEW   SHARE
+  score           dl_983e2427bcd5c45f31b107a7250ea642  395ms    362ms  33ms  0s       0s       2%
+  keep-good       dl_ab3aed8f1c6bb0acd6631f1fefa0d20d  3ms      2ms    1ms   0s       0s       0%
+  analyst-review  dl_1a3bf49e9f6088ea853eb8d150e1cb52  18.786s  1ms    0s    0s       18.785s  98%
+...
+```
+
 Stop the engine with Ctrl-C.
 
 ## 9. Where to go next
 
 - **Insights and run reports.** The engine analyses every pipeline on its own, with no LLM: slow steps, failure
   clusters, cost per approved item, review patterns. `millstream insights list`, `millstream run report`, and the
-  Insights view show them; yours already lists the failed filter expression and the agent's cost:
+  Insights view show them; yours already lists the failed filter expression, the agent's cost and the review wait:
 
   ```text
-  ID                   PIPELINE  KIND            SCOPE       SEVERITY  STATE     UPDATED               SUMMARY
-  in_81c1c912b20d93ff  listings  failureCluster  affordable  error     open      2026-10-20T16:28:09Z  1 failures (7% of attempts), 0% recovered on retry: expr: filter of step affordable: evaluate "item.priceEur <= vars.maxPrice": no such key: priceEur
-  in_9fff78625564965e  listings  cost            score       info      open      2026-10-20T16:28:09Z  $0.0144 for 8 outputs ($0.0018 each, $- per approved item), 1 turns per delivery, 0 schema failures
+  ID                   PIPELINE  KIND            SCOPE           SEVERITY  STATE     UPDATED               SUMMARY
+  in_81c1c912b20d93ff  listings  failureCluster  affordable      error     open      2026-10-20T22:56:08Z  1 failures (7% of attempts), 0% recovered on retry: expr: filter of step affordable: evaluate "item.priceEur <= vars.maxPrice": no such key: priceEur
+  in_9fff78625564965e  listings  cost            score           info      open      2026-10-20T22:56:08Z  $0.0216 for 12 outputs ($0.0018 each, $0.0072 per approved item), 1 turns per delivery, 0 schema failures
+  in_e2dc90da035dbc4b  listings  slowStep        analyst-review  info      open      2026-10-20T22:56:08Z  75% of the critical path (queue 0%, work 0%, backoff 0%, review 100%); p95 18.786s, no baseline
   ```
 
   `millstream metrics` prints the rollups behind them, or a Prometheus exposition with `--prometheus`.
