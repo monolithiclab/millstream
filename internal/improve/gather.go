@@ -233,9 +233,9 @@ func (a *action) evidence(ctx context.Context, ideas []idea, files map[string]ap
 			if de == nil {
 				continue
 			}
-			ev.Distill, ev.Brief = de, b+rejections(rejected)
+			ev.Distill, ev.Brief = de, fence(b+rejections(rejected))
 		} else {
-			ev.Brief = brief(id, pd.files, examples, rejected)
+			ev.Brief = fence(brief(id, pd.files, examples, rejected))
 		}
 		if id.insight != nil {
 			ev.Insights = []string{id.insight.ID}
