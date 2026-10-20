@@ -300,7 +300,7 @@ func (c RunPackagesCmd) load(rt *Runtime, log *slog.Logger, actions pipeline.Act
 ) ([]*pipeline.Package, error) {
 	dirs := c.Dirs
 	if len(dirs) == 0 {
-		dirs = []string{"."}
+		dirs = []string{dirOrCurrent("")}
 	}
 	if c.Slots <= 0 || c.LeaseTTL <= 0 {
 		return nil, usageError("--slots and --lease-ttl must be positive")

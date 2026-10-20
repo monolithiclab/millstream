@@ -170,11 +170,11 @@ TOTAL                                1.00
 ### One run
 
 `run --once` applies the package, fires its manual triggers once, waits for the runs to settle, prints a summary and
-exits. Pass the package directory explicitly: at the time of writing, `run` without a directory argument fails to
-start actions built under `bin/`. The engine logs JSON lines on stderr; they are hidden here.
+exits. With no directory argument it runs the package in the current directory. The engine logs JSON lines on
+stderr; they are hidden here.
 
 ```sh
-millstream run --once . 2>/dev/null
+millstream run --once 2>/dev/null
 ```
 
 ```text
@@ -211,11 +211,11 @@ millstream trigger listings adhoc --payload '{"name":"Ada"}'
 run_20261020T162512Z-a8bab96e_adhoc
 ```
 
-Now start the engine in a second terminal (same directory, same `PATH`). `millstream run .` without `--once` keeps
+Now start the engine in a second terminal (same directory, same `PATH`). `millstream run` without `--once` keeps
 running, serves the API and the UI on 127.0.0.1:7070, and picks up the waiting run:
 
 ```sh
-millstream run . 2>../engine.log
+millstream run 2>../engine.log
 ```
 
 ```text
@@ -459,8 +459,8 @@ environment variable it names, else the default applies.
 ### Run it, twice
 
 ```sh
-millstream run --once . 2>/dev/null
-millstream run --once --var day=2 . 2>/dev/null
+millstream run --once 2>/dev/null
+millstream run --once --var day=2 2>/dev/null
 ```
 
 ```text
@@ -485,7 +485,7 @@ stream; in the UI, an item's journey shows where it was filtered and why (`Filte
 
 ## 6. Operate
 
-Start the engine again in the second terminal (`millstream run . 2>../engine.log`) and drive it from the first.
+Start the engine again in the second terminal (`millstream run 2>../engine.log`) and drive it from the first.
 Commands that change state write to the SQLite store directly, and the running engine picks the change up.
 
 ### Status, triggers and events
@@ -818,7 +818,7 @@ terminal:
 
 ```sh
 export MILLSTREAM_SECRET_MODEL_KEY=unused MILLSTREAM_HARNESS_MODE=record MILLSTREAM_HARNESS_DIR=$PWD/recordings
-millstream run . 2>../engine.log
+millstream run 2>../engine.log
 ```
 
 Every listing has been crawled already, and `dedupe` holds back the ones it has seen, so a new run would give the
@@ -879,7 +879,7 @@ Stop the engine (Ctrl-C) and the stand-in model. Restart the engine in replay mo
 
 ```sh
 export MILLSTREAM_SECRET_MODEL_KEY=unused MILLSTREAM_HARNESS_MODE=replay MILLSTREAM_HARNESS_DIR=$PWD/recordings
-millstream run . 2>../engine.log
+millstream run 2>../engine.log
 ```
 
 ```sh

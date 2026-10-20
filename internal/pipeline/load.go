@@ -19,7 +19,8 @@ var skippedDirs = []string{".git", ".millstream"}
 
 // Package is a pipeline package (spec section 4.9): a directory holding the pipeline file and everything it uses.
 type Package struct {
-	// Dir is the package directory; for a lone pipeline file, the directory holding it.
+	// Dir is the package directory's absolute path; for a lone pipeline file, the directory holding it. Absolute,
+	// because actions run in their own directory and find their command under it.
 	Dir      string
 	Pipeline *Pipeline
 	// Hash is the hex SHA-256 identifying the package's content: the revision.
@@ -38,14 +39,18 @@ func Load(path string) (*Package, error) {
 	if err != nil {
 		return nil, fmt.Errorf("load package: %w", err)
 	}
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return nil, fmt.Errorf("load package: %w", err)
+	}
 	pkg := &Package{Files: map[string][]byte{}}
 	if info.IsDir() {
-		pkg.Dir, pkg.PipelineFile = path, FileName
+		pkg.Dir, pkg.PipelineFile = abs, FileName
 		if err := readTree(path, pkg.Files); err != nil {
 			return nil, fmt.Errorf("load package %s: %w", path, err)
 		}
 	} else {
-		pkg.Dir, pkg.PipelineFile = filepath.Dir(path), filepath.Base(path)
+		pkg.Dir, pkg.PipelineFile = filepath.Dir(abs), filepath.Base(path)
 		data, err := os.ReadFile(path) // #nosec G304 -- the user names the package to load
 		if err != nil {
 			return nil, fmt.Errorf("load package: %w", err)
