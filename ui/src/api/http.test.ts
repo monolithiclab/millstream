@@ -62,6 +62,28 @@ const cases: Case[] = [
     '/api/v1/insights?pipeline=p&state=open',
   ],
   [
+    'listProposals',
+    (a) => a.listProposals({ pipeline: 'p', state: 'ready' }),
+    'GET',
+    '/api/v1/proposals?pipeline=p&state=ready',
+  ],
+  ['getProposal', (a) => a.getProposal('p-1'), 'GET', '/api/v1/proposals/p-1'],
+  [
+    'acceptProposal',
+    (a) => a.acceptProposal('p-1', { patchSha256: 'abc' }),
+    'POST',
+    '/api/v1/proposals/p-1/accept',
+    { patchSha256: 'abc' },
+  ],
+  [
+    'rejectProposal',
+    (a) => a.rejectProposal('p-1', { reason: 'too broad' }),
+    'POST',
+    '/api/v1/proposals/p-1/reject',
+    { reason: 'too broad' },
+  ],
+  ['revalidateProposal', (a) => a.revalidateProposal('p-1'), 'POST', '/api/v1/proposals/p-1/revalidate', {}],
+  [
     'getMetrics',
     (a) => a.getMetrics({ name: 'throughput', groupBy: 'step', since: '1h' }),
     'GET',

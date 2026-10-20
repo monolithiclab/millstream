@@ -12,6 +12,8 @@ import type {
   MetricSeries,
   Nodes,
   Pipeline,
+  Proposal,
+  ProposalDecision,
   ReplayRequest,
   Review,
   ReviewDecision,
@@ -44,6 +46,7 @@ export type MetricNamesQuery = QueryOf<'listMetricNames'>;
 export type InboxQuery = QueryOf<'listInbox'>;
 export type SampleQuery = QueryOf<'listSamples'>;
 export type InsightQuery = QueryOf<'listInsights'>;
+export type ProposalQuery = QueryOf<'listProposals'>;
 
 // A step or a whole pipeline, for pause and resume.
 export interface Target {
@@ -95,6 +98,9 @@ export interface Api {
   listInbox(query?: InboxQuery): Promise<ReviewPage>;
   listSamples(query?: SampleQuery): Promise<SamplePage>;
   listInsights(query?: InsightQuery): Promise<Insight[]>;
+  // Proposals (spec section 11.3), newest first; one with its patch and latest validation report.
+  listProposals(query?: ProposalQuery): Promise<Proposal[]>;
+  getProposal(proposal: string): Promise<Proposal>;
   getMetrics(query: MetricsQuery): Promise<MetricSeries[]>;
   listMetricNames(query?: MetricNamesQuery): Promise<string[]>;
   listNodes(): Promise<Nodes>;
@@ -117,6 +123,11 @@ export interface Api {
   decideSample(pipeline: string, delivery: string, decision: SampleDecision, options?: SendOptions): Promise<Sample>;
   acknowledgeInsight(pipeline: string, insight: string): Promise<void>;
   muteInsight(pipeline: string, insight: string): Promise<void>;
+  // Accepting names the patch the decider saw (patchSha256); a moved base or another patch is a conflict, the
+  // proposal then stale. Rejecting needs a reason. Revalidating rebases a stale one first (a conflict if it cannot).
+  acceptProposal(proposal: string, decision: ProposalDecision): Promise<Proposal>;
+  rejectProposal(proposal: string, decision: ProposalDecision): Promise<Proposal>;
+  revalidateProposal(proposal: string): Promise<Proposal>;
   // A remote node: drain stops leasing to it until it restarts; revoke refuses its id for good and ends its leases.
   drainNode(node: string): Promise<void>;
   revokeNode(node: string): Promise<void>;

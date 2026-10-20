@@ -36,9 +36,9 @@ describe('InsightsScreen', () => {
 
   it('lists what needs attention, by kind, each with its evidence and a way in', async () => {
     await open();
-    expect(screen.getByRole('button', { name: 'Needs attention 3' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'Needs attention 6' })).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByRole('button', { name: 'Resolved 1' })).toBeInTheDocument();
-    expect(screen.getAllByRole('article')).toHaveLength(3);
+    expect(screen.getAllByRole('article')).toHaveLength(6);
 
     const slow = card(/enrich is slowing runs down/);
     expect(slow).toHaveTextContent('OpenSlow stepenrichraised 2 days ago');
@@ -75,17 +75,19 @@ describe('InsightsScreen', () => {
   it('filters by kind and step', async () => {
     const { user } = await open();
     await user.click(screen.getByRole('checkbox', { name: /Slow step/ }));
-    expect(screen.getAllByRole('article')).toHaveLength(2);
+    expect(screen.getAllByRole('article')).toHaveLength(5);
     await user.selectOptions(screen.getByRole('combobox', { name: 'Step' }), 'score');
-    expect(screen.getAllByRole('article')).toHaveLength(1);
-    await user.click(screen.getByRole('checkbox', { name: /Failure cluster/ }));
+    expect(screen.getAllByRole('article')).toHaveLength(4);
+    for (const kind of [/Failure cluster/, /Drift/, /Waste/, /Could be code/]) {
+      await user.click(screen.getByRole('checkbox', { name: kind }));
+    }
     expect(screen.getByText('Nothing needs attention')).toBeInTheDocument();
   });
 
   it('drops a step filter that does not apply to the tab shown', async () => {
     const { user } = await open();
     await user.selectOptions(screen.getByRole('combobox', { name: 'Step' }), 'score');
-    expect(screen.getAllByRole('article')).toHaveLength(1);
+    expect(screen.getAllByRole('article')).toHaveLength(4);
     await user.click(screen.getByRole('button', { name: 'Muted 1' }));
     expect(card(/No node can run render/)).toBeInTheDocument();
   });
@@ -112,7 +114,7 @@ describe('InsightsScreen', () => {
     expect(api.calls).toEqual([{ method: 'acknowledgeInsight', args: ['listings-daily', 'in_slow_enrich'] }]);
     await vi.waitFor(() => expect(within(card(/enrich is slowing/)).getByText('Acknowledged')).toBeInTheDocument());
     await user.click(within(card(/2 failures/)).getByRole('button', { name: 'Mute' }));
-    await vi.waitFor(() => expect(screen.getAllByRole('article')).toHaveLength(2));
+    await vi.waitFor(() => expect(screen.getAllByRole('article')).toHaveLength(5));
     expect(screen.getByRole('button', { name: 'Muted 2' })).toBeInTheDocument();
   });
 
@@ -130,8 +132,8 @@ describe('InsightsScreen', () => {
   it('shows an unknown kind with the engine summary, and missing figures as dashes', async () => {
     const odd: Insight = {
       ...demoFixtures.insights![0]!,
-      id: 'in_drift',
-      kind: 'drift',
+      id: 'in_novel',
+      kind: 'novelKind',
       summary: 'output drifted',
       evidence: {},
     };
@@ -139,6 +141,62 @@ describe('InsightsScreen', () => {
     await open(ROUTE, new FakeApi({ ...demoFixtures, insights: [odd, bare] }));
     expect(screen.getByText('output drifted')).toHaveAttribute('lang', 'en');
     expect(card(/0 failures/)).toHaveTextContent('Share of attempts—');
+  });
+
+  it('reads the M5 kinds: drift from audits, waste, distillable, and what reviews teach', async () => {
+    await open();
+    const drift = card(/The fallback disagrees with score/);
+    expect(drift).toHaveTextContent('On 4 of 39 audits, the fallback’s output differed from the primary’s');
+    expect(drift).toHaveTextContent('Agreement on audits90%');
+    expect(drift).toHaveTextContent('Disagreements4failed audits: 1');
+
+    const waste = card(/score spent \$0\.27 on items discarded later/);
+    expect(waste).toHaveTextContent('Discarded by: analyst-review (9), dedupe (5).');
+    expect(waste).toHaveTextContent('Wasted cost$0.274% of the step’s cost');
+    expect(waste).not.toHaveTextContent('Moving');
+
+    const distill = card(/score could become code/);
+    expect(distill).toHaveTextContent('80% of its output fields are bounded or copied. Bounded: /score, /marginPct');
+    expect(distill).toHaveTextContent('Saving a month$228.60candidate 1 by saving');
+    expect(distill).toHaveTextContent('Approved without an edit96%decisions: 53');
+
+    const review = card(/How reviewers decide at analyst-review/);
+    expect(within(review).getByRole('heading', { name: 'Who wrote the edited fields' })).toBeInTheDocument();
+    expect(review).toHaveTextContent('/marginPct by score: 6 edits');
+    expect(review).toHaveTextContent('/notes by no single step: 2 edits');
+    expect(review).toHaveTextContent('Edits no single step wrote: 2');
+    expect(review).toHaveTextContent(
+      'TopologyA filter item.priceEur <= 520000 after parse, before score: it drops 5 rejected items and 0 of 18 approved ones.',
+    );
+    expect(review).toHaveTextContent('Lessons6 edits of /marginPct written by score: a lesson, or a prompt change.');
+    expect(review).toHaveTextContent('Reason codes3 rejections at analyst-review with a text and no reason code');
+  });
+
+  it('suggests moving a filter upstream, and names the config hint', async () => {
+    const [review, waste] = ['in_review_analyst', 'in_waste_score'].map((id) =>
+      demoFixtures.insights.find((i) => i.id === id)!,
+    );
+    const moved: Insight = {
+      ...waste!,
+      evidence: {
+        ...waste!.evidence,
+        byStep: [{ step: 'price-filter', kind: 'filter', items: 9 }],
+        suggestion: { kind: 'topology', moveUpstream: 'price-filter', before: 'score' },
+      },
+    };
+    const universal: Insight = {
+      ...review!,
+      evidence: {
+        attribution: [],
+        proposals: [{ kind: 'config', step: 'analyst-review', decisions: 40, approvalRate: 0.99 }, { kind: 'odd' }],
+      },
+    };
+    await open(ROUTE, new FakeApi({ ...demoFixtures, insights: [moved, universal] }));
+    expect(card(/score spent/)).toHaveTextContent('Moving price-filter before score would save it.');
+    const hints = card(/How reviewers decide/);
+    expect(hints).toHaveTextContent('Config99% of 40 decisions at analyst-review approved without an edit');
+    expect(hints).toHaveTextContent('oddodd');
+    expect(within(hints).queryByRole('heading', { name: 'Who wrote the edited fields' })).not.toBeInTheDocument();
   });
 
   it('teaches when nothing needs attention, and retries a failed read', async () => {
@@ -158,5 +216,6 @@ describe('InsightsScreen', () => {
     await open(ROUTE, new FakeApi(), 'fr');
     expect(screen.getByRole('heading', { level: 1, name: 'Constats' })).toBeInTheDocument();
     expect(card(/enrich ralentit les runs/)).toHaveTextContent('Elle occupe 34 % du chemin critique');
+    expect(card(/score pourrait devenir du code/)).toHaveTextContent('Économie par mois');
   });
 });

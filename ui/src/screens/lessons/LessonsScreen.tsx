@@ -2,15 +2,15 @@ import { useTranslation } from 'react-i18next';
 import { Link, useParams } from 'react-router-dom';
 import { enc, withQuery } from '../../api/api';
 import type { StepLessons } from '../../api/schema';
-import { pipelinePath } from '../../routes';
+import { pipelinePath, proposalPath } from '../../routes';
 import { ScreenPage } from '../ScreenPage';
 import { EmptyState, QueryView } from '../../common/States';
 import { card, cardTitle } from '../../common/styles';
 import { useResource } from '../../common/useResource';
 import { ReviewSource } from './ReviewSource';
 
-// A lesson's source (spec 11.4) is "kind/id": an insight links to its card, a review opens its decision in a panel; a
-// proposal has no page until the Improve view (M5), so it is named only.
+// A lesson's source (spec 11.4) is "kind/id": an insight links to its card, a proposal to its page in the Improve
+// view, a review opens its decision in a panel.
 function Source({ pipeline, source }: { pipeline: string; source: string }) {
   const { t } = useTranslation();
   const [kind = '', ...rest] = source.split('/');
@@ -19,14 +19,15 @@ function Source({ pipeline, source }: { pipeline: string; source: string }) {
     return <Link to={`${pipelinePath(pipeline, 'insights')}#${enc(id)}`}>{t('lessons.fromInsight', { id })}</Link>;
   }
   if (kind === 'review' && id) return <ReviewSource pipeline={pipeline} delivery={id} />;
-  if (kind === 'proposal' && id) return <span>{t('lessons.fromProposal', { id })}</span>;
+  if (kind === 'proposal' && id)
+    return <Link to={proposalPath(pipeline, id)}>{t('lessons.fromProposal', { id })}</Link>;
   return <span className="font-mono">{source}</span>;
 }
 
 const json = (value: unknown) => JSON.stringify(value, null, 2);
 
 // What each step has learned (lessons/<step>.yaml of the active revision): rules and examples, read-only, each with
-// the source it cites. Lessons change through the package (or, from M5, accepted proposals).
+// the source it cites. Lessons change through the package, and through accepted lessons proposals.
 export function LessonsScreen() {
   const { t } = useTranslation();
   const { pipeline = '' } = useParams();

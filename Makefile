@@ -140,11 +140,18 @@ UI_TYPES_GEN = npx openapi-typescript ../internal/api/openapi.yaml --empty-objec
 ui-types: ui-deps ## Generate ui/src/api/openapi.d.ts from internal/api/openapi.yaml (openapi-typescript, node container)
 	@$(UI_DOCKER) $(UI_NODE_IMAGE) sh -c '$(UI_TYPES_GEN) && cp /tmp/openapi.fmt.d.ts $(UI_TYPES)'
 
+# FILES narrows a run to some paths under ui/ while working (make test-ui FILES='src/screens/improve src/api'): the
+# whole project's typecheck, then ESLint, Prettier and Vitest on those paths alone, without coverage.
 .PHONY: test-ui
-test-ui: ui-deps ## Typecheck, lint, format check and Vitest (coverage, i18n checks) for the web UI (node container)
+test-ui: ui-deps ## Typecheck, lint, format check and Vitest (coverage, i18n checks) for the web UI; FILES= narrows it (node container)
+ifeq ($(strip $(FILES)),)
 	@$(UI_DOCKER) $(UI_NODE_IMAGE) sh -c '$(UI_TYPES_GEN) && { cmp -s /tmp/openapi.fmt.d.ts $(UI_TYPES) || \
 		{ echo "ui/$(UI_TYPES) is stale: run make ui-types" >&2; exit 1; }; } && \
 		npm run typecheck && npm run lint && npm run format:check && npm test'
+else
+	@$(UI_DOCKER) $(UI_NODE_IMAGE) sh -c 'npm run typecheck && npx eslint --max-warnings 0 $(FILES) && \
+		npx prettier --check $(FILES) && npx vitest run --passWithNoTests $(FILES)'
+endif
 
 # The Playwright tests reach the build through the binary: millstream, cross-compiled for the container's Linux with
 # the UI embedded, serves the API and the UI over a package.

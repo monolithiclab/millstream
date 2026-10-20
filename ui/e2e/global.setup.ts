@@ -1,9 +1,11 @@
 import { expect, test as setup } from '@playwright/test';
+import { descriptionPatch, proposals } from './proposals';
 
 // Seeds the e2e server (millstream run over e2e/fixture) through the API: four listings that park in the analysts
 // and triage inboxes, one the shortlist filters out, so a run settles, and one whose surface is 0, which dies at
 // price-check (a division by zero), so there is a dead letter to replay. The screens tests read the analysts inbox;
-// the keyboard flow decides the triage one.
+// the keyboard flow decides the triage one. Then two proposals, for the Improve view's flow to reject one and accept
+// the other.
 export const listings = [
   {
     title: 'T3 · 68 m² · Paris 19e',
@@ -66,4 +68,20 @@ setup('seed runs with parked reviews and a dead letter', async ({ request }) => 
   const deadLetters = async () =>
     ((await (await request.get('/api/v1/pipelines/listings-daily/dead-letters')).json()) as unknown[]).length;
   await expect.poll(deadLetters, { timeout: 30_000 }).toBe(1);
+});
+
+setup('seed two ready proposals', async ({ request }) => {
+  for (const { fingerprint, description, rationale } of proposals) {
+    const response = await request.post('/api/v1/proposals', {
+      data: {
+        pipeline: 'listings-daily',
+        kind: 'config',
+        patch: descriptionPatch(description),
+        rationale,
+        fingerprint,
+      },
+    });
+    expect(response.status(), await response.text()).toBe(201);
+    expect(((await response.json()) as { state: string }).state).toBe('ready');
+  }
 });

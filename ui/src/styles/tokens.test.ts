@@ -30,6 +30,10 @@ const text: [string, string][] = [
   ...statuses.flatMap((s) => [`${s}-soft`, 'surface', 'surface-2', 'bg'].map((bg): [string, string] => [s, bg])),
   ...[...statuses, 'accent'].map((s): [string, string] => ['ink', `${s}-soft`]),
   ...['log-ink', 'log-dim', 'log-warn', 'log-bad'].map((fg): [string, string] => [fg, 'log-bg']),
+  // The diff viewer's syntax tones and marks on its added and removed lines.
+  ...['accent', 'human', 'warn', 'ink-2', 'ok', 'bad'].flatMap((fg) =>
+    ['ok-soft', 'bad-soft'].map((bg): [string, string] => [fg, bg]),
+  ),
 ];
 // The focus ring on every ground, the reconnecting outline, the switcher's ink border.
 const ui: [string, string][] = [
