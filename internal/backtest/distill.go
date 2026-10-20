@@ -242,12 +242,17 @@ func (h *history) truth(d store.Delivery, p *distill.Pair, reviewed map[string][
 
 // reviewsBelow returns the people's decisions on an item and its descendants, nearest first.
 func (h *history) reviewsBelow(id string, reviewed map[string][]store.Review) []store.Review {
-	var out []store.Review
+	return below(h, id, reviewed)
+}
+
+// below collects what by holds for an item and its descendants, nearest first, maxReviewDepth levels down.
+func below[T any](h *history, id string, by map[string][]T) []T {
+	var out []T
 	level, seen := []string{id}, map[string]bool{id: true}
 	for depth := 0; len(level) > 0 && depth < maxReviewDepth; depth++ {
 		var next []string
 		for _, it := range level {
-			out = append(out, reviewed[it]...)
+			out = append(out, by[it]...)
 			for _, c := range h.children[it] {
 				if !seen[c.ID] {
 					seen[c.ID] = true

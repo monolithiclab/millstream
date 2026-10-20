@@ -285,12 +285,16 @@ func Proposed(pkg *pipeline.Package, r pipeline.ActionResolver, touched []string
 			}
 		}
 	}
+	dirs := map[string]bool{}
 	for _, p := range touched {
 		if rest, ok := strings.CutPrefix(p, "actions/"); ok {
 			if dir, _, found := strings.Cut(rest, "/"); found && dir != "" {
-				add("./actions/" + dir)
+				dirs[dir] = true
 			}
 		}
+	}
+	for dir := range dirs {
+		add("./actions/" + dir)
 	}
 	slices.Sort(all)
 	slices.Sort(execs)

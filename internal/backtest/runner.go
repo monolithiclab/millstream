@@ -158,8 +158,7 @@ func (b *Backtester) Prepare(req Request) (*patch.Patch, error) {
 		return nil, fmt.Errorf("the patch applies to %s, not %s: %w", p.Base, req.BaseRevision, store.ErrInvalid)
 	}
 	if left, limited := b.remaining(); limited && left <= 0 {
-		return nil, fmt.Errorf("%w: %.2f USD spent or held by running backtests today", ErrBudget,
-			b.opts.Improve.BudgetDayUSD)
+		return nil, b.errBudgetSpent()
 	}
 	return p, nil
 }
@@ -290,24 +289,33 @@ func (b *Backtester) Run(ctx context.Context, req Request) (*Report, error) {
 
 // remaining is what is left of today's improve budget, and whether there is a limit at all.
 func (b *Backtester) remaining() (float64, bool) {
-	limit := b.opts.Improve.BudgetDayUSD
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	return b.left()
+}
+
+// left is what is left of the day's improve budget, held by no running backtest; b.mu is held.
+func (b *Backtester) left() (float64, bool) {
+	limit := b.opts.Improve.BudgetDayUSD
 	return limit - b.opts.Budget.Spent(b.opts.Now()) - b.reserved, limit > 0
+}
+
+// errBudgetSpent is the refusal of a backtest that finds nothing left.
+func (b *Backtester) errBudgetSpent() error {
+	return fmt.Errorf("%w: %.2f USD spent or held by running backtests today", ErrBudget, b.opts.Improve.BudgetDayUSD)
 }
 
 // reserve holds what is left of the day's improve budget for a backtest until release: a concurrent backtest finds
 // nothing left meanwhile (ErrBudget). Without a budget it holds nothing.
 func (b *Backtester) reserve() (limit float64, limited bool, release func(), err error) {
-	limit = b.opts.Improve.BudgetDayUSD
-	if limit <= 0 {
-		return 0, false, func() {}, nil
-	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	left := limit - b.opts.Budget.Spent(b.opts.Now()) - b.reserved
-	if left <= 0 {
-		return 0, true, nil, fmt.Errorf("%w: %.2f USD spent or held by running backtests today", ErrBudget, limit)
+	left, limited := b.left()
+	switch {
+	case !limited:
+		return 0, false, func() {}, nil
+	case left <= 0:
+		return 0, true, nil, b.errBudgetSpent()
 	}
 	b.reserved += left
 	return left, true, func() {

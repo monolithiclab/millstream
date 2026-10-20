@@ -20,24 +20,21 @@ func measure(h *history, s sample, r *replayed, step string) Metrics {
 	// Agreement with the historical outputs, split by whether a review lies below.
 	compare := func(hd store.Delivery, agreed bool) {
 		m.Compared++
-		revs := lin.below(hd.ItemID)
-		switch {
-		case len(revs) == 0:
+		if agreed {
+			m.Agreed++
+		}
+		if revs := lin.below(hd.ItemID); len(revs) == 0 {
 			m.UnreviewedCompared++
 			if agreed {
 				m.UnreviewedAgreed++
 			}
-		case agreed:
+		} else {
 			m.ReviewedCompared++
-			m.ReviewedAgreed++
-		default:
-			m.ReviewedCompared++
-			if lin.met(revs) {
+			if agreed {
+				m.ReviewedAgreed++
+			} else if lin.met(revs) {
 				m.TowardReviewers++
 			}
-		}
-		if agreed {
-			m.Agreed++
 		}
 	}
 	if step == "" {
@@ -97,7 +94,7 @@ func measure(h *history, s sample, r *replayed, step string) Metrics {
 				m.ApprovalsDropped++
 			}
 		}
-		if reviewAgrees(h, r, rv, hd) {
+		if lin.verdict[id].agrees {
 			m.ReviewAgreed++
 		}
 	}
@@ -114,20 +111,28 @@ func measure(h *history, s sample, r *replayed, step string) Metrics {
 }
 
 // reviewed finds the decided reviews below a delivery's item, on the sampled lineages, and whether a replay meets
-// them.
+// them: each review's verdict is worked out once.
 type reviewed struct {
-	h      *history
-	r      *replayed
-	byItem map[string][]string // the reviews' delivery ids by the item each review received
-	cache  map[string][]string
+	h       *history
+	byItem  map[string][]string // the reviews' delivery ids by the item each review received
+	verdict map[string]verdict  // by review delivery id
+	cache   map[string][]string
 }
 
+// verdict is a replay against one review: whether it agrees, and whether the review edited or rejected the item.
+type verdict struct{ agrees, corrective bool }
+
 func newReviewed(h *history, s sample, r *replayed) *reviewed {
-	l := &reviewed{h: h, r: r, byItem: map[string][]string{}, cache: map[string][]string{}}
-	for id := range h.reviews {
-		if hd, ok := h.deliveries[id]; ok && s.keep[hd.ItemID] && s.fired[hd.RunID] {
-			l.byItem[hd.ItemID] = append(l.byItem[hd.ItemID], id)
+	l := &reviewed{h: h, byItem: map[string][]string{}, verdict: map[string]verdict{}, cache: map[string][]string{}}
+	for id, rv := range h.reviews {
+		hd, ok := h.deliveries[id]
+		if !ok || !s.keep[hd.ItemID] || !s.fired[hd.RunID] {
+			continue
 		}
+		l.byItem[hd.ItemID] = append(l.byItem[hd.ItemID], id)
+		ops, err := review.ParsePatch(rv.Patch)
+		l.verdict[id] = verdict{agrees: reviewAgrees(h, r, rv, hd),
+			corrective: rv.Decision == store.DecisionReject || (err == nil && len(ops) > 0)}
 	}
 	return l
 }
@@ -137,25 +142,11 @@ func (l *reviewed) below(itemID string) []string {
 	if len(l.byItem) == 0 {
 		return nil
 	}
-	if out, ok := l.cache[itemID]; ok {
-		return out
+	out, ok := l.cache[itemID]
+	if !ok {
+		out = below(l.h, itemID, l.byItem)
+		l.cache[itemID] = out
 	}
-	var out []string
-	level, seen := []string{itemID}, map[string]bool{itemID: true}
-	for depth := 0; len(level) > 0 && depth < maxReviewDepth; depth++ {
-		var next []string
-		for _, it := range level {
-			out = append(out, l.byItem[it]...)
-			for _, c := range l.h.children[it] {
-				if !seen[c.ID] {
-					seen[c.ID] = true
-					next = append(next, c.ID)
-				}
-			}
-		}
-		level = next
-	}
-	l.cache[itemID] = out
 	return out
 }
 
@@ -165,12 +156,11 @@ func (l *reviewed) below(itemID string) []string {
 func (l *reviewed) met(revs []string) bool {
 	corrective := false
 	for _, id := range revs {
-		rv := l.h.reviews[id]
-		if !reviewAgrees(l.h, l.r, rv, l.h.deliveries[id]) {
+		v := l.verdict[id]
+		if !v.agrees {
 			return false
 		}
-		ops, err := review.ParsePatch(rv.Patch)
-		corrective = corrective || rv.Decision == store.DecisionReject || (err == nil && len(ops) > 0)
+		corrective = corrective || v.corrective
 	}
 	return corrective
 }

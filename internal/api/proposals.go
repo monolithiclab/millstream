@@ -199,7 +199,7 @@ func (s *Server) getProposal(w http.ResponseWriter, r *http.Request) error {
 // proposalPublished events of their pipelines.
 func (s *Server) withPublications(ctx context.Context, ps ...store.Proposal) ([]Proposal, error) {
 	out := make([]Proposal, len(ps))
-	byPipeline := map[string]map[string]*Publication{}
+	byPipeline := map[string]map[string]publish.Publication{}
 	for i, p := range ps {
 		out[i] = ToProposal(p)
 		if p.State != store.ProposalAccepted {
@@ -207,21 +207,15 @@ func (s *Server) withPublications(ctx context.Context, ps ...store.Proposal) ([]
 		}
 		pubs, ok := byPipeline[p.Pipeline]
 		if !ok {
-			evs, err := s.opts.Store.PipelineEvents(ctx, store.EventFilter{Pipeline: p.Pipeline,
-				Kinds: []string{store.EventProposalPublished}})
-			if err != nil {
+			var err error
+			if pubs, err = publish.Publications(ctx, s.opts.Store, p.Pipeline); err != nil {
 				return nil, err
-			}
-			pubs = map[string]*Publication{}
-			for _, ev := range evs {
-				var d struct{ ID, Publisher, Where string }
-				if json.Unmarshal(ev.Data, &d) == nil && pubs[d.ID] == nil {
-					pubs[d.ID] = &Publication{Publisher: d.Publisher, Location: d.Where, At: ev.TS}
-				}
 			}
 			byPipeline[p.Pipeline] = pubs
 		}
-		out[i].Published = pubs[p.ID]
+		if pub, ok := pubs[p.ID]; ok {
+			out[i].Published = &Publication{Publisher: pub.Publisher, Location: pub.Where, At: pub.At}
+		}
 	}
 	return out, nil
 }

@@ -137,10 +137,8 @@ func secretRefs(s pipeline.Step) map[string]bool {
 	}
 	walk(s.Config)
 	if s.Action == pipeline.BuiltinReview {
-		if n, ok := s.Config["notify"].(map[string]any); ok {
-			if name, ok := n["secret"].(string); ok {
-				out[name] = true
-			}
+		if r, _ := pipeline.ParseReview(s.Name, s.Config); r != nil && r.NotifySecret != "" {
+			out[r.NotifySecret] = true
 		}
 	}
 	return out
