@@ -510,3 +510,21 @@ func TestUnschedulablePending(t *testing.T) {
 		t.Fatalf("summary = %q", s)
 	}
 }
+
+// A summary never prints a unit around a missing value: a slow step without a baseline says so.
+func TestSummaryMissingValues(t *testing.T) {
+	for _, tt := range []struct {
+		kind, evidence, want string
+	}{
+		{pipeline.InsightSlowStep, `{"criticalPathShare":0.5,"queueWaitShare":0.1,"workShare":0.4,"backoffShare":0,` +
+			`"p95Seconds":2.5}`, "50% of the critical path (queue 10%, work 40%, backoff 0%); p95 2.5s, no baseline"},
+		{pipeline.InsightSlowStep, `{"p95Seconds":2.5,"baselineP95Seconds":1}`, "p95 2.5s, baseline 1s"},
+		{pipeline.InsightCost, `{"costUsd":0.1,"outputs":2,"costPerOutput":0.05}`, "$0.1 for 2 outputs ($0.05 each, none approved)"},
+		{pipeline.InsightReviewPattern, `{}`, "p50 decision -"},
+	} {
+		got := Summary(store.Insight{Kind: tt.kind, Evidence: json.RawMessage(tt.evidence)})
+		if !strings.Contains(got, tt.want) || strings.Contains(got, "-s") || strings.Contains(got, "$-") {
+			t.Errorf("%s %s: summary %q, want %q", tt.kind, tt.evidence, got, tt.want)
+		}
+	}
+}

@@ -607,17 +607,25 @@ func Summary(in store.Insight) string {
 		}
 		return strconv.FormatFloat(v*100, 'f', 0, 64) + "%"
 	}
+	// unit wraps a value in its unit, or says absent when the evidence lacks it: never a bare unit around "-".
+	unit := func(k, prefix, suffix, absent string) string {
+		if ev[k] == nil {
+			return absent
+		}
+		return prefix + f(k) + suffix
+	}
 	switch in.Kind {
 	case pipeline.InsightSlowStep:
-		return fmt.Sprintf("%s of the critical path (queue %s, work %s, backoff %s); p95 %ss, baseline %ss",
-			p("criticalPathShare"), p("queueWaitShare"), p("workShare"), p("backoffShare"), f("p95Seconds"),
-			f("baselineP95Seconds"))
+		return fmt.Sprintf("%s of the critical path (queue %s, work %s, backoff %s); p95 %s, %s",
+			p("criticalPathShare"), p("queueWaitShare"), p("workShare"), p("backoffShare"),
+			unit("p95Seconds", "", "s", "-"), unit("baselineP95Seconds", "baseline ", "s", "no baseline"))
 	case pipeline.InsightFailureCluster:
 		return fmt.Sprintf("%s failures (%s of attempts), %s recovered on retry: %s: %s", f("count"), p("rate"),
 			p("retrySuccessShare"), f("class"), f("message"))
 	case pipeline.InsightCost:
-		return fmt.Sprintf("$%s for %s outputs ($%s each, $%s per approved item), %s turns per delivery, %s schema "+
-			"failures", f("costUsd"), f("outputs"), f("costPerOutput"), f("costPerApprovedItem"), f("turnsPerDelivery"),
+		return fmt.Sprintf("%s for %s outputs (%s each, %s), %s turns per delivery, %s schema failures",
+			unit("costUsd", "$", "", "-"), f("outputs"), unit("costPerOutput", "$", "", "-"),
+			unit("costPerApprovedItem", "$", " per approved item", "none approved"), f("turnsPerDelivery"),
 			f("schemaFailures"))
 	case pipeline.InsightUnschedulable:
 		if f("class") == ClassNoNode {
@@ -628,16 +636,16 @@ func Summary(in store.Insight) string {
 		return fmt.Sprintf("the fallback disagreed with the primary on %s of %s audits (%s disagreed, %s failed)",
 			p("disagreementShare"), f("audits"), f("disagreed"), f("failed"))
 	case pipeline.InsightWaste:
-		return fmt.Sprintf("%s items discarded downstream, $%s of $%s wasted (%s)", f("discardedItems"),
-			f("wastedCostUsd"), f("costUsd"), p("wasteShare"))
+		return fmt.Sprintf("%s items discarded downstream, %s of %s wasted (%s)", f("discardedItems"),
+			unit("wastedCostUsd", "$", "", "-"), unit("costUsd", "$", "", "-"), p("wasteShare"))
 	case pipeline.InsightDistillable:
 		return fmt.Sprintf("candidate #%s for code: %s deliveries, %s bounded output, p95 %s turns, reviewer "+
-			"agreement %s; saves about $%s a month", f("rank"), f("deliveries"), p("boundedShare"), f("turnsP95"),
-			p("reviewerAgreement"), f("monthlySavingUsd"))
+			"agreement %s; saves about %s a month", f("rank"), f("deliveries"), p("boundedShare"), f("turnsP95"),
+			p("reviewerAgreement"), unit("monthlySavingUsd", "$", "", "-"))
 	case pipeline.InsightReviewPattern:
 		return fmt.Sprintf("%s rejected, %s edited, %s auto-approved, sampled agreement %s, intervention %s, p50 "+
-			"decision %ss", p("rejectionRate"), p("editRate"), p("autoApprovalRate"), p("sampledAgreement"),
-			p("interventionRate"), f("timeToDecisionP50Seconds"))
+			"decision %s", p("rejectionRate"), p("editRate"), p("autoApprovalRate"), p("sampledAgreement"),
+			p("interventionRate"), unit("timeToDecisionP50Seconds", "", "s", "-"))
 	}
 	return string(in.Evidence)
 }
