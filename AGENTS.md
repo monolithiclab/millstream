@@ -83,8 +83,9 @@ and `make help` for every command.
 ## Testing
 
 - `make test` (the default build, no `-race`) has a time budget checked by `make test-times`: medians summing to at
-  most 750 ms, no test over 20 ms, no package over 100 ms. The working target is 600 ms: a change that takes the
-  median total above it makes room in the same change. What keeps it there: [docs/testing.md](docs/testing.md).
+  most 750 ms, no test over 20 ms, no package over 100 ms. The working target is 600 ms. Run `make test-times` at
+  milestone close, not for each change or branch (it runs the suite six times); a milestone above the target makes
+  room before it closes. What keeps it there: [docs/testing.md](docs/testing.md).
 - Tiers: while working, run `make ci` and `make test-e2e PKG=./internal/foo/...` for the packages a change touches.
   Run the full `make test-e2e` (race, every tag, Docker, Postgres, S3, chaos) once when the change is done, before
   closing a milestone, and after touching the exec runtime, the node, the CLI's run path, the store's concurrency or

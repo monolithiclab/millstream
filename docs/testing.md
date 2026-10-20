@@ -8,7 +8,7 @@ detail behind them.
 | Command | What it runs | In `make ci` |
 | --- | --- | --- |
 | `make test` | The default build: in-process unit tests, without `-race`, within the time budget | Yes |
-| `make test-times` | The budget check alone (`scripts/test-times`) | Part of `make test` |
+| `make test-times` | The budget check (`scripts/test-times`): six suite runs, so at milestone close only | No |
 | `make test-e2e PKG=./internal/foo/...` | The iteration tier: those packages only, tag `e2e`, no `-race`, no coverage | No |
 | `make test-e2e` | Everything, tagged and untagged, under `-race`, with the whole suite's coverage | No (own CI job) |
 | `make test-exit` | The M5 exit scenario alone, verbose, under the e2e lock, see [m5-exit.md](m5-exit.md) | No (in `test-e2e`) |
@@ -23,7 +23,8 @@ node or the Compose files.
 
 ## The time budget
 
-`make test` runs the default build without `-race`, within a budget that `make test-times` measures. The script runs
+`make test` runs the default build without `-race`, within a budget that `make test-times` measures at milestone
+close, not for each change or branch: it runs the suite six times. The script runs
 the suite serially (`-p 1 -parallel 1`) three times (five with `CI=1`), times each top-level test from the
 `go test -json` event timestamps and takes its median. The sum of the medians is at most 750 ms, and no test's median
 is over 20 ms. The slowest run of each listed test is printed beside its median. The script then runs the suite three
@@ -35,8 +36,8 @@ its slowest serial run took over 1.2 times its fastest: the medians still decide
 exits 1 over budget. The figures are `BUDGET_TOTAL_MS`, `BUDGET_TEST_MS` and `BUDGET_PKG_MS` in `scripts/test-times`,
 with `TARGET_TOTAL_MS` for the working target.
 
-The working target is 600 ms, which the script warns about when the median total goes above it. A change that takes
-the total over the target makes room in the same change.
+The working target is 600 ms, which the script warns about when the median total goes above it. A milestone over the
+target makes room before it closes.
 
 ### What keeps the default suite fast
 
