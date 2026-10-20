@@ -141,3 +141,11 @@ func (c *client) lineage(ctx context.Context, pipelineName, id string) (api.Line
 	var out api.Lineage
 	return out, c.get(ctx, "/pipelines/"+url.PathEscape(pipelineName)+"/items/"+url.PathEscape(id)+"/lineage", &out)
 }
+
+// publish asks the engine to publish an accepted proposal whose validated patch hashes to patchSHA256.
+func (c *client) publish(ctx context.Context, id, patchSHA256 string) (api.PublishedProposal, error) {
+	var out api.PublishedProposal
+	err := c.do(ctx, http.MethodPost, "/proposals/"+url.PathEscape(id)+"/publish",
+		api.PublishRequest{PatchSHA256: patchSHA256}, &out)
+	return out, err
+}

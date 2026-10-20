@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -29,6 +30,7 @@ type fakeAPI struct {
 	createErr int // the status POST /proposals answers instead of creating
 	training  api.DistillTraining
 	trainErr  int // the status GET .../distill-training answers instead
+	published []string
 }
 
 const reviewEvidence = `{"decisions":{"approved":4},"timeToDecisionP50Seconds":12.5,"samples":["i1","i2"],
@@ -42,6 +44,9 @@ var baseHash = strings.Repeat("ab", 32)
 const fakePipeline = "pipeline: listings\ntriggers: { adhoc: { manual: {} } }\nsteps:\n" +
 	"  score: { action: ./actions/score, in: trigger.adhoc, out: scored }\n" +
 	"  review: { action: review, in: scored, out: reviewed, config: { inbox: a } }\n"
+
+// fakePatch is the patch of the proposals the fake answers.
+const fakePatch = "--- a/lessons/score.yaml\n+++ b/lessons/score.yaml\n"
 
 func newFakeAPI() *fakeAPI {
 	return &fakeAPI{
@@ -107,9 +112,20 @@ func (f *fakeAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		f.created = append(f.created, req)
 		w.WriteHeader(http.StatusCreated)
 		answer(api.Proposal{ID: "pr_1", Pipeline: req.Pipeline, Kind: req.Kind, State: "ready"})
+	case strings.HasSuffix(p, "/publish") && r.Method == http.MethodPost:
+		id := strings.TrimSuffix(strings.TrimPrefix(p, "/proposals/"), "/publish")
+		var req api.PublishRequest
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		if req.PatchSHA256 != patch.Hash([]byte(fakePatch)) {
+			http.Error(w, `{"error":{"code":"invalid","message":"not the validated patch"}}`, http.StatusBadRequest)
+			return
+		}
+		answer(api.PublishedProposal{Proposal: id, Publisher: "patch-file", Location: "/x/" + id + ".patch",
+			Again: slices.Contains(f.published, id)})
+		f.published = append(f.published, id)
 	case strings.HasPrefix(p, "/proposals/"):
 		answer(api.Proposal{ID: strings.TrimPrefix(p, "/proposals/"), Pipeline: "listings", Kind: "lessons",
-			State: "accepted", Rationale: "why", PatchSHA256: "abc"})
+			State: "accepted", Rationale: "why", Patch: fakePatch, PatchSHA256: patch.Hash([]byte(fakePatch))})
 	case strings.HasSuffix(p, "/distill-training"):
 		if f.trainErr != 0 {
 			w.WriteHeader(f.trainErr)
@@ -267,34 +283,25 @@ func TestValidate(t *testing.T) {
 	}
 }
 
-type recordingPublisher struct{ got []PublishRequest }
-
-func (p *recordingPublisher) Publish(_ context.Context, req PublishRequest) (PublishResult, error) {
-	p.got = append(p.got, req)
-	return PublishResult{Published: true, Location: "file:///tmp/" + req.Proposal.ID + ".patch"}, nil
-}
-
-// publish hands an accepted proposal to improve.publish's publisher; without one it stays accepted, unpublished,
-// and a proposal not accepted passes as it came.
+// publish hands an accepted proposal to the engine's publish action, once, and asked again reports it published
+// already; without improve.publish it stays accepted, unpublished, and a proposal not accepted passes as it came.
 func TestPublish(t *testing.T) {
 	f := newFakeAPI()
-	pub := &recordingPublisher{}
 	a := testAction(t, f, config{Publisher: "patch-file"})
-	a.opts.Publishers = map[string]Publisher{"patch-file": pub}
-	outs, err := publish(context.Background(), a, item(`{"outcome":"proposed","proposal":"pr_1","state":"accepted"}`))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if o := outs[0].Payload.(Outcome); !o.Published || len(pub.got) != 1 || pub.got[0].Proposal.PatchSHA256 != "abc" ||
-		pub.got[0].Publisher != "patch-file" {
-		t.Errorf("published %+v, %+v", o, pub.got)
+	accepted := item(`{"outcome":"proposed","proposal":"pr_1","state":"accepted"}`)
+	for _, want := range []string{"published by patch-file", "published already by patch-file"} {
+		outs, err := publish(context.Background(), a, accepted)
+		if o := outs[0].Payload.(Outcome); err != nil || !o.Published || o.Location != "/x/pr_1.patch" || o.Message != want {
+			t.Fatalf("published %+v, %v; want %q", o, err, want)
+		}
 	}
 	ready := `{"outcome":"proposed","proposal":"pr_2","state":"ready"}`
-	if outs, _ := publish(context.Background(), a, item(ready)); outs[0].Payload.(Outcome).Published || len(pub.got) != 1 {
+	if outs, _ := publish(context.Background(), a, item(ready)); outs[0].Payload.(Outcome).Published ||
+		len(f.published) != 2 {
 		t.Errorf("a ready proposal published: %+v", outs)
 	}
 	a.cfg.Publisher = ""
-	outs, err = publish(context.Background(), a, item(`{"outcome":"proposed","proposal":"pr_1","state":"accepted"}`))
+	outs, err := publish(context.Background(), a, accepted)
 	if o := outs[0].Payload.(Outcome); err != nil || o.Published || !strings.Contains(o.Message, "not set") {
 		t.Errorf("without a publisher: %+v, %v", o, err)
 	}
@@ -318,25 +325,26 @@ func TestServe(t *testing.T) {
 	}
 }
 
-// propose reads a proposal back; the weekly run's publish hands every accepted proposal to the registered publisher.
+// propose reads a proposal back; the weekly run's publish hands every accepted proposal to the engine.
 func TestProposeAndPublishWeekly(t *testing.T) {
 	f := newFakeAPI()
-	a := testAction(t, f, config{Publisher: "test-weekly"})
+	a := testAction(t, f, config{Publisher: "patch-file"})
 	outs, err := propose(context.Background(), a, item(`{"outcome":"proposed","proposal":"pr_9"}`))
 	if o := outs[0].Payload.(Outcome); err != nil || o.State != "accepted" || o.Rationale != "why" {
 		t.Errorf("propose: %+v, %v", o, err)
 	}
-	pub := &recordingPublisher{}
-	RegisterPublisher("test-weekly", pub)
-	f.proposals = []api.Proposal{{ID: "pr_7", State: "accepted"}, {ID: "pr_8", State: "accepted"}}
+	sha := patch.Hash([]byte(fakePatch))
+	f.proposals = []api.Proposal{{ID: "pr_7", State: "accepted", Patch: fakePatch, PatchSHA256: sha},
+		{ID: "pr_8", State: "accepted", Patch: fakePatch, PatchSHA256: sha}}
 	outs, err = publish(context.Background(), a, item(`{"trigger":"weekly","scheduledAt":"2026-10-19T06:00:00Z"}`))
-	if err != nil || len(outs) != 2 || len(pub.got) != 2 || outs[1].Key != "pr_8" {
-		t.Errorf("weekly publish: %+v, %v, %+v", outs, err, pub.got)
+	if err != nil || len(outs) != 2 || !slices.Equal(f.published, []string{"pr_7", "pr_8"}) || outs[1].Key != "pr_8" {
+		t.Errorf("weekly publish: %+v, %v, %v", outs, err, f.published)
 	}
-	a.cfg.Publisher = "nope"
-	outs, _ = publish(context.Background(), a, item(`{"outcome":"proposed","proposal":"pr_1","state":"accepted"}`))
-	if o := outs[0].Payload.(Outcome); o.Published || !strings.Contains(o.Message, "no publisher") {
-		t.Errorf("an unknown publisher: %+v", o)
+	// A patch that is not the validated one is refused before the engine is asked.
+	f.proposals[0].Patch = "tampered"
+	if _, err := publish(context.Background(), a, item(`{"trigger":"weekly"}`)); err == nil ||
+		!strings.Contains(err.Error(), "validated") || len(f.published) != 2 {
+		t.Errorf("a tampered patch: %v, published %v", err, f.published)
 	}
 }
 
