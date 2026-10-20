@@ -72,6 +72,8 @@ type Options struct {
 	NewHarness func(rt *pipeline.AgentRuntime, apiKey string) Harness
 	// Client sends the default api harness's requests; nil means http.DefaultClient.
 	Client *http.Client
+	// RecordHint is Recorder.RecordHint.
+	RecordHint string
 }
 
 // Run serves the protocol on in and out until shutdown or the end of input. A problem with the action itself (its
@@ -192,7 +194,7 @@ func (a *adapter) setup(secrets map[string]string) error {
 		newHarness = a.defaultHarness
 	}
 	a.harness = Recorder{Harness: newHarness(act.Agent, apiKey), Name: act.Agent.Harness, Mode: mode, Dir: dir,
-		Redact: a.redact}
+		Redact: a.redact, RecordHint: a.opts.RecordHint}
 	return nil
 }
 

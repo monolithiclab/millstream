@@ -165,6 +165,8 @@ type Options struct {
 	// Mode is the harness mode (agent.ModeReplay, ModeRecord or ModeLive) and Dir the recordings directory, for the
 	// agent's calls and the judge's.
 	Mode, Dir string
+	// RecordHint is how a replay miss says to record (agent.Recorder.RecordHint).
+	RecordHint string
 	// Env looks up the environment: PATH, HOME and TMPDIR for exec actions, and the secrets
 	// (MILLSTREAM_SECRET_<NAME>) for API keys.
 	Env func(string) (string, bool)
@@ -362,7 +364,7 @@ func runAgent(ctx context.Context, opts Options, config, vars map[string]any, it
 	}
 	err = agent.Run(ctx, &in, &out, agent.Options{
 		Package: opts.Package.Dir, Loaded: opts.Package, Action: opts.Ref, Secrets: opts.Package.Pipeline.Secrets,
-		Price: opts.Price, Logger: opts.Logger, Client: opts.Client,
+		Price: opts.Price, Logger: opts.Logger, Client: opts.Client, RecordHint: opts.RecordHint,
 		Env: func(k string) (string, bool) {
 			if v, ok := overlay[k]; ok {
 				return v, v != ""
@@ -438,6 +440,7 @@ func judge(ctx context.Context, opts Options, c *Case, output any) (*Verdict, er
 	h := agent.Recorder{
 		Harness: agent.API{Provider: j.Provider, BaseURL: j.BaseURL, APIKey: key, Client: opts.Client},
 		Name:    pipeline.HarnessAPI, Mode: opts.Mode, Dir: opts.Dir, Redact: redact.New(secrets),
+		RecordHint: opts.RecordHint,
 	}
 	resp, err := h.Run(ctx, agent.Request{
 		Model: j.Model, Prompt: fmt.Sprintf(judgePrompt, strings.TrimSpace(j.Rubric), in, out), Schema: judgeSchema,

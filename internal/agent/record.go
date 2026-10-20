@@ -62,6 +62,9 @@ type Recorder struct {
 	// Redact redacts the secret values out of what a recording stores, the prompt turn and the model's output
 	// included: recordings are committed. The key is still the hash of the request as sent.
 	Redact *redact.Redactor
+	// RecordHint is how the caller records, which a replay miss names: MILLSTREAM_HARNESS_MODE=record when empty,
+	// --harness-mode record for the commands that take the flag (eval, test action).
+	RecordHint string
 }
 
 // Recording is a stored harness response with what it was recorded for.
@@ -102,8 +105,12 @@ func (r Recorder) replay(req Request) (Response, error) {
 	key := Key(r.Name, req)
 	data, err := os.ReadFile(r.path(key))
 	if errors.Is(err, fs.ErrNotExist) {
-		return Response{}, permanent("replay: no recording %s for harness %s and model %s in %s: record it with %s=%s",
-			key, r.Name, req.Model, r.Dir, EnvHarnessMode, ModeRecord)
+		hint := r.RecordHint
+		if hint == "" {
+			hint = EnvHarnessMode + "=" + ModeRecord
+		}
+		return Response{}, permanent("replay: no recording %s for harness %s and model %s in %s: record it with %s",
+			key, r.Name, req.Model, r.Dir, hint)
 	}
 	if err != nil {
 		return Response{}, permanent("replay: %v", err)

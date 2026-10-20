@@ -125,9 +125,15 @@ func TestRunAgentRecordReplay(t *testing.T) {
 	if r := Run(t.Context(), opts, c); !r.Passes() || r.Score != 1 || calls.Load() != 1 {
 		t.Fatalf("replay = %+v after %d calls", r, calls.Load())
 	}
+	// A miss says how to record: the environment variable, or what the caller names (eval's flag).
 	c.Input = map[string]any{"url": "https://example.com/2"}
-	if r := Run(t.Context(), opts, c); r.Passes() || !strings.Contains(r.Err, "no recording") {
+	if r := Run(t.Context(), opts, c); r.Passes() || !strings.Contains(r.Err, "no recording") ||
+		!strings.Contains(r.Err, "record it with MILLSTREAM_HARNESS_MODE=record (") {
 		t.Fatalf("unrecorded = %+v", r)
+	}
+	opts.RecordHint = "--harness-mode record"
+	if r := Run(t.Context(), opts, c); !strings.Contains(r.Err, "record it with --harness-mode record (") {
+		t.Fatalf("unrecorded, with a hint = %+v", r)
 	}
 }
 

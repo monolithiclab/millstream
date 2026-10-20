@@ -882,10 +882,11 @@ TOTAL                                   1.00
 ```
 
 The replay run succeeds with no model running and no key: a replay never calls the model. A prompt that changed
-misses its recording, and the delivery fails without retry, naming the key:
+misses its recording, and the delivery fails without retry, naming the key and how to record it: in the engine,
+`MILLSTREAM_HARNESS_MODE=record`; in `eval`, its flag:
 
 ```text
-cheap-flat: error: the action failed: replay: no recording 627ebf3b880e…3c6b for harness api and model fake-scorer in /Users/you/millstream-tutorial/listings/actions/score/evals/recordings: record it with MILLSTREAM_HARNESS_MODE=record
+cheap-flat: error: the action failed: replay: no recording 627ebf3b880e…3c6b for harness api and model fake-scorer in /Users/you/millstream-tutorial/listings/actions/score/evals/recordings: record it with --harness-mode record
 ```
 
 Lessons are rendered into the prompt, so editing them misses the old recordings too, rather than replaying a stale

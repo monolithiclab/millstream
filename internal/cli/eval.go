@@ -121,6 +121,7 @@ func actionOptions(rt *Runtime, dir, pkgDir string, standalone bool) (eval.Optio
 	opts := eval.Options{
 		Package: pkg, Action: act, Ref: ref, Env: env.SecretEnvLookup(pkg.Pipeline.Name, rt.Env),
 		Logger: slog.New(slog.NewTextHandler(rt.IO.Err, nil)), Launchers: launchers(rt, env),
+		RecordHint: "--harness-mode record", // eval and test action take the mode as a flag
 	}
 	if act.Agent != nil {
 		if price, ok := env.Prices[act.Agent.Model]; ok {
