@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"time"
 
 	"github.com/monolithiclab/millstream/internal/artifacts"
@@ -137,4 +138,91 @@ func (b *Bundle) StoreReviews() []store.Review {
 			Patch: r.Patch, ParkedAt: r.ParkedAt, DecidedAt: r.DecidedAt, Item: store.Item{ID: r.Item}}
 	}
 	return out
+}
+
+// StoreInsights returns the bundle's insights as the store's, in its pipeline.
+func (b *Bundle) StoreInsights() []store.Insight {
+	out := make([]store.Insight, len(b.Insights))
+	for i, in := range b.Insights {
+		out[i] = store.Insight{Pipeline: b.Pipeline, ID: in.ID, Kind: in.Kind, Scope: in.Scope,
+			WindowStart: in.WindowStart, WindowEnd: in.WindowEnd, Severity: in.Severity, Evidence: in.Evidence,
+			State: store.InsightState(in.State), OpenedAt: in.OpenedAt, UpdatedAt: in.UpdatedAt}
+	}
+	return out
+}
+
+// ImportedInsight is an insight as a development deployment lists it: its own (Bundle empty), or an open insight an
+// imported bundle carries, with the bundle's id.
+type ImportedInsight struct {
+	store.Insight
+	Bundle string
+}
+
+// ListInsights returns the insights f selects, the deployment's own (most recently updated first), then, when f
+// selects open ones, the open insights the unexpired bundles imported for f's pipeline carry (every pipeline's when
+// it names none) that the deployment does not record itself, the latest import's copy of each: production's
+// insights listed beside the deployment's own, for people and the improve pipeline to act on (spec section 11.2).
+// arts nil reads no bundle.
+func ListInsights(ctx context.Context, st store.Store, arts artifacts.Store, f store.InsightFilter, now time.Time) (
+	[]ImportedInsight, error,
+) {
+	all, err := st.Insights(ctx, store.InsightFilter{Pipeline: f.Pipeline})
+	if err != nil {
+		return nil, err
+	}
+	var out []ImportedInsight
+	seen := map[[2]string]bool{}
+	for _, in := range all {
+		seen[[2]string{in.Pipeline, in.ID}] = true
+		if f.State == "" || in.State == f.State {
+			out = append(out, ImportedInsight{Insight: in})
+		}
+	}
+	if arts == nil || (f.State != "" && f.State != store.InsightOpen) {
+		return out, nil
+	}
+	bundles, err := Load(ctx, st, arts, f.Pipeline, now)
+	if err != nil {
+		return nil, err
+	}
+	for _, b := range slices.Backward(bundles) { // the latest import first
+		for _, in := range b.StoreInsights() {
+			k := [2]string{in.Pipeline, in.ID}
+			if in.State == store.InsightOpen && !seen[k] {
+				seen[k] = true
+				out = append(out, ImportedInsight{Insight: in, Bundle: b.ID})
+			}
+		}
+	}
+	return out, nil
+}
+
+// Items indexes the items of the unexpired bundles imported for a pipeline, the first copy of each (bundles may
+// overlap): the history the reads of an item the deployment does not hold fall back to.
+type Items struct {
+	ByID     map[string]store.Item
+	Children map[string][]store.Item
+}
+
+// LoadItems reads the items of the unexpired bundles imported for a pipeline.
+func LoadItems(ctx context.Context, st store.Store, arts artifacts.Store, pipelineName string, now time.Time) (
+	*Items, error,
+) {
+	bundles, err := Load(ctx, st, arts, pipelineName, now)
+	if err != nil {
+		return nil, err
+	}
+	x := &Items{ByID: map[string]store.Item{}, Children: map[string][]store.Item{}}
+	for _, b := range bundles {
+		for _, it := range b.StoreItems() {
+			if _, dup := x.ByID[it.ID]; dup {
+				continue
+			}
+			x.ByID[it.ID] = it
+			for _, p := range it.Parents {
+				x.Children[p] = append(x.Children[p], it)
+			}
+		}
+	}
+	return x, nil
 }

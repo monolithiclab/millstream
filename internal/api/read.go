@@ -23,6 +23,7 @@ import (
 
 	"github.com/monolithiclab/millstream/internal/artifacts"
 	"github.com/monolithiclab/millstream/internal/engine"
+	"github.com/monolithiclab/millstream/internal/evidence"
 	"github.com/monolithiclab/millstream/internal/expr"
 	"github.com/monolithiclab/millstream/internal/insights"
 	"github.com/monolithiclab/millstream/internal/pipeline"
@@ -526,7 +527,7 @@ func (s *Server) listItems(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-// item returns the item the request names.
+// item returns the item the request names, of the deployment's own.
 func (s *Server) item(ctx context.Context, pipelineName, id string) (store.Item, error) {
 	items, err := s.opts.Store.Items(ctx, store.ItemFilter{Pipeline: pipelineName, IDs: []string{id}})
 	if err != nil {
@@ -538,8 +539,25 @@ func (s *Server) item(ctx context.Context, pipelineName, id string) (store.Item,
 	return items[0], nil
 }
 
+// readItem returns the item the request names: the deployment's own, else one of the evidence bundles imported for
+// its pipeline (spec section 11.2), with those bundles' items, the history its lineage is read in (nil for its own).
+func (s *Server) readItem(ctx context.Context, pipelineName, id string) (store.Item, *evidence.Items, error) {
+	it, err := s.item(ctx, pipelineName, id)
+	if !errors.Is(err, store.ErrNotFound) || s.opts.Artifacts == nil {
+		return it, nil, err
+	}
+	imported, lerr := evidence.LoadItems(ctx, s.opts.Store, s.opts.Artifacts, pipelineName, s.opts.Clock.Now())
+	if lerr != nil {
+		return store.Item{}, nil, lerr
+	}
+	if it, ok := imported.ByID[id]; ok {
+		return it, imported, nil
+	}
+	return store.Item{}, nil, err
+}
+
 func (s *Server) getItem(w http.ResponseWriter, r *http.Request) error {
-	it, err := s.item(r.Context(), r.PathValue("pipeline"), r.PathValue("item"))
+	it, _, err := s.readItem(r.Context(), r.PathValue("pipeline"), r.PathValue("item"))
 	if err != nil {
 		return err
 	}
@@ -549,9 +567,25 @@ func (s *Server) getItem(w http.ResponseWriter, r *http.Request) error {
 
 func (s *Server) getLineage(w http.ResponseWriter, r *http.Request) error {
 	name := r.PathValue("pipeline")
-	it, err := s.item(r.Context(), name, r.PathValue("item"))
+	it, imported, err := s.readItem(r.Context(), name, r.PathValue("item"))
 	if err != nil {
 		return err
+	}
+	// An imported item's lineage is read in the bundles that hold it, never in the deployment's own items.
+	items := s.opts.Store.Items
+	if imported != nil {
+		items = func(_ context.Context, f store.ItemFilter) ([]store.Item, error) {
+			var out []store.Item
+			for _, id := range f.IDs {
+				if it, ok := imported.ByID[id]; ok {
+					out = append(out, it)
+				}
+			}
+			for _, p := range f.Parents {
+				out = append(out, imported.Children[p]...)
+			}
+			return out, nil
+		}
 	}
 	depth := defaultDepth
 	if v := r.URL.Query().Get("depth"); v != "" {
@@ -596,7 +630,7 @@ func (s *Server) getLineage(w http.ResponseWriter, r *http.Request) error {
 		}
 		var next []ref
 		for _, p := range order {
-			parents, err := s.opts.Store.Items(r.Context(), store.ItemFilter{Pipeline: p, IDs: groups[p]})
+			parents, err := items(r.Context(), store.ItemFilter{Pipeline: p, IDs: groups[p]})
 			if err != nil {
 				return err
 			}
@@ -626,7 +660,7 @@ func (s *Server) getLineage(w http.ResponseWriter, r *http.Request) error {
 		var next []ref
 		order, groups := byPipeline(level)
 		for _, p := range order {
-			children, err := s.opts.Store.Items(r.Context(), store.ItemFilter{Parents: groups[p], ParentPipeline: p})
+			children, err := items(r.Context(), store.ItemFilter{Parents: groups[p], ParentPipeline: p})
 			if err != nil {
 				return err
 			}
@@ -1052,18 +1086,25 @@ func (s *Server) listInsights(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	ins, err := s.opts.Store.Insights(r.Context(), store.InsightFilter{Pipeline: r.URL.Query().Get("pipeline"), State: state})
+	ins, err := evidence.ListInsights(r.Context(), s.opts.Store, s.opts.Artifacts,
+		store.InsightFilter{Pipeline: r.URL.Query().Get("pipeline"), State: state}, s.opts.Clock.Now())
 	if err != nil {
 		return err
 	}
-	out := make([]Insight, 0, len(ins))
-	for _, in := range ins {
-		out = append(out, Insight{Pipeline: in.Pipeline, ID: in.ID, Kind: in.Kind, Scope: in.Scope,
-			Severity: in.Severity, State: string(in.State), Summary: insights.Summary(in), WindowStart: in.WindowStart,
-			WindowEnd: in.WindowEnd, OpenedAt: in.OpenedAt, UpdatedAt: in.UpdatedAt, Evidence: in.Evidence})
+	out := make([]Insight, len(ins))
+	for i, in := range ins {
+		out[i] = InsightOf(in)
 	}
 	writeJSON(w, http.StatusOK, out)
 	return nil
+}
+
+// InsightOf is an insight as the API and millstream insights --json show it.
+func InsightOf(in evidence.ImportedInsight) Insight {
+	return Insight{Pipeline: in.Pipeline, ID: in.ID, Kind: in.Kind, Scope: in.Scope, Severity: in.Severity,
+		State: string(in.State), Summary: insights.Summary(in.Insight), WindowStart: in.WindowStart,
+		WindowEnd: in.WindowEnd, OpenedAt: in.OpenedAt, UpdatedAt: in.UpdatedAt, Evidence: in.Evidence,
+		Imported: in.Bundle}
 }
 
 // timeRange reads the from and to query parameters (RFC 3339), or since (a duration back from now): the last

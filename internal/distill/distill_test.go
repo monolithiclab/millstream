@@ -126,7 +126,7 @@ func TestWithheld(t *testing.T) {
 	}
 }
 
-// TestAgree: outputs agree by key (the input's when unkeyed) and canonical payload, in any order.
+// TestAgree: outputs agree by key and canonical payload, in any order; an unkeyed output is not a keyed one.
 func TestAgree(t *testing.T) {
 	truth := []Output{{Key: "A", Payload: json.RawMessage(`{"a":1,"b":[1,2]}`)}, {Key: "B", Payload: json.RawMessage(`2`)}}
 	cases := map[string]struct {
@@ -134,12 +134,12 @@ func TestAgree(t *testing.T) {
 		want bool
 	}{
 		"reordered": {[]Output{{Key: "B", Payload: json.RawMessage(`2`)}, {Key: "A", Payload: json.RawMessage(`{"b":[1,2], "a":1}`)}}, true},
-		"unkeyed":   {[]Output{{Payload: json.RawMessage(`{"b":[1,2],"a":1}`)}, {Key: "B", Payload: json.RawMessage(`2`)}}, true},
+		"unkeyed":   {[]Output{{Payload: json.RawMessage(`{"b":[1,2],"a":1}`)}, {Key: "B", Payload: json.RawMessage(`2`)}}, false},
 		"differs":   {[]Output{{Key: "A", Payload: json.RawMessage(`{"a":2,"b":[1,2]}`)}, {Key: "B", Payload: json.RawMessage(`2`)}}, false},
 		"missing":   {[]Output{{Key: "A", Payload: json.RawMessage(`{"a":1,"b":[1,2]}`)}}, false},
 	}
 	for name, c := range cases {
-		if got := Agree(truth, c.got, "A"); got != c.want {
+		if got := Agree(truth, c.got); got != c.want {
 			t.Errorf("%s: %v", name, got)
 		}
 	}

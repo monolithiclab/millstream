@@ -11,6 +11,8 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/monolithiclab/millstream/internal/api"
+	"github.com/monolithiclab/millstream/internal/evidence"
 	"github.com/monolithiclab/millstream/internal/insights"
 	"github.com/monolithiclab/millstream/internal/metrics"
 	"github.com/monolithiclab/millstream/internal/pipeline"
@@ -82,40 +84,27 @@ type InsightsListCmd struct {
 	JSON     bool   `name:"json" help:"Print each insight with its evidence as a JSON line."`
 }
 
-// insightJSON is an insight as --json prints it.
-type insightJSON struct {
-	Pipeline    string          `json:"pipeline"`
-	ID          string          `json:"id"`
-	Kind        string          `json:"kind"`
-	Scope       string          `json:"scope"`
-	Severity    string          `json:"severity"`
-	State       string          `json:"state"`
-	WindowStart time.Time       `json:"windowStart"`
-	WindowEnd   time.Time       `json:"windowEnd"`
-	OpenedAt    time.Time       `json:"openedAt"`
-	UpdatedAt   time.Time       `json:"updatedAt"`
-	Evidence    json.RawMessage `json:"evidence"`
-}
-
-// Run lists the insights the engine's projector recorded (spec section 11.1), most recently updated first.
+// Run lists the insights the engine's projector recorded (spec section 11.1), most recently updated first, then the
+// open ones of the evidence bundles imported here (spec section 11.2), their state shown as imported.
 func (c InsightsListCmd) Run(rt *Runtime) error {
 	state := store.InsightState(c.State)
 	if c.State == "all" {
 		state = ""
 	}
 	return withStore(rt, func(st store.Store) error {
-		ins, err := st.Insights(rt.Ctx, store.InsightFilter{Pipeline: c.Pipeline, State: state})
+		_, arts, err := localArtifacts(rt)
+		if err != nil {
+			return err
+		}
+		ins, err := evidence.ListInsights(rt.Ctx, st, arts, store.InsightFilter{Pipeline: c.Pipeline, State: state},
+			time.Now())
 		if err != nil {
 			return err
 		}
 		if c.JSON {
 			enc := json.NewEncoder(rt.IO.Out)
 			for _, in := range ins {
-				if err := enc.Encode(insightJSON{
-					Pipeline: in.Pipeline, ID: in.ID, Kind: in.Kind, Scope: in.Scope, Severity: in.Severity,
-					State: string(in.State), WindowStart: in.WindowStart, WindowEnd: in.WindowEnd,
-					OpenedAt: in.OpenedAt, UpdatedAt: in.UpdatedAt, Evidence: in.Evidence,
-				}); err != nil {
+				if err := enc.Encode(api.InsightOf(in)); err != nil {
 					return err
 				}
 			}
@@ -124,8 +113,12 @@ func (c InsightsListCmd) Run(rt *Runtime) error {
 		tw := tabwriter.NewWriter(rt.IO.Out, 0, 0, 2, ' ', 0)
 		fmt.Fprintln(tw, "ID\tPIPELINE\tKIND\tSCOPE\tSEVERITY\tSTATE\tUPDATED\tSUMMARY")
 		for _, in := range ins {
+			state := string(in.State)
+			if in.Bundle != "" {
+				state = "imported"
+			}
 			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", in.ID, in.Pipeline, in.Kind, in.Scope, in.Severity,
-				in.State, in.UpdatedAt.Format(time.RFC3339), insights.Summary(in))
+				state, in.UpdatedAt.Format(time.RFC3339), insights.Summary(in.Insight))
 		}
 		return tw.Flush()
 	})

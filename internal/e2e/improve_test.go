@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"testing"
 
@@ -81,30 +80,83 @@ func TestImprove(t *testing.T) {
 	}
 	db := dbPath(t)
 	recordings := t.TempDir()
-	dirs := []string{m2Recordings, improveRecordings(root)}
-	if *update { // the first improve run misses the draft's recording, which is then written for the brief it found
-		dirs = dirs[:1]
-	}
-	for _, dir := range dirs {
-		files, _ := filepath.Glob(filepath.Join(dir, "*.json"))
-		for _, f := range files {
-			data, err := os.ReadFile(f) // #nosec G304 -- fixture recordings
-			if err != nil {
-				t.Fatal(err)
-			}
-			if err := os.WriteFile(filepath.Join(recordings, filepath.Base(f)), data, 0o600); err != nil {
-				t.Fatal(err)
-			}
-		}
+	copyRecordings(t, m2Recordings, recordings)
+	if !*update { // the first improve run misses the draft's recording, which is then written for the brief it found
+		copyRecordings(t, improveRecordings(root), recordings)
 	}
 	env := append(m2Env(recordings), "MILLSTREAM_SECRET_ANTHROPIC_KEY=sk-fake-0123456789")
-	runDay := func(day int) result {
-		return millstream(t, db, env, "--env-file", improveEnv, "run", "--once", "--request-id",
-			"day-"+strconv.Itoa(day), "--lease-ttl", "1s", "--var", "day="+strconv.Itoa(day), fixtureM2Review)
+	in := reviewHistory(t, db, env, improveEnv)
+
+	r := millstream(t, db, env, "--env-file", improveEnv, "improve", "--insight", in.ID)
+	if *update {
+		writeDraftRecording(t, root, db, recordings, in)
+		r = millstream(t, db, env, "--env-file", improveEnv, "improve", "--insight", in.ID)
 	}
+	var ps []api.Proposal
+	out := mustExit(t, 0, db, nil, "proposals", "list", "--pipeline", improvePipeline, "--json")
+	for _, line := range strings.Split(strings.TrimSpace(out.stdout), "\n") {
+		var p api.Proposal
+		if err := json.Unmarshal([]byte(line), &p); err != nil {
+			t.Fatalf("improve: %s\nproposals: %v: %s", r, err, line)
+		}
+		ps = append(ps, p)
+	}
+	if r.code != 0 || !strings.Contains(r.stdout, "proposed lessons on "+improvePipeline) ||
+		!strings.Contains(r.stdout, " ready") || len(ps) != 1 {
+		t.Fatalf("improve: %s\nproposals: %+v", r, ps)
+	}
+	p := ps[0]
+	var rep lessonsReport
+	if err := json.Unmarshal(p.Report, &rep); err != nil {
+		t.Fatal(err)
+	}
+	bt := rep.Backtest.Report
+	if p.Kind != "lessons" || p.State != string(store.ProposalReady) || p.CreatedBy != improve.Name ||
+		len(p.Insights) != 1 || p.Insights[0] != in.ID || p.Paths[0] != "lessons/score.yaml" || !rep.Passed ||
+		!rep.Backtest.Passed || bt.Sampled == 0 || len(bt.ChangedSteps) != 1 || bt.ChangedSteps[0] != "score" ||
+		bt.After.ReviewAgreement <= bt.Before.ReviewAgreement {
+		t.Fatalf("proposal %+v\nreport %s", p, p.Report)
+	}
+	if !strings.Contains(p.Patch, "lower its score by 25 points") {
+		t.Errorf("patch:\n%s", p.Patch)
+	}
+	// The same idea again is not drafted twice: its proposal is open.
+	r = mustExit(t, 0, db, env, "--env-file", improveEnv, "improve", "--insight", in.ID)
+	if strings.Contains(r.stdout, "proposed") {
+		t.Errorf("a second draft of an open idea: %s", r.stdout)
+	}
+	t.Logf("review agreement %.2f -> %.2f over %d sampled deliveries", bt.Before.ReviewAgreement,
+		bt.After.ReviewAgreement, bt.Sampled)
+}
+
+// lessonsReport is a lessons proposal's validation report, as far as the tests read it.
+type lessonsReport struct {
+	Passed   bool `json:"passed"`
+	Backtest struct {
+		Passed bool `json:"passed"`
+		Report struct {
+			Source       string   `json:"source"`
+			Bundles      []string `json:"bundles"`
+			ChangedSteps []string `json:"changedSteps"`
+			Sampled      int      `json:"sampled"`
+			After        struct {
+				ReviewAgreement float64 `json:"reviewAgreement"`
+			} `json:"after"`
+			Before struct {
+				ReviewAgreement float64 `json:"reviewAgreement"`
+			} `json:"before"`
+		} `json:"report"`
+	} `json:"backtest"`
+}
+
+// reviewHistory runs the review fixture on db under envFile, every listing once, and has the analysts lower the
+// scores of the poor listings: it returns the reviewPattern insight that history opens, hinting a lessons proposal on
+// score.
+func reviewHistory(t *testing.T, db string, env []string, envFile string) api.Insight {
+	t.Helper()
 	// Every listing once, four a day, each parked at the review.
 	for _, day := range []int{1, 5, 9} {
-		if r := runDay(day); r.code != 1 {
+		if r := runDay(t, db, env, envFile, fixtureM2Review, day); r.code != 1 {
 			t.Fatalf("day %d: %s", day, r)
 		}
 	}
@@ -127,64 +179,8 @@ func TestImprove(t *testing.T) {
 	}
 	// A day of listings already seen: its run settles at once, the decided runs finish, and the insights are
 	// projected with the decisions.
-	runDay(13)
-	in := reviewInsight(t, db)
-
-	r := millstream(t, db, env, "--env-file", improveEnv, "improve", "--insight", in.ID)
-	if *update {
-		writeDraftRecording(t, root, db, recordings, in)
-		r = millstream(t, db, env, "--env-file", improveEnv, "improve", "--insight", in.ID)
-	}
-	var ps []api.Proposal
-	out := mustExit(t, 0, db, nil, "proposals", "list", "--pipeline", improvePipeline, "--json")
-	for _, line := range strings.Split(strings.TrimSpace(out.stdout), "\n") {
-		var p api.Proposal
-		if err := json.Unmarshal([]byte(line), &p); err != nil {
-			t.Fatalf("improve: %s\nproposals: %v: %s", r, err, line)
-		}
-		ps = append(ps, p)
-	}
-	if r.code != 0 || !strings.Contains(r.stdout, "proposed lessons on "+improvePipeline) ||
-		!strings.Contains(r.stdout, " ready") || len(ps) != 1 {
-		t.Fatalf("improve: %s\nproposals: %+v", r, ps)
-	}
-	p := ps[0]
-	var rep struct {
-		Passed   bool `json:"passed"`
-		Backtest struct {
-			Passed bool `json:"passed"`
-			Report struct {
-				ChangedSteps []string `json:"changedSteps"`
-				Sampled      int      `json:"sampled"`
-				After        struct {
-					ReviewAgreement float64 `json:"reviewAgreement"`
-				} `json:"after"`
-				Before struct {
-					ReviewAgreement float64 `json:"reviewAgreement"`
-				} `json:"before"`
-			} `json:"report"`
-		} `json:"backtest"`
-	}
-	if err := json.Unmarshal(p.Report, &rep); err != nil {
-		t.Fatal(err)
-	}
-	bt := rep.Backtest.Report
-	if p.Kind != "lessons" || p.State != string(store.ProposalReady) || p.CreatedBy != improve.Name ||
-		len(p.Insights) != 1 || p.Insights[0] != in.ID || p.Paths[0] != "lessons/score.yaml" || !rep.Passed ||
-		!rep.Backtest.Passed || bt.Sampled == 0 || len(bt.ChangedSteps) != 1 || bt.ChangedSteps[0] != "score" ||
-		bt.After.ReviewAgreement <= bt.Before.ReviewAgreement {
-		t.Fatalf("proposal %+v\nreport %s", p, p.Report)
-	}
-	if !strings.Contains(p.Patch, "lower its score by 25 points") {
-		t.Errorf("patch:\n%s", p.Patch)
-	}
-	// The same idea again is not drafted twice: its proposal is open.
-	r = mustExit(t, 0, db, env, "--env-file", improveEnv, "improve", "--insight", in.ID)
-	if strings.Contains(r.stdout, "proposed") {
-		t.Errorf("a second draft of an open idea: %s", r.stdout)
-	}
-	t.Logf("review agreement %.2f -> %.2f over %d sampled deliveries", bt.Before.ReviewAgreement,
-		bt.After.ReviewAgreement, bt.Sampled)
+	runDay(t, db, env, envFile, fixtureM2Review, 13)
+	return reviewInsight(t, db)
 }
 
 // reviewInsight returns the review fixture's reviewPattern insight, which must hint a lessons proposal on score.

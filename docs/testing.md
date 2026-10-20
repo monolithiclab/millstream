@@ -11,6 +11,7 @@ detail behind them.
 | `make test-times` | The budget check alone (`scripts/test-times`) | Part of `make test` |
 | `make test-e2e PKG=./internal/foo/...` | The iteration tier: those packages only, tag `e2e`, no `-race`, no coverage | No |
 | `make test-e2e` | Everything, tagged and untagged, under `-race`, with the whole suite's coverage | No (own CI job) |
+| `make test-exit` | The M5 exit scenario alone, verbose, under the e2e lock, see [m5-exit.md](m5-exit.md) | No (in `test-e2e`) |
 | `make soak` | The Compose deployment under chaos for `SOAK_DURATION` (30m), see [soak.md](soak.md) | No |
 | `make test-ui`, `make test-ui-e2e` | The web UI's unit and Playwright suites, in containers | No (own CI jobs) |
 | `make test-image`, `make test-deploy` | The image and the deployment files | No (CI's `image` job) |
@@ -152,6 +153,12 @@ agent tiering them by price per square metre): it records the tier agent at test
 `tiers.Tier`, replays the drafter's answer (the code in `examples/m5-distill/testdata/tier-rules`) from
 `internal/improve/testdata/recordings/distill`, and validates the proposal in the container sandbox on the holdout;
 it skips without Docker. `make recordings` and `-update` rewrite that recording too.
+
+`TestM5Exit` (`internal/e2e/m5_exit_test.go`, `make test-exit`, [m5-exit.md](m5-exit.md)) chains both across two
+deployments: production runs the review and distill fixtures and exports their evidence, development imports it and
+drafts, validates, accepts and publishes both proposals, then runs a day of new listings on the distilled code. It
+replays the same draft recordings (the briefs drawn from imported evidence are the local ones), so it needs no
+recording of its own; it skips without Docker.
 
 The live smoke test runs the M2 fixture's score action through the `claude-code` harness against the real `claude` CLI
 (installed, logged in) on two listings, recording into a temporary directory, and spends a few cents:

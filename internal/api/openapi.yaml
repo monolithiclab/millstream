@@ -492,7 +492,7 @@ paths:
     parameters: [{ $ref: "#/components/parameters/pipeline" }, { $ref: "#/components/parameters/item" }]
     get:
       operationId: getItem
-      summary: An item with its payload.
+      summary: An item with its payload; one the deployment lacks is looked up in its imported evidence bundles.
       responses:
         default: { $ref: "#/components/responses/Error" }
         "200":
@@ -796,7 +796,7 @@ paths:
   /insights:
     get:
       operationId: listInsights
-      summary: Insights by pipeline, most recently updated first.
+      summary: Insights by pipeline, most recently updated first, then the open insights of imported evidence bundles.
       parameters:
         - { name: pipeline, in: query, schema: { type: string } }
         - { name: state, in: query, schema: { $ref: "#/components/schemas/InsightState" } }
@@ -2272,6 +2272,10 @@ components:
         openedAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
         evidence: { type: object }
+        imported:
+          type: string
+          description: The evidence bundle an open insight of production was imported in (spec section 11.2), listed
+            beside the deployment's own and read-only here.
     DistillTraining:
       type: object
       required: [pipeline, step, agent, source, holdoutFrom, pairs, holdout, training, lessons, withheldExamples]

@@ -248,13 +248,14 @@ func Canon(raw json.RawMessage) string {
 	return string(b)
 }
 
-// Agree reports whether the code's outputs on an item are the truth's: the same keys (an output without one takes
-// the input item's key, as the engine keys it) with canonically equal payloads, in any order.
-func Agree(truth, got []Output, itemKey string) bool {
+// Agree reports whether the code's outputs on an item are the truth's: the same keys with canonically equal
+// payloads, in any order. An output without a key agrees only with one without: the engine publishes it unkeyed,
+// under another id than a keyed one (spec section 5.2), where an agent keys its output with its input's key.
+func Agree(truth, got []Output) bool {
 	canon := func(os []Output) []string {
 		out := make([]string, len(os))
 		for i, o := range os {
-			out[i] = cmp.Or(o.Key, itemKey) + "\x00" + Canon(o.Payload)
+			out[i] = o.Key + "\x00" + Canon(o.Payload)
 		}
 		slices.Sort(out)
 		return out

@@ -81,17 +81,13 @@ func TestDistill(t *testing.T) {
 	}
 	db := dbPath(t)
 	recordings := t.TempDir()
-	recordTiers(t, recordings)
+	recordTiers(t, recordings, 1, 2)
 	if !*update { // the first improve run misses the draft's recording, which is then written for the brief it found
 		copyRecordings(t, distillRecordings(root), recordings)
 	}
 	env := []string{agent.EnvHarnessMode + "=" + agent.ModeReplay, agent.EnvHarnessDir + "=" + recordings,
 		"MILLSTREAM_SECRET_TIER_KEY=sk-fake-0123456789", "MILLSTREAM_SECRET_ANTHROPIC_KEY=sk-fake-0123456789"}
-	for day := 1; day <= distillDays; day++ {
-		mustExit(t, 0, db, env, "--env-file", distillEnv, "run", "--once", "--request-id", "day-"+strconv.Itoa(day),
-			"--lease-ttl", "1s", "--var", "day="+strconv.Itoa(day), fixtureDistill)
-	}
-	in := distillableInsight(t, db)
+	in := distillHistory(t, db, env, distillEnv)
 	r := millstream(t, db, env, "--env-file", distillEnv, "improve", "--insight", in.ID)
 	if *update {
 		writeDistillRecording(t, root, db, recordings, in)
@@ -102,28 +98,7 @@ func TestDistill(t *testing.T) {
 	if err := json.Unmarshal([]byte(strings.TrimSpace(out.stdout)), &p); err != nil {
 		t.Fatalf("improve: %s\nproposals: %v: %s", r, err, out.stdout)
 	}
-	var rep struct {
-		Passed   bool `json:"passed"`
-		Backtest struct {
-			Skipped string `json:"skipped"`
-		} `json:"backtest"`
-		NewEvals []struct {
-			Passed bool `json:"passed"`
-		} `json:"newEvals"`
-		Distill struct {
-			Step              string   `json:"step"`
-			Action            string   `json:"action"`
-			Fallback          string   `json:"fallback"`
-			Holdout           int      `json:"holdout"`
-			Covered           int      `json:"covered"`
-			Coverage          float64  `json:"coverage"`
-			Agreement         float64  `json:"agreement"`
-			AgentCostSavedUSD float64  `json:"agentCostSavedUsd"`
-			Passed            bool     `json:"passed"`
-			Error             string   `json:"error"`
-			Disagreements     []string `json:"disagreements"`
-		} `json:"distill"`
-	}
+	var rep distillReport
 	if err := json.Unmarshal(p.Report, &rep); err != nil {
 		t.Fatal(err)
 	}
@@ -140,6 +115,51 @@ func TestDistill(t *testing.T) {
 	}
 	t.Logf("holdout %d, covered %d (%.2f), agreement %.3f, agent cost saved %.4f USD", d.Holdout, d.Covered,
 		d.Coverage, d.Agreement, d.AgentCostSavedUSD)
+}
+
+// distillReport is a distill proposal's validation report, as far as the tests read it.
+type distillReport struct {
+	Passed   bool `json:"passed"`
+	Backtest struct {
+		Skipped string `json:"skipped"`
+	} `json:"backtest"`
+	NewEvals []struct {
+		Passed bool `json:"passed"`
+	} `json:"newEvals"`
+	Distill struct {
+		Step              string   `json:"step"`
+		Action            string   `json:"action"`
+		Fallback          string   `json:"fallback"`
+		Holdout           int      `json:"holdout"`
+		Covered           int      `json:"covered"`
+		Agreed            int      `json:"agreed"`
+		Coverage          float64  `json:"coverage"`
+		Agreement         float64  `json:"agreement"`
+		AgentCostUSD      float64  `json:"agentCostUsd"`
+		AgentCostSavedUSD float64  `json:"agentCostSavedUsd"`
+		Passed            bool     `json:"passed"`
+		Error             string   `json:"error"`
+		Disagreements     []string `json:"disagreements"`
+	} `json:"distill"`
+}
+
+// distillHistory runs the distill fixture's days on db under envFile and returns the distillable insight on tier
+// they open.
+func distillHistory(t *testing.T, db string, env []string, envFile string) api.Insight {
+	t.Helper()
+	for day := 1; day <= distillDays; day++ {
+		if r := runDay(t, db, env, envFile, fixtureDistill, day); r.code != 0 {
+			t.Fatalf("day %d: %s", day, r)
+		}
+	}
+	return distillableInsight(t, db)
+}
+
+// runDay runs the package pkg on db under envFile once for one day, under the request id day-<day>.
+func runDay(t *testing.T, db string, env []string, envFile, pkg string, day int) result {
+	t.Helper()
+	return millstream(t, db, env, "--env-file", envFile, "run", "--once", "--request-id", "day-"+strconv.Itoa(day),
+		"--lease-ttl", "1s", "--var", "day="+strconv.Itoa(day), pkg)
 }
 
 // dockerSandbox skips the test without Docker or the candidate-code sandbox's image (pulled once when missing).
@@ -222,14 +242,14 @@ func writeDistillRecording(t *testing.T, root, db, recordings string, in api.Ins
 // tierInPrompt finds the listing a tier prompt is about.
 var tierInPrompt = regexp.MustCompile(`Listing (D\d+-\d+):`)
 
-// recordTiers records the tier agent on every listing of the fixture's days, through the agent adapter and the real
+// recordTiers records the tier agent on every listing of the days given, through the agent adapter and the real
 // api harness pointed at a fake model applying tiers.Tier, into dir. Token counts are the characters divided by
 // four, so the costs are reproducible.
-func recordTiers(t *testing.T, dir string) {
+func recordTiers(t *testing.T, dir string, days ...int) {
 	t.Helper()
 	all := map[string]tiers.Listing{}
 	var listings []tiers.Listing
-	for day := 1; day <= distillDays; day++ {
+	for _, day := range days {
 		for _, l := range tiers.Day(day, distillPerDay) {
 			all[l.ID] = l
 			listings = append(listings, l)

@@ -479,7 +479,7 @@ export interface paths {
       };
       cookie?: never;
     };
-    /** An item with its payload. */
+    /** An item with its payload; one the deployment lacks is looked up in its imported evidence bundles. */
     get: operations['getItem'];
     put?: never;
     post?: never;
@@ -849,7 +849,7 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /** Insights by pipeline, most recently updated first. */
+    /** Insights by pipeline, most recently updated first, then the open insights of imported evidence bundles. */
     get: operations['listInsights'];
     put?: never;
     post?: never;
@@ -978,6 +978,34 @@ export interface paths {
      * @description Backtests live in the engine process's memory, the last 100 kept; a restart forgets them.
      */
     get: operations['getBacktest'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/pipelines/{pipeline}/steps/{step}/distill-training': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        pipeline: components['parameters']['pipeline'];
+        step: string;
+      };
+      cookie?: never;
+    };
+    /**
+     * The training side of an agent step's distill split, in a development deployment (spec section 11.5).
+     * @description The step's input and output pairs (local history, else the imported evidence; the truth a reviewer's edit
+     *     where there is one, else the agent's output) are split by entity (item key, input item and lineage root)
+     *     and by time: the most recently first-seen entities, half the pairs, are the holdout, which is never served;
+     *     a distill proposal records holdoutFrom, and the engine validates it on the holdout it recomputes from it.
+     *     The step's lessons come without the examples derived from a holdout item. A step that is not an agent step,
+     *     or whose history has nothing to split, is refused.
+     */
+    get: operations['getDistillTraining'];
     put?: never;
     post?: never;
     delete?: never;
@@ -2132,6 +2160,41 @@ export interface components {
       /** Format: date-time */
       updatedAt: string;
       evidence: Record<string, unknown>;
+      /** @description The evidence bundle an open insight of production was imported in (spec section 11.2), listed beside the deployment's own and read-only here. */
+      imported?: string;
+    };
+    DistillTraining: {
+      pipeline: string;
+      step: string;
+      /** @description The step's agent action */
+      agent: string;
+      /** @enum {string} */
+      source: 'local' | 'evidence';
+      /**
+       * Format: date-time
+       * @description The holdout is the entities first seen at or after it.
+       */
+      holdoutFrom: string;
+      /** @description Every pair of the step. */
+      pairs: number;
+      /** @description The pairs of the holdout */
+      holdout: number;
+      training: {
+        key: string;
+        input: unknown;
+        outputs: {
+          key?: string;
+          payload: unknown;
+        }[];
+        /** @description A reviewer's edit is part of the truth. */
+        edited?: boolean;
+      }[];
+      lessons: {
+        rules?: components['schemas']['StepLessons']['rules'];
+        examples?: components['schemas']['StepLessons']['examples'];
+      };
+      /** @description Lesson examples withheld as derived from a holdout item. */
+      withheldExamples: number;
     };
     StepLessons: {
       step: string;
@@ -3856,6 +3919,34 @@ export interface operations {
         };
       };
       404: components['responses']['Error'];
+      503: components['responses']['Error'];
+      default: components['responses']['Error'];
+    };
+  };
+  getDistillTraining: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        pipeline: components['parameters']['pipeline'];
+        step: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The training set. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['DistillTraining'];
+        };
+      };
+      400: components['responses']['Error'];
+      404: components['responses']['Error'];
+      409: components['responses']['Error'];
       503: components['responses']['Error'];
       default: components['responses']['Error'];
     };

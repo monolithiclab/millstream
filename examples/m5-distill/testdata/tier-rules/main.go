@@ -35,11 +35,11 @@ func tier(l Listing) (string, bool) {
 }
 
 func main() {
-	millstream.Map(func(c millstream.Context, in Listing) ([]Tiered, error) {
+	millstream.MapKeyed(func(c millstream.Context, in Listing) ([]millstream.Keyed[Tiered], error) {
 		t, ok := tier(in)
 		if !ok {
 			return nil, c.Abstain("no surface: no price per square metre")
 		}
-		return []Tiered{{Listing: in, Tier: t}}, nil
+		return []millstream.Keyed[Tiered]{{Key: c.Item().Key, Value: Tiered{Listing: in, Tier: t}}}, nil
 	})
 }

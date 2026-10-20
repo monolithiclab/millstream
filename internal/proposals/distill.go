@@ -162,7 +162,7 @@ func (v Validator) runHoldout(ctx context.Context, pipelineName string, s side, 
 			for j, o := range res.Outputs {
 				got[j] = distill.Output{Key: o.Key, Payload: o.Payload}
 			}
-			r.Agreed = distill.Agree(pr.Outputs, got, pr.Key)
+			r.Agreed = distill.Agree(pr.Outputs, got)
 		}
 		out = append(out, r)
 	}

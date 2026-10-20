@@ -79,6 +79,16 @@ test-e2e-locked:
 	@go tool cover -func=build/cover-e2e.out | awk '/^total:/ {print "Total coverage, e2e build: " $$NF}'
 	@cd $(SDK_DIR) && go test -race -count=1 -tags e2e ./...
 
+# The M5 exit scenario alone (internal/e2e/m5_exit_test.go, docs/m5-exit.md), verbose so that it prints what it
+# measured: production evidence to accepted lessons and distill proposals in development. It needs Docker (the
+# distill's sandbox).
+.PHONY: test-exit test-exit-locked
+test-exit: ## Run the M5 exit scenario alone and print its measures (docs/m5-exit.md; Docker for the sandbox)
+	$(locked)
+
+test-exit-locked:
+	@go test -tags e2e -count=1 -run '^TestM5Exit$$' -v ./internal/e2e
+
 # The soak (internal/e2e/soak_test.go): the Compose deployment of deploy/compose, as its own project, runs three
 # pipelines for SOAK_DURATION while a chaos driver kills the active engine and the nodes every SOAK_CHAOS on average,
 # then checks the store's invariants and writes build/soak/report.md. Not in make ci or test-e2e (it skips without

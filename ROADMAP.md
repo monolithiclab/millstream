@@ -164,7 +164,12 @@ earlier designs are in the git history of the spec.
   files of the items' own artifacts (photos, pages), the review samples and the deliveries of lineage items created
   before `--since`; an export reads the transcripts and lineages one delivery at a time, fine for a sample of 500.
   The redaction of free text (transcripts, error messages) replaces the redacted strings it finds verbatim or
-  JSON-escaped, not other spellings of them.
+  JSON-escaped, not other spellings of them. A development deployment lists the open insights of its imported
+  bundles but does not record them, so they fire no insight trigger (`millstream improve --insight` drafts from
+  them by hand), cannot be acknowledged or muted, and the projector does not recompute them from the bundles; each
+  read of an imported item decodes its pipeline's bundles again (fine for a few bundles of 500 items). A distill
+  draft whose outputs are right but unkeyed (the SDK's `Map`) fails its holdout with no hint that only the keys differ:
+  the report could say so, or `validate` refuse such a draft before the sandbox runs it.
 - Crash suite on Postgres: the failpoint matrices (run and commands) run on both stores; the seeded random kill
   points, the M2 agent path and the review fixtures still run on SQLite only.
 

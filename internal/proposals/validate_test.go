@@ -59,7 +59,8 @@ func (f *fakeHoldout) Holdout(_ context.Context, _, step string, from time.Time)
 }
 
 // holdout returns pairs the fake action's rules mode answers: covered ones whose truth is its output but for the
-// first wrong, then abstained ones; each item cost the agent a cent.
+// first wrong, then abstained ones; each item cost the agent a cent. The truths are keyed with their input's key,
+// as an agent keys its output, and so does the rules mode.
 func holdout(covered, wrong, abstained int) *fakeHoldout {
 	var ps []distill.Pair
 	for i := range covered + abstained {

@@ -89,10 +89,10 @@ func distillBrief(id idea, files api.RevisionFiles, t api.DistillTraining, actio
 	fmt.Fprintf(&b, "## The step to distill\n\nStep `%s` runs the agent `%s`. Write the Go exec action `%s` that "+
 		"computes the agent's output with rules, using the Millstream Go SDK, to become the step's action; the agent "+
 		"stays as its fallback for the items the code abstains on. Write these files under `%s`:\n\n"+
-		"- `main.go`: package main, calling `millstream.Map` (import `millstream \"%s\"`) with a function "+
-		"`func(c millstream.Context, in In) ([]Out, error)` returning the one output, every field the output schema "+
-		"requires, or `nil, c.Abstain(\"why\")` for an input the rules are not sure of. Use the standard library "+
-		"only.\n- `main_test.go`: unit tests of the rules.\n- `evals/<case>.yaml`: a few eval cases, each an `input` "+
+		"- `main.go`: package main, calling `millstream.MapKeyed` (import `millstream \"%s\"`) with a function "+
+		"`func(c millstream.Context, in In) ([]millstream.Keyed[Out], error)` returning the one output, every field "+
+		"the output schema requires, under the key the agent gives it, its input's (`c.Item().Key`), or "+
+		"`nil, c.Abstain(\"why\")` for an input the rules are not sure of. Use the standard library only.\n- `main_test.go`: unit tests of the rules.\n- `evals/<case>.yaml`: a few eval cases, each an `input` "+
 		"and `assert` (CEL over `output`).\n\nThe manifest (`action.yaml`, the agent's schemas), `go.mod` and the "+
 		"pipeline change are written for you: do not write them. The code is validated on recent items you do not "+
 		"see: it must agree with the truth on at least 98%% of the items it does not abstain on, and abstain on at "+

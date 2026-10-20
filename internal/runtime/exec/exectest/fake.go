@@ -267,7 +267,7 @@ func (f *fake) rules(w *protocol.Writer, in map[string]any, it protocol.Item) er
 	case fallback && in["disagree"] == true:
 		score++
 	}
-	if err := w.Write(protocol.Emit{Delivery: it.Delivery, Payload: json.RawMessage(fmt.Sprintf(`{"score":%g}`, score))}); err != nil {
+	if err := w.Write(protocol.Emit{Delivery: it.Delivery, Key: it.Key, Payload: json.RawMessage(fmt.Sprintf(`{"score":%g}`, score))}); err != nil {
 		return err
 	}
 	return w.Write(protocol.Done{Delivery: it.Delivery})

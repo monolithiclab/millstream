@@ -338,6 +338,8 @@ type Insight struct {
 	OpenedAt    time.Time       `json:"openedAt"`
 	UpdatedAt   time.Time       `json:"updatedAt"`
 	Evidence    json.RawMessage `json:"evidence"`
+	// Imported names the evidence bundle an insight of production came in, read-only here (spec section 11.2).
+	Imported string `json:"imported,omitempty"`
 }
 
 // StepLessons is a step's lessons file in the active revision.
