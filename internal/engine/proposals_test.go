@@ -106,6 +106,22 @@ func TestProposals(t *testing.T) {
 			t.Fatalf("a tampered patch: %v", err)
 		}
 	}
+	// Production learns and never changes itself: no proposal is created, revalidated or given a token there.
+	e.opts.Mode = pipeline.ModeProduction
+	for name, err := range map[string]error{
+		"create": func() error {
+			_, err := e.CreateProposal(ctx, ProposalRequest{Pipeline: "extra", Kind: store.ProposalConfig,
+				Patch: diff(4, "false")})
+			return err
+		}(),
+		"revalidate": func() error { _, err := e.ValidateProposal(ctx, first.ID); return err }(),
+		"token":      func() error { _, err := e.MintProposalToken(ctx); return err }(),
+	} {
+		if !errors.Is(err, pipeline.ErrProduction) || !errors.Is(err, store.ErrConflict) {
+			t.Errorf("%s in production: %v", name, err)
+		}
+	}
+	e.opts.Mode = ""
 	token, err := e.MintProposalToken(ctx)
 	if err != nil || !strings.HasPrefix(token, ProposalTokenPrefix) {
 		t.Fatalf("MintProposalToken = %q, %v", token, err)

@@ -995,7 +995,7 @@ paths:
         then validates it before answering: check on the patched package, the base revision's evals of every affected
         action before and after, and the backtest. The proposal comes back ready when all pass, drafting with its
         report otherwise. A fingerprint a rejection suppresses (until an insight it answers doubles in severity) is a
-        conflict.
+        conflict, as is any proposal on a production deployment, which makes none (D31).
       requestBody:
         required: true
         content:
@@ -1016,7 +1016,7 @@ paths:
   /proposal-token:
     post:
       operationId: mintProposalToken
-      summary: Mint the proposals-only token, replacing the earlier one, and answer it once (spec section 11.3).
+      summary: Mint the proposals-only token, replacing the earlier one, and answer it once (spec section 11.3); a conflict in production.
       requestBody:
         required: true
         content:
@@ -1036,6 +1036,7 @@ paths:
                 properties:
                   token: { type: string }
         "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
   /proposals/{proposal}:
     parameters: [{ $ref: "#/components/parameters/proposal" }]
     get:
@@ -1101,7 +1102,7 @@ paths:
     parameters: [{ $ref: "#/components/parameters/proposal" }]
     post:
       operationId: revalidateProposal
-      summary: Validate a proposal again; a stale one is first rebased onto the active revision (a conflict when it does not rebase).
+      summary: Validate a proposal again; a stale one is first rebased onto the active revision (a conflict when it does not rebase, and in production).
       requestBody:
         required: true
         content:

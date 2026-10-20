@@ -25,10 +25,10 @@ and `make help` for every command.
   revision was applied, not when they open: they open inside the producer's Done unit (spec section 4.12). A copy is
   made only when the producer's item is newly inserted; earlier items reach a new importer through
   `replay --stream`.
-- The environment (`production` or `development`, spec section 11.2) is the environment file's key, else the
-  command's default: `serve` production, `run` development. Production refuses `improve.enabled` and
-  `improve.publish: apply` (`pipeline.Environment.CheckMode`, `ErrProduction`); a command that runs the `improve`
-  pipeline calls `Environment.RequireDevelopment`.
+- The environment (`production` or `development`, spec section 11.2) is the environment file's key, else the command's
+  default: `serve` production, `run` development. Production refuses `improve.enabled` and `improve.publish: apply`
+  (`pipeline.Environment.CheckMode`, `ErrProduction`), and every proposal: created, revalidated, or its token minted
+  (`Engine.developmentOnly`); a command that runs the `improve` pipeline calls `Environment.RequireDevelopment`.
 - An insight trigger fires only for the insights of other pipelines (`engine/insight.go`), keyed by the insight and
   its `insightOpened` or `insightEscalated` event: a pipeline never feeds itself, and reading an event again finds
   the run it fired.

@@ -73,6 +73,9 @@ func NewProposalToken() (token, hash string) {
 // MintProposalToken mints the proposals-only token, replacing any earlier one, and returns it: shown once, since the
 // store keeps only its hash.
 func (e *Engine) MintProposalToken(ctx context.Context) (string, error) {
+	if err := e.developmentOnly("mint the proposals-only token"); err != nil {
+		return "", err
+	}
 	token, hash := NewProposalToken()
 	if err := e.st.SetProposalToken(ctx, hash); err != nil {
 		return "", err
@@ -84,6 +87,9 @@ func (e *Engine) MintProposalToken(ctx context.Context) (string, error) {
 // drafting, and validates it. A patch the rules refuse is store.ErrInvalid; a suppressed fingerprint is
 // store.ErrConflict.
 func (e *Engine) CreateProposal(ctx context.Context, req ProposalRequest) (store.Proposal, error) {
+	if err := e.developmentOnly("create a proposal"); err != nil {
+		return store.Proposal{}, err
+	}
 	rev, err := e.activeRevision(ctx, req.Pipeline)
 	if err != nil {
 		return store.Proposal{}, err
@@ -112,6 +118,9 @@ func (e *Engine) CreateProposal(ctx context.Context, req ProposalRequest) (store
 // first, and one that does not rebase stays stale (store.ErrConflict), as does one made stale by an accepted
 // proposal while its base is still the active revision: the accepted one is to be applied first.
 func (e *Engine) ValidateProposal(ctx context.Context, id string) (store.Proposal, error) {
+	if err := e.developmentOnly("validate a proposal"); err != nil {
+		return store.Proposal{}, err
+	}
 	p, err := e.proposal(ctx, id)
 	if err != nil {
 		return p, err
@@ -167,6 +176,16 @@ func (e *Engine) resetValidations(ctx context.Context) {
 	if err != nil && ctx.Err() == nil {
 		e.log.Error("reset validating proposals", "error", err.Error())
 	}
+}
+
+// developmentOnly refuses what a production deployment never does with proposals (spec section 11.3, D31): it
+// learns, and proposals are made, validated and published in development (pipeline.ErrProduction, a conflict).
+func (e *Engine) developmentOnly(what string) error {
+	if e.opts.Mode != pipeline.ModeProduction {
+		return nil
+	}
+	return fmt.Errorf("%s: proposals are made in development: %w: %w", what, pipeline.ErrProduction,
+		store.ErrConflict)
 }
 
 // validate runs the validation and encodes its report; a validation that could not run fails with its error as the
