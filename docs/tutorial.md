@@ -1049,5 +1049,5 @@ Stop the engine with Ctrl-C.
 - **The design.** [The platform design](specs/20261014.platform-design.md) covers every key of the pipeline file
   (section 4), the execution model (5), actions (6), agents (7), review (8) and the CLI (13).
 
-Command help: `millstream <command> --help`; `millstream run --help`, for one, lists `run [dir…]` with its flags and
-`run report`.
+Command help: `millstream --help` lists the commands, `millstream <command> --help` shows one; `millstream help` is a
+short guide to the CLI for people and agents alike, the same text as [internal/cli/guide.md](../internal/cli/guide.md).

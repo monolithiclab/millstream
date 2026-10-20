@@ -23,6 +23,14 @@ type TriggerCmd struct {
 	Token TriggerTokenCmd `cmd:"" help:"Replace a webhook trigger's token (--rotate) and print the new one, once."`
 }
 
+// Help is the command's detail, printed by its --help.
+func (TriggerFireCmd) Help() string {
+	return `Examples:
+  millstream trigger listings adhoc --payload '{"city":"Lyon"}'
+  # A retry with the same request id fires nothing new
+  millstream trigger listings adhoc --request-id nightly-2026-10-21`
+}
+
 // TriggerFireCmd is "millstream trigger <pipeline> <trigger>".
 type TriggerFireCmd struct {
 	Pipeline  string            `arg:"" help:"Pipeline name."`
@@ -154,6 +162,19 @@ func (c CancelCmd) Run(rt *Runtime) error {
 	}
 	_, err = fmt.Fprintf(rt.IO.Out, "%s cancelled\n", c.RunID)
 	return err
+}
+
+// Help is the command's detail, printed by its --help.
+func (ReplayCmd) Help() string {
+	return `Three forms, exclusive: --from dlq, --step or --stream.
+
+Examples:
+  # Retry a run's open dead letters in that run
+  millstream replay --pipeline listings --from dlq --run <run>
+  # Rerun a step over the items published in the last day, in a new replay run
+  millstream replay --pipeline listings --step score --since 1d
+  # Back-fill an imported stream from the producer's retained items
+  millstream replay --pipeline scoring --stream listings.ready`
 }
 
 // ReplayCmd is "millstream replay": dead-letter replay into the origin run (--from dlq, spec section 5.6), a replay

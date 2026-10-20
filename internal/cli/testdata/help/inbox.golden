@@ -1,0 +1,14 @@
+Usage: millstream inbox <command> [<args>] [flags]
+
+List and decide reviews and review samples.
+
+Commands:
+  list                           List the open reviews (the default).
+  show <delivery>                Show a review: its item, its display and what may be edited.
+  approve <delivery>             Approve a review, optionally editing the item first.
+  reject <delivery>              Reject a review, with a reason code when the step lists some.
+  samples <command>              List the open review samples.
+  sample <delivery> <decision>   Decide a review sample: agree or disagree with the rule that
+                                 approved it.
+
+Run "millstream inbox <command> --help" for a command's arguments and flags.

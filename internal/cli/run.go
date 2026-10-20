@@ -34,6 +34,17 @@ type RunCmd struct {
 	Report   RunReportCmd   `cmd:"" help:"Print a run's report: critical path, slowest steps, failures, cost, comparison."`
 }
 
+// Help is the command's detail, printed by its --help.
+func (RunPackagesCmd) Help() string {
+	return `Examples:
+  # Apply the package in the current directory, fire its manual triggers once, print a summary
+  millstream run --once
+  # Serve the engine, the API and the UI on 127.0.0.1:7070 until interrupted, logs on stderr
+  millstream run 2>engine.log
+  # Run two packages, one importing the other's stream, with a variable set
+  millstream run ./crawl ./score --var region=lyon`
+}
+
 // RunPackagesCmd is "millstream run [dir…]".
 type RunPackagesCmd struct {
 	Dirs      []string          `arg:"" optional:"" type:"path" help:"Package directories (default: the current one)."`

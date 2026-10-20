@@ -52,34 +52,6 @@ func Test_helpExitsZero(t *testing.T) {
 	}
 }
 
-// The default commands whose name is optional show under their parent's: its help prints their arguments and
-// flags, then its other commands.
-func Test_helpShowsImplicitCommands(t *testing.T) {
-	t.Parallel()
-	for _, tt := range []struct {
-		argv []string
-		want []string
-	}{
-		{[]string{"run", "--help"}, []string{"Usage: millstream run [<dirs> ...] [flags]", "--once", "--listen=HOST:PORT",
-			"run report <pipeline> <run>"}},
-		{[]string{"trigger", "--help"}, []string{"Usage: millstream trigger <pipeline> <trigger> [flags]", "--payload",
-			"trigger token <pipeline> <trigger>"}},
-		{[]string{"node", "--help"}, []string{"Usage: millstream node --join=", "--allow-exec", "node drain"}},
-		{[]string{"--help"}, []string{"  run [<dirs> ...] [flags]", "  trigger <pipeline> <trigger> [flags]",
-			"  node --join="}},
-	} {
-		code, out, _ := runCLI(t, "dev", tt.argv...)
-		for _, w := range tt.want {
-			if code != 0 || !strings.Contains(out, w) {
-				t.Errorf("%v: code %d, no %q in:\n%s", tt.argv, code, w, out)
-			}
-		}
-		if strings.Contains(out, "run packages") || strings.Contains(out, "trigger fire") {
-			t.Errorf("%v names an implicit command:\n%s", tt.argv, out)
-		}
-	}
-}
-
 func Test_configureSeamAdjustsRuntime(t *testing.T) {
 	t.Parallel()
 	var out bytes.Buffer

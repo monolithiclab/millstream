@@ -1,0 +1,14 @@
+Usage: millstream run [<dirs> ...] [flags]
+       millstream run <command> [<args>] [flags]
+
+Run packages locally with an embedded engine, or print a run's report.
+
+Default command:
+  run [<dirs> ...]          Apply packages and run the engine with an embedded node.
+                            Its arguments and flags: "millstream run packages --help"
+
+Commands:
+  report <pipeline> <run>   Print a run's report: critical path, slowest steps, failures, cost,
+                            comparison.
+
+Run "millstream run <command> --help" for a command's arguments and flags.

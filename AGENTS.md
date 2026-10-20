@@ -66,6 +66,9 @@ and `make help` for every command.
 - A CLI command that changes state goes through `changeState` (`internal/cli`), which calls the served engine's API
   when `--server`/`MILLSTREAM_SERVER` names one, else `withWriter`; reads use `withStore`. A command that only reads
   opens the store with `stores.OpenReader` (on Postgres: read-only, no leadership lock).
+- CLI help is `internal/cli/help.go` (three levels, colored on a terminal only) and the `millstream help` guide is
+  `internal/cli/guide.md`; a new command takes a `group:""` tag and a one-line `help:""`, examples go in a `Help()`
+  method, and `go test ./internal/cli -run Test_help -update` rewrites the golden files.
 - A new store test goes in `internal/store/storetest`, listed in `storetest.Tests` and wrapped in the
   `conformance_test.go` of the `internal/store/sqlstore/conformance/` package of its area (`delivery`, `review` or
   `retention`; a package nearing 70 ms wall splits again); `TestTestsListed` and `TestConformanceListed` name what is

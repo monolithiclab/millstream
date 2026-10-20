@@ -64,6 +64,10 @@ type Runtime struct {
 	Store store.Store
 	// CurrentUser names the account running the command, for when $USER is unset; nil asks os/user.
 	CurrentUser func() (string, error)
+	// IsTerminal says whether help written to w reaches a terminal, to color it; nil checks for a character device.
+	IsTerminal func(w io.Writer) bool
+	// color is the global --color flag: auto, always or never.
+	color string
 }
 
 // identity is who runs the command, the reviewer of its decisions (but of those a token server records under
@@ -118,38 +122,40 @@ type CLI struct {
 	EnvFile string `name:"env-file" type:"path" help:"Environment file (default: ./millstream.yaml when it exists)."`
 	Server  string `name:"server" placeholder:"URL" help:"Change state through the API of the engine serving at this URL (default: $MILLSTREAM_SERVER; token: $MILLSTREAM_TOKEN)."`
 	Direct  bool   `name:"direct" help:"Change state from this process, not through --server; on Postgres this takes the leadership lock, waiting while an engine runs."`
+	Color   string `name:"color" enum:"auto,always,never" default:"auto" placeholder:"WHEN" help:"Color the help: auto (on a terminal, unless NO_COLOR or TERM=dumb), always or never (default: $MILLSTREAM_COLOR, else auto)."`
 
-	Run           RunCmd           `cmd:"" help:"Apply packages and run the engine with an embedded node; run report prints a run's report."`
-	Serve         ServeCmd         `cmd:"" help:"Run an engine from the environment file; a second one on the same Postgres store waits as the standby."`
-	Node          NodeCmd          `cmd:"" help:"Run a remote node that joins the engine with the node token; node drain drains it."`
-	Nodes         NodesCmd         `cmd:"" help:"List the remote nodes, or revoke one."`
-	Apply         ApplyCmd         `cmd:"" help:"Check packages against the whole deployment and upload them as new revisions."`
-	Rollback      RollbackCmd      `cmd:"" help:"Reactivate an earlier revision of a pipeline."`
-	Disable       DisableCmd       `cmd:"" help:"Disable a pipeline: its triggers stop firing and its deliveries wait until resume."`
-	Check         CheckCmd         `cmd:"" help:"Validate a pipeline package."`
-	Lock          LockCmd          `cmd:"" help:"Pin a package's container and registry actions by image digest in millstream.lock."`
-	Graph         GraphCmd         `cmd:"" help:"Print a package's graph as Mermaid or DOT."`
-	Vars          VarsCmd          `cmd:"" help:"Print a package's variables, values and sources."`
-	Status        StatusCmd        `cmd:"" help:"Show pipelines and recent runs."`
-	Tail          TailCmd          `cmd:"" help:"Print events as JSON lines."`
-	Trigger       TriggerCmd       `cmd:"" help:"Fire a trigger; trigger token --rotate replaces a webhook trigger's token."`
-	Cancel        CancelCmd        `cmd:"" help:"Cancel a run."`
-	Replay        ReplayCmd        `cmd:"" help:"Replay dead letters into their run, or a step over past items in a replay run."`
-	DLQ           DLQCmd           `cmd:"" name:"dlq" help:"List and discard dead letters."`
-	Purge         PurgeCmd         `cmd:"" help:"Erase the items with a key, or an item, with their descendants and their copies in other pipelines."`
-	Inbox         InboxCmd         `cmd:"" help:"List and decide reviews and review samples."`
-	Pause         PauseCmd         `cmd:"" help:"Pause a pipeline or one of its steps."`
-	Resume        ResumeCmd        `cmd:"" help:"Resume a pipeline or one of its steps."`
-	Init          InitCmd          `cmd:"" help:"Scaffold a pipeline package or an action."`
-	Test          TestCmd          `cmd:"" help:"Test a package against stubbed actions, or an action against golden outputs."`
-	Eval          EvalCmd          `cmd:"" help:"Run an action's evals and score them."`
-	Metrics       MetricsCmd       `cmd:"" help:"Print metric rollups, or their Prometheus exposition."`
-	Insights      InsightsCmd      `cmd:"" help:"List, acknowledge and mute insights."`
-	Evidence      EvidenceCmd      `cmd:"" help:"Export an evidence bundle in production; import it in development."`
-	Proposals     ProposalsCmd     `cmd:"" help:"List, show, create, accept, reject and revalidate proposals."`
-	Backtest      BacktestCmd      `cmd:"" help:"Validate a patch against past items: replay the steps it changes, before and after."`
-	Improve       ImproveCmd       `cmd:"" help:"Run the improve pipeline now, on one insight or every open one; development only."`
-	Version       VersionCmd       `cmd:"" help:"Print the version."`
+	Init          InitCmd          `cmd:"" group:"Develop" help:"Scaffold a pipeline package or an action."`
+	Check         CheckCmd         `cmd:"" group:"Develop" help:"Validate pipeline packages, alone and against each other."`
+	Vars          VarsCmd          `cmd:"" group:"Develop" help:"Print a package's variables, their values and sources."`
+	Graph         GraphCmd         `cmd:"" group:"Develop" help:"Print a package's graph as Mermaid or DOT."`
+	Test          TestCmd          `cmd:"" group:"Develop" help:"Test a package against stubbed actions, or an action against golden outputs."`
+	Eval          EvalCmd          `cmd:"" group:"Develop" help:"Run an action's evals and score them."`
+	Lock          LockCmd          `cmd:"" group:"Develop" help:"Pin a package's container and registry actions by image digest."`
+	Run           RunCmd           `cmd:"" group:"Run" help:"Run packages locally with an embedded engine, or print a run's report."`
+	Trigger       TriggerCmd       `cmd:"" group:"Run" help:"Fire a trigger by hand, or replace a webhook trigger's token."`
+	Cancel        CancelCmd        `cmd:"" group:"Run" help:"Cancel a run."`
+	Replay        ReplayCmd        `cmd:"" group:"Run" help:"Replay dead letters into their run, or a step over past items."`
+	DLQ           DLQCmd           `cmd:"" name:"dlq" group:"Run" help:"List and discard dead letters."`
+	Inbox         InboxCmd         `cmd:"" group:"Run" help:"List and decide reviews and review samples."`
+	Status        StatusCmd        `cmd:"" group:"Observe" help:"Show pipelines and recent runs."`
+	Tail          TailCmd          `cmd:"" group:"Observe" help:"Print events as JSON lines."`
+	Metrics       MetricsCmd       `cmd:"" group:"Observe" help:"Print metric rollups, or their Prometheus exposition."`
+	Insights      InsightsCmd      `cmd:"" group:"Observe" help:"List, acknowledge and mute insights."`
+	Serve         ServeCmd         `cmd:"" group:"Operate" help:"Run an engine from the environment file, or its standby."`
+	Apply         ApplyCmd         `cmd:"" group:"Operate" help:"Check packages against the deployment and upload them as new revisions."`
+	Rollback      RollbackCmd      `cmd:"" group:"Operate" help:"Reactivate an earlier revision of a pipeline."`
+	Pause         PauseCmd         `cmd:"" group:"Operate" help:"Pause a pipeline or one of its steps."`
+	Resume        ResumeCmd        `cmd:"" group:"Operate" help:"Resume a pipeline or one of its steps."`
+	Disable       DisableCmd       `cmd:"" group:"Operate" help:"Disable a pipeline: its triggers stop firing until resume."`
+	Purge         PurgeCmd         `cmd:"" group:"Operate" help:"Erase items by key or id, with their descendants and copies."`
+	Node          NodeCmd          `cmd:"" group:"Operate" help:"Run a remote node that joins an engine, or drain it."`
+	Nodes         NodesCmd         `cmd:"" group:"Operate" help:"List the remote nodes, or revoke one."`
+	Evidence      EvidenceCmd      `cmd:"" group:"Improve" help:"Export an evidence bundle in production; import it in development."`
+	Improve       ImproveCmd       `cmd:"" group:"Improve" help:"Run the improve pipeline on one insight or every open one; development only."`
+	Proposals     ProposalsCmd     `cmd:"" group:"Improve" help:"List, create and decide proposals."`
+	Backtest      BacktestCmd      `cmd:"" group:"Improve" help:"Validate a patch against past items, before and after."`
+	Help          HelpCmd          `cmd:"" group:"Help" help:"Print the guide, a topic, or a command's help."`
+	Version       VersionCmd       `cmd:"" group:"Help" help:"Print the version."`
 	Agent         AgentCmd         `cmd:"" hidden:"" help:"Run the agent adapter: the action process of agent steps."`
 	ImproveAction ImproveActionCmd `cmd:"" name:"improve-action" hidden:"" help:"Run a step of the improve package: its action process."`
 }
@@ -183,6 +189,9 @@ func Run(ctx context.Context, argv []string, stdio IO, version string, configure
 	}
 	defer p.release()
 	parser := p.k
+	if len(argv) == 0 {
+		argv = []string{"--help"} // the bare command prints the top-level help
+	}
 	kctx, err := p.parse(argv)
 	rt.DB, rt.EnvFile, rt.Server, rt.Direct = p.tree.DB, p.tree.EnvFile, p.tree.Server, p.tree.Direct
 	if kctx != nil {
@@ -233,7 +242,7 @@ func takeParser(rt *Runtime) (*parser, error) {
 			kong.Name("millstream"),
 			kong.Description("Pipelines of actions connected by persisted streams."),
 			kong.Exit(func(c int) { panic(exitSignal(c)) }),
-			kong.Help(helpPrinter),
+			kong.Help(func(opts kong.HelpOptions, ctx *kong.Context) error { return printHelp(p.rt, opts, ctx) }),
 			kong.BindToProvider(func() (context.Context, error) { return p.rt.Ctx, nil }),
 			kong.BindToProvider(func() (*Runtime, error) { return p.rt, nil }),
 		)
@@ -274,6 +283,7 @@ func (p *parser) parse(argv []string) (*kong.Context, error) {
 	if err != nil {
 		return nil, err
 	}
+	p.rt.color = colorFlag(kctx) // help prints before the flags apply: on --help, after a usage error, and by help
 	if kctx.Error != nil {
 		return nil, kctx.Error
 	}

@@ -34,6 +34,14 @@ type NodeCmd struct {
 	Drain NodeDrainCmd `cmd:"" help:"Drain the node running from the state directory: it stops pulling, finishes or releases its deliveries within its drain timeout, and exits."`
 }
 
+// Help is the command's detail, printed by its --help.
+func (NodeRunCmd) Help() string {
+	return `The node authenticates with $MILLSTREAM_NODE_TOKEN.
+
+Examples:
+  millstream node --join https://engine-a:7070,https://engine-b:7070 --labels zone=par --slots 8`
+}
+
 // NodeRunCmd is "millstream node --join <url>[,<url>…]" (spec section 5.10).
 type NodeRunCmd struct {
 	Join         []string          `required:"" placeholder:"URL[,URL…]" help:"The engines' URLs, the active one and its standbys: https, or http to a loopback engine. The node follows the active one across a failover."`
