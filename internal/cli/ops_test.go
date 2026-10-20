@@ -217,6 +217,14 @@ func Test_replayStepCommand(t *testing.T) {
 		!strings.Contains(errOut, `has no step "nope"`) {
 		t.Errorf("--step nope: code %d, stderr %q", code, errOut)
 	}
+	// No form is the default: the help shows none as one, and replay without one says which to pick.
+	if out, _ := s.must(0, "replay", "--help"); strings.Contains(out, "--from=dlq") || !strings.Contains(out, "--from=SOURCE") {
+		t.Errorf("replay --help shows a default --from:\n%s", out)
+	}
+	if code, _, errOut := s.run("replay", "--pipeline", "listings", "--run", "run_r1_adhoc"); code != 2 ||
+		!strings.Contains(errOut, "replay needs --from dlq, --step or --stream") {
+		t.Errorf("no form: code %d, stderr %q", code, errOut)
+	}
 	replayCmd := func(c ReplayCmd) ReplayCmd { c.Pipeline = "listings"; return c }
 	s.checkRefusals(t, nil, []refusal{
 		{replayCmd(ReplayCmd{}), true, "replay needs --from dlq, --step or --stream"},

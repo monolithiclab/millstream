@@ -160,7 +160,7 @@ func (c CancelCmd) Run(rt *Runtime) error {
 // run of a step over past items (--step, spec section 5.7), or a back-fill of an imported stream over the producer's
 // retained items (--stream, spec section 4.12).
 type ReplayCmd struct {
-	From      string            `placeholder:"dlq" help:"Replay dead letters into their run: dlq. Exclusive with --step and --stream."`
+	From      string            `placeholder:"SOURCE" help:"Replay dead letters into their run: --from dlq, the one source. Exclusive with --step and --stream; one of the three is required."`
 	Step      string            `help:"Start a replay run of this step over past items on its input streams."`
 	Stream    string            `help:"Start a replay run back-filling this imported stream from the producer's retained items on it."`
 	Pipeline  string            `required:"" help:"Pipeline name."`

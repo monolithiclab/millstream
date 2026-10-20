@@ -568,8 +568,9 @@ it_73e90e50ff565e444d90e071f4e2e2eb  listings  run_20261020T162508Z-f9927400_adh
 it_88a91b75434734f59cc9057087b7f59d  listings  run_20261020T162558Z-7559f3e7_adhoc  affordable  dead  replayed   expr: filter of step affordable: evaluate "item.priceEur <= vars.maxPrice": no …
 ```
 
-`--from dlq` is required, although `millstream replay --help` shows it as the default. The day 1 run is now
-`succeeded`, L4 filtered. `millstream rollback listings` reactivates the previous revision if a change goes wrong.
+`replay` has two forms, `--from dlq` for dead letters and `--step` (next section), and takes one of them. The day 1
+run is now `succeeded`, L4 filtered. `millstream rollback listings` reactivates the previous revision if a change
+goes wrong.
 
 ### Replay a step over past items
 
