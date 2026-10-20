@@ -271,6 +271,8 @@ type Improve struct {
 	EvidenceTTL    time.Duration
 	// BacktestSample is improve.backtest.sample.
 	BacktestSample int
+	// ValidationTimeout is improve.validation.timeout: how long a proposal's validation may run.
+	ValidationTimeout time.Duration
 	// Distill is improve.distill (section 11.5).
 	DistillMinDeliveries int
 	DistillLanguage      string
@@ -907,7 +909,7 @@ func readImprove(f *fields, env *Environment) error {
 		return err
 	}
 	if err := imf.allow("enabled", "harness", "minSeverity", "publish", "patchFile", "git", "budget", "evidence",
-		"backtest", "distill", "filter"); err != nil {
+		"backtest", "validation", "distill", "filter"); err != nil {
 		return err
 	}
 	im := &env.Improve
@@ -943,6 +945,9 @@ func readImprove(f *fields, env *Environment) error {
 		}),
 		sub("backtest", []string{"sample"}, func(sf *fields) []error {
 			return []error{optional(sf, "sample", &im.BacktestSample, positiveInt)}
+		}),
+		sub("validation", []string{"timeout"}, func(sf *fields) []error {
+			return []error{optional(sf, "timeout", &im.ValidationTimeout, duration)}
 		}),
 		sub("distill", []string{"minDeliveries", "language", "minAgreement", "minCoverage"}, func(sf *fields) []error {
 			return []error{optional(sf, "minDeliveries", &im.DistillMinDeliveries, positiveInt),

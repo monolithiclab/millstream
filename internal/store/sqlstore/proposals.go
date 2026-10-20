@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"time"
 
 	"github.com/monolithiclab/millstream/internal/store"
 )
@@ -178,15 +179,16 @@ func (w *wtx) maxSeverity(pipelineName string, ids []string) (string, int, error
 }
 
 // StartValidation moves a proposal to validating: see store.Store.
-func (s *Store) StartValidation(ctx context.Context, id string) (store.Proposal, error) {
+func (s *Store) StartValidation(ctx context.Context, id string, takeOver time.Time) (store.Proposal, error) {
 	var out store.Proposal
 	err := s.submit(ctx, unitStartValidation, func(w *wtx) error {
 		p, err := w.proposal(id)
 		if err != nil {
 			return err
 		}
-		switch p.State {
-		case store.ProposalDrafting, store.ProposalReady, store.ProposalStale:
+		switch {
+		case p.State == store.ProposalDrafting, p.State == store.ProposalReady, p.State == store.ProposalStale:
+		case p.State == store.ProposalValidating && p.UpdatedAt.Before(takeOver):
 		default:
 			return fmt.Errorf("proposal %s is %s: only a drafting, ready or stale one is validated: %w", id, p.State,
 				store.ErrConflict)
@@ -202,6 +204,42 @@ func (s *Store) StartValidation(ctx context.Context, id string) (store.Proposal,
 		return store.Proposal{}, fmt.Errorf("start validation: %w", err)
 	}
 	return out, nil
+}
+
+// ResetValidations moves the validating proposals back to drafting: see store.Store.
+func (s *Store) ResetValidations(ctx context.Context) ([]string, error) {
+	var ids []string
+	err := s.submit(ctx, unitResetValidations, func(w *wtx) error {
+		rows, err := w.query(`SELECT id, pipeline FROM proposals WHERE state = ? ORDER BY id`, store.ProposalValidating)
+		if err != nil {
+			return err
+		}
+		var found [][2]string
+		for rows.Next() {
+			var id, pipelineName string
+			if err := rows.Scan(&id, &pipelineName); err != nil {
+				_ = rows.Close()
+				return err
+			}
+			found = append(found, [2]string{id, pipelineName})
+		}
+		if err := errors.Join(rows.Err(), rows.Close()); err != nil {
+			return err
+		}
+		ids = ids[:0]
+		for _, f := range found {
+			if err := w.setProposalState(f[0], f[1], store.ProposalDrafting, store.EventProposalValidated,
+				map[string]any{"passed": false, "interrupted": true}); err != nil {
+				return err
+			}
+			ids = append(ids, f[0])
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("reset validations: %w", err)
+	}
+	return ids, nil
 }
 
 // RecordValidation records a validating proposal's report: see store.Store.

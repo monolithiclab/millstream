@@ -25,9 +25,8 @@ import (
 // action (publish.Applier). A production deployment refuses it (pipeline.ErrProduction).
 func (e *Engine) ApplyProposal(ctx context.Context, proposalID, pipelineName, base string, files map[string][]byte,
 ) (store.RevisionID, error) {
-	if e.opts.Mode == pipeline.ModeProduction {
-		return 0, fmt.Errorf("apply proposal %s: improve.publish: apply is %w: %w", proposalID, pipeline.ErrProduction,
-			store.ErrConflict)
+	if err := e.developmentOnly("apply proposal " + proposalID); err != nil {
+		return 0, err
 	}
 	pkg, err := e.PackageFromFiles(files)
 	if err != nil {

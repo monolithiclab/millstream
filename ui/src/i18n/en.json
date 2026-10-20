@@ -949,7 +949,10 @@
       "paths": "Files",
       "patch": "Patch SHA-256",
       "created": "Created",
-      "createdValue": "by {{who}}, {{when}}"
+      "createdValue": "by {{who}}, {{when}}",
+      "published": "Published",
+      "publishedValue": "by {{publisher}}, {{when}}:",
+      "notPublished": "Not yet: the improve pipeline publishes it as improve.publish says"
     },
     "refused": "Not done",
     "conflict": "{{message}}. The proposal was read again.",
@@ -1002,7 +1005,7 @@
     },
     "backtest": {
       "title": "Backtest, before and after",
-      "rule": "The changed steps replayed on past items, once on the base revision and once patched. It passes when each agreement falls by at most 2 points, the failure rate does not rise, and the patch drops at most improve.filter.maxFalseDrop (1% by default) of the items reviewers approved.",
+      "rule": "The changed steps replayed on past items, once on the base revision and once patched. It passes when the agreement with reviewers and the history agreement of the lineages nobody reviewed fall by at most 2 points, the history agreement of the reviewed lineages by at most 2 points more than the share changed as reviewers corrected, the failure rate does not rise, and the patch drops at most improve.filter.maxFalseDrop (1% by default) of the items reviewers approved.",
       "skipped": "Did not run: {{reason}}",
       "sample": "Sample",
       "fromEvidence": "{{count}} deliveries from imported evidence, {{runs}} runs",
@@ -1017,6 +1020,9 @@
       "measure": "Measure",
       "change": "Change",
       "agreement": "Agreement with history",
+      "unreviewedAgreement": "History agreement, unreviewed lineages",
+      "reviewedAgreement": "History agreement, reviewed lineages",
+      "towardReviewers": "Changed as reviewers corrected",
       "reviewAgreement": "Agreement with reviewers",
       "approvalsDropped": "Past approvals dropped",
       "failureRate": "Failure rate",

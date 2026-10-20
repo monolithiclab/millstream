@@ -11,6 +11,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/monolithiclab/millstream/internal/patch"
 	"github.com/monolithiclab/millstream/internal/pipeline"
@@ -124,7 +125,8 @@ type ProposalStore interface {
 
 // Proposal publishes the accepted proposal id with p, the patch the caller saw being patchSHA256, and records where
 // it went (proposalPublished): what POST /proposals/{id}/publish runs for the improve package's publish step. A
-// proposal published already is not published again: its earlier result comes back, again true.
+// proposal published already is not published again: its earlier result comes back, again true. So does one apply
+// published without the record (the engine stopped in between): its proposalApplied event counts, and is recorded.
 func Proposal(ctx context.Context, st ProposalStore, p Publisher, id, patchSHA256 string) (res Result, again bool,
 	err error,
 ) {
@@ -139,19 +141,61 @@ func Proposal(ctx context.Context, st ProposalStore, p Publisher, id, patchSHA25
 		return Result{}, false, fmt.Errorf("%w: proposal %s: patch %.12s is not the validated one (%.12s)", ErrRefused,
 			id, patchSHA256, prop.PatchSHA256)
 	}
-	evs, err := st.PipelineEvents(ctx, store.EventFilter{Pipeline: prop.Pipeline,
-		Kinds: []string{store.EventProposalPublished}})
+	published, err := Publications(ctx, st, prop.Pipeline)
 	if err != nil {
 		return Result{}, false, err
 	}
-	for _, ev := range evs {
-		var done struct{ ID, Publisher, Where string }
-		if json.Unmarshal(ev.Data, &done) == nil && done.ID == id {
-			return Result{Publisher: done.Publisher, RevisionOrURL: done.Where}, true, nil
+	if done, ok := published[id]; ok {
+		return Result{Publisher: done.Publisher, RevisionOrURL: done.Where}, true, nil
+	}
+	if p.Name() == pipeline.PublishApply {
+		evs, err := st.PipelineEvents(ctx, store.EventFilter{Pipeline: prop.Pipeline,
+			Kinds: []string{store.EventProposalApplied}})
+		if err != nil {
+			return Result{}, false, err
+		}
+		for _, ev := range evs {
+			var applied struct {
+				ID       string
+				Revision json.Number
+			}
+			if ev.Kind == store.EventProposalApplied && json.Unmarshal(ev.Data, &applied) == nil && applied.ID == id {
+				res = Result{Publisher: pipeline.PublishApply, RevisionOrURL: applied.Revision.String()}
+				return res, true, st.RecordPublished(ctx, id, res.Publisher, res.RevisionOrURL)
+			}
 		}
 	}
 	if res, err = p.Publish(ctx, FromProposal(prop)); err != nil {
 		return res, false, err
 	}
 	return res, false, st.RecordPublished(ctx, id, res.Publisher, res.RevisionOrURL)
+}
+
+// Publication is where a publish action put a proposal, and when: its proposalPublished event.
+type Publication struct {
+	Publisher, Where string
+	At               time.Time
+}
+
+// Publications returns the publications of a pipeline's proposals, by proposal id, the first of each.
+func Publications(ctx context.Context, st interface {
+	PipelineEvents(ctx context.Context, f store.EventFilter) ([]store.Event, error)
+}, pipelineName string,
+) (map[string]Publication, error) {
+	evs, err := st.PipelineEvents(ctx, store.EventFilter{Pipeline: pipelineName,
+		Kinds: []string{store.EventProposalPublished}})
+	if err != nil {
+		return nil, err
+	}
+	out := map[string]Publication{}
+	for _, ev := range evs {
+		var d struct{ ID, Publisher, Where string }
+		if ev.Kind != store.EventProposalPublished || json.Unmarshal(ev.Data, &d) != nil {
+			continue
+		}
+		if _, seen := out[d.ID]; !seen {
+			out[d.ID] = Publication{Publisher: d.Publisher, Where: d.Where, At: ev.TS}
+		}
+	}
+	return out, nil
 }

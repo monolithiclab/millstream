@@ -15,20 +15,23 @@ import (
 const Tolerance = 0.02
 
 // Holds reports whether a backtest lets a proposal through (spec section 11.3), comparing the patched replay with
-// the base revision's over the whole sample: agreement with the reviewers' decisions falls by at most Tolerance,
-// agreement with the historical outputs too unless the reviewers' rose (the outputs a proposal changes as the
-// reviewers corrected them are what it is for), an agreement with nothing to compare not counting; and the failure
-// rate does not rise at all; and the patched replay drops at most maxFalseDrop of the sample's approvals, items a
-// person approved that no longer reach their review (improve.filter.maxFalseDrop, spec section 11.6).
+// the base revision's over the whole sample: agreement with the reviewers' decisions falls by at most Tolerance;
+// agreement with the historical outputs of the lineages no review lies below falls by at most Tolerance; on the
+// reviewed lineages it may fall further only by the share of deliveries that moved toward the reviewers' truth
+// (TowardReviewersShare: what a proposal correcting outputs as reviewers did is for), so fixing one reviewed item
+// never pays for wrecking the outputs nobody reviewed; an agreement with nothing to compare does not count. The
+// failure rate does not rise at all, and the patched replay drops at most maxFalseDrop of the sample's approvals,
+// items a person approved that no longer reach their review (improve.filter.maxFalseDrop, spec section 11.6).
 func (r *Report) Holds(maxFalseDrop float64) bool {
 	b, a := r.Before, r.After
-	reviewed := b.Reviewed > 0
 	switch {
 	case a.Approved > 0 && float64(a.ApprovalsDropped-b.ApprovalsDropped) > maxFalseDrop*float64(a.Approved):
 		return false
-	case reviewed && a.ReviewAgreement < b.ReviewAgreement-Tolerance:
+	case b.Reviewed > 0 && a.ReviewAgreement < b.ReviewAgreement-Tolerance:
 		return false
-	case b.Compared > 0 && a.Agreement < b.Agreement-Tolerance && !(reviewed && a.ReviewAgreement > b.ReviewAgreement):
+	case b.UnreviewedCompared > 0 && a.UnreviewedAgreement < b.UnreviewedAgreement-Tolerance:
+		return false
+	case b.ReviewedCompared > 0 && a.ReviewedAgreement < b.ReviewedAgreement-a.TowardReviewersShare-Tolerance:
 		return false
 	}
 	return a.FailureRate <= b.FailureRate

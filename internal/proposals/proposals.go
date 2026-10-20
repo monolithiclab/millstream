@@ -70,6 +70,9 @@ func prepared(kind store.ProposalKind, base *pipeline.Package, text string, p *p
 	if err != nil {
 		return Prepared{}, fmt.Errorf("%w: the patched package does not parse: %w", patch.ErrPatch, err)
 	}
+	if err := semantic(kind, base.Pipeline, patched.Pipeline); err != nil {
+		return Prepared{}, err
+	}
 	return Prepared{Kind: kind, Patch: text, SHA256: patch.Hash([]byte(text)), Changes: p.Files, Base: base,
 		Patched: patched, Steps: touchedSteps(base.Pipeline, patched.Pipeline, p.Files)}, nil
 }
@@ -138,7 +141,7 @@ func Fingerprint(pipelineName string, kind store.ProposalKind, insights, paths [
 //	config, topology   pipeline.yaml, changed
 //	distill            pipeline.yaml changed, and files added under one new actions/<name>/ directory
 func allowed(kind store.ProposalKind, base *pipeline.Package, changes []patch.File) error {
-	newDir := ""
+	newDir, pipelineChanged := "", false
 	for _, c := range changes {
 		refuse := func(why string) error {
 			return fmt.Errorf("%w: a %s proposal may not %s %s: %s", patch.ErrPatch, kind, c.Op, c.Path, why)
@@ -147,6 +150,7 @@ func allowed(kind store.ProposalKind, base *pipeline.Package, changes []patch.Fi
 			if c.Op != patch.OpModify {
 				return refuse("the pipeline file is only changed")
 			}
+			pipelineChanged = true
 			if kind == store.ProposalConfig || kind == store.ProposalTopology || kind == store.ProposalDistill {
 				continue
 			}
@@ -184,8 +188,11 @@ func allowed(kind store.ProposalKind, base *pipeline.Package, changes []patch.Fi
 			return refuse("config and topology proposals change pipeline.yaml alone")
 		}
 	}
-	if kind == store.ProposalDistill && newDir == "" {
+	switch {
+	case kind == store.ProposalDistill && newDir == "":
 		return fmt.Errorf("%w: a distill proposal adds a new actions/<name>/ directory", patch.ErrPatch)
+	case kind == store.ProposalDistill && !pipelineChanged:
+		return fmt.Errorf("%w: a distill proposal changes pipeline.yaml to run the action it adds", patch.ErrPatch)
 	}
 	return nil
 }

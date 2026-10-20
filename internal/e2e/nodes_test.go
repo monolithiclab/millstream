@@ -111,8 +111,10 @@ func (p *engineProc) waitExit(t *testing.T, timeout time.Duration) int {
 	}
 }
 
-// TestNodesKilled kills nodes mid-delivery: the first while it runs the crawl, the next once it has done some work.
-// Their leases expire, each consuming its attempt, and another node redoes the deliveries.
+// TestNodesKilled kills nodes mid-delivery: the first while it runs the crawl, the next while it redoes it. The
+// slowed crawl is the only delivery a node holds for seconds, so the kill lands inside it; a later, quick delivery
+// may have ended before the kill. Their leases expire, each consuming an attempt of the crawl's three, and a third
+// node does it.
 func TestNodesKilled(t *testing.T) {
 	t.Parallel()
 	want := cleanBuiltinsRunOn(t, postgresBackend)
@@ -125,8 +127,10 @@ func TestNodesKilled(t *testing.T) {
 	n1.kill() // mid-crawl
 	n2 := f.startNode("2", nodeToken, a.url)
 	a.waitLine(t, `"msg":"lease expired"`, time.Minute)
-	a.waitDone(t, 5)
-	n2.kill()
+	if line := n2.waitLine(t, `"msg":"delivery started"`, time.Minute); !strings.Contains(line, `"step":"crawl"`) {
+		t.Fatalf("node 2 started %s, want the crawl redone", line)
+	}
+	n2.kill() // mid-crawl
 	f.startNode("3", nodeToken, a.url)
 	f.waitSettled()
 	a.stop(t)

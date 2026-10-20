@@ -23,9 +23,6 @@ type Options struct {
 	Client *http.Client
 	// Logger receives the action's logs (stderr, which the node relays); nil discards them.
 	Logger *slog.Logger
-	// Publishers are the publishers publish may hand accepted proposals to, by improve.publish's name; nil means
-	// those registered (RegisterPublisher).
-	Publishers map[string]Publisher
 	// Poll is how often validate polls a backtest; zero means a second.
 	Poll time.Duration
 }

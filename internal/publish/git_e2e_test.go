@@ -45,8 +45,13 @@ func newForgeRepo(t *testing.T) forgeRepo {
 	gitRun(t, seed, "-c", "user.name=t", "-c", "user.email=t@example.invalid", "commit", "--quiet", "-m", "seed")
 	gitRun(t, seed, "push", "--quiet", f.bare, "main")
 	for _, cli := range []string{"gh", "glab"} {
+		// view answers the pull request create opened, as JSON for glab; it fails before create or once it is gone.
+		rec := filepath.Join(f.rec, cli)
 		script := "#!/bin/sh\nif [ \"$1 $2\" = \"auth git-credential\" ]; then exit 0; fi\n" +
-			"printf '%s\\n' \"$*\" > " + filepath.Join(f.rec, cli) + "\necho https://forge.example/pr/1\n"
+			"if [ \"$2\" = view ]; then [ -f " + rec + ".open ] || exit 1\n" +
+			"  if [ \"$1\" = mr ]; then echo '{\"iid\": 1, \"web_url\": \"https://forge.example/pr/1\"}'; " +
+			"else echo https://forge.example/pr/1; fi; exit 0; fi\n" +
+			"printf '%s\\n' \"$*\" > " + rec + "\ntouch " + rec + ".open\necho https://forge.example/pr/1\n"
 		if err := os.WriteFile(filepath.Join(f.bin, cli), []byte(script), 0o755); err != nil { // #nosec G306 -- a test CLI
 			t.Fatal(err)
 		}
@@ -110,8 +115,9 @@ func (h hostJobs) run(ctx context.Context, j gitJob) (string, error) {
 	return string(out), nil
 }
 
-// TestGitPRHost: both git actions publish to a local repository with the scripts their container runs, and a second
-// publication of the same proposal is refused: its branch exists and is never forced.
+// TestGitPRHost: both git actions publish to a local repository with the scripts their container runs; publishing the
+// same proposal again resumes from its branch, never pushed again: the open pull request's URL, or, once that is gone,
+// a pull request opened on the branch as it is.
 func TestGitPRHost(t *testing.T) {
 	_, packages, acc := fixture(t)
 	for _, action := range []string{pipeline.PublishGitPRGH, pipeline.PublishGitPRGLab} {
@@ -125,11 +131,26 @@ func TestGitPRHost(t *testing.T) {
 		if err != nil || res.RevisionOrURL != "https://forge.example/pr/1" {
 			t.Fatalf("%s: Publish = %+v, %v", action, res, err)
 		}
-		f.check(t, strings.TrimPrefix(action, "git-pr-"))
+		cli := strings.TrimPrefix(action, "git-pr-")
+		f.check(t, cli)
+		head := gitRun(t, f.bare, "rev-parse", "millstream/pr_1")
 		again := acc
 		again.Rationale = "Another commit."
-		if _, err := p.Publish(t.Context(), again); err == nil || !strings.Contains(err.Error(), "rejected") {
-			t.Fatalf("%s: a second commit on the proposal's branch: %v, want the push rejected", action, err)
+		if res, err := p.Publish(t.Context(), again); err != nil || res.RevisionOrURL != "https://forge.example/pr/1" {
+			t.Fatalf("%s: publishing again = %+v, %v", action, res, err)
+		}
+		if err := os.Remove(filepath.Join(f.rec, cli+".open")); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Remove(filepath.Join(f.rec, cli)); err != nil {
+			t.Fatal(err)
+		}
+		if res, err := p.Publish(t.Context(), again); err != nil || res.RevisionOrURL != "https://forge.example/pr/1" {
+			t.Fatalf("%s: publishing again without a pull request = %+v, %v", action, res, err)
+		}
+		f.check(t, cli)
+		if got := gitRun(t, f.bare, "rev-parse", "millstream/pr_1"); got != head {
+			t.Fatalf("%s: the branch moved from %s to %s", action, head, got)
 		}
 	}
 }

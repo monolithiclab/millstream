@@ -5,6 +5,7 @@ import (
 	"maps"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/monolithiclab/millstream/internal/failpoint"
 	"github.com/monolithiclab/millstream/internal/store"
@@ -29,7 +30,7 @@ func (e *env) createProposal(np store.NewProposal) store.Proposal {
 // ready validates a proposal as passed.
 func (e *env) ready(id string) {
 	e.t.Helper()
-	if _, err := e.s.StartValidation(e.ctx, id); err != nil {
+	if _, err := e.s.StartValidation(e.ctx, id, time.Time{}); err != nil {
 		e.t.Fatalf("StartValidation %s: %v", id, err)
 	}
 	p, err := e.s.RecordValidation(e.ctx, store.Validation{ID: id, Report: []byte(`{"passed":true}`), Passed: true})
@@ -81,10 +82,29 @@ func TestProposalLifecycle(t *testing.T, open Opener) {
 
 	wantErr(t, func() error { _, err := e.s.AcceptProposal(e.ctx, "p1", "sha-p1", "ana"); return err }(),
 		store.ErrConflict) // not ready yet
-	if _, err := e.s.StartValidation(e.ctx, "failing"); err != nil {
+	if _, err := e.s.StartValidation(e.ctx, "failing", time.Time{}); err != nil {
 		t.Fatal(err)
 	}
-	wantErr(t, func() error { _, err := e.s.StartValidation(e.ctx, "failing"); return err }(), store.ErrConflict)
+	wantErr(t, func() error { _, err := e.s.StartValidation(e.ctx, "failing", time.Time{}); return err }(), store.ErrConflict)
+	// A validation started no earlier than the takeover time is still running; an older one is presumed lost.
+	wantErr(t, func() error { _, err := e.s.StartValidation(e.ctx, "failing", e.clock.Now()); return err }(),
+		store.ErrConflict)
+	e.clock.Advance(time.Hour)
+	if p, err := e.s.StartValidation(e.ctx, "failing", e.clock.Now().Add(-30*time.Minute)); err != nil ||
+		p.State != store.ProposalValidating || !p.UpdatedAt.Equal(e.clock.Now()) {
+		t.Fatalf("taking over a lost validation = %+v, %v", p, err)
+	}
+	// An engine starting resets what was validating: no validation outlives its engine.
+	if ids, err := e.s.ResetValidations(e.ctx); err != nil || !slices.Equal(ids, []string{"failing"}) ||
+		e.proposalStates()["failing"] != store.ProposalDrafting {
+		t.Fatalf("ResetValidations = %v, %v; states %v", ids, err, e.proposalStates())
+	}
+	if ids, err := e.s.ResetValidations(e.ctx); err != nil || len(ids) != 0 {
+		t.Fatalf("ResetValidations again = %v, %v", ids, err)
+	}
+	if _, err := e.s.StartValidation(e.ctx, "failing", time.Time{}); err != nil {
+		t.Fatal(err)
+	}
 	if f, err := e.s.RecordValidation(e.ctx, store.Validation{ID: "failing", Report: []byte(`{"passed":false}`)}); err != nil ||
 		f.State != store.ProposalDrafting || string(f.Report) != `{"passed":false}` {
 		t.Fatalf("failed validation = %+v, %v", f, err)
@@ -125,7 +145,7 @@ func TestProposalLifecycle(t *testing.T, open Opener) {
 	missing.Pipeline = "nope"
 	for _, err := range []error{
 		func() error { _, err := e.s.CreateProposal(e.ctx, missing); return err }(),
-		func() error { _, err := e.s.StartValidation(e.ctx, "nope"); return err }(),
+		func() error { _, err := e.s.StartValidation(e.ctx, "nope", time.Time{}); return err }(),
 		func() error {
 			_, err := e.s.RecordValidation(e.ctx, store.Validation{ID: "nope", Report: []byte(`{}`)})
 			return err
@@ -169,14 +189,14 @@ func TestProposalMovedBase(t *testing.T, open Opener) {
 	if !errors.Is(err, store.ErrConflict) || got.State != store.ProposalStale {
 		t.Fatalf("AcceptProposal on a moved base = %+v, %v; want it stale and a conflict", got, err)
 	}
-	if _, err := e.s.StartValidation(e.ctx, "p2"); err != nil {
+	if _, err := e.s.StartValidation(e.ctx, "p2", time.Time{}); err != nil {
 		t.Fatal(err)
 	}
 	if p, err := e.s.RecordValidation(e.ctx, store.Validation{ID: "p2", Report: []byte(`{}`), Passed: true}); err != nil ||
 		p.State != store.ProposalStale {
 		t.Fatalf("validation on the old base = %+v, %v; want stale", p, err)
 	}
-	if _, err := e.s.StartValidation(e.ctx, "p2"); err != nil {
+	if _, err := e.s.StartValidation(e.ctx, "p2", time.Time{}); err != nil {
 		t.Fatal(err)
 	}
 	p, err := e.s.RecordValidation(e.ctx, store.Validation{ID: "p2", Report: []byte(`{}`), Passed: true,

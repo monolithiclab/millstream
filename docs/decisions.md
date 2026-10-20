@@ -400,9 +400,11 @@ commits that API to stability.
 ### D31. Learn in production, change in development (2026-10-15)
 
 **Decision.** Deployments declare `environment: production | development`. Production computes insights and exports
-evidence bundles; the `improve` pipeline runs only in development, against imported evidence, and production refuses
-to publish proposals with `apply`. Bundles redact the pointers each stream lists, never carry reviewer identities,
-expire (30 days by default), and are recorded in production so erasure can find them.
+evidence bundles; the `improve` pipeline runs only in development, against imported evidence, and production refuses to
+publish proposals with `apply`. Corollary: production makes no proposal at all, refusing to create or revalidate one and
+to mint the proposals-only token (a conflict), so nothing there changes itself, whatever reaches its API. Bundles redact
+the pointers each stream lists, never carry reviewer identities, expire (30 days by default), and are recorded in
+production so erasure can find them.
 
 **Evidence.** Changes should follow the normal path from development to release, and development needs real evidence
 to draft and validate proposals. Redaction, expiry and an export record bound what production data reaches

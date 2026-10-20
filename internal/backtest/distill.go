@@ -68,6 +68,7 @@ func (b *Backtester) Training(ctx context.Context, pipelineName, step string) (T
 	}
 	t.Source, t.HoldoutFrom, t.Pairs, t.Holdout, t.Train = source, split.HoldoutFrom, len(pairs),
 		len(split.Holdout), split.Train
+	b.serve(pipelineName, step, split.HoldoutFrom)
 	t.Lessons, t.Withheld, err = stepLessons(pkg, step, split.Holdout)
 	return t, err
 }
@@ -94,12 +95,43 @@ func stepLessons(pkg *pipeline.Package, step string, holdout []distill.Pair) (pi
 	return out, len(withheld), nil
 }
 
+// serve records a boundary Training served, keeping the earliest of each step.
+func (b *Backtester) serve(pipelineName, step string, from time.Time) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	k := [2]string{pipelineName, step}
+	if was, ok := b.served[k]; !ok || from.Before(was) {
+		if b.served == nil {
+			b.served = map[[2]string]time.Time{}
+		}
+		b.served[k] = from
+	}
+}
+
 // Holdout returns an agent step's holdout pairs: those of the entities first seen at or after from (the boundary a
-// distill proposal records), read from history now. It implements proposals.HoldoutSource.
+// distill proposal records), read from history now. It implements proposals.HoldoutSource. The boundary is the
+// engine's, not the proposer's: one earlier than the earliest Training served for the step, or, when this
+// backtester served none (the engine restarted since), than the split of history made now, would judge the code on
+// items it may have trained on, and is refused (store.ErrInvalid).
 func (b *Backtester) Holdout(ctx context.Context, pipelineName, step string, from time.Time) ([]distill.Pair, error) {
 	pairs, _, err := b.pairs(ctx, pipelineName, step)
 	if err != nil {
 		return nil, err
+	}
+	b.mu.Lock()
+	floor, ok := b.served[[2]string{pipelineName, step}]
+	b.mu.Unlock()
+	if !ok {
+		split, err := distill.SplitPairs(pairs, distill.HoldoutShare)
+		if err != nil {
+			return nil, fmt.Errorf("%w: %d pairs of step %s: %w", err, len(pairs), step, store.ErrInvalid)
+		}
+		floor = split.HoldoutFrom
+	}
+	if from.Before(floor) {
+		return nil, fmt.Errorf("the holdout of step %s starts at %s, before the engine's boundary %s: the code "+
+			"would be judged on items it may have trained on: %w", step, from.UTC().Format(time.RFC3339),
+			floor.UTC().Format(time.RFC3339), store.ErrInvalid)
 	}
 	return distill.Holdout(pairs, from), nil
 }
@@ -210,12 +242,17 @@ func (h *history) truth(d store.Delivery, p *distill.Pair, reviewed map[string][
 
 // reviewsBelow returns the people's decisions on an item and its descendants, nearest first.
 func (h *history) reviewsBelow(id string, reviewed map[string][]store.Review) []store.Review {
-	var out []store.Review
+	return below(h, id, reviewed)
+}
+
+// below collects what by holds for an item and its descendants, nearest first, maxReviewDepth levels down.
+func below[T any](h *history, id string, by map[string][]T) []T {
+	var out []T
 	level, seen := []string{id}, map[string]bool{id: true}
 	for depth := 0; len(level) > 0 && depth < maxReviewDepth; depth++ {
 		var next []string
 		for _, it := range level {
-			out = append(out, reviewed[it]...)
+			out = append(out, by[it]...)
 			for _, c := range h.children[it] {
 				if !seen[c.ID] {
 					seen[c.ID] = true

@@ -316,14 +316,24 @@ func TestMeasure(t *testing.T) {
 	if m.Reviewed != 2 || m.ReviewAgreed != 2 || m.ReviewAgreement != 1 {
 		t.Errorf("reviews = %+v", m)
 	}
+	// Every sampled delivery leads to a review, and each changed as the reviewers corrected it.
+	if m.UnreviewedCompared != 0 || m.ReviewedCompared != 4 || m.ReviewedAgreed != 0 || m.TowardReviewers != 4 ||
+		m.TowardReviewersShare != 1 {
+		t.Errorf("by lineage = %+v", m)
+	}
 	score := measure(h, s, r, "score")
 	if score.Compared != 2 || score.Agreed != 0 || score.Reviewed != 0 {
 		t.Errorf("score = %+v", score)
 	}
 	// Met again with its historical payload, the edited item needs its edit again.
 	r.decisions[ids.Delivery("check", "as", 0)] = recorded
-	if m := measure(h, s, r, ""); m.ReviewAgreed != 1 {
+	if m := measure(h, s, r, ""); m.ReviewAgreed != 1 || m.TowardReviewers != 2 {
 		t.Errorf("recorded review = %+v", m)
+	}
+	// Without reviews, every delivery is unreviewed and none moves toward a reviewer.
+	h.reviews = map[string]store.Review{}
+	if m := measure(h, s, r, ""); m.UnreviewedCompared != 4 || m.ReviewedCompared != 0 || m.TowardReviewers != 0 {
+		t.Errorf("unreviewed = %+v", m)
 	}
 }
 

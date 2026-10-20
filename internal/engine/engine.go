@@ -357,6 +357,7 @@ func (e *Engine) Run(ctx context.Context) error {
 	}
 	// Reviews overdue while no engine ran time out before anything waits on their runs.
 	e.reviewTimeouts(ctx)
+	e.resetValidations(ctx)
 	e.readyOnce.Do(func() { close(e.ready) })
 	e.bg.start(ctx)
 	defer e.bg.stop()

@@ -30,8 +30,12 @@ import (
 // request, its body the validation report. git runs with hooks disabled (core.hooksPath=/dev/null) and its commit
 // hooks skipped, and nothing is built or run from the repository.
 
-// TrailerProposal is the commit trailer naming the proposal a commit publishes (spec section 11.3).
-const TrailerProposal = "Millstream-Proposal"
+// TrailerProposal is the commit trailer naming the proposal a commit publishes (spec section 11.3), and TrailerPatch
+// the one naming its patch's hash, by which a publication interrupted after its push is recognised.
+const (
+	TrailerProposal = "Millstream-Proposal"
+	TrailerPatch    = "Millstream-Patch"
+)
 
 // jobMount is where a git job's work directory is mounted in its container.
 const jobMount = "/work"
@@ -126,12 +130,27 @@ const cloneScript = gitPrelude + `g clone --quiet --depth 1 --no-tags --single-b
 g -C "$WORK/repo" checkout --quiet -b "$MS_BRANCH"
 `
 
-// publishScript commits the package directory's changes, pushes the branch (never forced) and opens the pull
-// request, printing its URL.
+// resumeScript finds a publication of the proposal an earlier run left: when its branch exists, it prints the
+// Millstream-Patch trailer of the branch's commit and the URL of the pull request open on it, if any.
+const resumeScript = gitPrelude + `g ls-remote --exit-code --heads -- "$MS_REPO" "refs/heads/$MS_BRANCH" >/dev/null || exit 0
+g init --quiet "$WORK/resume"
+cd "$WORK/resume"
+g remote add origin "$MS_REPO"
+g fetch --quiet --depth 1 --no-tags origin "refs/heads/$MS_BRANCH"
+echo "patch $(g log -1 --format=%B FETCH_HEAD | sed -n 's/^Millstream-Patch: *//p' | tail -n 1)"
+case "$MS_FORGE" in
+gh) url=$(gh pr view "$MS_BRANCH" --json url --jq .url 2>/dev/null || true) ;;
+glab) url=$(glab mr view "$MS_BRANCH" --output json 2>/dev/null | sed -n 's/.*"web_url": *"\([^"]*\)".*/\1/p' | head -n 1) ;;
+esac
+echo "url $url"
+`
+
+// publishScript commits the package directory's changes, pushes the branch (never forced, and not at all when
+// MS_PUSHED says an earlier run did) and opens the pull request, printing its URL.
 const publishScript = gitPrelude + `cd "$WORK/repo"
 g add --all -- "$MS_PATH"
 g -c user.name="$MS_AUTHOR_NAME" -c user.email="$MS_AUTHOR_EMAIL" commit --quiet --no-verify -F "$WORK/message"
-g push --quiet origin "HEAD:refs/heads/$MS_BRANCH"
+[ "${MS_PUSHED:-}" = 1 ] || g push --quiet origin "HEAD:refs/heads/$MS_BRANCH"
 case "$MS_FORGE" in
 gh) gh pr create --base "$MS_BASE" --head "$MS_BRANCH" --title "$MS_TITLE" --body-file "$WORK/body.md" ;;
 glab) glab mr create --source-branch "$MS_BRANCH" --target-branch "$MS_BASE" --title "$MS_TITLE" \
@@ -157,6 +176,21 @@ func (g *gitPR) publish(ctx context.Context, acc Accepted, prep proposals.Prepar
 		"MS_BASE=" + cmp.Or(g.cfg.Base, pipeline.DefaultGitBase), "MS_BRANCH=millstream/" + acc.ProposalID,
 		"MS_PATH=" + pkgPath, "MS_TITLE=" + title, "MS_AUTHOR_NAME=" + cmp.Or(g.cfg.AuthorName, "Millstream"),
 		"MS_AUTHOR_EMAIL=" + cmp.Or(g.cfg.AuthorEmail, "millstream@localhost")}, g.creds...)
+	// A run that stopped after its push left the branch: the same patch resumes there, never pushed again.
+	out, err := g.jobs.run(ctx, gitJob{work: work, script: resumeScript, env: env})
+	if err != nil {
+		return "", fmt.Errorf("look for an earlier publication on %s: %w", g.cfg.Repo, err)
+	}
+	if hash, url, found := resumed(out); found {
+		switch {
+		case hash != acc.PatchSHA256:
+			return "", fmt.Errorf("%w: branch millstream/%s exists with another patch (%.12s)", ErrRefused,
+				acc.ProposalID, hash)
+		case url != "":
+			return url, nil
+		}
+		env = append(env, "MS_PUSHED=1")
+	}
 	if _, err := g.jobs.run(ctx, gitJob{work: work, script: cloneScript, env: env}); err != nil {
 		return "", fmt.Errorf("clone %s: %w", g.cfg.Repo, err)
 	}
@@ -171,7 +205,7 @@ func (g *gitPR) publish(ctx context.Context, acc Accepted, prep proposals.Prepar
 	if err := os.WriteFile(filepath.Join(work, "body.md"), []byte(body(acc, onBase)), 0o600); err != nil {
 		return "", err
 	}
-	out, err := g.jobs.run(ctx, gitJob{work: work, script: publishScript, env: env})
+	out, err = g.jobs.run(ctx, gitJob{work: work, script: publishScript, env: env})
 	if err != nil {
 		return "", fmt.Errorf("open the pull request: %w", err)
 	}
@@ -181,6 +215,19 @@ func (g *gitPR) publish(ctx context.Context, acc Accepted, prep proposals.Prepar
 		return "", fmt.Errorf("%s printed no pull request URL", g.forge)
 	}
 	return url, nil
+}
+
+// resumed reads resumeScript's output: whether the branch exists, the patch hash its commit names and the open
+// pull request's URL.
+func resumed(out string) (hash, url string, found bool) {
+	for l := range strings.Lines(out) {
+		if v, ok := strings.CutPrefix(strings.TrimSpace(l), "patch"); ok {
+			hash, found = strings.TrimSpace(v), true
+		} else if v, ok := strings.CutPrefix(strings.TrimSpace(l), "url"); ok {
+			url = strings.TrimSpace(v)
+		}
+	}
+	return hash, url, found
 }
 
 // applyTo applies the validated patch to the package directory dir, exactly: each changed file must be a regular
@@ -267,7 +314,7 @@ func commitMessage(title string, acc Accepted) string {
 	if r := rationale(acc); r != "" {
 		b.WriteString(r + "\n\n")
 	}
-	fmt.Fprintf(&b, "%s: %s\n", TrailerProposal, acc.ProposalID)
+	fmt.Fprintf(&b, "%s: %s\n%s: %s\n", TrailerProposal, acc.ProposalID, TrailerPatch, acc.PatchSHA256)
 	return b.String()
 }
 

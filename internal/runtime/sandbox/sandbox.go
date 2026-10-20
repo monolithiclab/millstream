@@ -252,34 +252,49 @@ type Builder interface {
 
 var _ Builder = (*Sandbox)(nil)
 
-// Proposed returns the action directories of pkg's steps (their actions and fallbacks) holding a path the patch
-// touches, slash-terminated and sorted: proposed code. execs are those of exec actions, which run only in the
-// sandbox. Actions that do not resolve are left out: check reports them.
+// Proposed returns the action directories holding a path the patch touches, slash-terminated and sorted: proposed
+// code. They are the directories of pkg's steps' actions and fallbacks, and every touched actions/<dir>/ that
+// resolves to an action, whether a step names it or not: an eval, or anything else, may run it. execs are those of
+// exec actions, which run only in the sandbox. Directories that do not resolve are left out: nothing can run them,
+// and check reports a step's.
 func Proposed(pkg *pipeline.Package, r pipeline.ActionResolver, touched []string) (all, execs []string) {
+	add := func(ref string) {
+		a, err := r.Resolve(pkg, ref)
+		if err != nil || a.Dir == "" {
+			return
+		}
+		dir := strings.TrimSuffix(a.Dir, "/") + "/"
+		if slices.Contains(all, dir) || !slices.ContainsFunc(touched, func(p string) bool {
+			return strings.HasPrefix(p, dir)
+		}) {
+			return
+		}
+		all = append(all, dir)
+		if a.Kind == pipeline.KindExec {
+			execs = append(execs, dir)
+		}
+	}
 	for _, step := range pkg.Pipeline.Steps {
 		refs := []string{step.Action}
 		if step.Fallback != nil {
 			refs = append(refs, step.Fallback.Action)
 		}
 		for _, ref := range refs {
-			if pipeline.IsBuiltin(ref) {
-				continue
-			}
-			a, err := r.Resolve(pkg, ref)
-			if err != nil || a.Dir == "" {
-				continue
-			}
-			dir := strings.TrimSuffix(a.Dir, "/") + "/"
-			if slices.Contains(all, dir) || !slices.ContainsFunc(touched, func(p string) bool {
-				return strings.HasPrefix(p, dir)
-			}) {
-				continue
-			}
-			all = append(all, dir)
-			if a.Kind == pipeline.KindExec {
-				execs = append(execs, dir)
+			if !pipeline.IsBuiltin(ref) {
+				add(ref)
 			}
 		}
+	}
+	dirs := map[string]bool{}
+	for _, p := range touched {
+		if rest, ok := strings.CutPrefix(p, "actions/"); ok {
+			if dir, _, found := strings.Cut(rest, "/"); found && dir != "" {
+				dirs[dir] = true
+			}
+		}
+	}
+	for dir := range dirs {
+		add("./actions/" + dir)
 	}
 	slices.Sort(all)
 	slices.Sort(execs)

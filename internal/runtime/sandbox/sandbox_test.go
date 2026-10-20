@@ -162,3 +162,20 @@ func TestGoMod(t *testing.T) {
 		t.Fatalf("%q, %v, %v", got, err, verr)
 	}
 }
+
+// TestProposed: proposed code is every touched action directory that resolves, whether a step names it or not;
+// untouched and unresolvable ones are left out.
+func TestProposed(t *testing.T) {
+	pkg, err := pipeline.FromFiles("", probeFiles())
+	if err != nil {
+		t.Fatal(err)
+	}
+	all, execs := Proposed(pkg, pipeline.Resolver{}, []string{"actions/probe/main.go", "actions/other/x.py",
+		"actions/gone/main.go", "pipeline.yaml"})
+	if want := []string{"actions/other/", "actions/probe/"}; !slices.Equal(all, want) || !slices.Equal(execs, want) {
+		t.Fatalf("Proposed = %q, %q; want %q", all, execs, want)
+	}
+	if all, _ := Proposed(pkg, pipeline.Resolver{}, []string{"pipeline.yaml"}); len(all) != 0 {
+		t.Fatalf("nothing touched: %q", all)
+	}
+}

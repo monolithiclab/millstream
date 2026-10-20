@@ -67,6 +67,7 @@ improve:
   budget: { dayUsd: 5 }
   evidence: { sample: 500, ttl: 30d }
   backtest: { sample: 200 }
+  validation: { timeout: 45m }
   distill: { minDeliveries: 500, language: go, minAgreement: 0.98, minCoverage: 0.6 }
   filter: { maxFalseDrop: 0.01 }
 `))
@@ -90,7 +91,7 @@ improve:
 			PatchFile: PatchFileConfig{Dir: "proposals"}, Git: GitConfig{Repo: "https://git.example/p.git", Base: "trunk",
 				Path: "pipelines/{pipeline}", Env: []string{"GH_TOKEN"}, AuthorName: "Bot", AuthorEmail: "bot@example.invalid",
 				Image: "ghcr.io/x/publish@sha256:0000000000000000000000000000000000000000000000000000000000000000"},
-			EvidenceSample: 500, EvidenceTTL: 30 * day, BacktestSample: 200, DistillMinDeliveries: 500,
+			EvidenceSample: 500, EvidenceTTL: 30 * day, BacktestSample: 200, ValidationTimeout: 45 * time.Minute, DistillMinDeliveries: 500,
 			DistillLanguage: "go", DistillMinAgreement: 0.98, DistillMinCoverage: 0.6, FilterMaxFalseDrop: 0.01},
 	}
 	if !reflect.DeepEqual(env, want) {

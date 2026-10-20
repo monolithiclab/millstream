@@ -995,7 +995,7 @@ paths:
         then validates it before answering: check on the patched package, the base revision's evals of every affected
         action before and after, and the backtest. The proposal comes back ready when all pass, drafting with its
         report otherwise. A fingerprint a rejection suppresses (until an insight it answers doubles in severity) is a
-        conflict.
+        conflict, as is any proposal on a production deployment, which makes none (D31).
       requestBody:
         required: true
         content:
@@ -1016,7 +1016,7 @@ paths:
   /proposal-token:
     post:
       operationId: mintProposalToken
-      summary: Mint the proposals-only token, replacing the earlier one, and answer it once (spec section 11.3).
+      summary: Mint the proposals-only token, replacing the earlier one, and answer it once (spec section 11.3); a conflict in production.
       requestBody:
         required: true
         content:
@@ -1036,6 +1036,7 @@ paths:
                 properties:
                   token: { type: string }
         "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
   /proposals/{proposal}:
     parameters: [{ $ref: "#/components/parameters/proposal" }]
     get:
@@ -1101,7 +1102,7 @@ paths:
     parameters: [{ $ref: "#/components/parameters/proposal" }]
     post:
       operationId: revalidateProposal
-      summary: Validate a proposal again; a stale one is first rebased onto the active revision (a conflict when it does not rebase).
+      summary: Validate a proposal again; a stale one is first rebased onto the active revision (a conflict when it does not rebase, and in production).
       requestBody:
         required: true
         content:
@@ -1949,6 +1950,15 @@ components:
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
         decidedAt: { type: string, format: date-time }
+        published:
+          type: object
+          description: Where its publish action put an accepted proposal (its proposalPublished event); absent until then.
+          required: [publisher, location, at]
+          additionalProperties: false
+          properties:
+            publisher: { type: string, description: "improve.publish's action: apply, patch-file, git-pr-gh or git-pr-glab." }
+            location: { type: string, description: The revision apply created, the file patch-file wrote, or the pull request opened. }
+            at: { type: string, format: date-time }
     ValidationReport:
       type: object
       required: [passed, baseRevision, patchSha256]
@@ -2126,12 +2136,20 @@ components:
         finishedAt: { type: string, format: date-time }
     BacktestMetrics:
       type: object
-      required: [compared, agreed, agreement, newlyReached, noLongerReached, reviewed, reviewAgreed, reviewAgreement, approved, approvalsDropped, ran, failed, failureRate, costUsd, latencyMs]
+      required: [compared, agreed, agreement, unreviewedCompared, unreviewedAgreed, unreviewedAgreement, reviewedCompared, reviewedAgreed, reviewedAgreement, towardReviewers, towardReviewersShare, newlyReached, noLongerReached, reviewed, reviewAgreed, reviewAgreement, approved, approvalsDropped, ran, failed, failureRate, costUsd, latencyMs]
       additionalProperties: false
       properties:
         compared: { type: integer, description: Deliveries with a historical counterpart (the same step and input item). }
         agreed: { type: integer, description: Those that ended alike, the same state and outputs. }
         agreement: { type: number, description: agreed / compared, 0 when none. }
+        unreviewedCompared: { type: integer, description: The compared deliveries no decided review lies below. }
+        unreviewedAgreed: { type: integer }
+        unreviewedAgreement: { type: number, description: unreviewedAgreed / unreviewedCompared, 0 when none. }
+        reviewedCompared: { type: integer, description: The compared deliveries whose outputs lead to a decided review. }
+        reviewedAgreed: { type: integer }
+        reviewedAgreement: { type: number, description: reviewedAgreed / reviewedCompared, 0 when none. }
+        towardReviewers: { type: integer, description: "Reviewed deliveries that ended unlike history but as the reviewers corrected them: an edit or rejection below, and every review below agrees." }
+        towardReviewersShare: { type: number, description: "towardReviewers / reviewedCompared: how far the reviewed agreement may fall beyond the tolerance." }
         newlyReached: { type: integer, description: Deliveries without a historical counterpart, items the patch admits. }
         noLongerReached: { type: integer, description: Historical deliveries on the sampled lineages the replay never made. }
         reviewed: { type: integer, description: Decided reviews on the sampled lineages. }

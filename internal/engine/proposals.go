@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"cmp"
 	"context"
 	"crypto/rand"
 	"encoding/base64"
@@ -8,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/monolithiclab/millstream/internal/distill"
 	"github.com/monolithiclab/millstream/internal/patch"
@@ -32,6 +34,17 @@ type ProposalOptions struct {
 	// (improve.distill); without a source, every distill proposal fails its validation.
 	Holdout proposals.HoldoutSource
 	Distill distill.Thresholds
+	// ValidationTimeout bounds a validation (improve.validation.timeout); zero means DefaultValidationTimeout. A
+	// proposal validating for longer is presumed lost, and the next validation takes it over.
+	ValidationTimeout time.Duration
+}
+
+// DefaultValidationTimeout is improve.validation.timeout's default.
+const DefaultValidationTimeout = 30 * time.Minute
+
+// validationTimeout is ProposalOptions.ValidationTimeout or its default.
+func (e *Engine) validationTimeout() time.Duration {
+	return cmp.Or(e.opts.Proposals.ValidationTimeout, DefaultValidationTimeout)
 }
 
 // ProposalRequest is a proposal to create on a pipeline's active revision.
@@ -60,6 +73,9 @@ func NewProposalToken() (token, hash string) {
 // MintProposalToken mints the proposals-only token, replacing any earlier one, and returns it: shown once, since the
 // store keeps only its hash.
 func (e *Engine) MintProposalToken(ctx context.Context) (string, error) {
+	if err := e.developmentOnly("mint the proposals-only token"); err != nil {
+		return "", err
+	}
 	token, hash := NewProposalToken()
 	if err := e.st.SetProposalToken(ctx, hash); err != nil {
 		return "", err
@@ -71,6 +87,9 @@ func (e *Engine) MintProposalToken(ctx context.Context) (string, error) {
 // drafting, and validates it. A patch the rules refuse is store.ErrInvalid; a suppressed fingerprint is
 // store.ErrConflict.
 func (e *Engine) CreateProposal(ctx context.Context, req ProposalRequest) (store.Proposal, error) {
+	if err := e.developmentOnly("create a proposal"); err != nil {
+		return store.Proposal{}, err
+	}
 	rev, err := e.activeRevision(ctx, req.Pipeline)
 	if err != nil {
 		return store.Proposal{}, err
@@ -99,6 +118,9 @@ func (e *Engine) CreateProposal(ctx context.Context, req ProposalRequest) (store
 // first, and one that does not rebase stays stale (store.ErrConflict), as does one made stale by an accepted
 // proposal while its base is still the active revision: the accepted one is to be applied first.
 func (e *Engine) ValidateProposal(ctx context.Context, id string) (store.Proposal, error) {
+	if err := e.developmentOnly("validate a proposal"); err != nil {
+		return store.Proposal{}, err
+	}
 	p, err := e.proposal(ctx, id)
 	if err != nil {
 		return p, err
@@ -127,11 +149,43 @@ func (e *Engine) ValidateProposal(ctx context.Context, id string) (store.Proposa
 		rebase = &store.Rebase{BaseRevision: base, Patch: prep.Patch, PatchSHA256: prep.SHA256, Paths: prep.Paths(),
 			Steps: prep.Steps}
 	}
-	if _, err := e.st.StartValidation(ctx, id); err != nil {
+	timeout := e.validationTimeout()
+	if _, err := e.st.StartValidation(ctx, id, e.opts.Now().Add(-timeout)); err != nil {
 		return p, err
 	}
-	report, passed := e.validate(ctx, p.Pipeline, prep)
-	return e.st.RecordValidation(ctx, store.Validation{ID: id, Report: report, Passed: passed, Rebase: rebase})
+	// The validation outlives the request that started it, within its timeout, so the proposal never stays
+	// validating because a client went away.
+	vctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), timeout)
+	defer cancel()
+	report, passed := e.validate(vctx, p.Pipeline, prep)
+	return e.st.RecordValidation(context.WithoutCancel(ctx), store.Validation{ID: id, Report: report, Passed: passed,
+		Rebase: rebase})
+}
+
+// resetValidations moves the proposals left validating by an engine that stopped back to drafting, when this one
+// starts or takes the lead: their validations died with it. Reading first leaves the store unwritten when there is
+// none, as there almost always is.
+func (e *Engine) resetValidations(ctx context.Context) {
+	ps, err := e.st.Proposals(ctx, store.ProposalFilter{State: store.ProposalValidating})
+	if err == nil && len(ps) > 0 {
+		var ids []string
+		if ids, err = e.st.ResetValidations(ctx); err == nil {
+			e.log.Warn("proposals left validating by a stopped engine are drafting again", "proposals", ids)
+		}
+	}
+	if err != nil && ctx.Err() == nil {
+		e.log.Error("reset validating proposals", "error", err.Error())
+	}
+}
+
+// developmentOnly refuses what a production deployment never does with proposals (spec section 11.3, D31): it
+// learns, and proposals are made, validated and published in development (pipeline.ErrProduction, a conflict).
+func (e *Engine) developmentOnly(what string) error {
+	if e.opts.Mode != pipeline.ModeProduction {
+		return nil
+	}
+	return fmt.Errorf("%s: proposals are made in development: %w: %w", what, pipeline.ErrProduction,
+		store.ErrConflict)
 }
 
 // validate runs the validation and encodes its report; a validation that could not run fails with its error as the

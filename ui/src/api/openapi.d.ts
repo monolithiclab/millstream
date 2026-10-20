@@ -1031,7 +1031,7 @@ export interface paths {
      *     then validates it before answering: check on the patched package, the base revision's evals of every affected
      *     action before and after, and the backtest. The proposal comes back ready when all pass, drafting with its
      *     report otherwise. A fingerprint a rejection suppresses (until an insight it answers doubles in severity) is a
-     *     conflict.
+     *     conflict, as is any proposal on a production deployment, which makes none (D31).
      */
     post: operations['createProposal'];
     delete?: never;
@@ -1049,7 +1049,7 @@ export interface paths {
     };
     get?: never;
     put?: never;
-    /** Mint the proposals-only token, replacing the earlier one, and answer it once (spec section 11.3). */
+    /** Mint the proposals-only token, replacing the earlier one, and answer it once (spec section 11.3); a conflict in production. */
     post: operations['mintProposalToken'];
     delete?: never;
     options?: never;
@@ -1131,7 +1131,7 @@ export interface paths {
     };
     get?: never;
     put?: never;
-    /** Validate a proposal again; a stale one is first rebased onto the active revision (a conflict when it does not rebase). */
+    /** Validate a proposal again; a stale one is first rebased onto the active revision (a conflict when it does not rebase, and in production). */
     post: operations['revalidateProposal'];
     delete?: never;
     options?: never;
@@ -1845,6 +1845,15 @@ export interface components {
       updatedAt: string;
       /** Format: date-time */
       decidedAt?: string;
+      /** @description Where its publish action put an accepted proposal (its proposalPublished event); absent until then. */
+      published?: {
+        /** @description improve.publish's action: apply, patch-file, git-pr-gh or git-pr-glab. */
+        publisher: string;
+        /** @description The revision apply created */
+        location: string;
+        /** Format: date-time */
+        at: string;
+      };
     };
     ValidationReport: {
       passed: boolean;
@@ -2022,6 +2031,20 @@ export interface components {
       agreed: number;
       /** @description agreed / compared */
       agreement: number;
+      /** @description The compared deliveries no decided review lies below. */
+      unreviewedCompared: number;
+      unreviewedAgreed: number;
+      /** @description unreviewedAgreed / unreviewedCompared */
+      unreviewedAgreement: number;
+      /** @description The compared deliveries whose outputs lead to a decided review. */
+      reviewedCompared: number;
+      reviewedAgreed: number;
+      /** @description reviewedAgreed / reviewedCompared */
+      reviewedAgreement: number;
+      /** @description Reviewed deliveries that ended unlike history but as the reviewers corrected them: an edit or rejection below, and every review below agrees. */
+      towardReviewers: number;
+      /** @description towardReviewers / reviewedCompared: how far the reviewed agreement may fall beyond the tolerance. */
+      towardReviewersShare: number;
       /** @description Deliveries without a historical counterpart */
       newlyReached: number;
       /** @description Historical deliveries on the sampled lineages the replay never made. */
@@ -4031,6 +4054,7 @@ export interface operations {
         };
       };
       403: components['responses']['Error'];
+      409: components['responses']['Error'];
       415: components['responses']['Error'];
       default: components['responses']['Error'];
     };

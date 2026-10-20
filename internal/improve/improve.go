@@ -6,7 +6,7 @@
 // public HTTP API with the proposals-only token the engine mints at start: gather-evidence reads the insight, its
 // evidence and the files a proposal may change; draft is an agent action; validate turns the draft into a patch
 // and creates the proposal, which the engine validates before it answers; propose records it; publish hands
-// accepted proposals to the publisher improve.publish names (Publisher).
+// accepted proposals to the engine's publish action (POST /proposals/{id}/publish), which improve.publish names.
 package improve
 
 import (

@@ -41,7 +41,7 @@ func proposalOptions(rt *Runtime, env *pipeline.Environment, bt backtest.Runner)
 		Sandbox: candidateSandbox(rt, env)}
 	opts := engine.ProposalOptions{Evals: evals, Backtest: backtest.ForProposals(bt, env.Improve.FilterMaxFalseDrop),
 		Distill: distill.Thresholds{MinAgreement: env.Improve.DistillMinAgreement,
-			MinCoverage: env.Improve.DistillMinCoverage}}
+			MinCoverage: env.Improve.DistillMinCoverage}, ValidationTimeout: env.Improve.ValidationTimeout}
 	if h, ok := bt.(proposals.HoldoutSource); ok {
 		opts.Holdout = h
 	}

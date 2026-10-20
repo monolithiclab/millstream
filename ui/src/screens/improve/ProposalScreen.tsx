@@ -266,6 +266,20 @@ function Facts({
     [t('improve.facts.patch'), <Id value={p.patchSha256} />],
     [t('improve.facts.created'), t('improve.facts.createdValue', { who: p.createdBy, when: f.dateTime(p.createdAt) })],
   ];
+  // Spec 11.3: an accepted proposal goes to improve.publish's action, which says where it put it.
+  if (p.state === 'accepted') {
+    facts.push([
+      t('improve.facts.published'),
+      p.published ? (
+        <>
+          {t('improve.facts.publishedValue', { publisher: p.published.publisher, when: f.dateTime(p.published.at) })}{' '}
+          <span className="font-mono break-all">{p.published.location}</span>
+        </>
+      ) : (
+        t('improve.facts.notPublished')
+      ),
+    ]);
+  }
   return (
     <dl className="m-0 grid grid-cols-[minmax(0,auto)_minmax(0,1fr)] gap-x-4 gap-y-1.5 text-small">
       {facts.map(([label, value]) => (
