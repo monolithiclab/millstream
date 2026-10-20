@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -280,6 +282,54 @@ func TestDistillSpec(t *testing.T) {
 		}
 		if _, _, err := distillSpec(p); err == nil || !strings.Contains(err.Error(), c.want) {
 			t.Errorf("%s: %v", name, err)
+		}
+	}
+}
+
+// TestUnreferencedCodeSandboxed: a patch adding an exec action no step names, with evals, still runs it only in the
+// sandbox: without one its new evals fail unrun, never on the host's launcher; with one, the sandbox is given its
+// directory, as it is given a directory a step names.
+func TestUnreferencedCodeSandboxed(t *testing.T) {
+	base := basePackage(t)
+	// The pipeline change quotes the score step's action, which runs the same action: nothing names actions/evil.
+	unreferenced := edit("pipeline.yaml", 6, "  score:", "    action: ./actions/scorer", `    action: "./actions/scorer"`,
+		"    in: trigger.adhoc") + newFile("actions/evil/action.yaml", manifest("evil")...) +
+		newFile("actions/evil/evals/run.yaml", "config: { mode: rules }", "input: {}", "assert: [true]") +
+		newFile("actions/evil/distill.yaml", "step: score", "agent: ./actions/scorer", "holdoutFrom: 2026-10-01T00:00:00Z")
+	for _, c := range []struct {
+		name, patch, dir string
+	}{{"unreferenced", unreferenced, "actions/evil/"}, {"referenced", distillPatch("coded"), "actions/coded/"}} {
+		p, err := Prepare(store.ProposalDistill, base, c.patch)
+		if err != nil {
+			t.Fatalf("%s: %v", c.name, err)
+		}
+		host := 0
+		launchers := map[string]exec.Launcher{pipeline.KindExec: exec.FuncLauncher{F: func(ctx context.Context,
+			args, env []string, in io.Reader, out, errw io.Writer,
+		) int {
+			host++
+			return exectest.Serve(ctx, args, env, in, out, errw)
+		}}}
+		v := Validator{Check: checker, Evals: Evals{Launchers: launchers}, Scratch: t.TempDir()}
+		r, err := v.Validate(context.Background(), "listings", p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if c.name == "unreferenced" && (len(r.NewEvals) != 1 || len(r.NewEvals[0].Cases) != 1 ||
+			!strings.Contains(r.NewEvals[0].Cases[0].After.Error, "container sandbox")) {
+			t.Fatalf("%s: new evals %+v", c.name, r.NewEvals)
+		}
+		// The base revision's scorer runs on the host before; nothing of the proposal does.
+		if r.Passed || host > len(r.Evals) {
+			t.Fatalf("%s: passed %v, the host ran %d processes, evals %+v", c.name, r.Passed, host, r.Evals)
+		}
+		box := &inSandbox{}
+		v.Evals.Sandbox = box
+		if _, err := v.Validate(context.Background(), "listings", p); err != nil {
+			t.Fatal(err)
+		}
+		if len(box.dirs) != 1 || !slices.Equal(box.dirs[0], []string{c.dir}) {
+			t.Fatalf("%s: sandboxed %q, want %s", c.name, box.dirs, c.dir)
 		}
 	}
 }

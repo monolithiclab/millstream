@@ -114,6 +114,7 @@ func TestPrepare(t *testing.T) {
 		{store.ProposalDistill, distillPatch("coded"), []string{"score"}, ""},
 		{store.ProposalDistill, edit("pipeline.yaml", 6, "  score:", "    action: ./actions/scorer",
 			"    action: ./actions/scorer", "    in: trigger.adhoc"), nil, "adds a new actions/<name>/"},
+		{store.ProposalDistill, newFile("actions/coded/action.yaml", manifest("coded")...), nil, "changes pipeline.yaml"},
 		{store.ProposalDistill, distillPatch("coded", newFile("actions/scorer/main.go", "x")), nil, "exists"},
 		{store.ProposalDistill, distillPatch("coded", newFile("actions/more/x.go", "x")), nil, "one action directory"},
 		{store.ProposalDistill, distillPatch("coded", newFile("actions/coded", "x")), nil, "a new actions/<name>/"},
