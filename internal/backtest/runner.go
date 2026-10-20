@@ -100,6 +100,10 @@ func (l *Ledger) Charge(now time.Time, usd float64) {
 type Backtester struct {
 	opts Options
 	log  *slog.Logger
+	// served is the earliest distill boundary Training served for each pipeline and step (spec section 11.5): a
+	// distill proposal's holdout may start no earlier.
+	mu     sync.Mutex
+	served map[[2]string]time.Time
 }
 
 var _ Runner = (*Backtester)(nil)

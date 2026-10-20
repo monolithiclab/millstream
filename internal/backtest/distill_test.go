@@ -100,9 +100,21 @@ func TestTraining(t *testing.T) {
 			t.Errorf("%s: %v, want %v", name, err, c.want)
 		}
 	}
-	all, err := b.Holdout(ctx, "bt", "score", time.Time{})
+	// Without a boundary served, the split made now is the floor: this history has none, so nothing is judged.
+	if _, err := b.Holdout(ctx, "bt", "score", time.Time{}); !errors.Is(err, store.ErrInvalid) {
+		t.Fatalf("holdout with no boundary served or splittable: %v", err)
+	}
+	// Once a boundary is served, a proposal may start its holdout there or later, never earlier.
+	served := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	b.serve("bt", "score", served.Add(time.Hour))
+	b.serve("bt", "score", served)
+	b.serve("bt", "score", served.Add(2*time.Hour))
+	if _, err := b.Holdout(ctx, "bt", "score", served.Add(-time.Second)); !errors.Is(err, store.ErrInvalid) {
+		t.Fatalf("a holdout earlier than the boundary served: %v", err)
+	}
+	all, err := b.Holdout(ctx, "bt", "score", served)
 	if err != nil || len(all) != 6 {
-		t.Fatalf("holdout from the start: %d pairs, %v", len(all), err)
+		t.Fatalf("holdout from the boundary served: %d pairs, %v", len(all), err)
 	}
 	if none, err := b.Holdout(ctx, "bt", "score", time.Now().Add(time.Hour)); err != nil || len(none) != 0 {
 		t.Errorf("holdout from the future: %d pairs, %v", len(none), err)

@@ -49,8 +49,9 @@ and `make help` for every command.
   program name `millstream` is the running binary, `millstream improve-action <step>`) and reach the API through
   the `improveApi` and `improveToken` secrets the engine supplies. The engine holds no drafting logic.
 - A distill's holdout (spec section 11.5) is the engine's alone: `distill-training` serves the training side, and
-  validation recomputes the holdout from the `holdoutFrom` in the action's `distill.yaml`. Nothing the improve package
-  holds may name a holdout item; the split is by entity (item, key, lineage root), never by delivery.
+  validation recomputes the holdout from the `holdoutFrom` in the action's `distill.yaml`, never earlier than the
+  boundary the engine served. Nothing the improve package holds may name a holdout item; the split is by entity (item,
+  key, lineage root), never by delivery.
 - Proposed exec code (files a proposal's patch touches) runs only through `internal/runtime/sandbox`, in backtests
   and evals alike; without a container runtime it is refused, never run on the host. The publish actions
   (`internal/publish`) re-check the patch's hash and path rules themselves, whatever the caller checked.
