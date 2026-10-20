@@ -71,6 +71,7 @@ func buildM2(root, dir string) error {
 		os.WriteFile(filepath.Join(fixtureM2Lessons, "lessons", "score.yaml"), lessons, 0o600),
 		os.WriteFile(envFile, []byte("agents: { allowUnsandboxed: true }\n"+m2Prices), 0o600),
 		crashRecordings(m2Recordings, m2CrashRecordings),
+		buildImprove(dir),
 	)
 }
 

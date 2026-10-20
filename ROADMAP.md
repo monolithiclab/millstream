@@ -26,16 +26,22 @@ earlier designs are in the git history of the spec.
 
 ## Follow-ups
 
-- Backtests: the improve budget they charge is a per-process `backtest.Ledger`; once the `improve` pipeline exists,
-  charge its `budget_days` instead, so its agents and its backtests share one day budget across restarts. Backtests
+- Backtests: the improve budget they charge is a per-process `backtest.Ledger` against `improve.budget.dayUsd`,
+  while the improve pipeline's own agents charge its `budget.dayUsd` (the same figure) in the store: charge the
+  backtests to the pipeline's `budget_days` too, so both share one day budget across restarts (the store has no
+  per-pipeline charge outside deliveries yet). Backtests
   live in the engine's memory (the last 100); persist them if proposals need their reports after a restart. Patches
   touching exec actions are refused until distilled code runs in the network-less container sandbox (spec 15.3).
   Replays of runs a replay or an import opened, and of evidence (which carries no run variables, resolved anew), are
   left out or approximated.
 - Proposals: the evals of a `prompt` proposal replay the action's recordings, which a changed prompt misses: the
-  `improve` package validates in its harness's live or record mode. The improve package receives the proposals-only
-  token when it runs (`engine.MintProposalToken`), and an accepted proposal reaches a revision through the publish
-  actions.
+  `improve` package validates in its harness's live or record mode.
+- The improve package: its actions call the API over plain HTTP on the address the engine serves; with `tls`, a
+  self-signed certificate would fail them (trust the configured certificate, or a loopback listener for them). Only the
+  embedded `improve` pipeline gets the `improveApi` and `improveToken` secrets: a fork (`init pipeline --from improve`)
+  maps them itself, and minting a token for it replaces the embedded one's. The weekly run hands every accepted proposal
+  to the publisher again: publishers recognise what they published (Task 8). `run --once` does not run the improve
+  pipeline (it serves no API).
 
 - Audits: an audit whose run's revision is neither active nor has unsettled runs leases without a budget
   reservation (the engine's reservations cover those revisions only); and audits keep their outputs' payloads, not

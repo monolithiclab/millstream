@@ -18,8 +18,9 @@ info:
     out aside); the server also answers ui.baseUrl's host and its listen address's; a request authenticated by the
     cookie that changes state must name its origin; and every decision is recorded under auth.user, whatever the
     request says. A bearer token that is the proposals-only token (POST /proposal-token) reaches only listing,
-    reading, creating and revalidating proposals and running backtests (forbidden otherwise), with or without
-    auth.token: the improve package calls the API with it.
+    reading, creating and revalidating proposals, running backtests, and the reads the improve pipeline gathers
+    evidence with (insights, pipelines, revisions and their files, items and their lineage); anything else is
+    forbidden, with or without auth.token: the improve package calls the API with it.
 
     On Postgres a standby engine serves the reads and the UI from a read-only connection: every POST it answers
     503 unavailable, with the active engine's id in the X-Millstream-Active-Engine header and its API address in
@@ -311,6 +312,22 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Revision" }
+        "400": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+  /pipelines/{pipeline}/revisions/{revision}/files:
+    parameters:
+      - { $ref: "#/components/parameters/pipeline" }
+      - { name: revision, in: path, required: true, schema: { type: integer } }
+    get:
+      operationId: getRevisionFiles
+      summary: A revision's package files, for the improve pipeline's drafts (spec section 11.3).
+      responses:
+        default: { $ref: "#/components/responses/Error" }
+        "200":
+          description: Each text file's content by path; the files that are not UTF-8 text, by path alone.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RevisionFiles" }
         "400": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
   /pipelines/{pipeline}/streams:
@@ -1390,6 +1407,14 @@ components:
         message: { type: string, description: Why it was applied (apply --message). }
         active: { type: boolean }
         graph: { $ref: "#/components/schemas/Graph" }
+    RevisionFiles:
+      type: object
+      required: [packageHash, files, binary]
+      additionalProperties: false
+      properties:
+        packageHash: { type: string }
+        files: { type: object, additionalProperties: { type: string } }
+        binary: { type: array, items: { type: string } }
     Graph:
       type: object
       required: [steps, triggers, streams]
@@ -2037,7 +2062,7 @@ components:
         finishedAt: { type: string, format: date-time }
     BacktestMetrics:
       type: object
-      required: [compared, agreed, agreement, newlyReached, noLongerReached, reviewed, reviewAgreed, reviewAgreement, ran, failed, failureRate, costUsd, latencyMs]
+      required: [compared, agreed, agreement, newlyReached, noLongerReached, reviewed, reviewAgreed, reviewAgreement, approved, approvalsDropped, ran, failed, failureRate, costUsd, latencyMs]
       additionalProperties: false
       properties:
         compared: { type: integer, description: Deliveries with a historical counterpart (the same step and input item). }
@@ -2048,6 +2073,8 @@ components:
         reviewed: { type: integer, description: Decided reviews on the sampled lineages. }
         reviewAgreed: { type: integer, description: "Those the replay agrees with: approved still reaching the review, edited reaching it with the edited values, rejected no longer reaching it." }
         reviewAgreement: { type: number }
+        approved: { type: integer, description: The approvals among the reviews. }
+        approvalsDropped: { type: integer, description: The approved items the replay no longer brings to their review. }
         ran: { type: integer, description: Deliveries an action or builtin ran, not stubbed. }
         failed: { type: integer }
         failureRate: { type: number }

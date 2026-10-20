@@ -1,6 +1,7 @@
 package exec
 
 import (
+	"os"
 	osexec "os/exec"
 	"slices"
 	"strings"
@@ -87,5 +88,18 @@ func TestStartWithoutLauncher(t *testing.T) {
 	requireClass(t, err, ClassCrash)
 	if !strings.Contains(err.Error(), "has no command") {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+// The program name millstream runs the running binary, whatever PATH holds (spec section 6.2).
+func TestExecLauncherSelf(t *testing.T) {
+	cmd, err := ExecLauncher{}.Command(Spec{Action: "improve/validate", Command: []string{SelfCommand,
+		"improve-action", "validate"}}, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	self, _ := os.Executable()
+	if cmd.Path != self || !slices.Equal(cmd.Args[1:], []string{"improve-action", "validate"}) {
+		t.Errorf("runs %s %v, want %s", cmd.Path, cmd.Args, self)
 	}
 }

@@ -1,0 +1,75 @@
+# The improve pipeline (spec section 11.3): an ordinary package, embedded in the millstream binary and run only in
+# development deployments with improve.enabled and improve.harness set. It drafts proposals from the insights of
+# the other pipelines and has them validated by the engine, calling the public HTTP API with the proposals-only
+# token the engine mints for it at start (the improveApi and improveToken secrets). Accepting or rejecting a
+# proposal stays a person's.
+#
+# The engine fills in the environment file's settings when it loads the package: improve.harness (the draft agent's
+# harness), improve.budget.dayUsd (budget.dayUsd), improve.publish, lessons.maxTokens and improve.filter.maxFalseDrop
+# (the defaults of the variables below). Fork it with millstream init pipeline <name> --from improve.
+pipeline: improve
+description: Drafts validated proposals from the insights of the other pipelines
+
+vars:
+  publisher: "" # improve.publish: the publisher accepted proposals go to; empty leaves them accepted, unpublished
+  lessonsMaxTokens: 2000 # lessons.maxTokens: lessons files near it are merged and pruned
+  maxFalseDrop: 0.01 # improve.filter.maxFalseDrop: the most past approvals a proposed filter may drop
+  minSeverity: warning # improve.minSeverity: the insights the weekly run and a manual run without one consider
+
+secrets: [improveApi, improveToken]
+
+triggers:
+  insights: { insight: {} } # at or above improve.minSeverity
+  weekly: { cron: "0 6 * * 1" }
+  propose: # "Propose a fix" ({pipeline, insight?}), and millstream improve [--pipeline <p>] [--insight <id>]
+    manual: {}
+    inputSchema:
+      type: object
+      properties:
+        pipeline: { type: string, minLength: 1 }
+        insight: { type: string, minLength: 1 }
+      additionalProperties: false
+
+steps:
+  gather-evidence:
+    action: ./actions/gather-evidence
+    in: [trigger.insights, trigger.weekly, trigger.propose]
+    out: improve.evidence
+    config:
+      api: "${secrets.improveApi}"
+      token: "${secrets.improveToken}"
+      pipeline: improve # this pipeline's name: its own insights are left out
+      lessonsMaxTokens: "${vars.lessonsMaxTokens}"
+      maxFalseDrop: "${vars.maxFalseDrop}"
+      minSeverity: "${vars.minSeverity}"
+
+  draft:
+    action: ./actions/draft
+    in: improve.evidence
+    out: improve.drafts
+
+  validate:
+    action: ./actions/validate
+    in: improve.drafts
+    out: improve.validated
+    config:
+      api: "${secrets.improveApi}"
+      token: "${secrets.improveToken}"
+      pipeline: improve # this pipeline's name, where the draft's evidence is read back
+
+  propose:
+    action: ./actions/propose
+    in: improve.validated
+    out: improve.proposals
+    config:
+      api: "${secrets.improveApi}"
+      token: "${secrets.improveToken}"
+
+  publish:
+    action: ./actions/publish
+    in: [improve.proposals, trigger.weekly]
+    out: improve.published
+    config:
+      api: "${secrets.improveApi}"
+      token: "${secrets.improveToken}"
+      publisher: "${vars.publisher}"

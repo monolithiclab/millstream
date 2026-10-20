@@ -1,0 +1,17 @@
+# Records a validated proposal (spec section 11.3): reads it back and emits its rationale and the insights it answers,
+# the run's record of what it proposed; a proposal that failed its validation, or was not created, passes as it came.
+name: improve/propose
+version: 1.0.0
+description: Records each proposal with its rationale and the insights it answers
+kind: exec
+effects: none
+input: { type: object }
+config:
+  type: object
+  properties:
+    api: { type: string, minLength: 1 }
+    token: { type: string, minLength: 1 }
+  required: [api, token]
+  additionalProperties: false
+output: { type: object }
+runtime: { exec: { command: [millstream, improve-action, propose] } }

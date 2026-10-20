@@ -41,7 +41,7 @@ func TestProposalActions(t *testing.T) {
 	t.Cleanup(func() { _ = st.Close() })
 	// The real backtest runner: the pipeline has no history, so the backtests sample nothing and pass.
 	eng, err := engine.New(engine.Options{Store: st, PackageDir: testdir.New(t),
-		Proposals: engine.ProposalOptions{Backtest: backtest.ForProposals(backtest.New(backtest.Options{Store: st}))}})
+		Proposals: engine.ProposalOptions{Backtest: backtest.ForProposals(backtest.New(backtest.Options{Store: st}), 0)}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,7 +84,15 @@ func TestProposalActions(t *testing.T) {
 	}
 	call(http.MethodPost, "/proposals/"+p1.ID+"/accept", `{"patchSha256":"`+p1.PatchSHA256+`"}`, tok.Token,
 		http.StatusForbidden)
-	call(http.MethodGet, "/pipelines", "", tok.Token, http.StatusForbidden)
+	call(http.MethodGet, "/inbox", "", tok.Token, http.StatusForbidden)
+	call(http.MethodPost, "/pipelines/extra/pause", `{}`, tok.Token, http.StatusForbidden)
+	// The reads the improve pipeline gathers evidence with pass: a revision's files among them.
+	var files RevisionFiles
+	if err := json.Unmarshal(call(http.MethodGet, "/pipelines/extra/revisions/1/files", "", tok.Token, http.StatusOK),
+		&files); err != nil || !strings.Contains(files.Files["pipeline.yaml"], "pipeline: extra") || files.PackageHash == "" {
+		t.Fatalf("files %+v, %v", files, err)
+	}
+	call(http.MethodGet, "/pipelines/extra/revisions/9/files", "", tok.Token, http.StatusNotFound)
 	call(http.MethodPost, "/proposal-token", `{}`, tok.Token, http.StatusForbidden)
 	p2 := proposal(call(http.MethodPost, "/proposals", proposalBody("topology", filterPatch("true", "item.n > 2")),
 		tok.Token, http.StatusCreated))

@@ -136,6 +136,15 @@ Tests never reach a model: agent calls replay from recordings made against a fak
 rewrites them (`internal/agent/testdata/recordings`, `examples/m2-fixture/recordings`) after a change to a prompt, a
 lessons file, an output schema or the fake model.
 
+The improve pipeline's draft agent replays `internal/improve/testdata/recordings` in `TestImprove`
+(`internal/e2e/improve_test.go`): the M2 fixture with a review step, analysts lowering the scores of poor listings,
+`millstream improve --insight` on the `reviewPattern` it yields, a `lessons` proposal validated through a real
+backtest. Its prompt is the brief `gather-evidence` writes from that run, so a change to the brief, the draft prompt
+or schema, the improve package's variables or the fixture misses the recording: `make recordings` (or the test with
+`-update`) runs the scenario once, records the fake drafter's answer (the M2 fixture's second lessons version) for
+the brief it finds, and runs it again. The default build tests the package's files, check and triggers, and each
+step against an in-process fake API (`internal/improve`).
+
 The live smoke test runs the M2 fixture's score action through the `claude-code` harness against the real `claude` CLI
 (installed, logged in) on two listings, recording into a temporary directory, and spends a few cents:
 

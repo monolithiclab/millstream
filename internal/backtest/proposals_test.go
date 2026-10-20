@@ -23,17 +23,22 @@ func TestHolds(t *testing.T) {
 		"agreement within tolerance": {func(m *Metrics) { m.Agreement = 0.885 }, true},
 		"agreement regressed":        {func(m *Metrics) { m.Agreement = 0.87 }, false},
 		"reviews regressed":          {func(m *Metrics) { m.ReviewAgreement = 0.75 }, false},
-		"failure rate up":            {func(m *Metrics) { m.FailureRate = 0.11 }, false},
-		"failure rate down":          {func(m *Metrics) { m.FailureRate = 0 }, true},
+		"outputs changed as the reviewers corrected them": {func(m *Metrics) { m.Agreement, m.ReviewAgreement = 0.6, 1 },
+			true},
+		"outputs changed, reviews unchanged":    {func(m *Metrics) { m.Agreement = 0.6 }, false},
+		"approvals dropped within maxFalseDrop": {func(m *Metrics) { m.Approved, m.ApprovalsDropped = 10, 1 }, true},
+		"approvals dropped over maxFalseDrop":   {func(m *Metrics) { m.Approved, m.ApprovalsDropped = 10, 2 }, false},
+		"failure rate up":                       {func(m *Metrics) { m.FailureRate = 0.11 }, false},
+		"failure rate down":                     {func(m *Metrics) { m.FailureRate = 0 }, true},
 	} {
 		after := base
 		tt.after(&after)
-		if got := (&Report{Before: base, After: after}).Holds(); got != tt.want {
+		if got := (&Report{Before: base, After: after}).Holds(0.1); got != tt.want {
 			t.Errorf("%s: Holds = %v, want %v", name, got, tt.want)
 		}
 	}
 	// Nothing compared or reviewed before: agreement cannot regress.
-	if !(&Report{After: Metrics{Agreement: 0, ReviewAgreement: 0}}).Holds() {
+	if !(&Report{After: Metrics{Agreement: 0, ReviewAgreement: 0}}).Holds(0.1) {
 		t.Error("an empty sample does not hold")
 	}
 }
@@ -52,7 +57,7 @@ func TestForProposals(t *testing.T) {
 		t.Fatal(err)
 	}
 	res, err := ForProposals(New(Options{Store: seeded, Launchers: launchers(), Timeout: time.Minute,
-		Improve: pipeline.Improve{BacktestSample: 1}})).Backtest(ctx, proposals.BacktestRequest{Pipeline: "bt",
+		Improve: pipeline.Improve{BacktestSample: 1}}), 0).Backtest(ctx, proposals.BacktestRequest{Pipeline: "bt",
 		BaseRevision: historyHash, Patch: string(harmless), Steps: []string{"score"}})
 	var rep Report
 	if err != nil || !res.Passed || json.Unmarshal(res.Report, &rep) != nil || rep.Sampled != 1 ||
@@ -60,7 +65,7 @@ func TestForProposals(t *testing.T) {
 		t.Errorf("Backtest = %+v (%s), %v", res, res.Report, err)
 	}
 	_, data := edit(t, fixtureHash, files, "mode: score, bonus: 0", "mode: score, bonus: 15")
-	res, err = ForProposals(New(Options{Store: revisionOnly, Launchers: launchers()})).Backtest(ctx,
+	res, err = ForProposals(New(Options{Store: revisionOnly, Launchers: launchers()}), 0).Backtest(ctx,
 		proposals.BacktestRequest{Pipeline: "bt", BaseRevision: fixtureHash, Patch: string(data)})
 	rep = Report{}
 	if err != nil || !res.Passed || json.Unmarshal(res.Report, &rep) != nil || rep.Sampled != 0 || len(rep.Warnings) != 1 {

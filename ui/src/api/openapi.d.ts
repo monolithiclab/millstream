@@ -288,6 +288,26 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/pipelines/{pipeline}/revisions/{revision}/files': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        pipeline: components['parameters']['pipeline'];
+        revision: number;
+      };
+      cookie?: never;
+    };
+    /** A revision's package files, for the improve pipeline's drafts (spec section 11.3). */
+    get: operations['getRevisionFiles'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/pipelines/{pipeline}/streams': {
     parameters: {
       query?: never;
@@ -1371,6 +1391,13 @@ export interface components {
       active: boolean;
       graph?: components['schemas']['Graph'];
     };
+    RevisionFiles: {
+      packageHash: string;
+      files: {
+        [key: string]: string;
+      };
+      binary: string[];
+    };
     Graph: {
       description?: string;
       steps: components['schemas']['Step'][];
@@ -1950,6 +1977,10 @@ export interface components {
       /** @description Those the replay agrees with: approved still reaching the review, edited reaching it with the edited values, rejected no longer reaching it. */
       reviewAgreed: number;
       reviewAgreement: number;
+      /** @description The approvals among the reviews. */
+      approved: number;
+      /** @description The approved items the replay no longer brings to their review. */
+      approvalsDropped: number;
       /** @description Deliveries an action or builtin ran */
       ran: number;
       failed: number;
@@ -2761,6 +2792,32 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['Revision'];
+        };
+      };
+      400: components['responses']['Error'];
+      404: components['responses']['Error'];
+      default: components['responses']['Error'];
+    };
+  };
+  getRevisionFiles: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        pipeline: components['parameters']['pipeline'];
+        revision: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Each text file's content by path; the files that are not UTF-8 text, by path alone. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['RevisionFiles'];
         };
       };
       400: components['responses']['Error'];

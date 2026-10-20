@@ -18,6 +18,7 @@ import (
 	"github.com/monolithiclab/millstream/internal/api"
 	"github.com/monolithiclab/millstream/internal/artifacts"
 	"github.com/monolithiclab/millstream/internal/engine"
+	"github.com/monolithiclab/millstream/internal/improve"
 	"github.com/monolithiclab/millstream/internal/node"
 	"github.com/monolithiclab/millstream/internal/nodeapi"
 	"github.com/monolithiclab/millstream/internal/pipeline"
@@ -47,6 +48,11 @@ func (c ServeCmd) Run(rt *Runtime) error {
 	}
 	if err := env.CheckMode(pipeline.ModeProduction); err != nil {
 		return err
+	}
+	if env.Improve.Enabled {
+		if err := improve.Check(env, pipeline.ModeProduction); err != nil {
+			return err
+		}
 	}
 	if c.Slots <= 0 || c.LeaseTTL <= 0 {
 		return usageError("--slots and --lease-ttl must be positive")
@@ -237,15 +243,30 @@ func (s *server) term(ctx context.Context, st store.Store, lead leadership) erro
 	rt, env := s.rt, s.env
 	notes := notifier(rt, env, s.log)
 	bt := newBacktester(rt, env, st, s.arts, mode, s.log)
+	// A development deployment with improve.enabled runs the improve pipeline: each term applies it (an unchanged
+	// package is left as it is) and mints its token.
+	im, err := newImproveHost(rt, env, pipeline.ModeProduction)
+	if err != nil {
+		return err
+	}
 	e, err := engine.New(engine.Options{
-		Store: st, Logger: s.log, LeaseTTL: s.cmd.LeaseTTL, Env: rt.Env, Secrets: secrets(rt, env),
+		Store: st, Logger: s.log, LeaseTTL: s.cmd.LeaseTTL, Env: rt.Env, Secrets: im.secrets(secrets(rt, env)),
 		Artifacts: s.arts, Resolver: resolver(rt, env, false), Agents: agents(rt, env),
-		Notifier: notes, PackageDir: packageDir(rt, env), Check: checkOptions(rt, env),
+		Notifier: notes, PackageDir: packageDir(rt, env), Check: im.check(checkOptions(rt, env)),
 		Leadership: engine.Leadership{ID: s.id, Epoch: lead.identity.Epoch}, Takeover: true, Retention: env.Retention,
 		Improve: env.Improve, Proposals: proposalOptions(rt, env, bt), Mode: mode,
 	})
 	if err != nil {
 		return err
+	}
+	if im != nil {
+		if err := im.apply(ctx, rt, env, e, s.log); err != nil {
+			return err
+		}
+		if err := im.start(ctx, e); err != nil {
+			return err
+		}
+		im.served(s.site.url)
 	}
 	// The engine steps down at once when the store loses its write connection, and the leadership lock with it.
 	var wait func(context.Context) error

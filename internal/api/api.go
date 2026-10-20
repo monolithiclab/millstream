@@ -205,6 +205,7 @@ var routes = []route{
 	{http.MethodPost, "/pipelines/{pipeline}/steps/{step}/resume", (*Server).resumeStep},
 	{http.MethodGet, "/pipelines/{pipeline}/revisions", (*Server).listRevisions},
 	{http.MethodGet, "/pipelines/{pipeline}/revisions/{revision}", (*Server).getRevision},
+	{http.MethodGet, "/pipelines/{pipeline}/revisions/{revision}/files", (*Server).getRevisionFiles},
 	{http.MethodGet, "/pipelines/{pipeline}/streams", (*Server).listStreams},
 	{http.MethodGet, "/pipelines/{pipeline}/runs", (*Server).listRuns},
 	{http.MethodPost, "/pipelines/{pipeline}/runs", (*Server).triggerRun},

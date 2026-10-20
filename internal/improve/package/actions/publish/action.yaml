@@ -1,0 +1,19 @@
+# Hands accepted proposals to the publisher improve.publish names (spec sections 11.3 and 11.7): the proposals of
+# the run, and on the weekly run every accepted proposal. Without a publisher an accepted proposal stays accepted,
+# unpublished; a proposal not accepted yet is reported as it is.
+name: improve/publish
+version: 1.0.0
+description: Publishes accepted proposals through improve.publish
+kind: exec
+effects: external
+input: { type: object }
+config:
+  type: object
+  properties:
+    api: { type: string, minLength: 1 }
+    token: { type: string, minLength: 1 }
+    publisher: { type: string }
+  required: [api, token]
+  additionalProperties: false
+output: { type: object }
+runtime: { exec: { command: [millstream, improve-action, publish] } }
