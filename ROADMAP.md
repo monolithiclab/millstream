@@ -62,10 +62,6 @@ earlier designs are in the git history of the spec.
   reservation (the engine's reservations cover those revisions only); and audits keep their outputs' payloads, not
   their artifacts or the fallback's transcript.
 
-- Repository history: purge `conformance.test`, an 18 MB test binary committed by mistake in f164ceb (M3), and
-  `sqlstore.test` (29 MB, 19fe3b5, M4), from every branch with BFG Repo-Cleaner (`bfg --delete-files
-  '{conformance,sqlstore}.test'` on a mirror clone, `git reflog expire` and `git gc`, then force-push the phase
-  branches). Rewriting is fine while there are no tags or releases.
 - Insights: deployment-wide `insights` defaults from the environment file, and a CLI to reopen a muted insight.
 - Go SDK: per-output artifacts for `MapKeyed` (today `Context.Artifact` attaches a file to every output of the
   delivery).
