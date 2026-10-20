@@ -16,18 +16,38 @@ import (
 func measure(h *history, s sample, r *replayed, step string) Metrics {
 	var m Metrics
 	var latency time.Duration
-	// Agreement with the historical outputs.
+	lin := newReviewed(h, s, r)
+	// Agreement with the historical outputs, split by whether a review lies below.
+	compare := func(hd store.Delivery, agreed bool) {
+		m.Compared++
+		revs := lin.below(hd.ItemID)
+		switch {
+		case len(revs) == 0:
+			m.UnreviewedCompared++
+			if agreed {
+				m.UnreviewedAgreed++
+			}
+		case agreed:
+			m.ReviewedCompared++
+			m.ReviewedAgreed++
+		default:
+			m.ReviewedCompared++
+			if lin.met(revs) {
+				m.TowardReviewers++
+			}
+		}
+		if agreed {
+			m.Agreed++
+		}
+	}
 	if step == "" {
 		for _, sd := range s.sampled {
 			hd := h.deliveries[sd.Delivery]
-			m.Compared++
 			d, ok := r.deliveries[hd.ID]
-			switch {
-			case !ok:
+			if !ok {
 				m.NoLongerReached++
-			case alike(h, r, hd, d):
-				m.Agreed++
 			}
+			compare(hd, ok && alike(h, r, hd, d))
 		}
 	} else {
 		for _, hd := range h.deliveries {
@@ -53,10 +73,7 @@ func measure(h *history, s sample, r *replayed, step string) Metrics {
 				m.NewlyReached++
 			}
 		} else if step != "" && dec != unrecorded {
-			m.Compared++
-			if alike(h, r, hd, d) {
-				m.Agreed++
-			}
+			compare(hd, alike(h, r, hd, d))
 		}
 		if dec == ran && d.State != store.DeliveryPending && d.State != store.DeliveryLeased {
 			m.Ran++
@@ -85,12 +102,77 @@ func measure(h *history, s sample, r *replayed, step string) Metrics {
 		}
 	}
 	m.Agreement = ratio(m.Agreed, m.Compared)
+	m.UnreviewedAgreement = ratio(m.UnreviewedAgreed, m.UnreviewedCompared)
+	m.ReviewedAgreement = ratio(m.ReviewedAgreed, m.ReviewedCompared)
+	m.TowardReviewersShare = ratio(m.TowardReviewers, m.ReviewedCompared)
 	m.ReviewAgreement = ratio(m.ReviewAgreed, m.Reviewed)
 	m.FailureRate = ratio(m.Failed, m.Ran)
 	if m.Ran > 0 {
 		m.LatencyMs = float64(latency.Milliseconds()) / float64(m.Ran)
 	}
 	return m
+}
+
+// reviewed finds the decided reviews below a delivery's item, on the sampled lineages, and whether a replay meets
+// them.
+type reviewed struct {
+	h      *history
+	r      *replayed
+	byItem map[string][]string // the reviews' delivery ids by the item each review received
+	cache  map[string][]string
+}
+
+func newReviewed(h *history, s sample, r *replayed) *reviewed {
+	l := &reviewed{h: h, r: r, byItem: map[string][]string{}, cache: map[string][]string{}}
+	for id := range h.reviews {
+		if hd, ok := h.deliveries[id]; ok && s.keep[hd.ItemID] && s.fired[hd.RunID] {
+			l.byItem[hd.ItemID] = append(l.byItem[hd.ItemID], id)
+		}
+	}
+	return l
+}
+
+// below returns the reviews of an item and its descendants: the reviews its delivery's outputs lead to.
+func (l *reviewed) below(itemID string) []string {
+	if len(l.byItem) == 0 {
+		return nil
+	}
+	if out, ok := l.cache[itemID]; ok {
+		return out
+	}
+	var out []string
+	level, seen := []string{itemID}, map[string]bool{itemID: true}
+	for depth := 0; len(level) > 0 && depth < maxReviewDepth; depth++ {
+		var next []string
+		for _, it := range level {
+			out = append(out, l.byItem[it]...)
+			for _, c := range l.h.children[it] {
+				if !seen[c.ID] {
+					seen[c.ID] = true
+					next = append(next, c.ID)
+				}
+			}
+		}
+		level = next
+	}
+	l.cache[itemID] = out
+	return out
+}
+
+// met reports whether the replay moved toward the reviewers' truth on these reviews: one at least edited or rejected
+// the item, and the replay agrees with every one (the edited values reached, the rejected item no longer reaching
+// its review, the approved one still reaching it).
+func (l *reviewed) met(revs []string) bool {
+	corrective := false
+	for _, id := range revs {
+		rv := l.h.reviews[id]
+		if !reviewAgrees(l.h, l.r, rv, l.h.deliveries[id]) {
+			return false
+		}
+		ops, err := review.ParsePatch(rv.Patch)
+		corrective = corrective || rv.Decision == store.DecisionReject || (err == nil && len(ops) > 0)
+	}
+	return corrective
 }
 
 // ratio is a / b, 0 when b is 0.

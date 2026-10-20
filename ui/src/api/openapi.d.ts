@@ -986,6 +986,34 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/pipelines/{pipeline}/steps/{step}/distill-training': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        pipeline: components['parameters']['pipeline'];
+        step: string;
+      };
+      cookie?: never;
+    };
+    /**
+     * The training side of an agent step's distill split, in a development deployment (spec section 11.5).
+     * @description The step's input and output pairs (local history, else the imported evidence; the truth a reviewer's edit
+     *     where there is one, else the agent's output) are split by entity (item key, input item and lineage root)
+     *     and by time: the most recently first-seen entities, half the pairs, are the holdout, which is never served;
+     *     a distill proposal records holdoutFrom, and the engine validates it on the holdout it recomputes from it.
+     *     The step's lessons come without the examples derived from a holdout item. A step that is not an agent step,
+     *     or whose history has nothing to split, is refused.
+     */
+    get: operations['getDistillTraining'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/proposals': {
     parameters: {
       query?: never;
@@ -1994,6 +2022,20 @@ export interface components {
       agreed: number;
       /** @description agreed / compared */
       agreement: number;
+      /** @description The compared deliveries no decided review lies below. */
+      unreviewedCompared: number;
+      unreviewedAgreed: number;
+      /** @description unreviewedAgreed / unreviewedCompared */
+      unreviewedAgreement: number;
+      /** @description The compared deliveries whose outputs lead to a decided review. */
+      reviewedCompared: number;
+      reviewedAgreed: number;
+      /** @description reviewedAgreed / reviewedCompared */
+      reviewedAgreement: number;
+      /** @description Reviewed deliveries that ended unlike history but as the reviewers corrected them: an edit or rejection below, and every review below agrees. */
+      towardReviewers: number;
+      /** @description towardReviewers / reviewedCompared: how far the reviewed agreement may fall beyond the tolerance. */
+      towardReviewersShare: number;
       /** @description Deliveries without a historical counterpart */
       newlyReached: number;
       /** @description Historical deliveries on the sampled lineages the replay never made. */
@@ -2132,6 +2174,39 @@ export interface components {
       /** Format: date-time */
       updatedAt: string;
       evidence: Record<string, unknown>;
+    };
+    DistillTraining: {
+      pipeline: string;
+      step: string;
+      /** @description The step's agent action */
+      agent: string;
+      /** @enum {string} */
+      source: 'local' | 'evidence';
+      /**
+       * Format: date-time
+       * @description The holdout is the entities first seen at or after it.
+       */
+      holdoutFrom: string;
+      /** @description Every pair of the step. */
+      pairs: number;
+      /** @description The pairs of the holdout */
+      holdout: number;
+      training: {
+        key: string;
+        input: unknown;
+        outputs: {
+          key?: string;
+          payload: unknown;
+        }[];
+        /** @description A reviewer's edit is part of the truth. */
+        edited?: boolean;
+      }[];
+      lessons: {
+        rules?: components['schemas']['StepLessons']['rules'];
+        examples?: components['schemas']['StepLessons']['examples'];
+      };
+      /** @description Lesson examples withheld as derived from a holdout item. */
+      withheldExamples: number;
     };
     StepLessons: {
       step: string;
@@ -3856,6 +3931,34 @@ export interface operations {
         };
       };
       404: components['responses']['Error'];
+      503: components['responses']['Error'];
+      default: components['responses']['Error'];
+    };
+  };
+  getDistillTraining: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        pipeline: components['parameters']['pipeline'];
+        step: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The training set. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['DistillTraining'];
+        };
+      };
+      400: components['responses']['Error'];
+      404: components['responses']['Error'];
+      409: components['responses']['Error'];
       503: components['responses']['Error'];
       default: components['responses']['Error'];
     };

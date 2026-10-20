@@ -124,6 +124,18 @@ type Metrics struct {
 	Compared  int     `json:"compared"`
 	Agreed    int     `json:"agreed"`
 	Agreement float64 `json:"agreement"`
+	// They split by lineage: the deliveries no decided review lies below (Unreviewed), and those whose outputs lead
+	// to one (Reviewed). TowardReviewers counts the reviewed ones that ended unlike history but as the reviewers
+	// corrected them (an edit or rejection below, and the replay agrees with every review below), and
+	// TowardReviewersShare is TowardReviewers / ReviewedCompared.
+	UnreviewedCompared   int     `json:"unreviewedCompared"`
+	UnreviewedAgreed     int     `json:"unreviewedAgreed"`
+	UnreviewedAgreement  float64 `json:"unreviewedAgreement"`
+	ReviewedCompared     int     `json:"reviewedCompared"`
+	ReviewedAgreed       int     `json:"reviewedAgreed"`
+	ReviewedAgreement    float64 `json:"reviewedAgreement"`
+	TowardReviewers      int     `json:"towardReviewers"`
+	TowardReviewersShare float64 `json:"towardReviewersShare"`
 	// NewlyReached counts the deliveries without a historical counterpart: items the patch admits. NoLongerReached
 	// counts the historical deliveries on the sampled lineages the replay never made.
 	NewlyReached    int `json:"newlyReached"`

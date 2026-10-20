@@ -12,20 +12,31 @@ import (
 	"github.com/monolithiclab/millstream/internal/proposals"
 )
 
-// TestHolds: the proposals' pass rule, after against before over the whole sample.
+// TestHolds: the proposals' pass rule, after against before over the whole sample: 40 deliveries no review lies
+// below, 10 whose outputs lead to a review.
 func TestHolds(t *testing.T) {
-	base := Metrics{Compared: 50, Agreement: 0.9, Reviewed: 10, ReviewAgreement: 0.8, Ran: 50, FailureRate: 0.1}
+	base := Metrics{Compared: 50, Agreement: 0.9, UnreviewedCompared: 40, UnreviewedAgreement: 0.9,
+		ReviewedCompared: 10, ReviewedAgreement: 0.9, Reviewed: 10, ReviewAgreement: 0.8, Ran: 50, FailureRate: 0.1}
 	for name, tt := range map[string]struct {
 		after func(m *Metrics)
 		want  bool
 	}{
-		"unchanged":                  {func(*Metrics) {}, true},
-		"agreement within tolerance": {func(m *Metrics) { m.Agreement = 0.885 }, true},
-		"agreement regressed":        {func(m *Metrics) { m.Agreement = 0.87 }, false},
-		"reviews regressed":          {func(m *Metrics) { m.ReviewAgreement = 0.75 }, false},
-		"outputs changed as the reviewers corrected them": {func(m *Metrics) { m.Agreement, m.ReviewAgreement = 0.6, 1 },
-			true},
-		"outputs changed, reviews unchanged":    {func(m *Metrics) { m.Agreement = 0.6 }, false},
+		"unchanged":                             {func(*Metrics) {}, true},
+		"unreviewed agreement within tolerance": {func(m *Metrics) { m.UnreviewedAgreement = 0.885 }, true},
+		"unreviewed agreement regressed":        {func(m *Metrics) { m.UnreviewedAgreement = 0.87 }, false},
+		"reviews regressed":                     {func(m *Metrics) { m.ReviewAgreement = 0.75 }, false},
+		"reviewed outputs changed as the reviewers corrected them": {func(m *Metrics) {
+			m.ReviewedAgreement, m.TowardReviewers, m.TowardReviewersShare, m.ReviewAgreement = 0.4, 5, 0.5, 1
+		}, true},
+		"reviewed outputs changed beyond the corrections": {func(m *Metrics) {
+			m.ReviewedAgreement, m.TowardReviewers, m.TowardReviewersShare, m.ReviewAgreement = 0.3, 5, 0.5, 1
+		}, false},
+		"reviewed outputs changed, reviews unchanged": {func(m *Metrics) { m.ReviewedAgreement = 0.6 }, false},
+		// The finer rule's reason: one reviewed item fixed, the outputs nobody reviewed wrecked.
+		"one reviewed item fixed, unreviewed outputs wrecked": {func(m *Metrics) {
+			m.ReviewedAgreement, m.TowardReviewers, m.TowardReviewersShare, m.ReviewAgreement = 0.8, 1, 0.1, 0.9
+			m.UnreviewedAgreement, m.Agreement = 0.3, 0.4
+		}, false},
 		"approvals dropped within maxFalseDrop": {func(m *Metrics) { m.Approved, m.ApprovalsDropped = 10, 1 }, true},
 		"approvals dropped over maxFalseDrop":   {func(m *Metrics) { m.Approved, m.ApprovalsDropped = 10, 2 }, false},
 		"failure rate up":                       {func(m *Metrics) { m.FailureRate = 0.11 }, false},

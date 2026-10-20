@@ -46,6 +46,12 @@ describe('ProposalScreen', () => {
       'Agreement with history80%84%+4 pts',
     );
     expect(within(backtest).getByRole('row', { name: /Agreement with reviewers/ })).toHaveTextContent('70%82%+12 pts');
+    expect(within(backtest).getByRole('row', { name: /unreviewed lineages/ })).toHaveTextContent('80%98%+18 pts');
+    // The reviewed lineages fall by 10 points, within the 20% changed as reviewers corrected plus 2 points.
+    expect(within(backtest).getByRole('row', { name: /, reviewed lineages/ })).toHaveTextContent('80%70%−10 pts');
+    expect(within(backtest).getByRole('row', { name: /Changed as reviewers corrected/ })).toHaveTextContent(
+      '0%20%+20 pts',
+    );
     expect(within(backtest).getByRole('row', { name: /Failure rate/ })).toHaveTextContent('2%1.5%−0.5 pts');
     expect(within(backtest).getByRole('row', { name: /Past approvals dropped/ })).toHaveTextContent(
       'Past approvals dropped000',
@@ -180,8 +186,11 @@ describe('ProposalScreen', () => {
     expect(within(validation).getByText('New and changed cases')).toBeInTheDocument();
     expect(within(evals[1]!).getByRole('row', { name: /recent-sales-only/ })).toHaveTextContent('Passed · 0.9');
     const backtest = within(validation).getByRole('table', { name: 'Backtest over the whole sample' });
-    expect(within(backtest).getByRole('row', { name: /Agreement with history/ })).toHaveTextContent(
+    expect(within(backtest).getByRole('row', { name: /unreviewed lineages/ })).toHaveTextContent(
       '−5 pts, over the limit',
+    );
+    expect(within(backtest).getByRole('row', { name: /Agreement with history/ })).not.toHaveTextContent(
+      'over the limit',
     );
     expect(within(backtest).getByRole('row', { name: /Agreement with reviewers/ })).toHaveTextContent(
       '−4 pts, over the limit',

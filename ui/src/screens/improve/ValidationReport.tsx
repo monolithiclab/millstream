@@ -176,8 +176,8 @@ interface Row {
   value: (m: BacktestMetrics) => number;
   format: (v: number) => string;
   change: (d: number) => string;
-  // Whether the change from before to after fails the backtest.
-  regressed?: (before: number, after: number) => boolean;
+  // Whether the change from before to after fails the backtest, the after side's metrics at hand.
+  regressed?: (before: number, after: number, m: BacktestMetrics) => boolean;
   // What an agreement is over: none, and there is nothing to compare.
   over?: (m: BacktestMetrics) => number;
 }
@@ -189,13 +189,19 @@ function useRows(f: Format): Row[] {
     `${v > 0 ? '+' : v < 0 ? '−' : ''}${format(Math.abs(v))}`;
   const points = (d: number) =>
     t('improve.backtest.points', { value: signed(d * 100, (x) => f.num(x, { maximumFractionDigits: 1 })) });
-  // An agreement fails the backtest when it falls by more than two points; with nothing compared, it does not count.
-  const agreement = (label: string, value: Row['value'], over: Row['value']): Row => ({
+  // An agreement fails the backtest when it falls by more than two points, plus what allowance says; with nothing
+  // compared, it does not count. Without allowance it is shown, not judged.
+  const agreement = (
+    label: string,
+    value: Row['value'],
+    over: Row['value'],
+    allowance?: (m: BacktestMetrics) => number,
+  ): Row => ({
     label,
     value,
     format: f.percent,
     change: points,
-    regressed: (b, a) => b - a > MAX_AGREEMENT_DROP + 1e-9,
+    ...(allowance && { regressed: (b, a, m) => b - a > allowance(m) + MAX_AGREEMENT_DROP + 1e-9 }),
     over,
   });
   return [
@@ -204,10 +210,30 @@ function useRows(f: Format): Row[] {
       (m) => m.agreement,
       (m) => m.compared,
     ),
+    // Spec 11.3: the lineages nobody reviewed keep their outputs; the reviewed ones may change further only as far as
+    // their outputs moved as the reviewers corrected them.
+    agreement(
+      t('improve.backtest.unreviewedAgreement'),
+      (m) => m.unreviewedAgreement,
+      (m) => m.unreviewedCompared,
+      () => 0,
+    ),
+    agreement(
+      t('improve.backtest.reviewedAgreement'),
+      (m) => m.reviewedAgreement,
+      (m) => m.reviewedCompared,
+      (m) => m.towardReviewersShare,
+    ),
+    agreement(
+      t('improve.backtest.towardReviewers'),
+      (m) => m.towardReviewersShare,
+      (m) => m.reviewedCompared,
+    ),
     agreement(
       t('improve.backtest.reviewAgreement'),
       (m) => m.reviewAgreement,
       (m) => m.reviewed,
+      () => 0,
     ),
     {
       label: t('improve.backtest.failureRate'),
@@ -268,7 +294,7 @@ function MetricsTable({ label, before, after }: { label: string; before: Backtes
           {rows.map((row) => {
             const [b, a] = [row.value(before), row.value(after)];
             const none = empty(row, before) || empty(row, after);
-            const regressed = !none && row.regressed?.(b, a) === true;
+            const regressed = !none && row.regressed?.(b, a, after) === true;
             return (
               <tr key={row.label}>
                 <th scope="row" className={`${td} font-normal`}>

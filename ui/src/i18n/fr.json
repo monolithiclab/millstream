@@ -1002,7 +1002,7 @@
     },
     "backtest": {
       "title": "Rejeu, avant et après",
-      "rule": "Les étapes modifiées rejouées sur des items passés, une fois sur la révision de base et une fois patchées. Il réussit si chaque accord baisse d’au plus 2 points, si le taux d’échec n’augmente pas et si le patch écarte au plus improve.filter.maxFalseDrop (1 % par défaut) des items approuvés par les relecteurs.",
+      "rule": "Les étapes modifiées rejouées sur des items passés, une fois sur la révision de base et une fois patchées. Il réussit si l’accord avec les relecteurs et l’accord avec l’historique des lignées non relues baissent d’au plus 2 points, celui des lignées relues d’au plus 2 points de plus que la part modifiée comme l’ont corrigé les relecteurs, si le taux d’échec n’augmente pas et si le patch écarte au plus improve.filter.maxFalseDrop (1 % par défaut) des items approuvés par les relecteurs.",
       "skipped": "Non exécuté : {{reason}}",
       "sample": "Échantillon",
       "fromEvidence": "{{count}} livraisons des preuves importées, {{runs}} runs",
@@ -1017,6 +1017,9 @@
       "measure": "Mesure",
       "change": "Écart",
       "agreement": "Accord avec l’historique",
+      "unreviewedAgreement": "Accord avec l’historique, lignées non relues",
+      "reviewedAgreement": "Accord avec l’historique, lignées relues",
+      "towardReviewers": "Modifié comme l’ont corrigé les relecteurs",
       "reviewAgreement": "Accord avec les relecteurs",
       "approvalsDropped": "Approbations passées écartées",
       "failureRate": "Taux d’échec",
