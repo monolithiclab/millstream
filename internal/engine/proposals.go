@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"cmp"
 	"context"
 	"crypto/rand"
 	"encoding/base64"
@@ -8,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/monolithiclab/millstream/internal/distill"
 	"github.com/monolithiclab/millstream/internal/patch"
@@ -32,6 +34,17 @@ type ProposalOptions struct {
 	// (improve.distill); without a source, every distill proposal fails its validation.
 	Holdout proposals.HoldoutSource
 	Distill distill.Thresholds
+	// ValidationTimeout bounds a validation (improve.validation.timeout); zero means DefaultValidationTimeout. A
+	// proposal validating for longer is presumed lost, and the next validation takes it over.
+	ValidationTimeout time.Duration
+}
+
+// DefaultValidationTimeout is improve.validation.timeout's default.
+const DefaultValidationTimeout = 30 * time.Minute
+
+// validationTimeout is ProposalOptions.ValidationTimeout or its default.
+func (e *Engine) validationTimeout() time.Duration {
+	return cmp.Or(e.opts.Proposals.ValidationTimeout, DefaultValidationTimeout)
 }
 
 // ProposalRequest is a proposal to create on a pipeline's active revision.
@@ -127,11 +140,33 @@ func (e *Engine) ValidateProposal(ctx context.Context, id string) (store.Proposa
 		rebase = &store.Rebase{BaseRevision: base, Patch: prep.Patch, PatchSHA256: prep.SHA256, Paths: prep.Paths(),
 			Steps: prep.Steps}
 	}
-	if _, err := e.st.StartValidation(ctx, id); err != nil {
+	timeout := e.validationTimeout()
+	if _, err := e.st.StartValidation(ctx, id, e.opts.Now().Add(-timeout)); err != nil {
 		return p, err
 	}
-	report, passed := e.validate(ctx, p.Pipeline, prep)
-	return e.st.RecordValidation(ctx, store.Validation{ID: id, Report: report, Passed: passed, Rebase: rebase})
+	// The validation outlives the request that started it, within its timeout, so the proposal never stays
+	// validating because a client went away.
+	vctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), timeout)
+	defer cancel()
+	report, passed := e.validate(vctx, p.Pipeline, prep)
+	return e.st.RecordValidation(context.WithoutCancel(ctx), store.Validation{ID: id, Report: report, Passed: passed,
+		Rebase: rebase})
+}
+
+// resetValidations moves the proposals left validating by an engine that stopped back to drafting, when this one
+// starts or takes the lead: their validations died with it. Reading first leaves the store unwritten when there is
+// none, as there almost always is.
+func (e *Engine) resetValidations(ctx context.Context) {
+	ps, err := e.st.Proposals(ctx, store.ProposalFilter{State: store.ProposalValidating})
+	if err == nil && len(ps) > 0 {
+		var ids []string
+		if ids, err = e.st.ResetValidations(ctx); err == nil {
+			e.log.Warn("proposals left validating by a stopped engine are drafting again", "proposals", ids)
+		}
+	}
+	if err != nil && ctx.Err() == nil {
+		e.log.Error("reset validating proposals", "error", err.Error())
+	}
 }
 
 // validate runs the validation and encodes its report; a validation that could not run fails with its error as the

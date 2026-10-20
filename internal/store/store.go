@@ -214,8 +214,13 @@ type Store interface {
 	// the same fingerprint suppresses it until an insight it answers reaches twice the severity weight it had at
 	// the rejection (ErrConflict). A proposal answering no insight is never suppressed. It records proposalCreated.
 	CreateProposal(ctx context.Context, p NewProposal) (Proposal, error)
-	// StartValidation moves a drafting, ready or stale proposal to validating; any other state is ErrConflict.
-	StartValidation(ctx context.Context, id string) (Proposal, error)
+	// StartValidation moves a drafting, ready or stale proposal to validating, and takes over a validating one last
+	// updated before takeOver (its validation presumed lost: zero never takes over); any other state is
+	// ErrConflict.
+	StartValidation(ctx context.Context, id string, takeOver time.Time) (Proposal, error)
+	// ResetValidations moves every validating proposal back to drafting, as an engine does when it starts or takes
+	// the lead: no validation outlives the engine that ran it. It returns their ids.
+	ResetValidations(ctx context.Context) ([]string, error)
 	// RecordValidation records the report of a validating proposal: ready when it passed, else drafting again. A
 	// rebase replaces its base and patch; the base must then be the pipeline's active revision. A proposal whose base
 	// is no longer the active revision becomes stale instead. It records proposalValidated.
