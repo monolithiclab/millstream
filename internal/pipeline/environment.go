@@ -882,6 +882,20 @@ func fraction(n *yaml.Node, path string) (float64, error) {
 	return v, nil
 }
 
+// DefaultDistillLanguage is the one improve.distill.language the distill proposal writes code in for now, its default.
+const DefaultDistillLanguage = "go"
+
+// distillLanguage reads improve.distill.language: Go alone for now, the only language the sandbox builds and runs
+// (spec section 11.5).
+func distillLanguage(n *yaml.Node, path string) (string, error) {
+	s, err := nonEmptyStr(n, path)
+	if err == nil && s != DefaultDistillLanguage {
+		err = errAt(n, path, "%q is not supported yet: distilled actions are written in go, the only language the "+
+			"candidate-code sandbox builds and runs", s)
+	}
+	return s, err
+}
+
 // readImprove reads improve (spec sections 11.2 to 11.6).
 func readImprove(f *fields, env *Environment) error {
 	n := f.get("improve")
@@ -932,7 +946,7 @@ func readImprove(f *fields, env *Environment) error {
 		}),
 		sub("distill", []string{"minDeliveries", "language", "minAgreement", "minCoverage"}, func(sf *fields) []error {
 			return []error{optional(sf, "minDeliveries", &im.DistillMinDeliveries, positiveInt),
-				optional(sf, "language", &im.DistillLanguage, nonEmptyStr),
+				optional(sf, "language", &im.DistillLanguage, distillLanguage),
 				optional(sf, "minAgreement", &im.DistillMinAgreement, fraction),
 				optional(sf, "minCoverage", &im.DistillMinCoverage, fraction)}
 		}),

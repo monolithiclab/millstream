@@ -4,18 +4,18 @@
 # (claude-sonnet-5-5, its key in the anthropicKey secret).
 name: improve/draft
 version: 1.0.0
-description: Drafts a lessons, prompt, config or topology proposal from an insight's evidence
+description: Drafts a lessons, prompt, config, topology or distill proposal from an insight's evidence
 kind: agent
 input:
   type: object
   properties:
-    kind: { enum: [lessons, prompt, config, topology] }
+    kind: { enum: [lessons, prompt, config, topology, distill] }
     brief: { type: string }
   required: [kind, brief]
 output:
   type: object
   properties:
-    kind: { enum: [lessons, prompt, config, topology, none] }
+    kind: { enum: [lessons, prompt, config, topology, distill, none] }
     rationale: { type: string, minLength: 1 }
     insights: { type: array, items: { type: string } }
     files:

@@ -246,6 +246,7 @@ var routes = []route{
 	{http.MethodPost, "/evidence/imports", (*Server).importEvidence},
 	{http.MethodPost, "/backtests", (*Server).createBacktest},
 	{http.MethodGet, "/backtests/{backtest}", (*Server).getBacktest},
+	{http.MethodGet, "/pipelines/{pipeline}/steps/{step}/distill-training", (*Server).getDistillTraining},
 	{http.MethodGet, "/proposals", (*Server).listProposals},
 	{http.MethodPost, "/proposals", (*Server).createProposal},
 	{http.MethodPost, "/proposal-token", (*Server).mintProposalToken},

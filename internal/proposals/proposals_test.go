@@ -66,10 +66,15 @@ func baseFiles() map[string][]byte {
 	}
 }
 
-// distill is the distill patch moving the score step to a new action of that name.
-func distill(name string, extra ...string) string {
-	return edit("pipeline.yaml", 6, "  score:", "    action: ./actions/scorer", "    action: ./actions/"+name,
-		"    in: trigger.adhoc") + newFile("actions/"+name+"/action.yaml", manifest(name)...) + strings.Join(extra, "")
+// distillPatch is the distill patch moving the score step to a new action of that name, the scorer kept as its
+// fallback on abstain, with the spec file the improve package writes.
+func distillPatch(name string, extra ...string) string {
+	return "diff --git a/pipeline.yaml b/pipeline.yaml\nindex 1111111..2222222 100644\n--- a/pipeline.yaml\n" +
+		"+++ b/pipeline.yaml\n@@ -5,3 +5,4 @@\n   score:\n-    action: ./actions/scorer\n+    action: ./actions/" + name +
+		"\n+    fallback: { action: ./actions/scorer, when: [abstain] }\n     in: trigger.adhoc\n" +
+		newFile("actions/"+name+"/action.yaml", manifest(name)...) +
+		newFile("actions/"+name+"/distill.yaml", "step: score", "agent: ./actions/scorer",
+			"holdoutFrom: 2026-10-01T00:00:00Z") + strings.Join(extra, "")
 }
 
 var (
@@ -106,13 +111,13 @@ func TestPrepare(t *testing.T) {
 		{store.ProposalConfig, configPatch + lessonsPatch, nil, "pipeline.yaml alone"},
 		{store.ProposalConfig, newFile(".github/workflows/ci.yaml", "on: push"), nil, "pipeline.yaml alone"},
 		{store.ProposalTopology, newFile("Makefile", "all:"), nil, "pipeline.yaml alone"},
-		{store.ProposalDistill, distill("coded"), []string{"score"}, ""},
+		{store.ProposalDistill, distillPatch("coded"), []string{"score"}, ""},
 		{store.ProposalDistill, edit("pipeline.yaml", 6, "  score:", "    action: ./actions/scorer",
 			"    action: ./actions/scorer", "    in: trigger.adhoc"), nil, "adds a new actions/<name>/"},
-		{store.ProposalDistill, distill("coded", newFile("actions/scorer/main.go", "x")), nil, "exists"},
-		{store.ProposalDistill, distill("coded", newFile("actions/more/x.go", "x")), nil, "one action directory"},
-		{store.ProposalDistill, distill("coded", newFile("actions/coded", "x")), nil, "a new actions/<name>/"},
-		{store.ProposalDistill, distill("coded", newFile("bin/tool", "x")), nil, "a new actions/<name>/"},
+		{store.ProposalDistill, distillPatch("coded", newFile("actions/scorer/main.go", "x")), nil, "exists"},
+		{store.ProposalDistill, distillPatch("coded", newFile("actions/more/x.go", "x")), nil, "one action directory"},
+		{store.ProposalDistill, distillPatch("coded", newFile("actions/coded", "x")), nil, "a new actions/<name>/"},
+		{store.ProposalDistill, distillPatch("coded", newFile("bin/tool", "x")), nil, "a new actions/<name>/"},
 		{"other", lessonsPatch, nil, "is not one of"},
 		{store.ProposalConfig, strings.Replace(configPatch, "concurrency: 2", "concurrency: [", 1), nil, "does not parse"},
 		{store.ProposalLessons, "diff --git a/lessons/score.yaml b/lessons/score.yaml\nnew file mode 120000\n", nil,

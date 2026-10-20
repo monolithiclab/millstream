@@ -107,6 +107,8 @@ var proposalRoutes = map[string]bool{
 	"POST /proposals/{proposal}/publish":    true, // the improve package's publish step (spec section 11.7)
 	"POST /backtests":                       true, // spec section 11.3: the backtest endpoint the validate step calls
 	"GET /backtests/{backtest}":             true,
+	// The training side of a distill split (spec section 11.5); the holdout is never served.
+	"GET /pipelines/{pipeline}/steps/{step}/distill-training": true,
 	// The reads the improve pipeline gathers evidence with (spec section 11.3): insights, pipelines, revisions with
 	// their files, and items with their lineage. Never a decision, never a write elsewhere.
 	"GET /insights":             true,

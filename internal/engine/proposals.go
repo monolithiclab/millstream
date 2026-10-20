@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/monolithiclab/millstream/internal/distill"
 	"github.com/monolithiclab/millstream/internal/patch"
 	"github.com/monolithiclab/millstream/internal/pipeline"
 	"github.com/monolithiclab/millstream/internal/proposals"
@@ -27,6 +28,10 @@ type ProposalOptions struct {
 	Evals proposals.Evals
 	// Backtest runs the backtests (backtest.ForProposals); without one, every proposal fails its validation.
 	Backtest proposals.Backtester
+	// Holdout reads the holdout distill proposals are measured on (backtest.Backtester), Distill their thresholds
+	// (improve.distill); without a source, every distill proposal fails its validation.
+	Holdout proposals.HoldoutSource
+	Distill distill.Thresholds
 }
 
 // ProposalRequest is a proposal to create on a pipeline's active revision.
@@ -155,7 +160,8 @@ func (e *Engine) validator() proposals.Validator {
 		evals.Prices = e.opts.Agents.Prices
 	}
 	return proposals.Validator{Check: e.checkProposal, Resolver: e.opts.Resolver, Evals: evals,
-		Backtest: e.opts.Proposals.Backtest, Scratch: e.opts.PackageDir}
+		Backtest: e.opts.Proposals.Backtest, Holdout: e.opts.Proposals.Holdout, Distill: e.opts.Proposals.Distill,
+		Scratch: e.opts.PackageDir}
 }
 
 // checkProposal checks a patched package as apply would, against the rest of the deployment.

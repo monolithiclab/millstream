@@ -1,0 +1,23 @@
+name: m5-distill/list
+version: 1.0.0
+description: Emits the configured day's synthetic listings, keyed by id
+kind: exec
+effects: none
+input: { type: object }
+config:
+  type: object
+  properties:
+    day: { type: integer, minimum: 1 }
+    count: { type: integer, minimum: 1, maximum: 1000 }
+  required: [day, count]
+  additionalProperties: false
+output:
+  type: object
+  properties:
+    id: { type: string, maxLength: 16 }
+    city: { enum: [Lille, Lyon, Nantes, Paris] }
+    priceEur: { type: integer, minimum: 0, maximum: 10000000 }
+    surfaceM2: { type: integer, minimum: 0, maximum: 1000 }
+  required: [id, city, priceEur, surfaceM2]
+  additionalProperties: false
+runtime: { exec: { command: [list] } }

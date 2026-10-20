@@ -27,6 +27,8 @@ type fakeAPI struct {
 	lineage   map[string]api.Lineage
 	created   []api.ProposalRequest
 	createErr int // the status POST /proposals answers instead of creating
+	training  api.DistillTraining
+	trainErr  int // the status GET .../distill-training answers instead
 }
 
 const reviewEvidence = `{"decisions":{"approved":4},"timeToDecisionP50Seconds":12.5,"samples":["i1","i2"],
@@ -108,6 +110,13 @@ func (f *fakeAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case strings.HasPrefix(p, "/proposals/"):
 		answer(api.Proposal{ID: strings.TrimPrefix(p, "/proposals/"), Pipeline: "listings", Kind: "lessons",
 			State: "accepted", Rationale: "why", PatchSHA256: "abc"})
+	case strings.HasSuffix(p, "/distill-training"):
+		if f.trainErr != 0 {
+			w.WriteHeader(f.trainErr)
+			answer(map[string]any{"error": map[string]string{"code": "invalid", "message": "nothing to split"}})
+			return
+		}
+		answer(f.training)
 	case strings.HasSuffix(p, "/lineage"):
 		answer(f.lineage[strings.Split(p, "/")[4]])
 	case strings.Contains(p, "/items/"):

@@ -21,18 +21,7 @@ var volatile = map[string]bool{"samples": true, "timeToDecisionP50Seconds": true
 func brief(id idea, files api.RevisionFiles, examples []example, rejected []api.Proposal) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "# Pipeline %s\n\n", id.pipeline())
-	if in := id.insight; in != nil {
-		fmt.Fprintf(&b, "## Insight %s: %s of %s, %s\n\n", in.ID, in.Kind, in.Scope, in.Severity)
-		var ev map[string]any
-		if json.Unmarshal(in.Evidence, &ev) == nil {
-			for k := range ev {
-				if volatile[k] || k == "proposals" {
-					delete(ev, k)
-				}
-			}
-			writeJSON(&b, "Evidence", ev)
-		}
-	}
+	writeInsight(&b, id.insight)
 	if id.hint != nil {
 		writeJSON(&b, "The pattern, and the proposal it calls for", id.hint)
 	}
@@ -40,13 +29,7 @@ func brief(id idea, files api.RevisionFiles, examples []example, rejected []api.
 		writeJSON(&b, "Edits reviewers made (the item as the review received it, the value before and after)",
 			examples)
 	}
-	if len(rejected) > 0 {
-		b.WriteString("## Proposals of this idea people rejected\n\n")
-		for _, p := range rejected {
-			fmt.Fprintf(&b, "- %s, rejected because: %s\n  Its rationale was: %s\n", p.Kind, p.Reason, p.Rationale)
-		}
-		b.WriteString("\n")
-	}
+	b.WriteString(rejections(rejected))
 	b.WriteString("## Files\n")
 	for _, p := range relevant(id, files) {
 		content, ok := files.Files[p]
@@ -56,6 +39,20 @@ func brief(id idea, files api.RevisionFiles, examples []example, rejected []api.
 		}
 		fmt.Fprintf(&b, "\n### %s\n\n````\n%s````\n", p, ensureNewline(content))
 	}
+	return b.String()
+}
+
+// rejections is the section listing the proposals of the same idea people rejected, with their reasons.
+func rejections(rejected []api.Proposal) string {
+	if len(rejected) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("## Proposals of this idea people rejected\n\n")
+	for _, p := range rejected {
+		fmt.Fprintf(&b, "- %s, rejected because: %s\n  Its rationale was: %s\n", p.Kind, p.Reason, p.Rationale)
+	}
+	b.WriteString("\n")
 	return b.String()
 }
 

@@ -946,6 +946,31 @@ paths:
               schema: { $ref: "#/components/schemas/Backtest" }
         "404": { $ref: "#/components/responses/Error" }
         "503": { $ref: "#/components/responses/Error" }
+  /pipelines/{pipeline}/steps/{step}/distill-training:
+    parameters:
+      - { $ref: "#/components/parameters/pipeline" }
+      - { name: step, in: path, required: true, schema: { type: string } }
+    get:
+      operationId: getDistillTraining
+      summary: The training side of an agent step's distill split, in a development deployment (spec section 11.5).
+      description: |
+        The step's input and output pairs (local history, else the imported evidence; the truth a reviewer's edit
+        where there is one, else the agent's output) are split by entity (item key, input item and lineage root)
+        and by time: the most recently first-seen entities, half the pairs, are the holdout, which is never served;
+        a distill proposal records holdoutFrom, and the engine validates it on the holdout it recomputes from it.
+        The step's lessons come without the examples derived from a holdout item. A step that is not an agent step,
+        or whose history has nothing to split, is refused.
+      responses:
+        default: { $ref: "#/components/responses/Error" }
+        "200":
+          description: The training set.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DistillTraining" }
+        "400": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
   /proposals:
     get:
       operationId: listProposals
@@ -2247,6 +2272,44 @@ components:
         openedAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
         evidence: { type: object }
+    DistillTraining:
+      type: object
+      required: [pipeline, step, agent, source, holdoutFrom, pairs, holdout, training, lessons, withheldExamples]
+      additionalProperties: false
+      properties:
+        pipeline: { type: string }
+        step: { type: string }
+        agent: { type: string, description: The step's agent action, kept as the distilled action's fallback. }
+        source: { type: string, enum: [local, evidence] }
+        holdoutFrom: { type: string, format: date-time, description: The holdout is the entities first seen at or after it. }
+        pairs: { type: integer, description: Every pair of the step. }
+        holdout: { type: integer, description: The pairs of the holdout, never served. }
+        training:
+          type: array
+          items:
+            type: object
+            required: [key, input, outputs]
+            additionalProperties: false
+            properties:
+              key: { type: string }
+              input: {}
+              outputs:
+                type: array
+                items:
+                  type: object
+                  required: [payload]
+                  additionalProperties: false
+                  properties:
+                    key: { type: string }
+                    payload: {}
+              edited: { type: boolean, description: A reviewer's edit is part of the truth. }
+        lessons:
+          type: object
+          additionalProperties: false
+          properties:
+            rules: { $ref: "#/components/schemas/StepLessons/properties/rules" }
+            examples: { $ref: "#/components/schemas/StepLessons/properties/examples" }
+        withheldExamples: { type: integer, description: Lesson examples withheld as derived from a holdout item. }
     StepLessons:
       type: object
       required: [step, rules, examples]

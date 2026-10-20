@@ -13,6 +13,7 @@ import (
 	"github.com/monolithiclab/millstream/internal/api"
 	"github.com/monolithiclab/millstream/internal/patch"
 	"github.com/monolithiclab/millstream/internal/protocol"
+	"github.com/monolithiclab/millstream/internal/store"
 )
 
 // Draft is the draft agent's answer, the contract of its output schema: the kind (none when the evidence supports
@@ -132,9 +133,11 @@ func (a *action) evidenceOf(ctx context.Context, item string) (Evidence, error) 
 }
 
 // patchOf returns the draft's change as a patch against the evidence's base revision: its patch as given, or the
-// diff of its files against the base's, with the base's Millstream-Base trailer.
+// diff of its files against the base's, with the base's Millstream-Base trailer. A distill draft's files are
+// assembled first (distillFiles).
 func (a *action) patchOf(ctx context.Context, ev Evidence, d Draft) (string, error) {
-	if d.Patch != "" {
+	distilled := ev.Kind == string(store.ProposalDistill)
+	if d.Patch != "" && !distilled {
 		return d.Patch, nil
 	}
 	if len(d.Files) == 0 {
@@ -148,17 +151,27 @@ func (a *action) patchOf(ctx context.Context, ev Evidence, d Draft) (string, err
 		return "", fmt.Errorf("the active revision of %s moved from %.12s to %.12s since the evidence was gathered",
 			ev.Pipeline, ev.BaseRevision, files.PackageHash)
 	}
-	before, after := map[string][]byte{}, map[string][]byte{}
-	for _, f := range d.Files {
-		if err := patch.CheckPath(f.Path); err != nil {
+	changed := map[string]string{}
+	if distilled {
+		if changed, err = distillFiles(ev, d, files); err != nil {
 			return "", err
 		}
-		if old, ok := files.Files[f.Path]; ok {
-			before[f.Path] = []byte(old)
-		} else if slices.Contains(files.Binary, f.Path) {
-			return "", fmt.Errorf("%s is not a text file", f.Path)
+	} else {
+		for _, f := range d.Files {
+			changed[f.Path] = f.Content
 		}
-		after[f.Path] = []byte(f.Content)
+	}
+	before, after := map[string][]byte{}, map[string][]byte{}
+	for p, content := range changed {
+		if err := patch.CheckPath(p); err != nil {
+			return "", err
+		}
+		if old, ok := files.Files[p]; ok {
+			before[p] = []byte(old)
+		} else if slices.Contains(files.Binary, p) {
+			return "", fmt.Errorf("%s is not a text file", p)
+		}
+		after[p] = []byte(content)
 	}
 	if maps.EqualFunc(before, after, func(x, y []byte) bool { return string(x) == string(y) }) {
 		return "", errors.New("the draft's files are the base revision's")

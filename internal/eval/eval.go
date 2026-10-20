@@ -186,8 +186,10 @@ type Result struct {
 	Failed        []string
 	// Judge is the judge's verdict, nil without a judge or when it failed.
 	Judge *Verdict
-	// Err is why the case could not be scored: the action or the judge failed.
-	Err string
+	// Err is why the case could not be scored: the action or the judge failed. Abstained says the action abstained
+	// (spec section 6.3), which Err reports too: a step with a fallback hands such an item to it.
+	Err       string
+	Abstained bool
 	// CostUSD is what the action reported spending (its cost_usd metrics).
 	CostUSD float64
 	Score   float64
@@ -258,6 +260,7 @@ func runAction(ctx context.Context, opts Options, c *Case, res *Result) (any, er
 	}
 	res.CostUSD = protocol.CostUSD(r.Metrics)
 	if r.Err != nil {
+		res.Abstained = r.Err.Abstain
 		return nil, fmt.Errorf("the action failed: %s", r.Err.Message)
 	}
 	outs := make([]any, len(r.Outputs))

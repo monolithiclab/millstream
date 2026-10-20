@@ -12,6 +12,7 @@ import (
 
 	"github.com/monolithiclab/millstream/internal/api"
 	"github.com/monolithiclab/millstream/internal/backtest"
+	"github.com/monolithiclab/millstream/internal/distill"
 	"github.com/monolithiclab/millstream/internal/engine"
 	"github.com/monolithiclab/millstream/internal/pipeline"
 	"github.com/monolithiclab/millstream/internal/proposals"
@@ -33,12 +34,18 @@ type ProposalsCmd struct {
 
 // proposalOptions are what an engine validates proposals with: the evals of the affected actions run as eval runs
 // them, with the launchers, secrets and prices of the environment and proposed exec code in the container sandbox,
-// and the backtests run by bt.
+// and the backtests run by bt, which also reads the holdouts of distill proposals.
 func proposalOptions(rt *Runtime, env *pipeline.Environment, bt backtest.Runner) engine.ProposalOptions {
 	evals := proposals.Evals{Launchers: launchers(rt, env), Prices: env.Prices,
 		Env:     func(name string) func(string) (string, bool) { return env.SecretEnvLookup(name, rt.Env) },
 		Sandbox: candidateSandbox(rt, env)}
-	return engine.ProposalOptions{Evals: evals, Backtest: backtest.ForProposals(bt, env.Improve.FilterMaxFalseDrop)}
+	opts := engine.ProposalOptions{Evals: evals, Backtest: backtest.ForProposals(bt, env.Improve.FilterMaxFalseDrop),
+		Distill: distill.Thresholds{MinAgreement: env.Improve.DistillMinAgreement,
+			MinCoverage: env.Improve.DistillMinCoverage}}
+	if h, ok := bt.(proposals.HoldoutSource); ok {
+		opts.Holdout = h
+	}
+	return opts
 }
 
 // newPublisher is the publish action improve.publish names (spec section 11.7), run by the engine e behind

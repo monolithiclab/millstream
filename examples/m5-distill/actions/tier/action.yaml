@@ -1,0 +1,31 @@
+name: m5-distill/tier
+version: 1.0.0
+description: Sorts a listing into a price tier, with an LLM
+kind: agent
+input:
+  type: object
+  properties:
+    id: { type: string, maxLength: 16 }
+    city: { enum: [Lille, Lyon, Nantes, Paris] }
+    priceEur: { type: integer, minimum: 0, maximum: 10000000 }
+    surfaceM2: { type: integer, minimum: 0, maximum: 1000 }
+  required: [id, city, priceEur, surfaceM2]
+# The listing as given, plus its tier: every field bounded, so the step is a candidate for code.
+output:
+  type: object
+  properties:
+    id: { type: string, maxLength: 16 }
+    city: { enum: [Lille, Lyon, Nantes, Paris] }
+    priceEur: { type: integer, minimum: 0, maximum: 10000000 }
+    surfaceM2: { type: integer, minimum: 0, maximum: 1000 }
+    tier: { enum: [low, mid, high] }
+  required: [id, city, priceEur, surfaceM2, tier]
+runtime:
+  agent:
+    harness: api
+    provider: openai
+    baseUrl: https://models.example.invalid/v1
+    model: fake-tierer-1
+    apiKeySecret: tierKey
+    network: [models.example.invalid]
+    maxCostUsd: 0.05

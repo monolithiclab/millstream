@@ -208,13 +208,38 @@ func reviewInsight(t *testing.T, db string) api.Insight {
 // lessons file of the M2 fixture's second version, with its rule lowering poor listings by 25 points.
 func writeDraftRecording(t *testing.T, root, db, recordings string, in api.Insight) {
 	t.Helper()
+	lessons, err := os.ReadFile(filepath.Join(root, "examples", "m2-fixture", "testdata", "score-lessons-v2.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	answer := improve.Draft{Kind: "lessons", Insights: []string{in.ID},
+		Rationale: "Analysts lowered the score of every poor listing they reviewed by about 15 points: the score " +
+			"step underestimates hidden renovation costs. The rule now lowers a poor listing's score by 25 points.",
+		Files: []improve.DraftFile{{Path: "lessons/score.yaml", Content: string(lessons)}}}
+	dir := improveRecordings(root)
+	old, _ := filepath.Glob(filepath.Join(dir, "*.json"))
+	for _, f := range old {
+		_ = os.Remove(f)
+	}
+	recordDraft(t, lastEvidence(t, db), answer, dir, recordings)
+}
+
+// lastEvidence returns the payload of the last evidence the improve pipeline gathered.
+func lastEvidence(t *testing.T, db string) json.RawMessage {
+	t.Helper()
 	st := openStore(t, db)
 	defer func() { _ = st.Close() }()
 	items, err := st.Items(t.Context(), store.ItemFilter{Pipeline: improve.Name, Stream: "improve.evidence"})
 	if err != nil || len(items) == 0 {
 		t.Fatalf("no evidence gathered: %v", err)
 	}
-	payload := items[len(items)-1].Payload
+	return items[len(items)-1].Payload
+}
+
+// recordDraft records the fake drafter answering the draft agent's prompt for the evidence payload into each of
+// dirs, rendering the prompt as the improve package's draft action does.
+func recordDraft(t *testing.T, payload json.RawMessage, answer improve.Draft, dirs ...string) {
+	t.Helper()
 	envFile, err := pipeline.ParseEnvironment([]byte(improveEnvFile))
 	if err != nil {
 		t.Fatal(err)
@@ -247,30 +272,20 @@ func writeDraftRecording(t *testing.T, root, db, recordings string, in api.Insig
 	if err != nil {
 		t.Fatal(err)
 	}
-	lessons, err := os.ReadFile(filepath.Join(root, "examples", "m2-fixture", "testdata", "score-lessons-v2.yaml"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	answer, _ := json.Marshal(improve.Draft{Kind: "lessons", Insights: []string{in.ID},
-		Rationale: "Analysts lowered the score of every poor listing they reviewed by about 15 points: the score " +
-			"step underestimates hidden renovation costs. The rule now lowers a poor listing's score by 25 points.",
-		Files: []improve.DraftFile{{Path: "lessons/score.yaml", Content: string(lessons)}}})
+	text, _ := json.Marshal(answer)
+	reply := "```json\n" + string(text) + "\n```"
 	req := agent.Request{Model: act.Agent.Model, Prompt: prompt, Schema: act.Output}
-	text := "```json\n" + string(answer) + "\n```"
-	drafter := fakeDrafter{Text: text, TokensIn: int64(len(prompt) / 4), TokensOut: int64(len(text) / 4), Turns: 1}
-	dir := improveRecordings(root)
-	old, _ := filepath.Glob(filepath.Join(dir, "*.json"))
-	for _, f := range old {
-		_ = os.Remove(f)
-	}
-	for _, d := range []string{dir, recordings} {
+	drafter := fakeDrafter{Text: reply, TokensIn: int64(len(prompt) / 4), TokensOut: int64(len(reply) / 4), Turns: 1}
+	for _, d := range dirs {
+		if err := os.MkdirAll(d, 0o750); err != nil {
+			t.Fatal(err)
+		}
 		rec := agent.Recorder{Harness: drafter, Name: pipeline.HarnessAPI, Mode: agent.ModeRecord, Dir: d}
 		if _, err := rec.Run(t.Context(), req); err != nil {
 			t.Fatal(err)
 		}
 	}
-	key := agent.Key(pipeline.HarnessAPI, req)
-	t.Logf("recorded the draft %s", key)
+	t.Logf("recorded the draft %s", agent.Key(pipeline.HarnessAPI, req))
 }
 
 // fakeDrafter answers every draft with its response.

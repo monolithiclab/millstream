@@ -112,9 +112,36 @@ func (s *Sandbox) Launchers(ctx context.Context, pkg *pipeline.Package, dirs []s
 	return launchers, remove, nil
 }
 
+// SDKModule is the module path of the SDK proposed Go actions build against.
+const SDKModule = "github.com/monolithiclab/millstream/sdk/go"
+
+// GoMod returns the go.mod of a proposed Go action of module path module: the SDK's go version, and the SDK required
+// at v0.0.0, which the sandbox's workspace resolves to the SDK the binary embeds.
+func GoMod(module string) (string, error) {
+	v, err := sdkGoVersion()
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("module %s\n\ngo %s\n\nrequire %s v0.0.0\n", module, v, SDKModule), nil
+}
+
+// sdkGoVersion is the go version of the embedded SDK's go.mod.
+func sdkGoVersion() (string, error) {
+	data, err := millstream.Source.ReadFile("go.mod")
+	if err != nil {
+		return "", err
+	}
+	sc := bufio.NewScanner(bytes.NewReader(data))
+	for sc.Scan() {
+		if v, ok := strings.CutPrefix(strings.TrimSpace(sc.Text()), "go "); ok {
+			return strings.TrimSpace(v), nil
+		}
+	}
+	return "", errors.New("the embedded SDK's go.mod names no go version")
+}
+
 // writeSDK writes the SDK's source (millstream.Source, its tests left out) under dir and returns its go version.
 func writeSDK(dir string) (string, error) {
-	goVersion := ""
 	err := fs.WalkDir(millstream.Source, ".", func(p string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() || strings.HasSuffix(p, "_test.go") {
 			return err
@@ -123,24 +150,16 @@ func writeSDK(dir string) (string, error) {
 		if err != nil {
 			return err
 		}
-		if p == "go.mod" {
-			sc := bufio.NewScanner(bytes.NewReader(data))
-			for sc.Scan() {
-				if v, ok := strings.CutPrefix(strings.TrimSpace(sc.Text()), "go "); ok {
-					goVersion = strings.TrimSpace(v)
-				}
-			}
-		}
 		target := filepath.Join(dir, filepath.FromSlash(p))
 		if err := os.MkdirAll(filepath.Dir(target), 0o750); err != nil {
 			return err
 		}
 		return os.WriteFile(target, data, 0o600)
 	})
-	if err == nil && goVersion == "" {
-		err = errors.New("the embedded SDK's go.mod names no go version")
+	if err != nil {
+		return "", err
 	}
-	return goVersion, err
+	return sdkGoVersion()
 }
 
 // build compiles the Go module at src into out/action, in the image with no network: a workspace of the module and

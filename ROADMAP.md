@@ -33,6 +33,13 @@ earlier designs are in the git history of the spec.
   live in the engine's memory (the last 100); persist them if proposals need their reports after a restart.
   Replays of runs a replay or an import opened, and of evidence (which carries no run variables, resolved anew), are
   left out or approximated.
+- Distill (spec section 11.5): validation builds the candidate and runs its evals and the holdout, not its unit
+  tests (`go test` in the sandbox would); the holdout run gives the code an empty config and no variables, so a step
+  whose agent reads its config is measured without it; an accepted Go action reaches production as any exec action
+  does, built into its `bin/<os>-<arch>/` (nothing builds it on `apply` yet); the patch sets no `auditRate`, though
+  `effects: none` on the code allows one when the agent declares it too. A retention or erasure pass between the
+  gathering and the validation that removes an entity's oldest pair can move it to the holdout: record the training
+  entities if that ever matters. Python and other `improve.distill.language` values wait for a sandbox image each.
 - Proposals: the evals of a `prompt` proposal replay the action's recordings, which a changed prompt misses: the
   `improve` package validates in its harness's live or record mode.
 - The improve package: its actions call the API over plain HTTP on the address the engine serves; with `tls`, a

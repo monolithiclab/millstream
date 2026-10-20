@@ -216,6 +216,7 @@ func TestParseEnvironmentErrors(t *testing.T) {
 		"improve evidence":  {"improve: { evidence: { size: 3 } }\n", "improve.evidence.size: unknown key"},
 		"improve budget":    {"improve: { budget: { dayUsd: -1 } }\n", "improve.budget.dayUsd: must be a non-negative"},
 		"improve agreement": {"improve: { distill: { minAgreement: 2 } }\n", "improve.distill.minAgreement: must be a number from 0 to 1"},
+		"improve language":  {"improve: { distill: { language: python } }\n", `improve.distill.language: "python" is not supported yet: distilled actions are written in go`},
 		"improve filter":    {"improve: { filter: 3 }\n", "improve.filter: must be a mapping"},
 		"improve prod":      {"environment: production\nimprove: { enabled: true }\n", "improve: enabled: the improve pipeline runs in development"},
 		"patch-file dir":    {"improve: { publish: patch-file }\n", "improve.publish: patch-file needs improve.patchFile.dir"},

@@ -24,10 +24,18 @@ output:
   properties:
     pipeline: { type: string }
     baseRevision: { type: string }
-    kind: { enum: [lessons, prompt, config, topology] }
+    kind: { enum: [lessons, prompt, config, topology, distill] }
     fingerprint: { type: string }
     insights: { type: array, items: { type: string } }
     hint: { type: object }
     brief: { type: string }
+    distill: # a distill idea's step, its agent, the new action and the holdout's boundary (spec section 11.5)
+      type: object
+      properties:
+        step: { type: string }
+        agent: { type: string }
+        action: { type: string }
+        holdoutFrom: { type: string, format: date-time }
+      required: [step, agent, action, holdoutFrom]
   required: [pipeline, baseRevision, kind, fingerprint, insights, brief]
 runtime: { exec: { command: [millstream, improve-action, gather-evidence] } }

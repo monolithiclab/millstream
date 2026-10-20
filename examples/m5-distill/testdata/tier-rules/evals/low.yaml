@@ -1,0 +1,2 @@
+input: { id: E1, city: Lyon, priceEur: 100000, surfaceM2: 50 }
+assert: [output.tier == "low", output.id == "E1", output.surfaceM2 == 50]

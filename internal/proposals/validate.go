@@ -13,17 +13,19 @@ import (
 	"strings"
 
 	"github.com/monolithiclab/millstream/internal/agent"
+	"github.com/monolithiclab/millstream/internal/distill"
 	"github.com/monolithiclab/millstream/internal/eval"
 	"github.com/monolithiclab/millstream/internal/patch"
 	"github.com/monolithiclab/millstream/internal/pipeline"
 	"github.com/monolithiclab/millstream/internal/runtime/exec"
 	"github.com/monolithiclab/millstream/internal/runtime/sandbox"
+	"github.com/monolithiclab/millstream/internal/store"
 )
 
 // Validation (spec section 11.3) is the engine's, never an LLM's: check on the patched package, then the evals of
 // every affected action before and after, judged by the base revision's evals (a proposal that changes evals has
 // its new evals reported separately, so it cannot redefine its own success), then a backtest. A proposal is ready
-// when all three pass.
+// when all three pass. A distill proposal is measured on its holdout in the backtest's place (distill.go).
 
 // Backtester runs a backtest of a patch (spec section 11.3, POST /api/v1/backtests): the changed steps replayed on a
 // sample of past items in a scratch store, before and after. The engine's implementation adapts the backtest
@@ -84,6 +86,10 @@ type Validator struct {
 	Evals    Evals
 	// Backtest runs the backtest (backtest.ForProposals); without one, every backtest fails.
 	Backtest Backtester
+	// Holdout reads the holdout a distill proposal is validated on (the backtester's), and Distill holds the
+	// thresholds it must meet there (improve.distill); without a source, every distill proposal fails.
+	Holdout HoldoutSource
+	Distill distill.Thresholds
 	// Scratch is where the packages are written for the evals, each under its content hash as the engine's package
 	// directory holds them (and prunes them); empty writes them in a temporary directory removed afterwards.
 	Scratch string
@@ -100,6 +106,8 @@ type Report struct {
 	Evals    []EvalReport `json:"evals"`
 	NewEvals []EvalReport `json:"newEvals"`
 	Backtest Backtest     `json:"backtest"`
+	// Distill is a distill proposal's measure on its holdout, which takes the backtest's place (spec section 11.5).
+	Distill *DistillReport `json:"distill,omitempty"`
 }
 
 // Check is check's verdict on the patched package.
@@ -138,6 +146,9 @@ type EvalScore struct {
 	Passed bool    `json:"passed"`
 	Score  float64 `json:"score"`
 	Error  string  `json:"error,omitempty"`
+	// Fallback says the step's action abstained and its fallback answered the case (spec section 11.5).
+	Fallback  bool `json:"fallback,omitempty"`
+	abstained bool
 }
 
 // Backtest is the backtest's verdict and report, or why it did not run.
@@ -183,6 +194,12 @@ func (v Validator) Validate(ctx context.Context, pipelineName string, p Prepared
 	r.Evals, r.NewEvals = v.evals(ctx, pipelineName, before, after, p.Changes)
 	evalsPassed := !slices.ContainsFunc(r.Evals, func(e EvalReport) bool { return !e.Passed })
 	// The touched steps the patched pipeline still has: a removed step has nothing to replay.
+	if p.Kind == store.ProposalDistill {
+		r.Distill = v.distill(ctx, pipelineName, p, after)
+		r.Backtest.Skipped = "a distill proposal is judged on its holdout instead (spec section 11.5)"
+		r.Passed = evalsPassed && r.Distill.Passed
+		return r, nil
+	}
 	steps := slices.DeleteFunc(slices.Clone(p.Steps), func(s string) bool {
 		_, ok := p.Patched.Pipeline.Steps[s]
 		return !ok
@@ -305,9 +322,14 @@ func (v Validator) compare(ctx context.Context, pipelineName, step string, base,
 	if err != nil {
 		return fail(fmt.Errorf("resolve %s after the patch: %w", afterRef, err))
 	}
+	fallback, fallbackRef := v.abstainFallback(patched, step)
 	for _, c := range cases {
 		before := v.run(ctx, pipelineName, base, beforeRef, beforeAct, c)
 		after := v.run(ctx, pipelineName, patched, afterRef, afterAct, c)
+		if after.abstained && fallback != nil {
+			after = v.run(ctx, pipelineName, patched, fallbackRef, fallback, c)
+			after.Fallback = true
+		}
 		rep.Cases = append(rep.Cases, EvalCase{Case: c.Name, Before: &before, After: after})
 		if before.Passed && !after.Passed {
 			rep.Passed = false
@@ -354,7 +376,20 @@ func (v Validator) run(ctx context.Context, pipelineName string, s side, ref str
 		}
 	}
 	res := eval.Run(ctx, opts, c)
-	return EvalScore{Passed: res.Passes(), Score: res.Score, Error: res.Err}
+	return EvalScore{Passed: res.Passes(), Score: res.Score, Error: res.Err, abstained: res.Abstained}
+}
+
+// abstainFallback resolves the fallback a step of a side hands its abstentions to, nil without one.
+func (v Validator) abstainFallback(s side, step string) (*pipeline.Action, string) {
+	st, ok := s.pkg.Pipeline.Steps[step]
+	if !ok || st.Fallback == nil || !slices.Contains(st.Fallback.When, "abstain") {
+		return nil, ""
+	}
+	act, err := s.resolver.Resolve(s.pkg, st.Fallback.Action)
+	if err != nil {
+		return nil, ""
+	}
+	return act, st.Fallback.Action
 }
 
 // localDir returns the action directory of a local reference, ./actions/<dir>.

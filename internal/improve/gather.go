@@ -33,6 +33,8 @@ type Evidence struct {
 	Insights    []string       `json:"insights"`
 	Hint        map[string]any `json:"hint,omitempty"`
 	Brief       string         `json:"brief"`
+	// Distill is a distill idea's step, agent, new action and holdout boundary.
+	Distill *DistillEvidence `json:"distill,omitempty"`
 }
 
 // idea is a proposal an insight calls for: its kind, and the hint or pattern behind it.
@@ -120,7 +122,7 @@ func (a *action) openIdeas(ctx context.Context, only string, files map[string]ap
 
 // ideasOf are the proposals an insight calls for (spec section 11.6): a reviewPattern's hints (lessons, config for
 // autoApprove and uncovered reasons, topology for a filter), and config for a failure cluster's retries or a slow
-// step's timeouts and concurrency. Other kinds draft nothing here (distillable is the distill proposal's).
+// step's timeouts and concurrency, and distill for a distillable agent step (spec section 11.5).
 func ideasOf(in *api.Insight) []idea {
 	switch in.Kind {
 	case pipeline.InsightReviewPattern:
@@ -143,6 +145,8 @@ func ideasOf(in *api.Insight) []idea {
 		return out
 	case pipeline.InsightFailureCluster, pipeline.InsightSlowStep:
 		return []idea{{insight: in, kind: string(store.ProposalConfig), step: in.Scope}}
+	case pipeline.InsightDistillable:
+		return []idea{{insight: in, kind: string(store.ProposalDistill), step: in.Scope}}
 	}
 	return nil
 }
@@ -220,8 +224,19 @@ func (a *action) evidence(ctx context.Context, ideas []idea, files map[string]ap
 			}
 		}
 		ev := Evidence{Pipeline: name, BaseRevision: pd.files.PackageHash, Kind: id.kind, Fingerprint: fp,
-			Insights: []string{}, Hint: id.hint,
-			Brief: brief(id, pd.files, examples, rejected)}
+			Insights: []string{}, Hint: id.hint}
+		if id.kind == string(store.ProposalDistill) {
+			de, b, err := a.distillEvidence(ctx, id, pd.files)
+			if err != nil {
+				return nil, err
+			}
+			if de == nil {
+				continue
+			}
+			ev.Distill, ev.Brief = de, b+rejections(rejected)
+		} else {
+			ev.Brief = brief(id, pd.files, examples, rejected)
+		}
 		if id.insight != nil {
 			ev.Insights = []string{id.insight.ID}
 		}

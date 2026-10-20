@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"slices"
 	"sync"
 	"time"
@@ -116,3 +117,20 @@ func (j *Jobs) Get(id string) (Job, bool) {
 
 // Wait waits for the backtests started so far to end.
 func (j *Jobs) Wait() { j.wg.Wait() }
+
+// trainer is a Runner that serves the distill proposal's training sets (Backtester.Training).
+type trainer interface {
+	Training(ctx context.Context, pipelineName, step string) (Training, error)
+}
+
+// ErrNoTraining is returned by Jobs.Training when its runner serves no training sets.
+var ErrNoTraining = errors.New("this engine serves no distill training sets")
+
+// Training returns the training side of an agent step's split, from the runner (Backtester.Training).
+func (j *Jobs) Training(ctx context.Context, pipelineName, step string) (Training, error) {
+	t, ok := j.r.(trainer)
+	if !ok {
+		return Training{}, ErrNoTraining
+	}
+	return t.Training(ctx, pipelineName, step)
+}

@@ -21,6 +21,8 @@ import (
 
 // Prepared is a patch checked against its kind's path rules and applied to its base: what a proposal records.
 type Prepared struct {
+	// Kind is the proposal's kind, empty for a revision's change (Diff).
+	Kind store.ProposalKind
 	// Patch is the patch, which SHA256 hashes (patch.Hash).
 	Patch  string
 	SHA256 string
@@ -68,8 +70,8 @@ func prepared(kind store.ProposalKind, base *pipeline.Package, text string, p *p
 	if err != nil {
 		return Prepared{}, fmt.Errorf("%w: the patched package does not parse: %w", patch.ErrPatch, err)
 	}
-	return Prepared{Patch: text, SHA256: patch.Hash([]byte(text)), Changes: p.Files, Base: base, Patched: patched,
-		Steps: touchedSteps(base.Pipeline, patched.Pipeline, p.Files)}, nil
+	return Prepared{Kind: kind, Patch: text, SHA256: patch.Hash([]byte(text)), Changes: p.Files, Base: base,
+		Patched: patched, Steps: touchedSteps(base.Pipeline, patched.Pipeline, p.Files)}, nil
 }
 
 // Rebase moves a stale proposal's patch onto a newer base (spec section 11.3): each hunk applies where its context

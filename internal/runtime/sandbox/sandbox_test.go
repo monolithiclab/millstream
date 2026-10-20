@@ -153,3 +153,12 @@ type jobFunc func(ctx context.Context, j container.Job, stdout, stderr io.Writer
 func (f jobFunc) RunJob(ctx context.Context, j container.Job, stdout, stderr io.Writer) error {
 	return f(ctx, j, stdout, stderr)
 }
+
+// TestGoMod: a proposed action's go.mod requires the SDK the sandbox builds against, at the SDK's go version.
+func TestGoMod(t *testing.T) {
+	got, err := GoMod("score-rules")
+	v, verr := sdkGoVersion()
+	if err != nil || verr != nil || got != "module score-rules\n\ngo "+v+"\n\nrequire "+SDKModule+" v0.0.0\n" {
+		t.Fatalf("%q, %v, %v", got, err, verr)
+	}
+}

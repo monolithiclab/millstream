@@ -1,0 +1,28 @@
+# The M5 distill fixture (spec section 11.5): an agent step whose outputs follow a learnable rule, the price tier of
+# a listing from its price per square metre. Each day's list emits that day's synthetic listings, all new; tier
+# runs an agent through the api harness, whose calls the end-to-end suite records against a fake model applying
+# tiers.Tier. Enough days make tier a distillable step, and the improve pipeline drafts the code replacing it.
+pipeline: m5-distill
+description: Synthetic listings sorted into price tiers by an agent, the M5 distill end-to-end fixture
+
+vars:
+  day: 1 # the listed day: each run of the end-to-end suite sets it
+  count: 270 # listings a day
+
+secrets: [tierKey]
+
+triggers:
+  adhoc: { manual: {} }
+
+steps:
+  list:
+    action: ./actions/list
+    in: trigger.adhoc
+    out: listings.new
+    config: { day: "${vars.day}", count: "${vars.count}" }
+
+  tier:
+    action: ./actions/tier
+    in: listings.new
+    out: listings.tiered
+    concurrency: 8
