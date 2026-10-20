@@ -105,6 +105,11 @@ type Client struct {
 
 	pkgs *packages
 
+	// preparing are the leases Pull holds while it makes them ready to run (a package fetched, a spec built):
+	// Heartbeat renews them, so a slow first fetch never lets a lease expire before the node starts it.
+	prepMu    sync.Mutex
+	preparing map[store.DeliveryKey]store.LeaseRef
+
 	relayMu      sync.Mutex
 	relay        []nodewire.LogLine
 	relayDropped int
@@ -473,6 +478,8 @@ func (t *Client) Pull(ctx context.Context, owner string, maxN int) ([]node.Assig
 		wait+attemptTimeout); err != nil {
 		return nil, err
 	}
+	t.prepare(res.Assignments)
+	defer t.prepared(res.Assignments)
 	out := make([]node.Assignment, 0, len(res.Assignments))
 	for _, w := range res.Assignments {
 		a, err := t.assignment(ctx, w)
@@ -483,6 +490,28 @@ func (t *Client) Pull(ctx context.Context, owner string, maxN int) ([]node.Assig
 		out = append(out, a)
 	}
 	return out, nil
+}
+
+// prepare records the leases Pull is making ready to run, for Heartbeat to renew.
+func (t *Client) prepare(as []nodewire.Assignment) {
+	t.prepMu.Lock()
+	defer t.prepMu.Unlock()
+	if t.preparing == nil {
+		t.preparing = map[store.DeliveryKey]store.LeaseRef{}
+	}
+	for _, w := range as {
+		ref := w.Lease.ToLease().Ref()
+		t.preparing[ref.Key()] = ref
+	}
+}
+
+// prepared forgets them once Pull returns: the node holds those it starts.
+func (t *Client) prepared(as []nodewire.Assignment) {
+	t.prepMu.Lock()
+	defer t.prepMu.Unlock()
+	for _, w := range as {
+		delete(t.preparing, w.Lease.ToLease().Ref().Key())
+	}
 }
 
 // assignment makes a wire assignment ready to run here: its package fetched or found in the cache, its process
@@ -529,6 +558,13 @@ func (t *Client) failUnprepared(ctx context.Context, w nodewire.Assignment, err 
 
 // Heartbeat implements node.Transport: one attempt, the next heartbeat trying again.
 func (t *Client) Heartbeat(ctx context.Context, owner string, refs []store.LeaseRef) ([]store.LeaseRef, error) {
+	t.prepMu.Lock()
+	for key, ref := range t.preparing {
+		if !slices.ContainsFunc(refs, func(r store.LeaseRef) bool { return r.Key() == key }) {
+			refs = append(refs, ref)
+		}
+	}
+	t.prepMu.Unlock()
 	var res nodewire.Lost
 	if err := t.call(ctx, http.MethodPost, nodewire.PathHeartbeat, nil,
 		nodewire.Heartbeat{Node: owner, Leases: nodewire.FromRefs(refs)}, &res, false, attemptTimeout); err != nil {

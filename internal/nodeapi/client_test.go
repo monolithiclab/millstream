@@ -1,6 +1,7 @@
 package nodeapi_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -259,4 +260,48 @@ func (d *deployment) pull(tr *nodeapi.Client, id string) node.Assignment {
 		d.t.Fatalf("pull: %d, %v", len(as), err)
 	}
 	return as[0]
+}
+
+// A lease Pull holds while it makes the delivery ready to run (its package fetched on a node's first delivery) is
+// renewed by the heartbeat meanwhile: a slow fetch never lets it expire before the node starts it.
+func TestPreparingLeaseRenewed(t *testing.T) {
+	d := newDeployment(t)
+	tr, err := nodeapi.NewClient(nodeapi.ClientOptions{Join: []string{"https://a:7070"}, Token: token,
+		HTTP: &http.Client{Transport: d.hosts}, Node: nodewire.Register{Node: "n1", Runtimes: []string{"exec"}, Slots: 1},
+		StateDir: scratch(t), TmpDir: shared(t, "tmp"), PullWait: time.Millisecond})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tr.Register(d.ctx); err != nil {
+		t.Fatal(err)
+	}
+	inner, renewed, fetched := d.hosts.h["a:7070"], -1, false
+	d.hosts.set("a:7070", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case nodewire.PathPackage: // the heartbeat beats while the package is on its way
+			fetched = true
+			if _, err := tr.Heartbeat(r.Context(), "n1", nil); err != nil {
+				t.Error(err)
+			}
+		case nodewire.PathHeartbeat:
+			body, _ := io.ReadAll(r.Body)
+			var hb nodewire.Heartbeat
+			if err := json.Unmarshal(body, &hb); err != nil {
+				t.Error(err)
+			}
+			renewed = len(hb.Leases)
+			r.Body = io.NopCloser(bytes.NewReader(body))
+		}
+		inner.ServeHTTP(w, r)
+	}))
+	if _, _, err := d.e.Fire(d.ctx, "remote", "go", "k1", json.RawMessage(`{}`)); err != nil {
+		t.Fatal(err)
+	}
+	d.pull(tr, "n1")
+	if !fetched || renewed != 1 {
+		t.Fatalf("package fetched %v, heartbeat during it renewed %d leases, want 1", fetched, renewed)
+	}
+	if _, err := tr.Heartbeat(d.ctx, "n1", nil); err != nil || renewed != 0 {
+		t.Fatalf("after Pull the node holds what it started: renewed %d, %v", renewed, err)
+	}
 }
