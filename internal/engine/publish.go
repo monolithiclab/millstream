@@ -2,13 +2,12 @@ package engine
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"slices"
 	"sync"
 
+	"github.com/monolithiclab/millstream/internal/insights"
 	"github.com/monolithiclab/millstream/internal/pipeline"
 	"github.com/monolithiclab/millstream/internal/proposals"
 	"github.com/monolithiclab/millstream/internal/store"
@@ -27,7 +26,8 @@ import (
 func (e *Engine) ApplyProposal(ctx context.Context, proposalID, pipelineName, base string, files map[string][]byte,
 ) (store.RevisionID, error) {
 	if e.opts.Mode == pipeline.ModeProduction {
-		return 0, fmt.Errorf("apply proposal %s: improve.publish: apply is %w", proposalID, pipeline.ErrProduction)
+		return 0, fmt.Errorf("apply proposal %s: improve.publish: apply is %w: %w", proposalID, pipeline.ErrProduction,
+			store.ErrConflict)
 	}
 	pkg, err := e.PackageFromFiles(files)
 	if err != nil {
@@ -98,11 +98,11 @@ func (e *Engine) checkCombination(ctx context.Context, pipelineName string, rev 
 func (e *Engine) validateCombination(ctx context.Context, pipelineName string, rev store.RevisionID, parent,
 	hash string, ids []string,
 ) error {
-	before, err := e.storedPackage(ctx, parent)
+	before, err := e.StoredPackage(ctx, parent)
 	if err != nil {
 		return err
 	}
-	after, err := e.storedPackage(ctx, hash)
+	after, err := e.StoredPackage(ctx, hash)
 	if err != nil {
 		return err
 	}
@@ -146,27 +146,29 @@ func (e *Engine) raiseRegression(ctx context.Context, pipelineName string, rev s
 	if err != nil {
 		return err
 	}
-	sum := sha256.Sum256([]byte(pipeline.InsightRegression + "\x00" + pipelineName + "\x00" + hash))
 	now := e.opts.Now().UTC()
-	found := store.Insight{Pipeline: pipelineName, ID: "in_" + hex.EncodeToString(sum[:8]),
+	found := store.Insight{Pipeline: pipelineName, ID: insights.Fingerprint(pipeline.InsightRegression, pipelineName, hash),
 		Kind: pipeline.InsightRegression, Scope: "pipeline", WindowStart: r.AppliedAt, WindowEnd: now,
 		Severity: pipeline.SeverityWarning, Evidence: evidence}
+	// Background validations raise theirs one at a time: each pass keeps the others' open regressions.
+	e.regressionMu.Lock()
+	defer e.regressionMu.Unlock()
 	open, err := e.st.Insights(ctx, store.InsightFilter{Pipeline: pipelineName})
 	if err != nil {
 		return err
 	}
-	insights := []store.Insight{found}
+	kept := []store.Insight{found}
 	for _, in := range open {
 		if in.Kind == pipeline.InsightRegression && in.ID != found.ID && in.State != store.InsightResolved {
-			insights = append(insights, in)
+			kept = append(kept, in)
 		}
 	}
 	return e.st.RecordInsights(ctx, store.InsightReport{Pipeline: pipelineName,
-		Kinds: []string{pipeline.InsightRegression}, Insights: insights})
+		Kinds: []string{pipeline.InsightRegression}, Insights: kept})
 }
 
-// storedPackage returns the package stored under hash, as its files say, without writing it anywhere.
-func (e *Engine) storedPackage(ctx context.Context, hash string) (*pipeline.Package, error) {
+// StoredPackage returns the package stored under hash, as its files say, without writing it anywhere.
+func (e *Engine) StoredPackage(ctx context.Context, hash string) (*pipeline.Package, error) {
 	bundle, err := e.st.Package(ctx, hash)
 	if err != nil {
 		return nil, err

@@ -3,11 +3,13 @@ package backtest
 import (
 	"cmp"
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"maps"
 	"os"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -16,6 +18,7 @@ import (
 	"github.com/monolithiclab/millstream/internal/patch"
 	"github.com/monolithiclab/millstream/internal/pipeline"
 	"github.com/monolithiclab/millstream/internal/runtime/exec"
+	"github.com/monolithiclab/millstream/internal/runtime/sandbox"
 	"github.com/monolithiclab/millstream/internal/store"
 )
 
@@ -43,6 +46,9 @@ type Options struct {
 	Secrets   func(pipelineName string) pipeline.SecretLookup
 	// Check is what the patched package is checked with.
 	Check pipeline.CheckOptions
+	// Sandbox runs the proposed exec actions, those whose files the patch touches (sandbox.Sandbox); without one, a
+	// patch touching an exec action's files is refused (ErrUntrusted).
+	Sandbox sandbox.Builder
 	// Slots is how many deliveries a replay runs at once; zero means 4.
 	Slots int
 	// Timeout bounds each replay; zero means DefaultTimeout.
@@ -178,8 +184,10 @@ func (b *Backtester) Run(ctx context.Context, req Request) (*Report, error) {
 		return nil, fmt.Errorf("patched package: %w: %w", err, store.ErrInvalid)
 	}
 	touched := p.Paths()
-	if err := untrusted(touched, baseInfo, patchedInfo); err != nil {
-		return nil, err
+	proposedDirs, proposedExec := sandbox.Proposed(patched, b.opts.Resolver, touched)
+	if len(proposedExec) > 0 && b.opts.Sandbox == nil {
+		return nil, fmt.Errorf("%w: %s, an exec action, would run with the node's privileges: this deployment "+
+			"has no container runtime", ErrUntrusted, strings.TrimSuffix(proposedExec[0], "/"))
 	}
 	changed, err := changedSteps(base, patched, touched, req.Steps, baseInfo, patchedInfo)
 	if err != nil {
@@ -213,6 +221,18 @@ func (b *Backtester) Run(ctx context.Context, req Request) (*Report, error) {
 	if patched, err = pipeline.Materialize(work, patched.Files); err != nil {
 		return nil, err
 	}
+	patchedLaunchers := b.opts.Launchers
+	if len(proposedExec) > 0 {
+		var cleanup func()
+		patchedLaunchers, cleanup, err = b.opts.Sandbox.Launchers(ctx, patched, proposedExec, b.opts.Launchers)
+		switch {
+		case errors.Is(err, sandbox.ErrUnsupported):
+			return nil, fmt.Errorf("%w: %w", ErrUntrusted, err)
+		case err != nil:
+			return nil, fmt.Errorf("the proposed code: %w: %w", err, store.ErrInvalid)
+		}
+		defer cleanup()
+	}
 	isChanged := map[string]bool{}
 	for _, c := range changed {
 		isChanged[c] = true
@@ -222,14 +242,18 @@ func (b *Backtester) Run(ctx context.Context, req Request) (*Report, error) {
 	limit, limited := b.remaining()
 	replays := make([]*replayed, 2)
 	for i, side := range []struct {
-		pkg  *pipeline.Package
-		info actionInfo
-	}{{base, baseInfo}, {patched, patchedInfo}} {
+		pkg       *pipeline.Package
+		info      actionInfo
+		launchers map[string]exec.Launcher
+		resolver  pipeline.ActionResolver
+	}{{base, baseInfo, b.opts.Launchers, b.opts.Resolver},
+		{patched, patchedInfo, patchedLaunchers, sandbox.Confine(b.opts.Resolver, proposedDirs)}} {
 		firings, err := b.firings(h, s, side.pkg.Pipeline)
 		if err != nil {
 			return nil, err
 		}
-		r, err := b.replay(ctx, work, replayOptions{pkg: side.pkg, firings: firings, limit: limit - spent,
+		r, err := b.replay(ctx, work, replayOptions{pkg: side.pkg, launchers: side.launchers,
+			resolver: side.resolver, firings: firings, limit: limit - spent,
 			limited: limited, stubber: &stubber{h: h, keep: s.keep, changed: isChanged, external: side.info.external,
 				review: side.info.review, decisions: map[string]decision{}}})
 		if r != nil {

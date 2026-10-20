@@ -1,6 +1,8 @@
 package container
 
 import (
+	"context"
+	"io"
 	"os"
 	"path/filepath"
 	"slices"
@@ -139,5 +141,28 @@ func TestJobArgs(t *testing.T) {
 	j.Network = true
 	if args := rt.JobArgs(j); slices.Contains(args, "none") || strings.Contains(strings.Join(args, " "), "secret") {
 		t.Fatalf("a job with the network: %q", args)
+	}
+}
+
+// TestRunJob: a job runs through the CLI, its container removed when its context ends first; a mount path with a
+// comma is refused.
+func TestRunJob(t *testing.T) {
+	t.Parallel()
+	rt, calls := fakeRuntime(t, nil, nil)
+	ctx, cancel := context.WithCancel(t.Context())
+	j := Job{Name: "millstream-job-2", Image: "img@sha256:abc", Env: []string{"TOKEN=secret"}}
+	if err := rt.RunJob(ctx, j, io.Discard, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	cancel()
+	_ = rt.RunJob(ctx, j, io.Discard, io.Discard) // a process CLI (the e2e build's) is killed: either answer will do
+	got := calls()
+	if len(got) < 2 || !strings.HasPrefix(got[0], "run --rm") || !strings.HasSuffix(got[0], "--env TOKEN img@sha256:abc") ||
+		got[len(got)-1] != "rm --force millstream-job-2" {
+		t.Fatalf("calls = %q", got)
+	}
+	j.Mounts = []exec.Mount{{Source: "/a,b", Target: "/x"}}
+	if err := rt.RunJob(t.Context(), j, io.Discard, io.Discard); err == nil || !strings.Contains(err.Error(), "comma") {
+		t.Fatalf("a comma in a mount: %v", err)
 	}
 }

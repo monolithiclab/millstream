@@ -207,7 +207,7 @@ func (d *Data) insight(kind, scope, severity string, evidence map[string]any, id
 		body = []byte(`{"error":` + strconv.Quote("encode evidence: "+err.Error()) + `}`)
 	}
 	return store.Insight{
-		Pipeline: d.Pipeline, ID: fingerprint(kind, d.Pipeline, id...), Kind: kind, Scope: scope,
+		Pipeline: d.Pipeline, ID: Fingerprint(kind, d.Pipeline, id...), Kind: kind, Scope: scope,
 		WindowStart: d.windowStart(), WindowEnd: d.Now, Severity: severity, Evidence: body,
 	}
 }

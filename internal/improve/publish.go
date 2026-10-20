@@ -4,9 +4,14 @@ import (
 	"cmp"
 	"context"
 	"fmt"
+	"net/http"
+	"net/url"
+	"strings"
 	"sync"
 
 	"github.com/monolithiclab/millstream/internal/api"
+	"github.com/monolithiclab/millstream/internal/patch"
+	"github.com/monolithiclab/millstream/internal/pipeline"
 	"github.com/monolithiclab/millstream/internal/protocol"
 	"github.com/monolithiclab/millstream/internal/store"
 )
@@ -135,4 +140,39 @@ func (a *action) publishOne(ctx context.Context, p api.Proposal) (Outcome, error
 	}
 	o.Published, o.Location, o.Message = res.Published, res.Location, cmp.Or(res.Message, o.Message)
 	return o, nil
+}
+
+// The publish actions run in the engine, behind POST /proposals/{id}/publish (spec section 11.7): the publish step
+// reaches them by name through routePublisher, which every name of pipeline.PublishActions maps to.
+func init() {
+	for _, name := range pipeline.PublishActions {
+		RegisterPublisher(name, routePublisher{})
+	}
+}
+
+// routePublisher hands an accepted proposal to the engine's publish action, which publishes it once and, asked
+// again, answers where it went.
+type routePublisher struct {
+	http *http.Client // nil means http.DefaultClient
+}
+
+// Publish implements Publisher.
+func (r routePublisher) Publish(ctx context.Context, req PublishRequest) (PublishResult, error) {
+	p := req.Proposal
+	if got := patch.Hash([]byte(p.Patch)); got != p.PatchSHA256 {
+		return PublishResult{}, fmt.Errorf("proposal %s: its patch hashes to %.12s, not the validated %.12s", p.ID,
+			got, p.PatchSHA256)
+	}
+	c := &client{base: strings.TrimSuffix(req.API, "/") + api.Prefix, token: req.Token,
+		http: cmp.Or(r.http, http.DefaultClient)}
+	var out api.PublishedProposal
+	if err := c.do(ctx, http.MethodPost, "/proposals/"+url.PathEscape(p.ID)+"/publish",
+		api.PublishRequest{PatchSHA256: p.PatchSHA256}, &out); err != nil {
+		return PublishResult{}, err
+	}
+	msg := "published by " + out.Publisher
+	if out.Again {
+		msg = "published already by " + out.Publisher
+	}
+	return PublishResult{Published: true, Location: out.Location, Message: msg}, nil
 }

@@ -3,6 +3,7 @@ package proposals
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 	"testing"
@@ -148,5 +149,22 @@ func TestFingerprint(t *testing.T) {
 	}
 	if a == Fingerprint("p", store.ProposalPrompt, []string{"i1", "i2"}, []string{"a", "b"}) {
 		t.Fatal("the kind does not change the fingerprint")
+	}
+}
+
+// TestDiff: the change between two revisions, under no kind's rules; the same files are no change.
+func TestDiff(t *testing.T) {
+	base := basePackage(t)
+	files := maps.Clone(base.Files)
+	files["lessons/extra.yaml"] = []byte("lessons: []\n")
+	patched, err := pipeline.FromFiles("", files)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d, err := Diff(base, patched); err != nil || d.SHA256 == "" || len(d.Changes) == 0 {
+		t.Fatalf("Diff = %+v, %v", d, err)
+	}
+	if _, err := Diff(base, base); err == nil {
+		t.Fatal("Diff of a revision with itself: no error")
 	}
 }

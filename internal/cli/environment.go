@@ -12,6 +12,7 @@ import (
 	"github.com/monolithiclab/millstream/internal/review"
 	"github.com/monolithiclab/millstream/internal/runtime/container"
 	"github.com/monolithiclab/millstream/internal/runtime/exec"
+	"github.com/monolithiclab/millstream/internal/runtime/sandbox"
 )
 
 // environment reads the environment file: --env-file, else ./millstream.yaml when it exists.
@@ -45,6 +46,16 @@ func launchers(rt *Runtime, env *pipeline.Environment) map[string]exec.Launcher 
 		l[pipeline.KindContainer] = container.Launcher{Runtime: crt}
 	}
 	return l
+}
+
+// candidateSandbox is the container sandbox proposed exec code runs in (spec section 15.3), nil without a container
+// runtime: backtests and evals then refuse to run it.
+func candidateSandbox(rt *Runtime, env *pipeline.Environment) sandbox.Builder {
+	crt, ok := container.Find(env.ContainerRuntime, rt.Env)
+	if !ok || rt.Launchers != nil { // tests that run actions in-process run no container
+		return nil
+	}
+	return sandbox.New(crt)
 }
 
 // agents returns how the engine runs agent steps: in a container sandbox when the runtime the environment selects is

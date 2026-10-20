@@ -74,7 +74,6 @@ func (c ApplyCmd) remote(rt *Runtime, cl *apiClient, pkgs []*pipeline.Package, c
 	req := api.ApplyRequest{Force: c.Force, Message: c.Message}
 	for _, pkg := range pkgs {
 		req.Packages = append(req.Packages, api.PackageFiles{Files: pkg.Files, Proposals: carried[pkg.Pipeline.Name]})
-		carried[pkg.Pipeline.Name] = nil // a pipeline given twice carries its proposals once
 	}
 	var res api.ApplyResponse
 	if _, err := cl.post(rt.Ctx, "/revisions", req, &res); err != nil {

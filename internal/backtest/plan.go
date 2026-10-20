@@ -56,22 +56,6 @@ func resolveActions(pkg *pipeline.Package, r pipeline.ActionResolver) (actionInf
 	return info, nil
 }
 
-// untrusted refuses a patch touching an exec action's files, in either package: exec actions run with the node's
-// privileges, outside the container sandbox proposed code is confined to (spec section 15.3).
-func untrusted(touched []string, infos ...actionInfo) error {
-	for _, p := range touched {
-		for _, info := range infos {
-			for _, dir := range info.execDirs {
-				if strings.HasPrefix(p, dir) {
-					return fmt.Errorf("%w: %s belongs to the exec action %s, which would run unsandboxed", ErrUntrusted,
-						p, strings.TrimSuffix(dir, "/"))
-				}
-			}
-		}
-	}
-	return nil
-}
-
 // varRef finds the variables an expression or a config names.
 var varRef = regexp.MustCompile(`\bvars\.([A-Za-z_][A-Za-z0-9_]*)`)
 

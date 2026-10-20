@@ -33,7 +33,7 @@ func TestNormalise(t *testing.T) {
 	if len(long) > maxNormalised {
 		t.Errorf("normalised message of %d bytes", len(long))
 	}
-	if fingerprint("k", "p", "a", "b") == fingerprint("k", "p", "ab") {
+	if Fingerprint("k", "p", "a", "b") == Fingerprint("k", "p", "ab") {
 		t.Error("fingerprint parts are ambiguous")
 	}
 }

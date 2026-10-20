@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"slices"
 	"strings"
@@ -14,6 +15,8 @@ import (
 	"github.com/monolithiclab/millstream/internal/ids"
 	"github.com/monolithiclab/millstream/internal/patch"
 	"github.com/monolithiclab/millstream/internal/pipeline"
+	"github.com/monolithiclab/millstream/internal/runtime/exec"
+	"github.com/monolithiclab/millstream/internal/runtime/sandbox"
 	"github.com/monolithiclab/millstream/internal/store"
 	"github.com/monolithiclab/millstream/internal/store/sqlite"
 	"github.com/monolithiclab/millstream/internal/store/sqlite/sqlitetest"
@@ -119,7 +122,7 @@ func TestRunRefusals(t *testing.T) {
 	_, unknown := edit(t, "", files, "bonus: 0", "bonus: 1")
 	touched := fixtureFiles()
 	touched["actions/crm/notes.txt"] = []byte("changed\n")
-	exec, _ := patch.Format(fixtureHash, files, touched)
+	execCode, _ := patch.Format(fixtureHash, files, touched)
 	stale := []byte("--- a/pipeline.yaml\n+++ b/pipeline.yaml\n@@ -1 +1 @@\n-pipeline: other\n+pipeline: bt\n")
 	_, broken := edit(t, fixtureHash, files, "in: shortlist", "in: nowhere")
 	lessons := fixtureFiles()
@@ -134,7 +137,7 @@ func TestRunRefusals(t *testing.T) {
 		"unknown base": {Request{Pipeline: "bt", BaseRevision: "ff" + fixtureHash[2:], Patch: unknown}, store.ErrNotFound},
 		"stale":        {Request{Pipeline: "bt", BaseRevision: fixtureHash, Patch: stale}, patch.ErrPatch},
 		"check":        {Request{Pipeline: "bt", BaseRevision: fixtureHash, Patch: broken}, store.ErrInvalid},
-		"exec code":    {Request{Pipeline: "bt", BaseRevision: fixtureHash, Patch: exec}, ErrUntrusted},
+		"exec code":    {Request{Pipeline: "bt", BaseRevision: fixtureHash, Patch: execCode}, ErrUntrusted},
 		"no step":      {Request{Pipeline: "bt", BaseRevision: fixtureHash, Patch: nothing}, ErrNoHistory},
 		"no history":   {Request{Pipeline: "bt", BaseRevision: fixtureHash, Patch: ok}, ErrNoHistory},
 		"unknown step": {Request{Pipeline: "bt", BaseRevision: fixtureHash, Patch: ok, Steps: []string{"x"}}, store.ErrInvalid},
@@ -143,6 +146,33 @@ func TestRunRefusals(t *testing.T) {
 			t.Errorf("%s: Run = %v, want %v", name, err, c.want)
 		}
 	}
+	// With a sandbox, exec code is built there: an action it cannot run stays untrusted, one that does not build is
+	// invalid, and neither replays.
+	for name, c := range map[string]struct {
+		err, want error
+	}{
+		"not Go":         {fmt.Errorf("%w: no go.mod", sandbox.ErrUnsupported), ErrUntrusted},
+		"does not build": {errors.New("undefined: x"), store.ErrInvalid},
+	} {
+		box := &refusingSandbox{err: c.err}
+		b := New(Options{Store: seeded, Launchers: launchers(), Sandbox: box})
+		_, err := b.Run(context.Background(), Request{Pipeline: "bt", BaseRevision: historyHash, Patch: execCode})
+		if !errors.Is(err, c.want) || len(box.dirs) != 1 || box.dirs[0] != "actions/crm/" {
+			t.Errorf("%s: Run = %v, want %v; sandboxed %q", name, err, c.want, box.dirs)
+		}
+	}
+}
+
+// refusingSandbox refuses to build, recording the directories it was given.
+type refusingSandbox struct {
+	err  error
+	dirs []string
+}
+
+func (r *refusingSandbox) Launchers(_ context.Context, _ *pipeline.Package, dirs []string, _ map[string]exec.Launcher,
+) (map[string]exec.Launcher, func(), error) {
+	r.dirs = dirs
+	return nil, nil, r.err
 }
 
 // TestChangedSteps: what makes a step changed, and what does not.

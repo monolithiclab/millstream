@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/monolithiclab/millstream/internal/engine"
+	"github.com/monolithiclab/millstream/internal/publish"
 	"github.com/monolithiclab/millstream/internal/store"
 )
 
@@ -74,6 +75,20 @@ type ProposalDecision struct {
 	Reason      string `json:"reason"`
 }
 
+// PublishRequest names the patch the publisher saw: only that one is published.
+type PublishRequest struct {
+	PatchSHA256 string `json:"patchSha256"`
+}
+
+// PublishedProposal is where a proposal went: the publish action, the revision, file or pull request, and whether
+// it had been published already (nothing was done again).
+type PublishedProposal struct {
+	Proposal  string `json:"proposal"`
+	Publisher string `json:"publisher"`
+	Location  string `json:"location"`
+	Again     bool   `json:"again"`
+}
+
 // ProposalToken is a proposals-only token, shown once.
 type ProposalToken struct {
 	Token string `json:"token"`
@@ -89,6 +104,7 @@ var proposalRoutes = map[string]bool{
 	"POST /proposals":                       true,
 	"GET /proposals/{proposal}":             true,
 	"POST /proposals/{proposal}/revalidate": true,
+	"POST /proposals/{proposal}/publish":    true, // the improve package's publish step (spec section 11.7)
 	"POST /backtests":                       true, // spec section 11.3: the backtest endpoint the validate step calls
 	"GET /backtests/{backtest}":             true,
 	// The reads the improve pipeline gathers evidence with (spec section 11.3): insights, pipelines, revisions with
@@ -203,6 +219,29 @@ func (s *Server) revalidateProposal(w http.ResponseWriter, r *http.Request) erro
 		return err
 	}
 	writeJSON(w, http.StatusOK, ToProposal(p))
+	return nil
+}
+
+// publishProposal hands an accepted proposal to the publish action improve.publish names, once: a proposal published
+// already answers where it went.
+func (s *Server) publishProposal(w http.ResponseWriter, r *http.Request) error {
+	var req PublishRequest
+	if err := s.decodeBody(w, r, &req); err != nil {
+		return err
+	}
+	if req.PatchSHA256 == "" {
+		return invalidf("a publication names the patchSha256 of the patch it publishes")
+	}
+	if s.opts.Publisher == nil {
+		return fmt.Errorf("publish: improve.publish is not set: %w", errUnavailable)
+	}
+	id := r.PathValue("proposal")
+	res, again, err := publish.Proposal(r.Context(), s.opts.Store, s.opts.Publisher, id, req.PatchSHA256)
+	if err != nil {
+		return err
+	}
+	writeJSON(w, http.StatusOK, PublishedProposal{Proposal: id, Publisher: res.Publisher, Location: res.RevisionOrURL,
+		Again: again})
 	return nil
 }
 

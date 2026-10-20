@@ -1111,6 +1111,30 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/proposals/{proposal}/publish': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        proposal: components['parameters']['proposal'];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Hand an accepted proposal to the publish action improve.publish names (spec section 11.7), once.
+     * @description The patch must be the validated one (patchSha256) and pass its kind's path rules again. A proposal published
+     *     already is not published again: the answer says where it went, again true. The proposals-only token may call
+     *     it.
+     */
+    post: operations['publishProposal'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/purges': {
     parameters: {
       query?: never;
@@ -1698,6 +1722,8 @@ export interface components {
         files: {
           [key: string]: string;
         };
+        /** @description The accepted proposals the package carries: the Millstream-Proposal trailers of the commit it comes from. Each is recorded applied, validated in this combination or not. */
+        proposals?: string[];
       }[];
       /** @description Let through breaking an importer's contract. */
       force?: boolean;
@@ -4032,6 +4058,49 @@ export interface operations {
       404: components['responses']['Error'];
       409: components['responses']['Error'];
       415: components['responses']['Error'];
+      default: components['responses']['Error'];
+    };
+  };
+  publishProposal: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        proposal: components['parameters']['proposal'];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': {
+          /** @description The hash of the patch to publish. */
+          patchSha256: string;
+        };
+      };
+    };
+    responses: {
+      /** @description Where the proposal went. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            proposal: string;
+            /** @description apply, patch-file, git-pr-gh or git-pr-glab. */
+            publisher: string;
+            /** @description The revision number */
+            location: string;
+            /** @description Published before; nothing was done this time. */
+            again: boolean;
+          };
+        };
+      };
+      400: components['responses']['Error'];
+      404: components['responses']['Error'];
+      409: components['responses']['Error'];
+      415: components['responses']['Error'];
+      503: components['responses']['Error'];
       default: components['responses']['Error'];
     };
   };

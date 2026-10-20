@@ -18,8 +18,10 @@
 //   - everything else runs: the changed steps, and the unchanged steps reached by items the history does not hold
 //     (a topology change admitting items the historical run discarded), whose agent cost the improve budget pays.
 //
-// Proposed code runs only where spec section 15.3 allows it: agents in their sandbox, as configured for the
-// deployment; a patch touching an exec action's files is refused, since exec actions run unsandboxed.
+// Proposed code runs only where spec section 15.3 allows it: the exec actions whose files the patch touches run in
+// the container sandbox (Options.Sandbox: built and run with no network, read-only, without credentials), and a
+// backtest without one refuses them, since exec actions otherwise run with the node's privileges; container actions
+// whose files it touches run without the network; agents run in their sandbox, as configured for the deployment.
 package backtest
 
 import (
@@ -45,7 +47,7 @@ const (
 var (
 	// ErrBudget: improve.budget.dayUsd is spent for the day, or the backtest reached it.
 	ErrBudget = fmt.Errorf("improve budget reached: %w", store.ErrConflict)
-	// ErrUntrusted: the patch changes code a backtest cannot run in the container sandbox.
+	// ErrUntrusted: the patch changes exec code and no container sandbox can run it.
 	ErrUntrusted = fmt.Errorf("proposed code outside the sandbox: %w", store.ErrInvalid)
 	// ErrNoHistory: no past item reaches the steps the patch changes.
 	ErrNoHistory = fmt.Errorf("no history to replay: %w", store.ErrInvalid)

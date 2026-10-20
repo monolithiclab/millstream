@@ -13,7 +13,7 @@ import (
 // devEnv is a development environment file running the improve pipeline through the api harness.
 const devEnv = `environment: development
 lessons: { maxTokens: 1500 }
-improve: { enabled: true, harness: api, publish: patch-file, minSeverity: info, budget: { dayUsd: 3 },
+improve: { enabled: true, harness: api, publish: patch-file, patchFile: { dir: proposals }, minSeverity: info, budget: { dayUsd: 3 },
   filter: { maxFalseDrop: 0.05 } }
 `
 

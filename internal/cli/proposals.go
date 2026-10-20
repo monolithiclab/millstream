@@ -15,6 +15,8 @@ import (
 	"github.com/monolithiclab/millstream/internal/engine"
 	"github.com/monolithiclab/millstream/internal/pipeline"
 	"github.com/monolithiclab/millstream/internal/proposals"
+	"github.com/monolithiclab/millstream/internal/publish"
+	"github.com/monolithiclab/millstream/internal/runtime/container"
 	"github.com/monolithiclab/millstream/internal/store"
 )
 
@@ -30,11 +32,24 @@ type ProposalsCmd struct {
 }
 
 // proposalOptions are what an engine validates proposals with: the evals of the affected actions run as eval runs
-// them, with the launchers, secrets and prices of the environment, and the backtests run by bt.
+// them, with the launchers, secrets and prices of the environment and proposed exec code in the container sandbox,
+// and the backtests run by bt.
 func proposalOptions(rt *Runtime, env *pipeline.Environment, bt backtest.Runner) engine.ProposalOptions {
-	return engine.ProposalOptions{Evals: proposals.Evals{Launchers: launchers(rt, env), Prices: env.Prices,
-		Env: func(name string) func(string) (string, bool) { return env.SecretEnvLookup(name, rt.Env) }},
-		Backtest: backtest.ForProposals(bt, env.Improve.FilterMaxFalseDrop)}
+	evals := proposals.Evals{Launchers: launchers(rt, env), Prices: env.Prices,
+		Env:     func(name string) func(string) (string, bool) { return env.SecretEnvLookup(name, rt.Env) },
+		Sandbox: candidateSandbox(rt, env)}
+	return engine.ProposalOptions{Evals: evals, Backtest: backtest.ForProposals(bt, env.Improve.FilterMaxFalseDrop)}
+}
+
+// newPublisher is the publish action improve.publish names (spec section 11.7), run by the engine e behind
+// POST /proposals/{id}/publish: apply through e, the git actions in the container runtime the environment selects
+// with the variables improve.git.env names from this process's environment. Nil without improve.publish.
+func newPublisher(rt *Runtime, env *pipeline.Environment, e *engine.Engine) (publish.Publisher, error) {
+	d := publish.Deps{Packages: e.StoredPackage, Applier: e, Env: rt.Env}
+	if crt, ok := container.Find(env.ContainerRuntime, rt.Env); ok {
+		d.Runtime = crt
+	}
+	return publish.New(env.Improve, d)
 }
 
 // withProposalEngine runs fn with an engine over a store written from this process, as apply builds it.

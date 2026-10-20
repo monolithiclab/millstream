@@ -112,3 +112,45 @@ func (v *verdict) Backtest(_ context.Context, req proposals.BacktestRequest) (pr
 	v.requests = append(v.requests, req)
 	return proposals.BacktestResult{Passed: v.passed, Report: json.RawMessage(`{}`)}, nil
 }
+
+// TestBackground: while Run runs, work runs on its context in the background and stop waits for it; outside Run it
+// runs before do returns.
+func TestBackground(t *testing.T) {
+	var b background
+	ran := false
+	b.do(t.Context(), func(context.Context) { ran = true })
+	if !ran {
+		t.Fatal("outside Run, the work did not run at once")
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	b.start(ctx)
+	done := make(chan struct{})
+	b.do(t.Context(), func(c context.Context) {
+		<-c.Done()
+		close(done)
+	})
+	cancel()
+	b.stop()
+	select {
+	case <-done:
+	default:
+		t.Fatal("stop returned before the work ended")
+	}
+}
+
+// TestValidateCombinationErrors: a revision whose packages are not stored cannot be validated, and says so.
+func TestValidateCombinationErrors(t *testing.T) {
+	st, err := sqlite.Open(sqlite.Memory, sqlite.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	e, err := New(Options{Store: st})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := e.validateCombination(t.Context(), "extra", 1, "absent", "absent", []string{"pr_1"}); err == nil {
+		t.Fatal("validateCombination of absent packages: no error")
+	}
+	e.checkCombination(t.Context(), "extra", 1, "absent", "absent", []store.AppliedProposal{{ID: "pr_1"}})
+}

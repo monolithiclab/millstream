@@ -1092,6 +1092,45 @@ paths:
               schema: { $ref: "#/components/schemas/Proposal" }
         "404": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }
+  /proposals/{proposal}/publish:
+    parameters: [{ $ref: "#/components/parameters/proposal" }]
+    post:
+      operationId: publishProposal
+      summary: Hand an accepted proposal to the publish action improve.publish names (spec section 11.7), once.
+      description: |
+        The patch must be the validated one (patchSha256) and pass its kind's path rules again. A proposal published
+        already is not published again: the answer says where it went, again true. The proposals-only token may call
+        it.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [patchSha256]
+              additionalProperties: false
+              properties:
+                patchSha256: { type: string, description: The hash of the patch to publish. }
+      responses:
+        default: { $ref: "#/components/responses/Error" }
+        "415": { $ref: "#/components/responses/Error" }
+        "200":
+          description: Where the proposal went.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [proposal, publisher, location, again]
+                additionalProperties: false
+                properties:
+                  proposal: { type: string }
+                  publisher: { type: string, description: "apply, patch-file, git-pr-gh or git-pr-glab." }
+                  location: { type: string, description: The revision number, the patch file or the pull request URL. }
+                  again: { type: boolean, description: Published before; nothing was done this time. }
+        "400": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
   /purges:
     post:
       operationId: createPurge

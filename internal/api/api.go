@@ -36,6 +36,7 @@ import (
 	"github.com/monolithiclab/millstream/internal/backtest"
 	"github.com/monolithiclab/millstream/internal/engine"
 	"github.com/monolithiclab/millstream/internal/pipeline"
+	"github.com/monolithiclab/millstream/internal/publish"
 	"github.com/monolithiclab/millstream/internal/store"
 )
 
@@ -159,6 +160,9 @@ type Options struct {
 	Evidence EvidenceSettings
 	// Backtests runs the backtests POST /backtests starts (spec section 11.3); nil answers them unavailable.
 	Backtests *backtest.Jobs
+	// Publisher is the publish action improve.publish names (spec section 11.7); nil answers publications
+	// unavailable.
+	Publisher publish.Publisher
 }
 
 // EvidenceSettings are what evidence export and import read from the environment file: the effective mode, the
@@ -249,6 +253,7 @@ var routes = []route{
 	{http.MethodPost, "/proposals/{proposal}/accept", (*Server).acceptProposal},
 	{http.MethodPost, "/proposals/{proposal}/reject", (*Server).rejectProposal},
 	{http.MethodPost, "/proposals/{proposal}/revalidate", (*Server).revalidateProposal},
+	{http.MethodPost, "/proposals/{proposal}/publish", (*Server).publishProposal},
 	{http.MethodPost, "/purges", (*Server).createPurge},
 	{http.MethodGet, "/purges/{purge}", (*Server).getPurge},
 	{http.MethodGet, "/nodes", (*Server).listNodes},

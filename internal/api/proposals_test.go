@@ -9,6 +9,8 @@ import (
 
 	"github.com/monolithiclab/millstream/internal/backtest"
 	"github.com/monolithiclab/millstream/internal/engine"
+	"github.com/monolithiclab/millstream/internal/pipeline"
+	"github.com/monolithiclab/millstream/internal/publish"
 	"github.com/monolithiclab/millstream/internal/store/sqlite"
 	"github.com/monolithiclab/millstream/internal/testdir"
 )
@@ -143,4 +145,21 @@ func TestProposalActions(t *testing.T) {
 	}
 	call(http.MethodGet, "/proposals?state=nope", "", "", http.StatusBadRequest)
 	call(http.MethodGet, "/proposals/nope", "", "", http.StatusNotFound)
+	// Publishing, with the token: once, through the publish action (apply here), answering where it went again.
+	pubBody := `{"patchSha256":"` + p1.PatchSHA256 + `"}`
+	call(http.MethodPost, "/proposals/"+p1.ID+"/publish", pubBody, tok.Token, http.StatusServiceUnavailable)
+	if h.opts.Publisher, err = publish.New(pipeline.Improve{Publish: pipeline.PublishApply},
+		publish.Deps{Packages: eng.StoredPackage, Applier: eng}); err != nil {
+		t.Fatal(err)
+	}
+	call(http.MethodPost, "/proposals/"+p1.ID+"/publish", `{"patchSha256":"other"}`, tok.Token, http.StatusBadRequest)
+	call(http.MethodPost, "/proposals/"+p1.ID+"/publish", `{}`, tok.Token, http.StatusBadRequest)
+	for _, again := range []bool{false, true} {
+		var got PublishedProposal
+		if err := json.Unmarshal(call(http.MethodPost, "/proposals/"+p1.ID+"/publish", pubBody, tok.Token,
+			http.StatusOK), &got); err != nil || got.Location != "2" || got.Publisher != "apply" || got.Again != again {
+			t.Fatalf("published %+v, %v; want again %v", got, err, again)
+		}
+	}
+	call(http.MethodPost, "/proposals/"+p2.ID+"/publish", pubBody, tok.Token, http.StatusConflict)
 }

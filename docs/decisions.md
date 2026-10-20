@@ -414,11 +414,11 @@ use insights in production until learning in place is offered.
 ### D32. Forge integration goes through actions (2026-10-14)
 
 **Decision.** Accepted proposals are published by an action chosen in `improve.publish`: `apply` (a development
-revision), `patch-file`, or `git-pr-gh` and `git-pr-glab`, which wrap the `gh` and `glab` CLIs with the credentials
-they already have.
+revision), `patch-file`, or `git-pr-gh` and `git-pr-glab`, which wrap the `gh` and `glab` CLIs in a container. The
+environment file names the repository and the variables holding the forge's credentials (`improve.git`), which are
+passed to that container alone.
 
-**Evidence.** Millstream then holds no forge tokens or configuration, and a new forge is a new action, not an engine
-change.
+**Evidence.** Millstream then stores no forge token, and a new forge is a new action, not an engine change.
 
 **Cost if wrong.** Pull requests depend on the CLIs being installed and authenticated in the action's environment.
 
@@ -426,7 +426,8 @@ change.
 
 **Decision.** A proposal's patch may touch only the package paths its kind allows. The publish action runs in its
 own container with only forge credentials, never builds or runs candidate code, disables git hooks, and publishes
-only the patch whose hash was validated.
+only the patch whose hash was validated. Candidate exec code runs only in a separate network-less sandbox, built
+offline against the embedded SDK, which never holds a credential.
 
 **Evidence.** Patches are drafted by an agent that read crawled, untrusted data; an injected instruction could add
 CI workflows or build files that run with repository secrets as soon as a branch is pushed, or candidate code could

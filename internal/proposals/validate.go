@@ -17,6 +17,7 @@ import (
 	"github.com/monolithiclab/millstream/internal/patch"
 	"github.com/monolithiclab/millstream/internal/pipeline"
 	"github.com/monolithiclab/millstream/internal/runtime/exec"
+	"github.com/monolithiclab/millstream/internal/runtime/sandbox"
 )
 
 // Validation (spec section 11.3) is the engine's, never an LLM's: check on the patched package, then the evals of
@@ -58,6 +59,20 @@ type Evals struct {
 	// Prices are the environment file's model prices.
 	Prices map[string]pipeline.Price
 	Logger *slog.Logger
+	// Sandbox runs the proposed exec actions, those whose directory the patch changes (sandbox.Sandbox); without
+	// one, their cases fail rather than run with the node's privileges (spec section 15.3).
+	Sandbox sandbox.Builder
+}
+
+// side is how one side's actions run: the base revision's as configured, the patched package's with its proposed
+// code confined.
+type side struct {
+	pkg       *pipeline.Package
+	resolver  pipeline.ActionResolver
+	launchers map[string]exec.Launcher
+	// proposed are the patched package's exec action directories the patch changes, and refused why they cannot run.
+	proposed []string
+	refused  error
 }
 
 // Validator validates prepared proposals.
@@ -162,7 +177,10 @@ func (v Validator) Validate(ctx context.Context, pipelineName string, p Prepared
 		r.Backtest.Skipped = "check failed"
 		return r, nil
 	}
-	r.Evals, r.NewEvals = v.evals(ctx, pipelineName, base, patched, p.Changes)
+	after, cleanup := v.patchedSide(ctx, patched, p.Changes)
+	defer cleanup()
+	before := side{pkg: base, resolver: v.resolver(), launchers: v.Evals.Launchers}
+	r.Evals, r.NewEvals = v.evals(ctx, pipelineName, before, after, p.Changes)
 	evalsPassed := !slices.ContainsFunc(r.Evals, func(e EvalReport) bool { return !e.Passed })
 	// The touched steps the patched pipeline still has: a removed step has nothing to replay.
 	steps := slices.DeleteFunc(slices.Clone(p.Steps), func(s string) bool {
@@ -195,11 +213,34 @@ func (v Validator) resolver() pipeline.ActionResolver {
 	return v.Resolver
 }
 
+// patchedSide is how the patched package's actions run: the exec actions whose directory the patch changes in the
+// sandbox, refused without one; the container actions there without the network.
+func (v Validator) patchedSide(ctx context.Context, patched *pipeline.Package, changes []patch.File) (side, func()) {
+	all, execs := sandbox.Proposed(patched, v.resolver(), (&patch.Patch{Files: changes}).Paths())
+	s := side{pkg: patched, resolver: sandbox.Confine(v.resolver(), all), launchers: v.Evals.Launchers, proposed: execs}
+	switch {
+	case len(s.proposed) == 0:
+		return s, func() {}
+	case v.Evals.Sandbox == nil:
+		s.refused = errors.New("proposed exec code runs only in the container sandbox, and this deployment has no " +
+			"container runtime")
+		return s, func() {}
+	}
+	launchers, cleanup, err := v.Evals.Sandbox.Launchers(ctx, patched, s.proposed, v.Evals.Launchers)
+	if err != nil {
+		s.refused = err
+		return s, func() {}
+	}
+	s.launchers = launchers
+	return s, cleanup
+}
+
 // evals runs the base evals of each affected step's action, before on the base package and after on the patched
 // one, and the evals the patch adds or changes, after alone. A step is affected when its action changes, or the
 // patch changes its action's directory.
-func (v Validator) evals(ctx context.Context, pipelineName string, base, patched *pipeline.Package, changes []patch.File,
+func (v Validator) evals(ctx context.Context, pipelineName string, before, after side, changes []patch.File,
 ) (affected, added []EvalReport) {
+	base, patched := before.pkg, after.pkg
 	changedDirs, evalDirs := map[string]bool{}, map[string]bool{}
 	for _, c := range changes {
 		if dir, ok := actionDir(c.Path); ok {
@@ -212,28 +253,28 @@ func (v Validator) evals(ctx context.Context, pipelineName string, base, patched
 	affected, added = []EvalReport{}, []EvalReport{}
 	done := map[[2]string]bool{}
 	for _, name := range slices.Sorted(maps.Keys(base.Pipeline.Steps)) {
-		after, ok := patched.Pipeline.Steps[name]
-		before := base.Pipeline.Steps[name]
-		dir, local := localDir(before.Action)
-		if !ok || !local || (before.Action == after.Action && !changedDirs[dir]) {
+		afterStep, ok := patched.Pipeline.Steps[name]
+		beforeStep := base.Pipeline.Steps[name]
+		dir, local := localDir(beforeStep.Action)
+		if !ok || !local || (beforeStep.Action == afterStep.Action && !changedDirs[dir]) {
 			continue
 		}
-		pair := [2]string{before.Action, after.Action}
+		pair := [2]string{beforeStep.Action, afterStep.Action}
 		if done[pair] {
 			continue
 		}
 		done[pair] = true
-		affected = append(affected, v.compare(ctx, pipelineName, name, base, patched, before.Action, after.Action))
+		affected = append(affected, v.compare(ctx, pipelineName, name, before, after, beforeStep.Action, afterStep.Action))
 	}
 	for _, dir := range slices.Sorted(maps.Keys(evalDirs)) {
 		ref := "./actions/" + dir
 		rep := EvalReport{Action: ref, Cases: []EvalCase{}, Passed: true}
-		cases, act, err := v.cases(patched, ref)
+		cases, act, err := v.cases(after, ref)
 		if err == nil {
 			for _, c := range cases {
-				after := v.run(ctx, pipelineName, patched, ref, act, c)
-				rep.Cases = append(rep.Cases, EvalCase{Case: c.Name, After: after})
-				rep.Passed = rep.Passed && after.Passed
+				score := v.run(ctx, pipelineName, after, ref, act, c)
+				rep.Cases = append(rep.Cases, EvalCase{Case: c.Name, After: score})
+				rep.Passed = rep.Passed && score.Passed
 			}
 		} else {
 			rep.Passed, rep.Error = false, err.Error()
@@ -245,7 +286,7 @@ func (v Validator) evals(ctx context.Context, pipelineName string, base, patched
 
 // compare runs the base action's cases on the base action and on the step's action after the patch: it passes when
 // no case that passed before fails after.
-func (v Validator) compare(ctx context.Context, pipelineName, step string, base, patched *pipeline.Package,
+func (v Validator) compare(ctx context.Context, pipelineName, step string, base, patched side,
 	beforeRef, afterRef string,
 ) EvalReport {
 	rep := EvalReport{Step: step, Action: beforeRef, Cases: []EvalCase{}, Passed: true}
@@ -260,7 +301,7 @@ func (v Validator) compare(ctx context.Context, pipelineName, step string, base,
 	if err != nil {
 		return fail(err)
 	}
-	afterAct, err := v.resolver().Resolve(patched, afterRef)
+	afterAct, err := patched.resolver.Resolve(patched.pkg, afterRef)
 	if err != nil {
 		return fail(fmt.Errorf("resolve %s after the patch: %w", afterRef, err))
 	}
@@ -276,24 +317,27 @@ func (v Validator) compare(ctx context.Context, pipelineName, step string, base,
 }
 
 // cases loads the eval cases of a local action of pkg, with the action resolved.
-func (v Validator) cases(pkg *pipeline.Package, ref string) ([]*eval.Case, *pipeline.Action, error) {
-	act, err := v.resolver().Resolve(pkg, ref)
+func (v Validator) cases(s side, ref string) ([]*eval.Case, *pipeline.Action, error) {
+	act, err := s.resolver.Resolve(s.pkg, ref)
 	if err != nil {
 		return nil, nil, fmt.Errorf("resolve %s: %w", ref, err)
 	}
-	cases, err := eval.Load(filepath.Join(pkg.Dir, filepath.FromSlash(act.Dir)))
+	cases, err := eval.Load(filepath.Join(s.pkg.Dir, filepath.FromSlash(act.Dir)))
 	if err != nil {
 		return nil, nil, fmt.Errorf("the evals of %s: %w", ref, err)
 	}
 	return cases, act, nil
 }
 
-// run runs one case on an action of pkg.
-func (v Validator) run(ctx context.Context, pipelineName string, pkg *pipeline.Package, ref string,
-	act *pipeline.Action, c *eval.Case,
+// run runs one case on an action of a side; proposed exec code that cannot run in the sandbox fails it unrun.
+func (v Validator) run(ctx context.Context, pipelineName string, s side, ref string, act *pipeline.Action,
+	c *eval.Case,
 ) EvalScore {
-	e := v.Evals
-	opts := eval.Options{Package: pkg, Action: act, Ref: ref, Mode: e.Mode, Launchers: e.Launchers,
+	if s.refused != nil && slices.Contains(s.proposed, strings.TrimSuffix(act.Dir, "/")+"/") {
+		return EvalScore{Error: s.refused.Error()}
+	}
+	pkg, e := s.pkg, v.Evals
+	opts := eval.Options{Package: pkg, Action: act, Ref: ref, Mode: e.Mode, Launchers: s.launchers,
 		Logger: e.Logger, Env: func(string) (string, bool) { return "", false }}
 	if opts.Mode == "" {
 		opts.Mode = agent.ModeReplay

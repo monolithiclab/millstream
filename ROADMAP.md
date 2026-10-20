@@ -30,8 +30,7 @@ earlier designs are in the git history of the spec.
   while the improve pipeline's own agents charge its `budget.dayUsd` (the same figure) in the store: charge the
   backtests to the pipeline's `budget_days` too, so both share one day budget across restarts (the store has no
   per-pipeline charge outside deliveries yet). Backtests
-  live in the engine's memory (the last 100); persist them if proposals need their reports after a restart. Patches
-  touching exec actions are refused until distilled code runs in the network-less container sandbox (spec 15.3).
+  live in the engine's memory (the last 100); persist them if proposals need their reports after a restart.
   Replays of runs a replay or an import opened, and of evidence (which carries no run variables, resolved anew), are
   left out or approximated.
 - Proposals: the evals of a `prompt` proposal replay the action's recordings, which a changed prompt misses: the
@@ -42,6 +41,15 @@ earlier designs are in the git history of the spec.
   maps them itself, and minting a token for it replaces the embedded one's. The weekly run hands every accepted proposal
   to the publisher again: publishers recognise what they published (Task 8). `run --once` does not run the improve
   pipeline (it serves no API).
+- Publishing (M5 Task 8): the improve package's publish step reaches the publish actions through
+  `POST /proposals/{id}/publish`; there is no CLI command for it, and a person's acceptance does not publish by
+  itself (the next improve run does). The git actions need an image with git and `gh` or `glab`, which
+  the project does not ship: publish one, pinned. `millstream apply` reads the trailers of the last commit touching
+  the package only, so a proposal merged under later commits is not recorded applied. Whether a revision carries a
+  proposal in a validated combination lives in `proposalApplied` events, not in the proposal's row the API serves.
+- Candidate sandbox: Go actions only, built against the standard library and the SDK (no other module, no vendor
+  directory); each validation builds again (no cache of builds by action digest); remote nodes never run proposed
+  code, the engine's own process does.
 
 - Audits: an audit whose run's revision is neither active nor has unsettled runs leases without a budget
   reservation (the engine's reservations cover those revisions only); and audits keep their outputs' payloads, not

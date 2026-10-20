@@ -34,7 +34,7 @@ type Deps struct {
 	// Applier is apply's.
 	Applier Applier
 	// Runtime is the container runtime the git actions run in; without one they refuse to run (spec section 11.7).
-	Runtime *container.Runtime
+	Runtime container.JobRunner
 	// Env is the engine's environment, from which the git actions take the variables improve.git.env names.
 	Env func(string) (string, bool)
 

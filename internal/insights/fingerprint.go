@@ -54,9 +54,9 @@ func Normalise(msg string) string {
 	return msg
 }
 
-// fingerprint is an insight's id: a hash of its kind, pipeline and what makes it distinct, so a recurring problem
+// Fingerprint is an insight's id: a hash of its kind, pipeline and what makes it distinct, so a recurring problem
 // lands on the same row.
-func fingerprint(kind, pipelineName string, parts ...string) string {
+func Fingerprint(kind, pipelineName string, parts ...string) string {
 	h := sha256.New()
 	for _, p := range append([]string{kind, pipelineName}, parts...) {
 		h.Write([]byte(p))

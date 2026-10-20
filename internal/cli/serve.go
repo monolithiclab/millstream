@@ -18,6 +18,7 @@ import (
 	"github.com/monolithiclab/millstream/internal/backtest"
 	"github.com/monolithiclab/millstream/internal/engine"
 	"github.com/monolithiclab/millstream/internal/pipeline"
+	"github.com/monolithiclab/millstream/internal/publish"
 	"github.com/monolithiclab/millstream/internal/review"
 	"github.com/monolithiclab/millstream/internal/store"
 	"github.com/monolithiclab/millstream/internal/ui"
@@ -55,7 +56,7 @@ func newAPIServer(st store.Store, e *engine.Engine, notes *review.Notifier, logs
 		Nodes: x.nodes, Version: x.rt.Version, User: identity(x.rt), Auth: sec.auth, Logger: log,
 		Identity: lead.identity, Deployment: lead.deployment, NotificationFailures: notes.Failures,
 		NodeAPI: x.nodeAPI, LeaseTTL: x.leaseTTL, Environment: x.mode,
-		Evidence: x.evidence, Backtests: x.backtests})
+		Evidence: x.evidence, Backtests: x.backtests, Publisher: x.publisher})
 	if err != nil {
 		return nil, err
 	}
@@ -74,6 +75,8 @@ type apiExtras struct {
 	evidence api.EvidenceSettings
 	// backtests runs the API's backtests (spec section 11.3).
 	backtests *backtest.Jobs
+	// publisher publishes accepted proposals (POST /proposals/{id}/publish); nil without improve.publish.
+	publisher publish.Publisher
 }
 
 // apiSecurity is what the API server reads from the environment, auth.token and tls: run and serve read it before

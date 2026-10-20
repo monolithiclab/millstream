@@ -246,10 +246,14 @@ func (h engineHost) run(ctx context.Context, rt *Runtime, env *pipeline.Environm
 	if site == nil {
 		serveDone <- nil
 	} else {
-		srv, err := newAPIServer(st, e, notes, logs, apiExtras{rt: rt, arts: h.arts, nodes: nodes, nodeAPI: nodeAPI,
-			leaseTTL: h.leaseTTL, mode: h.mode, evidence: api.EvidenceSettings{Mode: h.mode, Sample: env.Improve.EvidenceSample,
-				TTL: env.Improve.EvidenceTTL},
-			backtests: backtest.NewJobs(runCtx, h.backtests, nil)}, h.lead, h.sec, log)
+		pub, err := newPublisher(rt, env, e)
+		var srv *apiServer
+		if err == nil {
+			srv, err = newAPIServer(st, e, notes, logs, apiExtras{rt: rt, arts: h.arts, nodes: nodes, nodeAPI: nodeAPI,
+				leaseTTL: h.leaseTTL, mode: h.mode, evidence: api.EvidenceSettings{Mode: h.mode,
+					Sample: env.Improve.EvidenceSample, TTL: env.Improve.EvidenceTTL},
+				backtests: backtest.NewJobs(runCtx, h.backtests, nil), publisher: pub}, h.lead, h.sec, log)
+		}
 		if err != nil {
 			cancel(nil)
 			return errors.Join(err, <-siteDone)

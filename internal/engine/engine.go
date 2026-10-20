@@ -183,6 +183,7 @@ type Engine struct {
 	insightTS    time.Time            // and when it was recorded
 	retainMu     sync.Mutex           // serialises Retain
 	bg           background           // the checks of revisions carrying unvalidated proposals, while Run runs
+	regressionMu sync.Mutex           // serialises the regression insights those checks raise
 
 	// Test seams, set before Run: maxDue bounds the missed cron times kept (the maxDue constant), and ticked and
 	// projected, when set, are called after each pass of Run's expiry tick and of its projectors.
@@ -311,14 +312,14 @@ func (e *Engine) apply(ctx context.Context, pkg *pipeline.Package, opts ApplyOpt
 		return fail(err)
 	}
 	parent := ""
-	if before != 0 {
+	if ids := opts.Proposals[name]; len(ids) > 0 && before != 0 {
 		rev, err := e.st.Revision(ctx, before)
 		if err != nil {
 			return fail(err)
 		}
 		parent = rev.PackageHash
+		rec.Proposals = e.carried(ctx, name, parent, pkg.Hash, ids)
 	}
-	rec.Proposals = e.carried(ctx, name, parent, pkg.Hash, opts.Proposals[name])
 	id, err := e.st.ApplyRevision(ctx, rec)
 	if err != nil {
 		return fail(err)

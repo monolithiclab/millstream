@@ -2,7 +2,9 @@ package publish
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"slices"
@@ -11,6 +13,8 @@ import (
 
 	"github.com/monolithiclab/millstream/internal/patch"
 	"github.com/monolithiclab/millstream/internal/pipeline"
+	"github.com/monolithiclab/millstream/internal/runtime/container"
+	"github.com/monolithiclab/millstream/internal/runtime/exec"
 	"github.com/monolithiclab/millstream/internal/store"
 )
 
@@ -271,35 +275,113 @@ func TestTrailers(t *testing.T) {
 	}
 }
 
-// TestProposal: the hook publishes an accepted proposal and records where it went; any other state is a conflict.
+// TestProposal: the hook publishes an accepted proposal with the patch the caller saw, once, recording where it went;
+// asked again it answers that, and any other state or patch is refused.
 func TestProposal(t *testing.T) {
 	t.Parallel()
 	_, packages, acc := fixture(t)
-	p, err := New(pipeline.Improve{Publish: pipeline.PublishApply}, Deps{Packages: packages, Applier: &fakeApplier{}})
+	a := &fakeApplier{}
+	p, err := New(pipeline.Improve{Publish: pipeline.PublishApply}, Deps{Packages: packages, Applier: a})
 	if err != nil {
 		t.Fatal(err)
 	}
 	st := &fakeProposals{p: store.Proposal{NewProposal: store.NewProposal{ID: acc.ProposalID, Pipeline: acc.Pipeline,
 		Kind: acc.Kind, BaseRevision: acc.BaseRevision, Patch: acc.Patch, PatchSHA256: acc.PatchSHA256},
 		State: store.ProposalReady}}
-	if _, err := Proposal(t.Context(), st, p, acc.ProposalID); !errors.Is(err, store.ErrConflict) {
+	if _, _, err := Proposal(t.Context(), st, p, acc.ProposalID, acc.PatchSHA256); !errors.Is(err, store.ErrConflict) {
 		t.Fatalf("a ready proposal: %v", err)
 	}
 	st.p.State = store.ProposalAccepted
-	if res, err := Proposal(t.Context(), st, p, acc.ProposalID); err != nil || st.recorded != "apply 7" ||
-		res.RevisionOrURL != "7" {
-		t.Fatalf("Proposal = %+v, %v; recorded %q", res, err, st.recorded)
+	if _, _, err := Proposal(t.Context(), st, p, acc.ProposalID, "other"); !errors.Is(err, ErrRefused) {
+		t.Fatalf("another patch: %v", err)
+	}
+	for i, wantAgain := range []bool{false, true} {
+		res, again, err := Proposal(t.Context(), st, p, acc.ProposalID, acc.PatchSHA256)
+		if err != nil || again != wantAgain || res.RevisionOrURL != "7" || res.Publisher != pipeline.PublishApply ||
+			len(st.events) != 1 {
+			t.Fatalf("publication %d = %+v, again %v, %v; events %d", i, res, again, err, len(st.events))
+		}
+	}
+	if a.base == "" {
+		t.Fatal("never applied")
 	}
 }
 
+// fakeProposals holds one proposal and the proposalPublished events recorded.
 type fakeProposals struct {
-	p        store.Proposal
-	recorded string
+	p      store.Proposal
+	events []store.Event
 }
 
 func (f *fakeProposals) Proposal(context.Context, string) (store.Proposal, error) { return f.p, nil }
 
-func (f *fakeProposals) RecordPublished(_ context.Context, _, publisher, where string) error {
-	f.recorded = publisher + " " + where
+func (f *fakeProposals) PipelineEvents(context.Context, store.EventFilter) ([]store.Event, error) {
+	return f.events, nil
+}
+
+func (f *fakeProposals) RecordPublished(_ context.Context, id, publisher, where string) error {
+	data, _ := json.Marshal(map[string]string{"id": id, "publisher": publisher, "where": where})
+	f.events = append(f.events, store.Event{Kind: store.EventProposalPublished, Data: data})
 	return nil
+}
+
+// TestContainerJobs: a git job runs in the action's image with the network, its work directory at /work, the
+// variables it was given, and its error output's end in the error.
+func TestContainerJobs(t *testing.T) {
+	t.Parallel()
+	f := &fakeRunner{stdout: "https://forge.example/pr/1\n"}
+	c := containerJobs{rt: f, image: "img@sha256:abc"}
+	out, err := c.run(t.Context(), gitJob{work: "/host/work", script: "true", env: []string{"TOKEN=x"}})
+	if err != nil || out != f.stdout || !f.job.Network || f.job.Image != "img@sha256:abc" ||
+		f.job.Mounts[0] != (exec.Mount{Source: "/host/work", Target: jobMount}) || !slices.Contains(f.job.Env, "TOKEN=x") ||
+		!slices.Contains(f.job.Env, "WORK=/work") {
+		t.Fatalf("run = %q, %v; job %+v", out, err, f.job)
+	}
+	f.err, f.stderr = errors.New("exit status 128"), strings.Repeat("x", 3000)+"fatal: denied"
+	if _, err := c.run(t.Context(), gitJob{work: "/w"}); err == nil || !strings.HasSuffix(err.Error(), "fatal: denied") ||
+		len(err.Error()) > 2100 {
+		t.Fatalf("a failing job: %v", err)
+	}
+}
+
+type fakeRunner struct {
+	job            container.Job
+	stdout, stderr string
+	err            error
+}
+
+func (f *fakeRunner) RunJob(_ context.Context, j container.Job, stdout, stderr io.Writer) error {
+	f.job = j
+	_, _ = io.WriteString(stdout, f.stdout)
+	_, _ = io.WriteString(stderr, f.stderr)
+	return f.err
+}
+
+// TestGitPRDistill: a distill's new action directory is created on the branch, and refused when the branch has it.
+func TestGitPRDistill(t *testing.T) {
+	t.Parallel()
+	base, packages, acc := fixture(t)
+	after := map[string][]byte{"pipeline.yaml": []byte(strings.Replace(baseSrc, "action: filter, in: trigger.adhoc, config: { expr: \"true\" }",
+		"action: ./actions/coded, in: trigger.adhoc", 1)), "actions/coded/action.yaml": []byte("name: coded\nkind: exec\n")}
+	text, err := patch.Format(base.Hash, base.Files, after)
+	if err != nil {
+		t.Fatal(err)
+	}
+	acc.Kind, acc.Patch, acc.PatchSHA256 = store.ProposalDistill, string(text), patch.Hash(text)
+	for _, exists := range []bool{false, true} {
+		files := map[string]string{"pipeline.yaml": baseSrc}
+		if exists {
+			files["actions/coded/action.yaml"] = "x"
+		}
+		f := &fakeForge{files: files}
+		p, err := New(pipeline.Improve{Publish: pipeline.PublishGitPRGH, Git: pipeline.GitConfig{Repo: "r", Image: "i"}},
+			Deps{Packages: packages, jobs: f})
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = p.Publish(t.Context(), acc)
+		if exists != (err != nil) || !exists && !strings.Contains(f.published, "./actions/coded") {
+			t.Fatalf("branch has the action %v: %v, published %q", exists, err, f.published)
+		}
+	}
 }

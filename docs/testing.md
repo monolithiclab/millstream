@@ -101,7 +101,10 @@ own job. It covers:
   more).
 - The end-to-end CLI and engine tests, and the real-process twins of the in-process tests (under the tag, `fakeexec`
   runs the built fake binary).
-- Docker and Postgres tests, and the long property runs.
+- Docker and Postgres tests, and the long property runs. The candidate sandbox's tests build Go actions in
+  `sandbox.DefaultImage` and the publish container's run `alpine/git`, both pinned by digest and pulled once when
+  missing (the backtest's sandbox test skips without the Go image); the git actions publish to a local bare
+  repository with fake `gh` and `glab` scripts, never to a forge.
 
 `make test-e2e PKG=./internal/foo/...` is the iteration tier: `go test -tags e2e -count=1` of those packages alone,
 tagged and untagged, without `-race` or coverage.

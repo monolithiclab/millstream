@@ -114,11 +114,14 @@ type replayed struct {
 // replayOptions are one replay's: the package to replay, the runs to fire, the stubber deciding its deliveries, and
 // what it may spend when limited.
 type replayOptions struct {
-	pkg     *pipeline.Package
-	firings []firing
-	stubber *stubber
-	limit   float64
-	limited bool
+	pkg *pipeline.Package
+	// launchers and resolver run its actions: the patched side's run proposed code confined (sandbox).
+	launchers map[string]exec.Launcher
+	resolver  pipeline.ActionResolver
+	firings   []firing
+	stubber   *stubber
+	limit     float64
+	limited   bool
 }
 
 // replay fires the runs again in a scratch store on o.pkg, its artifacts under work, and waits until they settle.
@@ -135,7 +138,7 @@ func (b *Backtester) replay(ctx context.Context, work string, o replayOptions) (
 		return nil, err
 	}
 	e, err := engine.New(engine.Options{Store: st, Env: b.opts.Env, Secrets: b.opts.Secrets, NoCron: true,
-		Resolver: b.opts.Resolver, Artifacts: artifacts.New(artsDir), Agents: b.opts.Agents, Stubber: o.stubber.stub,
+		Resolver: o.resolver, Artifacts: artifacts.New(artsDir), Agents: b.opts.Agents, Stubber: o.stubber.stub,
 		Logger: b.log})
 	if err != nil {
 		return nil, err
@@ -152,7 +155,7 @@ func (b *Backtester) replay(ctx context.Context, work string, o replayOptions) (
 		}
 		refs = append(refs, engine.RunRef{Pipeline: name, ID: f.runID})
 	}
-	pool := exec.NewPool(exec.PoolOptions{Options: exec.Options{Launchers: b.opts.Launchers, Logger: b.log}})
+	pool := exec.NewPool(exec.PoolOptions{Options: exec.Options{Launchers: o.launchers, Logger: b.log}})
 	defer func() { _ = pool.Close() }()
 	n, err := node.New(e, node.Options{Owner: "backtest", Slots: b.opts.Slots, Pool: pool,
 		PullInterval: 20 * time.Millisecond, Logger: b.log})

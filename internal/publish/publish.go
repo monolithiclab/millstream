@@ -118,23 +118,40 @@ func (c checked) Publish(ctx context.Context, a Accepted) (Result, error) {
 // ProposalStore is what Proposal reads and records: the store.
 type ProposalStore interface {
 	Proposal(ctx context.Context, id string) (store.Proposal, error)
+	PipelineEvents(ctx context.Context, f store.EventFilter) ([]store.Event, error)
 	RecordPublished(ctx context.Context, id, publisher, where string) error
 }
 
-// Proposal publishes the accepted proposal id with p and records where it went (proposalPublished): the hook the
-// improve package's publish step calls once a person accepted the proposal.
-func Proposal(ctx context.Context, st ProposalStore, p Publisher, id string) (Result, error) {
+// Proposal publishes the accepted proposal id with p, the patch the caller saw being patchSHA256, and records where
+// it went (proposalPublished): what POST /proposals/{id}/publish runs for the improve package's publish step. A
+// proposal published already is not published again: its earlier result comes back, again true.
+func Proposal(ctx context.Context, st ProposalStore, p Publisher, id, patchSHA256 string) (res Result, again bool,
+	err error,
+) {
 	prop, err := st.Proposal(ctx, id)
+	switch {
+	case err != nil:
+		return Result{}, false, err
+	case prop.State != store.ProposalAccepted:
+		return Result{}, false, fmt.Errorf("proposal %s is %s: only an accepted one is published: %w", id,
+			prop.State, store.ErrConflict)
+	case patchSHA256 != prop.PatchSHA256:
+		return Result{}, false, fmt.Errorf("%w: proposal %s: patch %.12s is not the validated one (%.12s)", ErrRefused,
+			id, patchSHA256, prop.PatchSHA256)
+	}
+	evs, err := st.PipelineEvents(ctx, store.EventFilter{Pipeline: prop.Pipeline,
+		Kinds: []string{store.EventProposalPublished}})
 	if err != nil {
-		return Result{}, err
+		return Result{}, false, err
 	}
-	if prop.State != store.ProposalAccepted {
-		return Result{}, fmt.Errorf("proposal %s is %s: only an accepted one is published: %w", id, prop.State,
-			store.ErrConflict)
+	for _, ev := range evs {
+		var done struct{ ID, Publisher, Where string }
+		if json.Unmarshal(ev.Data, &done) == nil && done.ID == id {
+			return Result{Publisher: done.Publisher, RevisionOrURL: done.Where}, true, nil
+		}
 	}
-	res, err := p.Publish(ctx, FromProposal(prop))
-	if err != nil {
-		return res, err
+	if res, err = p.Publish(ctx, FromProposal(prop)); err != nil {
+		return res, false, err
 	}
-	return res, st.RecordPublished(ctx, id, res.Publisher, res.RevisionOrURL)
+	return res, false, st.RecordPublished(ctx, id, res.Publisher, res.RevisionOrURL)
 }

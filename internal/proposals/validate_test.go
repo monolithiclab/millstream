@@ -18,6 +18,16 @@ import (
 // runtime, and the patched packages hold no binary.
 var inProcess = map[string]exec.Launcher{pipeline.KindExec: exec.FuncLauncher{F: exectest.Serve}}
 
+// inSandbox stands for the container sandbox: it runs the proposed actions as the base launchers do (in-process),
+// recording the directories it was given.
+type inSandbox struct{ dirs [][]string }
+
+func (s *inSandbox) Launchers(_ context.Context, _ *pipeline.Package, dirs []string, base map[string]exec.Launcher,
+) (map[string]exec.Launcher, func(), error) {
+	s.dirs = append(s.dirs, dirs)
+	return base, func() {}, nil
+}
+
 // fakeBacktest answers a fixed verdict and records what it was asked.
 type fakeBacktest struct {
 	passed bool
@@ -76,6 +86,13 @@ func TestValidate(t *testing.T) {
 			}
 		}},
 		{"check fails", store.ProposalConfig, brokenPatch, &fakeBacktest{passed: true}, false, nil},
+		{"distill without a sandbox", store.ProposalDistill, distill("coded", newEval), &fakeBacktest{passed: true}, false,
+			func(t *testing.T, r Report) {
+				if c := r.Evals[0].Cases[0]; !c.Before.Passed || !strings.Contains(c.After.Error, "container sandbox") ||
+					!strings.Contains(r.NewEvals[0].Cases[0].After.Error, "container sandbox") {
+					t.Fatalf("report %+v", r)
+				}
+			}},
 	}
 	scratch := t.TempDir()
 	for _, tt := range tests {
@@ -84,7 +101,11 @@ func TestValidate(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			v := Validator{Check: checker, Evals: Evals{Launchers: inProcess}, Scratch: scratch}
+			box := &inSandbox{}
+			v := Validator{Check: checker, Evals: Evals{Launchers: inProcess, Sandbox: box}, Scratch: scratch}
+			if tt.name == "distill without a sandbox" {
+				v.Evals.Sandbox = nil
+			}
 			if tt.backtest != nil {
 				v.Backtest = tt.backtest
 			}
@@ -103,6 +124,10 @@ func TestValidate(t *testing.T) {
 				tt.backtest.got[0].BaseRevision != base.Hash || tt.backtest.got[0].Patch != tt.patch) {
 				t.Fatalf("backtest asked %+v", tt.backtest.got)
 			}
+			if wantBox := tt.kind == store.ProposalDistill && v.Evals.Sandbox != nil; wantBox != (len(box.dirs) == 1) ||
+				wantBox && !strings.HasPrefix(box.dirs[0][0], "actions/coded") {
+				t.Fatalf("sandboxed %q", box.dirs)
+			}
 			if tt.check != nil {
 				tt.check(t, r)
 			}
@@ -117,7 +142,7 @@ func TestMain(m *testing.M) {
 	if dir, err := os.MkdirTemp("", "millstream-proposals-warm-"); err == nil {
 		if base, err := pipeline.FromFiles("", baseFiles()); err == nil {
 			if p, err := Prepare(store.ProposalDistill, base, distill("coded")); err == nil {
-				v := Validator{Check: checker, Evals: Evals{Launchers: inProcess}, Scratch: dir}
+				v := Validator{Check: checker, Evals: Evals{Launchers: inProcess, Sandbox: &inSandbox{}}, Scratch: dir}
 				_, _ = v.Validate(context.Background(), "listings", p)
 			}
 		}

@@ -31,9 +31,10 @@ type BacktestCmd struct {
 func newBacktester(rt *Runtime, env *pipeline.Environment, st store.Store, arts artifacts.Store, mode string,
 	log *slog.Logger,
 ) *backtest.Backtester {
-	return backtest.New(backtest.Options{Store: st, Artifacts: arts, Mode: mode, Improve: env.Improve,
+	opts := backtest.Options{Store: st, Artifacts: arts, Mode: mode, Improve: env.Improve,
 		Resolver: resolver(rt, env, false), Launchers: launchers(rt, env), Agents: agents(rt, env), Env: rt.Env,
-		Secrets: secrets(rt, env), Check: checkOptions(rt, env), Logger: log})
+		Secrets: secrets(rt, env), Check: checkOptions(rt, env), Sandbox: candidateSandbox(rt, env), Logger: log}
+	return backtest.New(opts)
 }
 
 // Run backtests the patch from this process, reading the store, and prints the report: a patch without a base

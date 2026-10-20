@@ -192,17 +192,9 @@ func (e *Engine) AcceptProposal(ctx context.Context, id, patchSHA256, by string)
 // (proposals.Rebase), under its kind's path rules; a refusal is store.ErrInvalid.
 func (e *Engine) prepare(ctx context.Context, rebase bool, kind store.ProposalKind, hash, text string,
 ) (proposals.Prepared, error) {
-	bundle, err := e.st.Package(ctx, hash)
+	base, err := e.StoredPackage(ctx, hash)
 	if err != nil {
 		return proposals.Prepared{}, err
-	}
-	files, err := pipeline.DecodeBundle(bundle)
-	if err != nil {
-		return proposals.Prepared{}, fmt.Errorf("package %.12s: %w", hash, err)
-	}
-	base, err := pipeline.FromFiles("", files)
-	if err != nil {
-		return proposals.Prepared{}, fmt.Errorf("package %.12s: %w", hash, err)
 	}
 	prepare := proposals.Prepare
 	if rebase {

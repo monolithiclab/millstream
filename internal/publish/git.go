@@ -4,8 +4,6 @@ import (
 	"bytes"
 	"cmp"
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -52,17 +50,15 @@ type jobRunner interface {
 
 // containerJobs runs the jobs in the action's container.
 type containerJobs struct {
-	rt    container.Runtime
+	rt    container.JobRunner
 	image string
 	// mounts are mounted besides the work directory: tests mount a local repository and fake CLIs.
 	mounts []exec.Mount
 }
 
 func (c containerJobs) run(ctx context.Context, j gitJob) (string, error) {
-	id := make([]byte, 6)
-	_, _ = rand.Read(id)
 	var stdout, stderr bytes.Buffer
-	err := c.rt.RunJob(ctx, container.Job{Name: "millstream-publish-" + hex.EncodeToString(id), Image: c.image,
+	err := c.rt.RunJob(ctx, container.Job{Image: c.image,
 		Entrypoint: "/bin/sh", Command: []string{"-euc", j.script}, Workdir: jobMount, Network: true,
 		Mounts: append([]exec.Mount{{Source: j.work, Target: jobMount}}, c.mounts...),
 		Env:    append([]string{"WORK=" + jobMount, "HOME=/tmp"}, j.env...)}, &stdout, &stderr)
@@ -102,7 +98,7 @@ func newGitPR(name string, cfg pipeline.GitConfig, d Deps) (*gitPR, error) {
 			return nil, fmt.Errorf("publish: %s runs in a container (spec section 11.7), and no container runtime "+
 				"is installed", name)
 		}
-		g.jobs = containerJobs{rt: *d.Runtime, image: cfg.Image}
+		g.jobs = containerJobs{rt: d.Runtime, image: cfg.Image}
 	}
 	for _, k := range cfg.Env {
 		v, ok := "", false
@@ -117,15 +113,16 @@ func newGitPR(name string, cfg pipeline.GitConfig, d Deps) (*gitPR, error) {
 	return g, nil
 }
 
-// gitPrelude defines g, git with hooks disabled, no system or global configuration, the forge's CLI as its only
-// credential helper, and no prompt.
-const gitPrelude = `export GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null GIT_TERMINAL_PROMPT=0 GH_PROMPT_DISABLED=1
-g() { git -c core.hooksPath=/dev/null -c safe.directory='*' -c protocol.ext.allow=never -c commit.gpgsign=false \
-  -c credential.helper= -c "credential.helper=!$MS_FORGE auth git-credential" "$@"; }
+// gitPrelude defines g: git with hooks disabled, the forge's CLI as its only credential helper, no prompt, and no
+// system or user configuration. The settings are also its global configuration, which the git processes it starts
+// for a local remote keep (they drop the command line's).
+const gitPrelude = `export GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL="$WORK/gitconfig" GIT_TERMINAL_PROMPT=0 GH_PROMPT_DISABLED=1
+printf '[core]\n\thooksPath = /dev/null\n[safe]\n\tdirectory = *\n[protocol "ext"]\n\tallow = never\n[commit]\n\tgpgsign = false\n[credential]\n\thelper = !%s auth git-credential\n' "$MS_FORGE" > "$GIT_CONFIG_GLOBAL"
+g() { git -c core.hooksPath=/dev/null "$@"; }
 `
 
 // cloneScript clones the base branch alone and starts the proposal's branch.
-const cloneScript = gitPrelude + `g clone --quiet --no-tags --single-branch --branch "$MS_BASE" -- "$MS_REPO" "$WORK/repo"
+const cloneScript = gitPrelude + `g clone --quiet --depth 1 --no-tags --single-branch --branch "$MS_BASE" -- "$MS_REPO" "$WORK/repo"
 g -C "$WORK/repo" checkout --quiet -b "$MS_BRANCH"
 `
 

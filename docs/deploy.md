@@ -348,6 +348,8 @@ improve:
     author: { name: Millstream, email: millstream@example.com }
 ```
 
+- The engine runs the action, when the improve pipeline's publish step asks (`POST /proposals/<id>/publish`), once
+  per proposal.
 - `apply` makes the patched package the pipeline's next revision, only while its active revision is still the
   proposal's base. Production refuses it.
 - The git actions run `improve.git.image` with the container runtime (`runtime.container`): a hardened container

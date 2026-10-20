@@ -16,6 +16,8 @@ package container
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -122,29 +124,46 @@ func (l Launcher) Command(spec exec.Spec, workdir string) (*osexec.Cmd, error) {
 	if spec.Image == "" {
 		return nil, fmt.Errorf("action %s: no image", spec.Action)
 	}
-	paths := []string{workdir}
-	for _, m := range spec.Mounts {
-		paths = append(paths, m.Source, m.Target)
-	}
-	for _, p := range paths {
-		if strings.Contains(p, ",") {
-			return nil, fmt.Errorf("action %s: mount path %q holds a comma, which --mount cannot pass", spec.Action, p)
-		}
+	if err := commaFree(spec.Mounts, workdir); err != nil {
+		return nil, fmt.Errorf("action %s: %w", spec.Action, err)
 	}
 	cmd := l.Runtime.command(context.Background(), l.Args(spec, workdir)...)
-	for _, kv := range spec.Env {
-		if k, _, _ := strings.Cut(kv, "="); !l.Runtime.hasEnv(k) {
-			cmd.Env = append(cmd.Env, kv)
-		}
-	}
+	cmd.Env = l.Runtime.cliEnv(spec.Env)
 	return cmd, nil
 }
 
 // Kill implements exec.Launcher: it removes the container, which outlives its killed client.
-func (l Launcher) Kill(_ exec.Spec, workdir string) {
+func (l Launcher) Kill(_ exec.Spec, workdir string) { l.Runtime.remove(Name(workdir)) }
+
+// commaFree refuses a mount path holding a comma, --mount's separator.
+func commaFree(mounts []exec.Mount, paths ...string) error {
+	for _, m := range mounts {
+		paths = append(paths, m.Source, m.Target)
+	}
+	for _, p := range paths {
+		if strings.Contains(p, ",") {
+			return fmt.Errorf("mount path %q holds a comma, which --mount cannot pass", p)
+		}
+	}
+	return nil
+}
+
+// cliEnv is the CLI's environment with the values of the variables env passes by name (mountsAndEnv).
+func (r Runtime) cliEnv(env []string) []string {
+	out := slices.Clone(r.Env)
+	for _, kv := range env {
+		if k, _, _ := strings.Cut(kv, "="); !r.hasEnv(k) {
+			out = append(out, kv)
+		}
+	}
+	return out
+}
+
+// remove removes a container by name, as a killed or cancelled client leaves it running.
+func (r Runtime) remove(name string) {
 	ctx, cancel := context.WithTimeout(context.Background(), removeTimeout)
 	defer cancel()
-	_ = l.Runtime.run(l.Runtime.command(ctx, "rm", "--force", Name(workdir)))
+	_ = r.run(r.command(ctx, "rm", "--force", name))
 }
 
 // Args are the CLI arguments that run spec with workdir.
@@ -198,7 +217,8 @@ func (r Runtime) mountsAndEnv(mounts []exec.Mount, env []string) []string {
 
 // Job is a one-off container run, hardened as an action's container is: a sandbox build, a publish action.
 type Job struct {
-	// Name names the container, so a cancelled job's container can be removed.
+	// Name names the container, so a cancelled job's container can be removed; empty means a unique
+	// millstream-job-<random> name.
 	Name  string
 	Image string
 	// Entrypoint replaces the image's entrypoint when set.
@@ -211,6 +231,13 @@ type Job struct {
 	// Network gives the job the network; it has none otherwise.
 	Network bool
 }
+
+// JobRunner runs jobs: a Runtime, or a test's fake.
+type JobRunner interface {
+	RunJob(ctx context.Context, j Job, stdout, stderr io.Writer) error
+}
+
+var _ JobRunner = Runtime{}
 
 // JobArgs are the CLI arguments that run j.
 func (r Runtime) JobArgs(j Job) []string {
@@ -228,24 +255,19 @@ func (r Runtime) JobArgs(j Job) []string {
 
 // RunJob runs j to its end, its output to stdout and stderr. A cancelled job's container is removed.
 func (r Runtime) RunJob(ctx context.Context, j Job, stdout, stderr io.Writer) error {
-	for _, m := range j.Mounts {
-		if strings.Contains(m.Source+m.Target, ",") {
-			return fmt.Errorf("job %s: mount path %q holds a comma, which --mount cannot pass", j.Name, m.Source)
-		}
+	if err := commaFree(j.Mounts, j.Workdir); err != nil {
+		return fmt.Errorf("job %s: %w", j.Name, err)
+	}
+	if j.Name == "" {
+		b := make([]byte, 6)
+		_, _ = rand.Read(b)
+		j.Name = "millstream-job-" + hex.EncodeToString(b)
 	}
 	cmd := r.command(ctx, r.JobArgs(j)...)
-	cmd.Stdout, cmd.Stderr = stdout, stderr
-	cmd.Env = slices.Clone(r.Env)
-	for _, kv := range j.Env {
-		if k, _, _ := strings.Cut(kv, "="); !r.hasEnv(k) {
-			cmd.Env = append(cmd.Env, kv)
-		}
-	}
+	cmd.Stdout, cmd.Stderr, cmd.Env = stdout, stderr, r.cliEnv(j.Env)
 	err := r.run(cmd)
 	if ctx.Err() != nil {
-		rmCtx, cancel := context.WithTimeout(context.Background(), removeTimeout)
-		defer cancel()
-		_ = r.run(r.command(rmCtx, "rm", "--force", j.Name))
+		r.remove(j.Name)
 	}
 	return err
 }
