@@ -1,3 +1,4 @@
+import { isDecided, isOpenProposal } from '../common/proposal';
 import { ApiError, type Api, type ArtifactLocation } from './api';
 import { demoFixtures } from './demo';
 import type {
@@ -13,6 +14,7 @@ import type {
   Nodes,
   Pipeline,
   PipelineSnapshot,
+  Proposal,
   Review,
   Revision,
   Run,
@@ -61,11 +63,13 @@ export interface Fixtures {
   reports: Record<string, Partial<RunReport>>;
   revisions: Revision[];
   insights: Insight[];
+  proposals: Proposal[];
   // By pipeline.
   lessons: Record<string, StepLessons[]>;
   metricNames: string[];
   metrics: (name: string, groupBy: string | undefined, from: Date, to: Date) => MetricSeries[];
-  // Review delivery ids whose decision answers 409 with this message.
+  // Review delivery ids whose decision, and proposal ids whose acceptance or revalidation, answer 409 with this
+  // message.
   conflicts: Record<string, string>;
 }
 
@@ -75,6 +79,8 @@ export interface FakeOptions {
   failReads?: boolean;
   // A server with a token: every call but signIn and signOut answers 401 until signIn with it.
   token?: string;
+  // The deployment's environment the session reports; development by default.
+  environment?: 'production' | 'development';
 }
 
 export interface FakeCall {
@@ -300,6 +306,15 @@ export class FakeApi implements Api {
     Promise.resolve({ items: this.fixtures.inbox.filter(matches({ pipeline, inbox, step, state })) });
   listSamples: Api['listSamples'] = ({ pipeline, inbox, step, state } = {}) =>
     Promise.resolve({ items: this.fixtures.samples.filter(matches({ pipeline, inbox, step, state })) });
+  listProposals: Api['listProposals'] = ({ pipeline, state } = {}) =>
+    Promise.resolve(
+      this.fixtures.proposals
+        .filter(
+          (p) => (pipeline === undefined || p.pipeline === pipeline) && (state === undefined || p.state === state),
+        )
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
+    );
+  getProposal: Api['getProposal'] = (id) => this.found(this.proposal(id), `proposal ${id}`).then((p) => ({ ...p }));
   listInsights: Api['listInsights'] = ({ pipeline, state } = {}) =>
     Promise.resolve(
       this.fixtures.insights.filter(
@@ -448,6 +463,66 @@ export class FakeApi implements Api {
   acknowledgeInsight: Api['acknowledgeInsight'] = (...args) =>
     this.setInsight('acknowledgeInsight', args, 'acknowledged');
   muteInsight: Api['muteInsight'] = (...args) => this.setInsight('muteInsight', args, 'muted');
+  // Accepting succeeds on a ready proposal whose patch the decider saw, while its base is the active revision; the
+  // other open proposals touching its paths or steps go stale. A moved base makes it stale: both are conflicts.
+  acceptProposal: Api['acceptProposal'] = (...args) => {
+    const [id, { patchSha256 }] = args;
+    const p = this.proposal(id);
+    if (p === undefined) return this.refuse('acceptProposal', args, 404, 'notFound', `proposal ${id} not found`);
+    const conflict = this.fixtures.conflicts[id];
+    if (conflict !== undefined) return this.refuse('acceptProposal', args, 409, 'conflict', conflict);
+    if (p.state !== 'ready') {
+      return this.refuse('acceptProposal', args, 409, 'conflict', `proposal ${id} is ${p.state}, not ready`);
+    }
+    if (patchSha256 !== p.patchSha256) {
+      return this.refuse('acceptProposal', args, 409, 'conflict', `proposal ${id}'s patch is not ${patchSha256}`);
+    }
+    if (p.baseRevision !== this.activeHash(p.pipeline)) {
+      this.decided(p, 'stale');
+      return this.refuse(
+        'acceptProposal',
+        args,
+        409,
+        'conflict',
+        `the active revision of ${p.pipeline} is no longer proposal ${id}'s base: it is stale`,
+      );
+    }
+    this.decided(p, 'accepted', this.user());
+    for (const other of this.fixtures.proposals) {
+      const touches = other.paths.some((x) => p.paths.includes(x)) || other.steps.some((x) => p.steps.includes(x));
+      if (other !== p && other.pipeline === p.pipeline && isOpenProposal(other.state) && touches)
+        this.decided(other, 'stale');
+    }
+    return this.record('acceptProposal', args, { ...p });
+  };
+  rejectProposal: Api['rejectProposal'] = (...args) => {
+    const [id, { reason = '' }] = args;
+    const p = this.proposal(id);
+    if (p === undefined) return this.refuse('rejectProposal', args, 404, 'notFound', `proposal ${id} not found`);
+    if (reason.trim() === '') return this.refuse('rejectProposal', args, 400, 'invalid', 'a rejection needs a reason');
+    if (isDecided(p.state)) {
+      return this.refuse('rejectProposal', args, 409, 'conflict', `proposal ${id} is ${p.state} already`);
+    }
+    this.decided(p, 'rejected', this.user());
+    p.reason = reason;
+    return this.record('rejectProposal', args, { ...p });
+  };
+  // A stale proposal is rebased onto the active revision (a new patch hash), then validated: the demo's reports
+  // stand, so it comes back ready when its report passed.
+  revalidateProposal: Api['revalidateProposal'] = (...args) => {
+    const [id] = args;
+    const p = this.proposal(id);
+    if (p === undefined) return this.refuse('revalidateProposal', args, 404, 'notFound', `proposal ${id} not found`);
+    const conflict = this.fixtures.conflicts[id];
+    if (conflict !== undefined) return this.refuse('revalidateProposal', args, 409, 'conflict', conflict);
+    if (p.state === 'stale') {
+      p.baseRevision = this.activeHash(p.pipeline) ?? p.baseRevision;
+      p.patchSha256 = `${p.id}-rebased-${this.calls.length + 1}`;
+      if (p.report) p.report = { ...p.report, baseRevision: p.baseRevision, patchSha256: p.patchSha256 };
+    }
+    this.decided(p, p.report?.passed === true ? 'ready' : 'drafting');
+    return this.record('revalidateProposal', args, { ...p });
+  };
   // Draining stops leasing to a node; revoking also ends its leases. The embedded node refuses both, a standby too.
   drainNode: Api['drainNode'] = (...args) => this.setNode('drainNode', args, 'draining');
   revokeNode: Api['revokeNode'] = (...args) => this.setNode('revokeNode', args, 'revoked');
@@ -472,8 +547,8 @@ export class FakeApi implements Api {
   getSession: Api['getSession'] = () =>
     Promise.resolve(
       this.options.token === undefined
-        ? { auth: false, user: 'demo', environment: 'development' }
-        : { auth: true, user: 'operator', environment: 'development' },
+        ? { auth: false, user: 'demo', environment: this.environment() }
+        : { auth: true, user: 'operator', environment: this.environment() },
     );
   signIn: Api['signIn'] = (token) => {
     if (this.options.token === undefined)
@@ -481,7 +556,7 @@ export class FakeApi implements Api {
     if (token !== this.options.token)
       return Promise.reject(new ApiError(401, 'unauthorized', "the token does not match this server's"));
     this.signedIn = true;
-    return this.record('signIn', [], { auth: true, user: 'operator', environment: 'development' as const });
+    return this.record('signIn', [], { auth: true, user: 'operator', environment: this.environment() });
   };
   signOut: Api['signOut'] = () => {
     this.signedIn = false;
@@ -502,6 +577,32 @@ export class FakeApi implements Api {
     node.state = state;
     if (state === 'revoked') node.leases = 0;
     return this.record(method, args, undefined);
+  }
+
+  private environment(): 'production' | 'development' {
+    return this.options.environment ?? 'development';
+  }
+
+  private user(): string {
+    return this.options.token === undefined ? 'demo' : 'operator';
+  }
+
+  private proposal(id: string): Proposal | undefined {
+    return this.fixtures.proposals.find((p) => p.id === id);
+  }
+
+  private activeHash(pipeline: string): string | undefined {
+    return this.fixtures.revisions.find((r) => r.pipeline === pipeline && r.active)?.packageHash;
+  }
+
+  // A proposal's new state, now; a decision also names who made it.
+  private decided(p: Proposal, state: Proposal['state'], by?: string): void {
+    p.state = state;
+    p.updatedAt = new Date().toISOString();
+    if (by !== undefined) {
+      p.decidedBy = by;
+      p.decidedAt = p.updatedAt;
+    }
   }
 
   private setInsight(method: string, args: [string, string], state: Insight['state']): Promise<void> {

@@ -79,6 +79,8 @@ export class HttpApi implements Api {
   listInbox: Api['listInbox'] = (query = {}) => this.get('/inbox', query);
   listSamples: Api['listSamples'] = (query = {}) => this.get('/inbox/samples', query);
   listInsights: Api['listInsights'] = (query = {}) => this.get('/insights', query);
+  listProposals: Api['listProposals'] = (query = {}) => this.get('/proposals', query);
+  getProposal: Api['getProposal'] = (proposal) => this.get(`/proposals/${enc(proposal)}`);
   getMetrics: Api['getMetrics'] = (query) => this.get('/metrics', query);
   listMetricNames: Api['listMetricNames'] = (query = {}) => this.get('/metrics/names', query);
   listNodes: Api['listNodes'] = () => this.get('/nodes');
@@ -104,6 +106,11 @@ export class HttpApi implements Api {
   acknowledgeInsight: Api['acknowledgeInsight'] = (p, insight) =>
     this.post(`${pipelinePath(p)}/insights/${enc(insight)}/acknowledge`);
   muteInsight: Api['muteInsight'] = (p, insight) => this.post(`${pipelinePath(p)}/insights/${enc(insight)}/mute`);
+  acceptProposal: Api['acceptProposal'] = (proposal, decision) =>
+    this.post(`/proposals/${enc(proposal)}/accept`, decision);
+  rejectProposal: Api['rejectProposal'] = (proposal, decision) =>
+    this.post(`/proposals/${enc(proposal)}/reject`, decision);
+  revalidateProposal: Api['revalidateProposal'] = (proposal) => this.post(`/proposals/${enc(proposal)}/revalidate`);
   drainNode: Api['drainNode'] = (node) => this.post(`/nodes/${enc(node)}/drain`);
   revokeNode: Api['revokeNode'] = (node) => this.post(`/nodes/${enc(node)}/revoke`);
   rotateTriggerToken: Api['rotateTriggerToken'] = (p, trigger) =>

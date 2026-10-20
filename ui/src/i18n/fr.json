@@ -45,7 +45,8 @@
     "items": "Flux et items",
     "deadLetters": "Lettres mortes",
     "insights": "Constats",
-    "lessons": "Leçons"
+    "lessons": "Leçons",
+    "improve": "Améliorer"
   },
   "screen": {
     "inPipeline": "Pipeline {{pipeline}}",
@@ -135,7 +136,13 @@
     "late": "Signal en retard",
     "lost": "Perdu",
     "expired": "Expiré",
-    "erased": "Effacé"
+    "erased": "Effacé",
+    "drafting": "En rédaction",
+    "validating": "En validation",
+    "ready": "Prête",
+    "accepted": "Acceptée",
+    "rejected": "Rejetée",
+    "stale": "Périmée"
   },
   "graph": {
     "kind": {
@@ -802,7 +809,10 @@
       "failureCluster": "Série d’échecs",
       "cost": "Coût",
       "reviewPattern": "Tendance de revue",
-      "unschedulable": "Non planifiable"
+      "unschedulable": "Non planifiable",
+      "waste": "Gaspillage",
+      "drift": "Dérive",
+      "distillable": "Remplaçable par du code"
     },
     "raised": "relevé {{when}}",
     "title": {
@@ -810,13 +820,20 @@
       "failureCluster": "{{count}} échecs avec la même erreur à {{step}}",
       "cost": "{{step}} a coûté {{cost}} sur la période",
       "reviewPattern": "Comment les relecteurs décident à {{step}}",
-      "unschedulable": "Aucun nœud ne peut exécuter {{step}}"
+      "unschedulable": "Aucun nœud ne peut exécuter {{step}}",
+      "drift": "Le secours contredit {{step}}",
+      "waste": "{{step}} a dépensé {{cost}} pour des items écartés ensuite",
+      "distillable": "{{step}} pourrait devenir du code"
     },
     "body": {
       "slowStep": "Elle occupe {{share}} du chemin critique sur les derniers runs ({{runs}}).",
       "cost": "Sorties sur la période : {{outputs}}.",
       "edits": "Les relecteurs modifient surtout ces champs : {{pointers}}.",
-      "noEdits": "Les relecteurs approuvent sans modifier."
+      "noEdits": "Les relecteurs approuvent sans modifier.",
+      "drift": "Sur {{disagreed}} des {{audits}} audits, la sortie du secours différait de celle du principal ; le seuil est de {{threshold}}.",
+      "waste": "Écartés par : {{steps}}.",
+      "wasteMove": "Placer {{filter}} avant {{step}} éviterait cette dépense.",
+      "distillable": "{{share}} de ses champs de sortie sont bornés ou recopiés. Bornés : {{bounded}}. Recopiés : {{copied}}. Libres : {{free}}."
     },
     "figure": {
       "p95": "Latence p95",
@@ -837,7 +854,21 @@
       "agreement": "Accord sur les échantillons",
       "decision": "décision médiane {{value}}",
       "attempts": "Essais refusés",
-      "deliveries": "Livraisons"
+      "deliveries": "Livraisons",
+      "auditAgreement": "Accord sur les audits",
+      "disagreed": "Désaccords",
+      "auditsFailed": "audits en échec : {{count}}",
+      "audits": "Audits",
+      "discarded": "Items écartés",
+      "wasted": "Coût perdu",
+      "ofStepCost": "{{value}} du coût de l’étape",
+      "stepCost": "Coût de l’étape",
+      "saving": "Économie par mois",
+      "rank": "candidate n°{{rank}} par économie",
+      "turns": "Tours par livraison, p95",
+      "deliveriesCount": "livraisons : {{count}}",
+      "reviewerAgreement": "Approuvés sans modification",
+      "reviewed": "décisions : {{count}}"
     },
     "samples": "Items en exemple",
     "openMetrics": "Ouvrir dans les métriques",
@@ -845,7 +876,186 @@
     "openNodes": "Ouvrir les nœuds",
     "acknowledge": "Prendre en compte",
     "mute": "Masquer",
-    "actionFailed": "Le constat n’a pas pu être modifié."
+    "actionFailed": "Le constat n’a pas pu être modifié.",
+    "attribution": "Qui a écrit les champs modifiés",
+    "attributed": "{{pointer}} par {{step}} : {{edits}} modifications",
+    "unattributed": "Modifications qu’aucune étape seule n’a écrites : {{count}}",
+    "hints": "Propositions qu’appellent ces tendances",
+    "hint": {
+      "unattributed": "aucune étape seule",
+      "topology": "Un filtre {{condition}} après {{after}}, avant {{before}} : il écarte {{rejections}} items rejetés et {{falseDrops}} des {{approvals}} approuvés.",
+      "lessons": "{{edits}} modifications de {{pointer}} écrit par {{step}} : une leçon, ou une modification du prompt.",
+      "config": "{{rate}} des {{decisions}} décisions à {{step}} approuvées sans modification : une règle autoApprove.",
+      "reasons": "{{rejections}} rejets à {{step}} avec un texte et sans code de motif : de nouveaux codes.",
+      "reasonCodes": "Codes de motif"
+    }
+  },
+  "improve": {
+    "viewLabel": "Vue Améliorer",
+    "view": {
+      "proposals": "Propositions {{count}}",
+      "insights": "Constats {{count}}"
+    },
+    "explain": "Le pipeline improve rédige des propositions à partir des constats et des preuves ; le moteur valide chacune. À vous de les accepter ou de les rejeter.",
+    "proposeFix": "Proposer une correction",
+    "propose": {
+      "production": "La production n’exécute jamais le pipeline improve : proposez des corrections dans un déploiement de développement, à partir des preuves exportées ici.",
+      "off": "Improve est désactivé dans ce déploiement : définissez improve.enabled et un harnais dans le fichier d’environnement.",
+      "noTrigger": "Le pipeline improve n’a pas de déclencheur manuel.",
+      "started": "Run improve {{run}} lancé : ses propositions apparaîtront ici.",
+      "failed": "Le pipeline improve n’a pas démarré : {{message}}"
+    },
+    "stateLabel": "État des propositions",
+    "tab": {
+      "open": "À décider {{count}}",
+      "stale": "Périmées {{count}}",
+      "accepted": "Acceptées {{count}}",
+      "rejected": "Rejetées {{count}}"
+    },
+    "kindLabel": "Type",
+    "allKinds": "Tous les types",
+    "kind": {
+      "config": "Configuration",
+      "prompt": "Prompt",
+      "lessons": "Leçons",
+      "topology": "Topologie",
+      "distill": "Distillation"
+    },
+    "listLabel": "Propositions, de la plus récente",
+    "none": "Aucune proposition à décider",
+    "noneBody": "Les propositions viennent du pipeline improve : à chaque nouveau constat, chaque semaine, ou quand vous proposez une correction.",
+    "noneHere": "Aucune proposition dans cet état",
+    "created": "par {{who}} {{when}}",
+    "noRationale": "Aucune justification donnée.",
+    "rejectedBecause": "Rejetée : {{reason}}",
+    "summary": {
+      "notYet": "Pas encore validée",
+      "passed": "Validation réussie",
+      "failed": "Validation échouée : {{what}}",
+      "check": "vérification",
+      "evals": "évaluations",
+      "backtest": "rejeu"
+    },
+    "title": "Proposition {{id}}",
+    "back": "Améliorer · {{pipeline}}",
+    "loadFailed": "La proposition {{id}} n’a pas pu être chargée.",
+    "why": "Quoi et pourquoi",
+    "facts": {
+      "base": "Révision de base",
+      "baseActive": "r{{id}}, la révision active",
+      "baseInactive": "r{{id}}, plus active",
+      "baseUnknown": "pas une révision de ce déploiement",
+      "steps": "Étapes",
+      "paths": "Fichiers",
+      "patch": "SHA-256 du patch",
+      "created": "Créée",
+      "createdValue": "par {{who}}, {{when}}"
+    },
+    "refused": "Non effectué",
+    "conflict": "{{message}}. La proposition a été relue.",
+    "accept": {
+      "action": "Accepter…",
+      "title": "Accepter la proposition {{id}} ?",
+      "publish": "Le pipeline improve la publie comme le dit improve.publish : une révision de développement (apply), un fichier de patch (patch-file) ou une pull request (git-pr-gh, git-pr-glab).",
+      "base": "Elle n’est acceptée que tant que {{revision}} est la révision active ; sinon elle devient périmée.",
+      "others": "Les autres propositions ouvertes qui touchent ses fichiers ou ses étapes deviennent périmées.",
+      "hash": "Vous acceptez le patch que vous avez lu :",
+      "confirm": "Accepter",
+      "done": "Proposition {{id}} acceptée"
+    },
+    "reject": {
+      "action": "Rejeter…",
+      "title": "Rejeter la proposition {{id}} ?",
+      "reason": "Pourquoi ? (obligatoire)",
+      "hint": "Le motif est enregistré et transmis aux rédactions suivantes. La même idée ne revient que si ses preuves changent nettement.",
+      "confirm": "Rejeter",
+      "done": "Proposition {{id}} rejetée"
+    },
+    "revalidate": "Revalider",
+    "revalidated": "Validée à nouveau : {{state}}",
+    "validatingNote": "Le moteur la valide : décidez une fois son rapport disponible.",
+    "staleNote": "Sa base n’est plus la révision active. Revalider rebase le patch sur la révision active et relance la validation.",
+    "validation": {
+      "title": "Validation",
+      "running": "Validation en cours : vérification, évaluations et rejeu.",
+      "none": "Pas encore validée.",
+      "allPassed": "Vérification, évaluations et rejeu réussis",
+      "passed": "Réussi",
+      "failed": "Échoué",
+      "check": "Vérification du package patché",
+      "notRun": "Non exécuté.",
+      "error": "Erreur",
+      "warning": "Avertissement"
+    },
+    "before": "Avant",
+    "after": "Après",
+    "evals": {
+      "title": "Évaluations, avant et après",
+      "rule": "Jugée par les évaluations de la révision de base : chaque action concernée exécute les cas de base avant et après le patch, et réussit si aucun cas réussi avant n’échoue après. Une proposition ne peut pas redéfinir son propre succès.",
+      "none": "Aucune action avec des évaluations n’est concernée.",
+      "case": "Cas",
+      "casePassed": "Réussi · {{score}}",
+      "caseFailed": "Échoué · {{score}}",
+      "tableLabel": "Évaluations de {{step}}",
+      "newTitle": "Cas nouveaux et modifiés",
+      "newRule": "Les cas que le patch ajoute ou modifie s’exécutent après lui seulement. Ils sont présentés à part et ne décident jamais."
+    },
+    "backtest": {
+      "title": "Rejeu, avant et après",
+      "rule": "Les étapes modifiées rejouées sur des items passés, une fois sur la révision de base et une fois patchées. Il réussit si chaque accord baisse d’au plus 2 points, si le taux d’échec n’augmente pas et si le patch écarte au plus improve.filter.maxFalseDrop (1 % par défaut) des items approuvés par les relecteurs.",
+      "skipped": "Non exécuté : {{reason}}",
+      "sample": "Échantillon",
+      "fromEvidence": "{{count}} livraisons des preuves importées, {{runs}} runs",
+      "fromLocal": "{{count}} livraisons de l’historique local, {{runs}} runs",
+      "changedSteps": "Étapes modifiées",
+      "reach": "Portée après",
+      "reachValue": "{{added}} livraisons nouvellement atteintes, {{dropped}} plus atteintes",
+      "spent": "Dépensé en rejeux",
+      "tableLabel": "Rejeu sur tout l’échantillon",
+      "stepTableLabel": "Rejeu à {{step}}",
+      "byStep": "Par étape modifiée",
+      "measure": "Mesure",
+      "change": "Écart",
+      "agreement": "Accord avec l’historique",
+      "reviewAgreement": "Accord avec les relecteurs",
+      "approvalsDropped": "Approbations passées écartées",
+      "failureRate": "Taux d’échec",
+      "cost": "Coût",
+      "latency": "Latence moyenne",
+      "points": "{{value}} pts",
+      "regressed": "{{change}}, au-delà de la limite",
+      "nothingToCompare": "rien à comparer",
+      "warnings": "Avertissements",
+      "divergence": "Enregistré sur une autre révision que la base : {{revision}} ({{count}} livraisons)"
+    },
+    "patch": "Patch",
+    "diff": {
+      "files": "Fichiers modifiés",
+      "counts": "+{{added}} −{{removed}}",
+      "added": "Ajouté :",
+      "removed": "Supprimé :",
+      "before": "{{path}}, avant",
+      "after": "{{path}}, après",
+      "empty": "Le patch ne modifie aucun fichier.",
+      "op": {
+        "modify": "Modifié",
+        "create": "Nouveau",
+        "delete": "Supprimé"
+      }
+    },
+    "evidence": "Preuves",
+    "noInsights": "Elle ne répond à aucun constat.",
+    "insightLink": "{{kind}} à {{step}}",
+    "insightGone": "Constat {{id}}, plus listé",
+    "history": {
+      "title": "Historique",
+      "created": "Créée par {{who}}, {{when}}",
+      "validated": "Validation : réussie",
+      "notValidated": "Validation : échouée",
+      "since": "{{state}} depuis {{when}}",
+      "accepted": "Acceptée par {{who}}, {{when}}",
+      "rejected": "Rejetée par {{who}}, {{when}} : {{reason}}"
+    }
   },
   "lessons": {
     "explain": "Lecture seule : les leçons se modifient dans le fichier de leçons de l’étape.",

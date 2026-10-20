@@ -6,6 +6,8 @@ import { SessionGate } from './auth/SessionGate';
 import type { Language } from './i18n';
 import type { EventSourceFactory } from './live/useLiveStream';
 import { PreferencesProvider, type Theme } from './preferences';
+import { ImproveScreen } from './screens/improve/ImproveScreen';
+import { ProposalScreen } from './screens/improve/ProposalScreen';
 import { InboxScreen } from './screens/inbox/InboxScreen';
 import { InsightsScreen } from './screens/insights/InsightsScreen';
 import { LessonsScreen } from './screens/lessons/LessonsScreen';
@@ -36,6 +38,7 @@ const elements: Record<ScreenId, () => ReactNode> = {
   runs: () => <RunsScreen />,
   items: () => <ItemsScreen />,
   insights: () => <InsightsScreen />,
+  improve: () => <ImproveScreen />,
   lessons: () => <LessonsScreen />,
   nodes: () => <NodesScreen />,
   logs: () => <LogsScreen />,
@@ -58,6 +61,7 @@ export function AppRoutes() {
         <Route path="inbox/:inbox/:delivery?" element={<InboxScreen />} />
         <Route path="p/:pipeline/runs/:run" element={<RunScreen />} />
         <Route path="p/:pipeline/items/:item" element={<ItemScreen />} />
+        <Route path="p/:pipeline/improve/:proposal" element={<ProposalScreen />} />
         <Route path="p/:pipeline" element={<Navigate to="graph" replace />} />
         <Route path="*" element={<NotFound />} />
       </Route>

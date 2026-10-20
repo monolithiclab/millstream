@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { expectNoClipping, expectNoViolations } from './checks';
+import { toAccept, toReject } from './proposals';
 
 // Every built screen against millstream run on the e2e fixture, seeded by global.setup.ts: in both themes, both
 // languages, at 375 and 1280 px, axe finds no WCAG 2.2 AA violation and no text is clipped. Then the flows that
@@ -24,6 +25,15 @@ async function deadItem(page: Page): Promise<string> {
   const groups = await read<{ deadLetters: { id: string }[] }[]>(page, '/dead-letters');
   const letter = await read<{ parents: string[] }>(page, `/items/${groups[0]?.deadLetters[0]?.id ?? 'none'}`);
   return letter.parents[0] ?? 'none';
+}
+
+// The id of a proposal global.setup.ts created, by its fingerprint.
+async function proposalId(page: Page, fingerprint: string): Promise<string> {
+  const all = (await (await page.request.get('/api/v1/proposals?pipeline=listings-daily')).json()) as {
+    id: string;
+    fingerprint: string;
+  }[];
+  return all.find((p) => p.fingerprint === fingerprint)?.id ?? 'none';
 }
 
 interface ScreenCase {
@@ -122,6 +132,27 @@ const screens: ScreenCase[] = [
     path: async () => '/p/listings-daily/insights',
     ready: (page) =>
       expect(page.getByRole('complementary', { name: /Filter insights|Filtrer les constats/ })).toBeVisible(),
+  },
+  {
+    name: 'improve',
+    path: async () => '/p/listings-daily/improve',
+    ready: (page) =>
+      expect(
+        page.getByRole('list', { name: /Proposals, newest first|Propositions, de la plus récente/ }),
+      ).toBeVisible(),
+    open: async (page) => {
+      await page.getByRole('button', { name: /^(Insights|Constats) \d+$/ }).click();
+      await expect(page.getByRole('complementary', { name: /Filter insights|Filtrer les constats/ })).toBeVisible();
+    },
+  },
+  {
+    name: 'proposal',
+    path: async (page) => `/p/listings-daily/improve/${await proposalId(page, toAccept.fingerprint)}`,
+    ready: (page) => expect(page.getByRole('region', { name: /^(Patch)$/ })).toBeVisible(),
+    open: async (page) => {
+      await page.getByRole('button', { name: /^(Reject|Rejeter)…$/ }).click();
+      await expect(page.getByRole('dialog')).toBeVisible();
+    },
   },
   {
     name: 'lessons',
@@ -286,4 +317,48 @@ test('the metrics explorer draws a chart and keeps the view in the URL', async (
   await page.reload();
   await expect(page.getByRole('combobox', { name: 'Metric' })).toHaveValue('items_in');
   await expectNoViolations(page);
+});
+
+test('open a proposal, read its diff and validation, reject one with a reason, accept another', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto('/p/listings-daily/improve');
+  const list = page.getByRole('list', { name: 'Proposals, newest first' });
+  await list.getByRole('link', { name: new RegExp(toReject.rationale) }).click();
+  await expect(page.getByRole('heading', { level: 1, name: /^Proposal / })).toBeVisible();
+
+  // The patch, side by side at this width, and the validation table.
+  const patch = page.getByRole('region', { name: 'Patch' });
+  await expect(patch.getByRole('navigation', { name: 'Files changed' })).toContainText('pipeline.yaml');
+  await expect(patch.getByRole('region', { name: 'pipeline.yaml, after' })).toContainText(
+    `description: ${toReject.description}`,
+  );
+  const validation = page.getByRole('region', { name: 'Validation' });
+  await expect(validation).toContainText('Judged by the base revision’s evals');
+  const table = validation.getByRole('table', { name: 'Backtest over the whole sample' });
+  await expect(table.getByRole('row', { name: /Agreement with history/ })).toBeVisible();
+  await expect(table.getByRole('row', { name: /Failure rate/ })).toBeVisible();
+  await expectNoViolations(page);
+
+  // Reject with a reason: the button waits for one.
+  await page.getByRole('button', { name: 'Reject…' }).click();
+  const sheet = page.getByRole('dialog', { name: /^Reject proposal / });
+  await expect(sheet.getByRole('button', { name: 'Reject' })).toBeDisabled();
+  await sheet.getByRole('textbox', { name: 'Why? (required)' }).fill('The triage inbox is temporary.');
+  await sheet.getByRole('button', { name: 'Reject' }).click();
+  await expect(page.getByText(/^Proposal \S+ rejected$/)).toBeVisible();
+  await expect(page.getByRole('region', { name: 'History' })).toContainText('The triage inbox is temporary.');
+  await expect(page.getByRole('button', { name: 'Reject…' })).toHaveCount(0);
+
+  // Accept the other: the confirmation says what follows, and sends the patch read.
+  await page.getByRole('link', { name: 'Improve · listings-daily' }).click();
+  await list.getByRole('link', { name: new RegExp(toAccept.rationale) }).click();
+  await page.getByRole('button', { name: 'Accept…' }).click();
+  const confirm = page.getByRole('dialog', { name: /^Accept proposal / });
+  await expect(confirm).toContainText('improve.publish');
+  await expectNoViolations(page);
+  await expectNoClipping(page);
+  await confirm.getByRole('button', { name: 'Accept' }).click();
+  await expect(page.getByText(/^Proposal \S+ accepted$/)).toBeVisible();
+  await expect(page.getByRole('region', { name: 'History' })).toContainText('Accepted by');
+  await expect(page.getByRole('dialog')).toHaveCount(0);
 });

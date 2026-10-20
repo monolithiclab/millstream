@@ -11,6 +11,7 @@ export type ScreenId =
   | 'items'
   | 'deadLetters'
   | 'insights'
+  | 'improve'
   | 'lessons';
 
 // Each label is written out in screens below: the i18n test finds used keys as quoted literals.
@@ -36,6 +37,7 @@ export const screens: Screen[] = [
   { id: 'items', scope: 'pipeline', segment: 'items', label: 'nav.items' },
   { id: 'deadLetters', scope: 'pipeline', segment: 'dead-letters', label: 'nav.deadLetters', goKey: 'd' },
   { id: 'insights', scope: 'pipeline', segment: 'insights', label: 'nav.insights' },
+  { id: 'improve', scope: 'pipeline', segment: 'improve', label: 'nav.improve' },
   { id: 'lessons', scope: 'pipeline', segment: 'lessons', label: 'nav.lessons' },
 ];
 
@@ -52,6 +54,9 @@ export function pipelinePath(pipeline: string, segment = 'graph'): string {
 // The URLs of one item and one run of a pipeline.
 export const itemPath = (pipeline: string, item: string) => pipelinePath(pipeline, `items/${encodeURIComponent(item)}`);
 export const runPath = (pipeline: string, run: string) => pipelinePath(pipeline, `runs/${encodeURIComponent(run)}`);
+// A proposal of the pipeline's (spec 11.3), in the Improve view.
+export const proposalPath = (pipeline: string, proposal: string) =>
+  pipelinePath(pipeline, `improve/${encodeURIComponent(proposal)}`);
 
 // The URL of a screen; a pipeline screen without a pipeline falls back to the pipelines list.
 export function screenPath(screen: Screen, pipeline: string | undefined): string {

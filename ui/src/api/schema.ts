@@ -61,6 +61,16 @@ export type SamplePage = Schemas['SamplePage'];
 export type SampleDecision = Schemas['SampleDecision'];
 
 export type Insight = Schemas['Insight'];
+
+export type ProposalState = Schemas['ProposalState'];
+export type ProposalKind = Schemas['ProposalKind'];
+export type Proposal = Schemas['Proposal'];
+export type ProposalDecision = Schemas['ProposalDecision'];
+export type ValidationReport = Schemas['ValidationReport'];
+export type EvalReport = Schemas['EvalReport'];
+export type EvalScore = Schemas['EvalScore'];
+export type BacktestReport = Schemas['BacktestReport'];
+export type BacktestMetrics = Schemas['BacktestMetrics'];
 export type StepLessons = Schemas['StepLessons'];
 export type Nodes = Schemas['Nodes'];
 export type Node = Schemas['Node'];

@@ -45,7 +45,8 @@
     "items": "Streams and items",
     "deadLetters": "Dead letters",
     "insights": "Insights",
-    "lessons": "Lessons"
+    "lessons": "Lessons",
+    "improve": "Improve"
   },
   "screen": {
     "inPipeline": "Pipeline {{pipeline}}",
@@ -135,7 +136,13 @@
     "late": "Late",
     "lost": "Lost",
     "expired": "Expired",
-    "erased": "Erased"
+    "erased": "Erased",
+    "drafting": "Drafting",
+    "validating": "Validating",
+    "ready": "Ready",
+    "accepted": "Accepted",
+    "rejected": "Rejected",
+    "stale": "Stale"
   },
   "graph": {
     "kind": {
@@ -802,7 +809,10 @@
       "failureCluster": "Failure cluster",
       "cost": "Cost",
       "reviewPattern": "Review pattern",
-      "unschedulable": "Unschedulable"
+      "unschedulable": "Unschedulable",
+      "waste": "Waste",
+      "drift": "Drift",
+      "distillable": "Could be code"
     },
     "raised": "raised {{when}}",
     "title": {
@@ -810,13 +820,20 @@
       "failureCluster": "{{count}} failures with the same error at {{step}}",
       "cost": "{{step}} cost {{cost}} over the window",
       "reviewPattern": "How reviewers decide at {{step}}",
-      "unschedulable": "No node can run {{step}}"
+      "unschedulable": "No node can run {{step}}",
+      "drift": "The fallback disagrees with {{step}}",
+      "waste": "{{step}} spent {{cost}} on items discarded later",
+      "distillable": "{{step}} could become code"
     },
     "body": {
       "slowStep": "It holds {{share}} of the critical path across the last runs ({{runs}}).",
       "cost": "Outputs over the window: {{outputs}}.",
       "edits": "Reviewers edit these fields most: {{pointers}}.",
-      "noEdits": "Reviewers approve without edits."
+      "noEdits": "Reviewers approve without edits.",
+      "drift": "On {{disagreed}} of {{audits}} audits, the fallback’s output differed from the primary’s; the threshold is {{threshold}}.",
+      "waste": "Discarded by: {{steps}}.",
+      "wasteMove": "Moving {{filter}} before {{step}} would save it.",
+      "distillable": "{{share}} of its output fields are bounded or copied. Bounded: {{bounded}}. Copied: {{copied}}. Free: {{free}}."
     },
     "figure": {
       "p95": "p95 latency",
@@ -837,7 +854,21 @@
       "agreement": "Agreement on samples",
       "decision": "median decision {{value}}",
       "attempts": "Attempts refused",
-      "deliveries": "Deliveries"
+      "deliveries": "Deliveries",
+      "auditAgreement": "Agreement on audits",
+      "disagreed": "Disagreements",
+      "auditsFailed": "failed audits: {{count}}",
+      "audits": "Audits",
+      "discarded": "Discarded items",
+      "wasted": "Wasted cost",
+      "ofStepCost": "{{value}} of the step’s cost",
+      "stepCost": "Step cost",
+      "saving": "Saving a month",
+      "rank": "candidate {{rank}} by saving",
+      "turns": "Turns per delivery, p95",
+      "deliveriesCount": "deliveries: {{count}}",
+      "reviewerAgreement": "Approved without an edit",
+      "reviewed": "decisions: {{count}}"
     },
     "samples": "Sample items",
     "openMetrics": "Open in metrics",
@@ -845,7 +876,186 @@
     "openNodes": "Open nodes",
     "acknowledge": "Acknowledge",
     "mute": "Mute",
-    "actionFailed": "The insight could not be changed."
+    "actionFailed": "The insight could not be changed.",
+    "attribution": "Who wrote the edited fields",
+    "attributed": "{{pointer}} by {{step}}: {{edits}} edits",
+    "unattributed": "Edits no single step wrote: {{count}}",
+    "hints": "Proposals these patterns call for",
+    "hint": {
+      "unattributed": "no single step",
+      "topology": "A filter {{condition}} after {{after}}, before {{before}}: it drops {{rejections}} rejected items and {{falseDrops}} of {{approvals}} approved ones.",
+      "lessons": "{{edits}} edits of {{pointer}} written by {{step}}: a lesson, or a prompt change.",
+      "config": "{{rate}} of {{decisions}} decisions at {{step}} approved without an edit: an autoApprove rule.",
+      "reasons": "{{rejections}} rejections at {{step}} with a text and no reason code: new codes.",
+      "reasonCodes": "Reason codes"
+    }
+  },
+  "improve": {
+    "viewLabel": "Improve view",
+    "view": {
+      "proposals": "Proposals {{count}}",
+      "insights": "Insights {{count}}"
+    },
+    "explain": "The improve pipeline drafts proposals from insights and evidence; the engine validates each one. You accept or reject them.",
+    "proposeFix": "Propose a fix",
+    "propose": {
+      "production": "Production never runs the improve pipeline: propose fixes in a development deployment, from evidence exported here.",
+      "off": "Improve is off in this deployment: set improve.enabled and a harness in the environment file.",
+      "noTrigger": "The improve pipeline has no manual trigger.",
+      "started": "Improve run {{run}} started: its proposals appear here.",
+      "failed": "The improve pipeline did not start: {{message}}"
+    },
+    "stateLabel": "Proposal state",
+    "tab": {
+      "open": "To decide {{count}}",
+      "stale": "Stale {{count}}",
+      "accepted": "Accepted {{count}}",
+      "rejected": "Rejected {{count}}"
+    },
+    "kindLabel": "Kind",
+    "allKinds": "All kinds",
+    "kind": {
+      "config": "Config",
+      "prompt": "Prompt",
+      "lessons": "Lessons",
+      "topology": "Topology",
+      "distill": "Distill"
+    },
+    "listLabel": "Proposals, newest first",
+    "none": "No proposal to decide",
+    "noneBody": "Proposals come from the improve pipeline: on new insights, every week, or when you propose a fix.",
+    "noneHere": "No proposal in this state",
+    "created": "by {{who}} {{when}}",
+    "noRationale": "No rationale given.",
+    "rejectedBecause": "Rejected: {{reason}}",
+    "summary": {
+      "notYet": "Not validated yet",
+      "passed": "Validation passed",
+      "failed": "Validation failed: {{what}}",
+      "check": "check",
+      "evals": "evals",
+      "backtest": "backtest"
+    },
+    "title": "Proposal {{id}}",
+    "back": "Improve · {{pipeline}}",
+    "loadFailed": "Proposal {{id}} could not be loaded.",
+    "why": "What and why",
+    "facts": {
+      "base": "Base revision",
+      "baseActive": "r{{id}}, the active revision",
+      "baseInactive": "r{{id}}, no longer active",
+      "baseUnknown": "not a revision of this deployment",
+      "steps": "Steps",
+      "paths": "Files",
+      "patch": "Patch SHA-256",
+      "created": "Created",
+      "createdValue": "by {{who}}, {{when}}"
+    },
+    "refused": "Not done",
+    "conflict": "{{message}}. The proposal was read again.",
+    "accept": {
+      "action": "Accept…",
+      "title": "Accept proposal {{id}}?",
+      "publish": "The improve pipeline publishes it as improve.publish says: a development revision (apply), a patch file (patch-file) or a pull request (git-pr-gh, git-pr-glab).",
+      "base": "It is accepted only while {{revision}} is the active revision; otherwise it becomes stale.",
+      "others": "The other open proposals that touch its files or steps become stale.",
+      "hash": "You accept the patch you read:",
+      "confirm": "Accept",
+      "done": "Proposal {{id}} accepted"
+    },
+    "reject": {
+      "action": "Reject…",
+      "title": "Reject proposal {{id}}?",
+      "reason": "Why? (required)",
+      "hint": "The reason is recorded and given to later drafts. The same idea comes back only when its evidence changes materially.",
+      "confirm": "Reject",
+      "done": "Proposal {{id}} rejected"
+    },
+    "revalidate": "Revalidate",
+    "revalidated": "Validated again: {{state}}",
+    "validatingNote": "The engine is validating it: decide once its report is in.",
+    "staleNote": "Its base is no longer the active revision. Revalidating rebases the patch onto the active revision and runs the validation again.",
+    "validation": {
+      "title": "Validation",
+      "running": "Validating now: check, evals and backtest.",
+      "none": "Not validated yet.",
+      "allPassed": "Check, evals and backtest passed",
+      "passed": "Passed",
+      "failed": "Failed",
+      "check": "Check on the patched package",
+      "notRun": "Did not run.",
+      "error": "Error",
+      "warning": "Warning"
+    },
+    "before": "Before",
+    "after": "After",
+    "evals": {
+      "title": "Evals, before and after",
+      "rule": "Judged by the base revision’s evals: each affected action runs the base cases before and after the patch, and passes when no case that passed before fails after. A proposal cannot redefine its own success.",
+      "none": "No action with evals is affected.",
+      "case": "Case",
+      "casePassed": "Passed · {{score}}",
+      "caseFailed": "Failed · {{score}}",
+      "tableLabel": "Evals of {{step}}",
+      "newTitle": "New and changed cases",
+      "newRule": "Cases the patch adds or changes run after it alone. They are reported apart and never decide."
+    },
+    "backtest": {
+      "title": "Backtest, before and after",
+      "rule": "The changed steps replayed on past items, once on the base revision and once patched. It passes when each agreement falls by at most 2 points, the failure rate does not rise, and the patch drops at most improve.filter.maxFalseDrop (1% by default) of the items reviewers approved.",
+      "skipped": "Did not run: {{reason}}",
+      "sample": "Sample",
+      "fromEvidence": "{{count}} deliveries from imported evidence, {{runs}} runs",
+      "fromLocal": "{{count}} deliveries from local history, {{runs}} runs",
+      "changedSteps": "Changed steps",
+      "reach": "Reach after",
+      "reachValue": "{{added}} deliveries newly reached, {{dropped}} no longer reached",
+      "spent": "Spent on replays",
+      "tableLabel": "Backtest over the whole sample",
+      "stepTableLabel": "Backtest at {{step}}",
+      "byStep": "By changed step",
+      "measure": "Measure",
+      "change": "Change",
+      "agreement": "Agreement with history",
+      "reviewAgreement": "Agreement with reviewers",
+      "approvalsDropped": "Past approvals dropped",
+      "failureRate": "Failure rate",
+      "cost": "Cost",
+      "latency": "Mean latency",
+      "points": "{{value}} pts",
+      "regressed": "{{change}}, over the limit",
+      "nothingToCompare": "nothing to compare",
+      "warnings": "Warnings",
+      "divergence": "Recorded on a revision other than the base: {{revision}} ({{count}} deliveries)"
+    },
+    "patch": "Patch",
+    "diff": {
+      "files": "Files changed",
+      "counts": "+{{added}} −{{removed}}",
+      "added": "Added:",
+      "removed": "Removed:",
+      "before": "{{path}}, before",
+      "after": "{{path}}, after",
+      "empty": "The patch changes no file.",
+      "op": {
+        "modify": "Changed",
+        "create": "New",
+        "delete": "Deleted"
+      }
+    },
+    "evidence": "Evidence",
+    "noInsights": "It answers no insight.",
+    "insightLink": "{{kind}} at {{step}}",
+    "insightGone": "Insight {{id}}, no longer listed",
+    "history": {
+      "title": "History",
+      "created": "Created by {{who}}, {{when}}",
+      "validated": "Validated: passed",
+      "notValidated": "Validated: failed",
+      "since": "{{state}} since {{when}}",
+      "accepted": "Accepted by {{who}}, {{when}}",
+      "rejected": "Rejected by {{who}}, {{when}}: {{reason}}"
+    }
   },
   "lessons": {
     "explain": "Read-only: lessons change in the step's lessons file.",

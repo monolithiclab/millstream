@@ -173,6 +173,9 @@ React Flow needs from `src/test/flow.ts`, installed for every test file. `tokens
 every text (4.5:1) and UI (3:1) pair from `tokens.css` itself. `i18n.test.ts` fails on a key missing in either
 language, a key no source file uses (a key is used when it appears as a quoted literal), and French typography.
 
+While working, `make test-ui FILES='src/screens/improve src/api'` runs the typecheck, then ESLint, Prettier and
+Vitest on those paths alone, without coverage; run the whole `make test-ui` once the change is done.
+
 `make test-ui-e2e` builds, then runs Playwright with axe (WCAG 2.2 AA) on the shell in both themes, both languages, at
 375 and 1280 px. It reaches the build through `millstream run` (cross-compiled for the container with the UI embedded)
 serving the API and the UI over `ui/e2e/fixture`, a package of builtin steps. In order:
