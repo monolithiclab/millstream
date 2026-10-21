@@ -209,3 +209,7 @@ earlier designs are in the git history of the spec.
   in the environment file; the rate buckets live in the active engine's memory, so a failover or a restart starts
   each one full; the apply's tokens and its revision are two units, so an apply interrupted between them leaves a
   webhook trigger without a token until the same apply runs again or the token is rotated.
+- Flaky under load: `TestFailoverAtFailpoints` (`internal/e2e`) failed twice in the full race suite on 2026-10-21
+  ("audit … of delivery … is pending after the run", at `endAudit.beforeCommit` and `park.beforeCommit`) and passed
+  run alone, on the branch and on its base. If it recurs, log the audit's state and the takeover times of the run
+  that leaves it pending, and check whether the clean-outcome wait ends before the new leader resumes audits.
