@@ -462,3 +462,26 @@ CI. A toolchain with no suitable public image gets an image of our own, publishe
 every developer and CI the same toolchain, with nothing left behind.
 
 **Cost if wrong.** UI commands need Docker, and the first run pulls the images.
+
+### D36. One tagged struct, three layers, and conventions over keys (2026-10-21)
+
+**Decision.** The environment's schema is one Go struct of named section structs; each leaf carries its `yaml` key,
+its `env` name segment, its `default` and its `doc` as tags. A configuration is the defaults, then the environment
+file (strict), then `MILLSTREAM_<SECTION>_<KEY>` variables found by walking the struct, then the flags given on the
+command line. `millstream init environment` writes the default file from the same tags. A setting that picks an
+implementation is one key whose value names it (`store.dsn` with `sqlite://` or `postgres://`, `artifacts.url` with
+`file://` or `s3://`), never a choice inferred from which of several keys is set. Where a client library has a
+convention, it is used instead of a key: `PGUSER`, `PGPASSWORD` and the rest of libpq for Postgres, `AWS_*` for S3.
+A secret-source key (`auth.token`, `node.token`) set from a variable takes the secret itself and keeps the variable's
+name, so no value is copied into the configuration. Compose and systemd set variables, and no template file is kept.
+No configuration library (koanf, viper) is used.
+
+**Evidence.** The same layering, with the same reflection walk over a tagged struct, is gomddoc's D5 and runs in
+production there. A hand-written reader per key (about 600 lines here) and a template file each duplicated what the
+code knew and drifted from it. Docker and systemd configure a process through its environment. With several keys
+choosing one store, two layers could name different kinds and the loader needed an error for it; with one URL the
+later layer wins, whole. A password in a DSN would make the DSN a secret again, so libpq's variables carry it. The
+libraries parse more than this needs (formats, watching, merging maps) and would put a dependency under every key.
+
+**Cost if wrong.** The walk is ours to maintain. A URL schema is less discoverable than a nested key, though the
+generated file documents it. Every `MILLSTREAM_<SECTION>_` name is reserved for a key.

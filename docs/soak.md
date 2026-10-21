@@ -18,8 +18,9 @@ make soak SOAK_DURATION=168h            # a week; SOAK_CHAOS=2m by default
 1. Builds `millstream:dev` (`make image`) and brings up `deploy/compose/compose.yaml` as the Compose project
    `millstream-soak`: Postgres, the active engine, the standby engine and two nodes, exactly as deployed. An override
    (`build/soak/_work/compose.soak.yaml`) only publishes the ports on loopback ports Docker picks, swaps in a
-   certificate made for the run, the scorer's secret, and gives the nodes an environment file allowing unsandboxed
-   agents and the M2 recordings their harness replays: no network call leaves the deployment.
+   certificate made for the run, the scorer's secret and the fake model's price (`MILLSTREAM_PRICES`), and gives the
+   nodes the same price, unsandboxed agents and the M2 recordings their harness replays: no network call leaves the
+   deployment.
 2. Applies three packages with the image's own CLI: the M1 fixture with its builtins (a filter and an auto-approving
    review, the dead-lettering `rentability` kept) fired by a cron trigger every minute and by a webhook trigger; a
    pipeline importing its crawled listings; and the M2 fixture, whose score agent replays its recordings, fired every

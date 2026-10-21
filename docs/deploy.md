@@ -1,8 +1,10 @@
 # Deploying Millstream
 
 One binary is the engine, the CLI and a node, with the web UI embedded. It runs the same packages everywhere; the
-environment file, `millstream.yaml`, says where (spec section 14). This guide covers the three targets: a laptop, a
-VPS with Docker Compose, and a VPS with systemd.
+environment says where (spec section 14): defaults, then the environment file `millstream.yaml`, then `MILLSTREAM_*`
+variables, then flags. Every key is a variable, `MILLSTREAM_<SECTION>_<KEY>` (`ui.baseUrl` is
+`MILLSTREAM_UI_BASE_URL`), and `millstream init environment` writes the file with every key and its variable. This
+guide covers the three targets: a laptop, a VPS with Docker Compose, and a VPS with systemd.
 
 > **M4 status.** `millstream serve`, `apply`, `rollback` and `disable`, every key of the environment file, the
 > standby's takeover, remote nodes with the node token over TLS, the S3 artifact store, token auth, `/metrics`,
@@ -33,7 +35,14 @@ sha256sum --ignore-missing -c SHA256SUMS
 ## Laptop
 
 `millstream run` in a package directory runs the engine and an embedded node on SQLite (`.millstream/` beside the
-package) and serves the API and the UI on `127.0.0.1:7070`. No environment file is needed. In the image:
+package) and serves the API and the UI on `127.0.0.1:7070`. No configuration is needed. To change a setting, write
+the default environment file and uncomment the keys:
+
+```sh
+millstream init environment     # millstream.yaml, every key commented out at its default
+```
+
+In the image:
 
 ```sh
 docker run --rm -v "$PWD:/pkg:ro" millstream:dev run --once /pkg
@@ -47,7 +56,7 @@ Linux binaries. Interpreted actions, container actions and sandboxed agents need
 ```sh
 cd deploy/compose
 cp .env.example .env        # set every value: openssl rand -hex 32
-$EDITOR millstream.yaml     # ui.baseUrl, registries, secrets, retention
+$EDITOR compose.yaml        # MILLSTREAM_UI_BASE_URL, MILLSTREAM_REGISTRIES, retention
 docker compose up -d
 ```
 
@@ -56,10 +65,15 @@ docker compose up -d
   advisory lock is active, the other is the hot standby and takes over when it fails.
 - **Containers.** Read-only root, every capability dropped, `no-new-privileges`. The engines share a volume for their
   working directory; each node has its own for its package cache.
-- **The environment file**, [`deploy/compose/millstream.yaml`](../deploy/compose/millstream.yaml), is mounted
-  read-only; its keys are spec section 14's. It names secrets by variable (`{ env: MILLSTREAM_TOKEN }`) and
-  `compose.yaml` passes those from `.env`, which is git-ignored. A pipeline's secrets need both: an entry under
-  `secrets` and the variable added to the engines' `environment`.
+- **Configuration** is the engines' `environment:` in `compose.yaml`, shared by both through one anchor: spec
+  section 14's keys as `MILLSTREAM_*` variables, `MILLSTREAM_STORE_DSN` naming `postgres://postgres/millstream`, and
+  libpq's `PGUSER` and `PGPASSWORD` for the credentials. The secrets (`PGPASSWORD`, `MILLSTREAM_AUTH_TOKEN`,
+  `MILLSTREAM_NODE_TOKEN`) come from `.env`, which is git-ignored, and the postgres service takes its password from
+  the same `PGPASSWORD`. A pipeline's secret is a `MILLSTREAM_SECRET_<NAME>` variable: add it to the engines'
+  `environment`, taken from `.env`.
+- **Artifacts** stay in the engines' shared volume by default. For an S3-compatible bucket, which survives a
+  failover and which the nodes reach through presigned URLs, set `MILLSTREAM_ARTIFACTS_URL=s3://<bucket>`,
+  `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` and, off AWS, `AWS_ENDPOINT_URL` in `.env`.
 - **Nodes** join both engines (`--join https://engine:7070,https://engine-standby:7070`) with the node token, over
   TLS with the certificate of `./tls` (below), and follow the active one across a failover. They run exec actions as
   static binaries only (see Laptop). For container actions, run nodes on hosts of their own with systemd.
@@ -74,14 +88,15 @@ A node is `millstream node --join <url>[,<url>…]` on any host, with the deploy
 `MILLSTREAM_NODE_TOKEN` (`node.token` on the engines, which serve no node without it). It registers its id (kept in
 `--state-dir`, `.millstream/node` by default, with its package cache), its labels (`--labels gpu=true,zone=eu`) and
 what it can run: exec actions only with `--allow-exec` (trusted code, run with the node's privileges), container
-actions when Docker or Podman is installed (`runtime` in an environment file beside it), agents when `agents` there
-gives it a sandbox or allows them unsandboxed. Steps go only to the nodes matching their `placement.labels` and the
+actions when Docker or Podman is installed (`MILLSTREAM_RUNTIME_CONTAINER`), agents when `MILLSTREAM_AGENTS_IMAGE`
+gives it a sandbox or `MILLSTREAM_AGENTS_ALLOW_UNSANDBOXED=true` allows them unsandboxed (or the same keys in an
+environment file beside it). Steps go only to the nodes matching their `placement.labels` and the
 runtime their action needs; a step no node can take is listed as unschedulable on the Nodes screen and in
 `/api/v1/nodes`, and raises an `unschedulable` insight.
 
 - **Node TLS.** A node reaches an engine on another host over HTTPS only (HTTP/2), checking its certificate against
   the system's authorities and `--ca <pem>`; plain HTTP is accepted to a loopback engine. The engines serve HTTPS with
-  `tls: { cert, key }`. A private authority for a deployment:
+  `MILLSTREAM_TLS_CERT` and `MILLSTREAM_TLS_KEY` (`tls.cert` and `tls.key`). A private authority for a deployment:
 
   ```sh
   openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -days 3650 -subj /CN=millstream-ca \
@@ -94,10 +109,10 @@ runtime their action needs; a step no node can take is listed as unschedulable o
 - **Failover.** List every engine in `--join`: a node tries them in turn, and follows the address a standby names
   (an engine listening on `0.0.0.0` names none, so the list matters). It registers again with the new active engine
   and resends the results it was holding; fencing refuses those whose lease ended meanwhile.
-- **Data.** Packages are fetched by hash into the node's cache; artifacts move through URLs the engine issues for
-  the deliveries the node holds: presigned ones with `artifacts.s3`, the engine's own proxy with a local directory.
-  Secrets reach the node inside its deliveries and stay in memory and in each delivery's working directory, created
-  on a tmpfs when the host has one (`$XDG_RUNTIME_DIR`, `/dev/shm`; the Compose nodes' `/tmp`), else 0700 in the
+- **Data.** Packages are fetched by hash into the node's cache; artifacts move through URLs the engine issues for the
+  deliveries the node holds: presigned ones with an `s3://` artifact store, the engine's own proxy with a local
+  directory. Secrets reach the node inside its deliveries and stay in memory and in each delivery's working directory,
+  created on a tmpfs when the host has one (`$XDG_RUNTIME_DIR`, `/dev/shm`; the Compose nodes' `/tmp`), else 0700 in the
   temporary directory, and removed when the process ends.
 - **Operations.** `millstream nodes` lists the nodes the store records with their health; `millstream node drain`
   (or SIGTERM) on the node's host drains it before an upgrade; the Nodes screen drains or revokes a node, as
@@ -110,7 +125,8 @@ runtime their action needs; a step no node can take is listed as unschedulable o
 
 ## Signing in and monitoring
 
-With `auth.token` set, every API request carries the token: the CLI sends `MILLSTREAM_TOKEN` as a bearer token, and
+With `auth.token` set (`MILLSTREAM_AUTH_TOKEN` on the engine), every API request carries the token: the CLI sends
+`MILLSTREAM_TOKEN` as a bearer token, and
 the web UI asks for it once on a sign-in screen, then holds a session cookie (12 hours, `HttpOnly`,
 `SameSite=Strict`, `Secure` behind HTTPS) until **Sign out** in its menu. Sessions live in the engine process's
 memory: a restart, and so a token change, or a failover to the other engine signs the UI out; the standby asks for
@@ -128,7 +144,7 @@ A server runs the packages applied to its store, never a directory. From a check
 host or through an SSH tunnel to its loopback port:
 
 ```sh
-export MILLSTREAM_SERVER=http://127.0.0.1:7070 MILLSTREAM_TOKEN=…   # the token from .env or millstream.env
+export MILLSTREAM_SERVER=http://127.0.0.1:7070 MILLSTREAM_TOKEN=…   # MILLSTREAM_AUTH_TOKEN from .env or millstream.env
 millstream apply ./property-sourcing ./deal-flow --message "lower the score threshold"
 millstream rollback property-sourcing          # the revision before the active one, or name one
 millstream disable deal-flow                   # until: millstream resume deal-flow
@@ -140,7 +156,7 @@ needs it. On Postgres, a command that changes state goes through `--server` (the
 unless `--direct` takes the leadership lock itself while no engine runs (with one running, it fails at once, naming
 the active engine); `status`, `tail`, `inbox list`, `metrics`
 and the other commands that only read open the database read-only, beside the running engine, with the same
-environment file.
+environment.
 
 ## Webhook triggers
 
@@ -186,13 +202,15 @@ On the engine host, Postgres 17 running locally or reachable:
 ```sh
 install -m 0755 millstream /usr/local/bin/millstream
 install -d -m 0755 /etc/millstream
-install -m 0644 millstream.yaml /etc/millstream/millstream.yaml
 install -m 0600 deploy/systemd/millstream.env.example /etc/millstream/millstream.env   # then set the values
 install -m 0644 deploy/systemd/millstream.service /etc/systemd/system/
 systemctl daemon-reload && systemctl enable --now millstream
 ```
 
-A standby is a second host with the same files and the same DSN. A node host installs the binary,
+The unit runs `millstream serve` with `/etc/millstream/millstream.env` as its `EnvironmentFile=`: the store's DSN and
+`PGPASSWORD`, `MILLSTREAM_AUTH_TOKEN`, `MILLSTREAM_NODE_TOKEN`, and any other key as `MILLSTREAM_*` (the file lists
+the common ones). systemd reads it as root, so the service user cannot. A standby is a second host with the same file
+and the same Postgres. A node host installs the binary,
 `deploy/systemd/node.env.example` as `/etc/millstream/node.env` and `millstream-node.service`.
 
 - **Hardening.** Both units run under a transient user (`DynamicUser`), write only to their state directory
@@ -207,7 +225,7 @@ A standby is a second host with the same files and the same DSN. A node host ins
 
 ## Standby and failover
 
-A second `millstream serve` on the same Postgres database, with the same environment file, is the hot standby
+A second `millstream serve` on the same Postgres database, with the same configuration, is the hot standby
 (spec section 5.9). Both engines run the same command; whichever holds the database's leadership lock is active.
 
 - **While it waits**, the standby logs `waiting as the standby` and serves the UI and the read endpoints of the API
@@ -222,7 +240,8 @@ A second `millstream serve` on the same Postgres database, with the same environ
   by an administrator) logs `stepping down`, stops writing at once, abandons its embedded node's deliveries, and
   stands by again, retrying the database every `engine.lockCheck` while it is unreachable. Only SIGTERM or SIGINT
   stops it; a stopped standby exits 0.
-- **Tuning.** `engine: { lockCheck: 5s, keepalive: 5s }` in the environment file. Shorter values fail over sooner and
+- **Tuning.** `MILLSTREAM_ENGINE_LOCK_CHECK` and `MILLSTREAM_ENGINE_KEEPALIVE` (`engine.lockCheck` and
+  `engine.keepalive`, 5 s each). Shorter values fail over sooner and
   ping the database more often. A connection pooler between the engines and Postgres must not be in transaction mode:
   the lock lives on a session.
 - **Clients.** Point the reverse proxy at both engines and fail over on `503`, or follow the header; the UI reloads
@@ -232,14 +251,14 @@ A second `millstream serve` on the same Postgres database, with the same environ
 
 ## Security
 
-- **API token.** The API listens on loopback unless `listen` says otherwise, and refuses a non-loopback address
-  without `auth.token`. Expose it through a reverse proxy that terminates TLS (Caddy, nginx), with `ui.baseUrl` set
-  to its https address: the API answers requests naming that host or a loopback one, takes state-changing requests
-  from that origin, and marks the session cookie `Secure`. Or let the engine serve HTTPS itself with
-  `tls: { cert, key }` (PEM files, relative to the environment file). Never expose it as plain HTTP. Tokens are
-  compared in constant time and never logged. `auth.token` and `node.token` hold at least 32 characters: the
-  engines and nodes refuse to start with a shorter one, and `millstream check` reports it. Generate each with
-  `openssl rand -hex 32`.
+- **API token.** The API listens on loopback unless `listen` (`MILLSTREAM_LISTEN`) says otherwise, and refuses a
+  non-loopback address without `auth.token`. Expose it through a reverse proxy that terminates TLS (Caddy, nginx), with
+  `ui.baseUrl` set to its https address: the API answers requests naming that host or a loopback one, takes
+  state-changing requests from that origin, and marks the session cookie `Secure`. Or let the engine serve HTTPS itself
+  with `tls.cert` and `tls.key` (PEM files; relative to the environment file, or to the working directory from
+  variables). Never expose it as plain HTTP. Tokens are compared in constant time and never logged. `auth.token` and
+  `node.token` hold at least 32 characters: the engines and nodes refuse to start with a shorter one, and `millstream
+  check` reports it. Generate each with `openssl rand -hex 32`.
 - **Webhook tokens.** Each webhook trigger has its own token, stored as a hash and compared in constant time; it
   admits that trigger's requests only, never the API. Rotate it with `millstream trigger token --rotate` or the UI
   when it may have leaked.
@@ -251,7 +270,9 @@ A second `millstream serve` on the same Postgres database, with the same environ
   A node can fetch packages and artifacts only for the deliveries it holds. `millstream nodes revoke <id>` refuses
   a node; rotating the token disconnects every node until it has the new one (see Remote nodes). A compromised
   node requires both: revoke it, then rotate the node token, since its host holds the token any new id joins with.
-- **Secrets** live in `.env` or `/etc/millstream/*.env`, mode 0600, never in `millstream.yaml`, an image or Git.
+- **Secrets** live in `.env` or `/etc/millstream/*.env`, mode 0600, never in an environment file, an image or Git. A
+  secret-source key set from a variable holds the secret itself (`MILLSTREAM_AUTH_TOKEN=<token>`), and the Postgres
+  password is `PGPASSWORD`: a password in `store.dsn` is refused.
 - **Supply chain.** Base images are pinned by digest (`make lint-pins` checks every `FROM`), the release build runs
   `go mod verify`, each archive has an SBOM, and checksums and images are signed with cosign (spec section 15.5).
 
@@ -259,21 +280,22 @@ A second `millstream serve` on the same Postgres database, with the same environ
 
 Nothing expires unless told to (spec section 9.3). Set a stream's retention in its pipeline
 (`streams: { listings.raw: { retention: 90d } }`, and on an imported stream's declaration for its copies), and the
-deployment's in `millstream.yaml`:
+deployment's as variables (or the same keys in `millstream.yaml`):
 
-```yaml
-retention: { events: 90d, transcripts: 30d, rollups: 400d, every: 1h }
+```sh
+MILLSTREAM_RETENTION_EVENTS=90d MILLSTREAM_RETENTION_TRANSCRIPTS=30d MILLSTREAM_RETENTION_ROLLUPS=400d
 ```
 
-The active engine's retention job runs every `every` (an hour by default; the standby runs none): expired payloads
-become tombstones (the UI shows the item as expired, its lineage intact), old events (once the metric rollup has read
-them), transcripts and rollups are deleted in batches of 500, the artifact files nothing references any more are
-deleted, in the local directory or the S3 bucket alike (a file stored again within the last day waits for the next
+`MILLSTREAM_RETENTION_EVERY` (`1h` by default) sets how often the job runs.
+
+The active engine's retention job runs every `retention.every` (an hour by default; the standby runs none): expired
+payloads become tombstones (the UI shows the item as expired, its lineage intact), old events (once the metric rollup
+has read them), transcripts and rollups are deleted in batches of 500, the artifact files nothing references any more
+are deleted, in the local directory or the S3 bucket alike (a file stored again within the last day waits for the next
 pass), and the package cache (`packages/` beside the artifacts) loses the revisions no pipeline runs any more. An item
 that unfinished work needs (a delivery in flight or waiting, on the embedded node or a remote one, a parked review, an
-open dead letter, an open review sample) keeps its payload until that work is
-resolved: replay or discard dead letters to let retention take them. The engine logs what each pass removed
-(`retention` lines).
+open dead letter, an open review sample) keeps its payload until that work is resolved: replay or discard dead letters
+to let retention take them. The engine logs what each pass removed (`retention` lines).
 
 Erase a person's data (a GDPR request) by the key their items carry, or by an item:
 
@@ -297,12 +319,9 @@ expiry or start over.
 ## Moving evidence between deployments
 
 Production holds the history; development is where pipelines are improved (spec section 11.2). Mark each deployment
-in its `millstream.yaml` (`serve` defaults to production, `run` and the other commands to development):
-
-```yaml
-environment: production
-improve: { evidence: { sample: 500, ttl: 30d } }   # the defaults
-```
+with `MILLSTREAM_ENVIRONMENT=production` or `development` (or `environment:` in its `millstream.yaml`; `serve`
+defaults to production, `run` and the other commands to development). The evidence settings, `improve.evidence.sample`
+(500) and `improve.evidence.ttl` (30d), are `MILLSTREAM_IMPROVE_EVIDENCE_SAMPLE` and `MILLSTREAM_IMPROVE_EVIDENCE_TTL`.
 
 On production, export a pipeline's evidence: a stratified sample of what it did in the window, with every step's
 inputs and outputs, review decisions, transcripts and the revision's package, in one file:
@@ -321,7 +340,7 @@ compare but cannot be read. The file is written readable by its owner alone; mov
 On development, import it:
 
 ```sh
-millstream --env-file millstream.yaml evidence import sourcing.tar.gz
+millstream evidence import sourcing.tar.gz
 ```
 
 The bundle is kept in the artifact store as read-only history (nothing joins the deployment's own items) until its
@@ -331,8 +350,9 @@ The command says when the development package has diverged from the revision pro
 ## Publishing accepted proposals
 
 On a development deployment, an accepted proposal goes to the publish action `improve.publish` names (spec section
-11.7). Each one publishes the validated patch and nothing else: a patch that no longer hashes to the validated one,
-or that touches a path its kind does not allow, is refused.
+11.7), set in the development deployment's environment file (each key is also a variable,
+`MILLSTREAM_IMPROVE_PUBLISH` and so on). Each one publishes the validated patch and nothing else: a patch that no
+longer hashes to the validated one, or that touches a path its kind does not allow, is refused.
 
 ```yaml
 environment: development
@@ -379,7 +399,7 @@ docker compose exec -T postgres pg_restore -U millstream -d millstream --clean -
 docker compose start engine engine-standby node-1 node-2
 ```
 
-On systemd, run the same `pg_dump` against the DSN from a timer. Back up an S3 artifact store with the provider's
+On systemd, run the same `pg_dump` against the database from a timer. Back up an S3 artifact store with the provider's
 versioning or replication; a local artifact directory is the engines' volume (Compose) or `/var/lib/millstream`.
 
 ## Upgrades

@@ -729,14 +729,30 @@ rules:
 
 ### The environment file
 
-`millstream.yaml` at the package root says where the package runs; it is not part of the package. Agents run in a
-container sandbox by default, which needs Docker and a Linux build of the binary. On a laptop, allow them to run as
-child processes instead (logged at every start), and give the model a price so cost is computed from tokens:
+`millstream.yaml` at the package root says where the package runs; it is not part of the package. Write the default
+one, with every key commented out at its default:
+
+```sh
+millstream init environment
+```
+
+```text
+created /Users/you/millstream-tutorial/listings/millstream.yaml
+next: uncomment the keys to change, then millstream serve --env-file /Users/you/millstream-tutorial/listings/millstream.yaml
+```
+
+Agents run in a container sandbox by default, which needs Docker and a Linux build of the binary. On a laptop, allow
+them to run as child processes instead (logged at every start), and give the model a price so cost is computed from
+tokens. Uncomment these keys in the file and set them so (`agents:` and its `allowUnsandboxed` line, and `prices`,
+whose example line names another model):
 
 ```yaml
-agents: { allowUnsandboxed: true }
+agents:
+  allowUnsandboxed: true   # MILLSTREAM_AGENTS_ALLOW_UNSANDBOXED
 prices: { fake-scorer: { inPerMtok: 3, outPerMtok: 15 } }
 ```
+
+Each key is also a variable, `MILLSTREAM_AGENTS_ALLOW_UNSANDBOXED=true` for the first, which overrides the file.
 
 ### The steps
 
@@ -856,7 +872,7 @@ cheap-flat  2/2         -      $0.0018  1.00
 TOTAL                                   1.00
 ```
 
-With `--db` (or an environment file naming the store), scores are recorded, and each run shows the case's previous
+With `--db sqlite://eval.db` (or a `store.dsn` of your own), scores are recorded, and each run shows the case's previous
 score: compare prompts and models before they ship.
 
 ### Replay offline
@@ -1041,8 +1057,9 @@ Stop the engine with Ctrl-C.
   replaces an agent step (`distill`), each validated by a backtest before a person accepts it (`millstream
   proposals`, the Improve view). It needs `improve.enabled` in a development environment file and a model for the
   drafting agent. Spec section 11 describes the loop and [the M5 exit](m5-exit.md) walks through it end to end.
-- **Serving.** `millstream serve` runs an engine from an environment file, on Postgres, with token auth, a hot
-  standby and remote nodes; `millstream apply` uploads packages to it. See [the deployment guide](deploy.md).
+- **Serving.** `millstream serve` runs an engine from an environment file or `MILLSTREAM_*` variables, on Postgres, with
+  token auth, a hot standby and remote nodes; `millstream apply` uploads packages to it. See [the deployment
+  guide](deploy.md).
 - **Other languages.** `millstream init action <name> --lang raw` scaffolds an action in Python 3 speaking the
   protocol with the standard library only, and `millstream test action . --conformance` checks any action against
   the protocol. [The action protocol](protocol.md) is the whole contract.

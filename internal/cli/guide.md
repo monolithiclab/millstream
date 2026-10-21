@@ -31,9 +31,10 @@ millstream replay --pipeline listings --from dlq --run <run>   # retry a run's d
 
 ## Where state lives
 
-- `.millstream/millstream.db`: the SQLite state database (`--db`), with `artifacts/` beside it.
+- `.millstream/millstream.db`: the SQLite state database (`store.dsn`, or `--db sqlite://<path>`), with `artifacts/`
+  beside it.
 - `millstream.yaml`: the environment file, read from the current directory (`--env-file` names another).
-  Its `store` key can name Postgres instead; `millstream help environment` lists its keys and variables.
+  Its `store.dsn` can name Postgres instead; `millstream help environment` lists its keys and variables.
 - `.millstream/node/`: a remote node's id, package cache and pid file.
 
 ## Scripting
