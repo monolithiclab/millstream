@@ -55,8 +55,7 @@ Linux binaries. Interpreted actions, container actions and sandboxed agents need
 
 ```sh
 cd deploy/compose
-cp .env.example .env        # set every value: openssl rand -hex 32
-$EDITOR compose.yaml        # MILLSTREAM_UI_BASE_URL, MILLSTREAM_REGISTRIES, retention
+cp .env.example .env        # set every value: the proxy's URL, and openssl rand -hex 32 for each secret
 docker compose up -d
 ```
 
@@ -67,7 +66,8 @@ docker compose up -d
   working directory; each node has its own for its package cache.
 - **Configuration** is the engines' `environment:` in `compose.yaml`, shared by both through one anchor: spec
   section 14's keys as `MILLSTREAM_*` variables, `MILLSTREAM_STORE_DSN` naming `postgres://postgres/millstream`, and
-  libpq's `PGUSER` and `PGPASSWORD` for the credentials. The secrets (`PGPASSWORD`, `MILLSTREAM_AUTH_TOKEN`,
+  libpq's `PGUSER` and `PGPASSWORD` for the credentials; keys left at their defaults are not listed. The reverse
+  proxy's address (`MILLSTREAM_UI_BASE_URL`) and the secrets (`PGPASSWORD`, `MILLSTREAM_AUTH_TOKEN`,
   `MILLSTREAM_NODE_TOKEN`) come from `.env`, which is git-ignored, and the postgres service takes its password from
   the same `PGPASSWORD`. A pipeline's secret is a `MILLSTREAM_SECRET_<NAME>` variable: add it to the engines'
   `environment`, taken from `.env`.

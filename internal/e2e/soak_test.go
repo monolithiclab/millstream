@@ -215,6 +215,7 @@ func newSoak(t *testing.T, cfg soakConfig) *soak {
 		TLSClientConfig: &tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS12}}}
 	// MILLSTREAM_AUTH_TOKEN is the engines' token, MILLSTREAM_TOKEN the one the apply container presents.
 	s.env = []string{"MILLSTREAM_IMAGE=" + soakImage, "PGPASSWORD=" + s.password,
+		"MILLSTREAM_UI_BASE_URL=https://millstream.example",
 		"MILLSTREAM_AUTH_TOKEN=" + s.token, "MILLSTREAM_TOKEN=" + s.token, "MILLSTREAM_NODE_TOKEN=" + randomHex(t),
 		"SOAK_DIR=" + s.dir, fmt.Sprintf("SOAK_PRICES={ %s: { inPerMtok: %d, outPerMtok: %d } }", m2Model,
 			m2InPerMtok, m2OutPerMtok),

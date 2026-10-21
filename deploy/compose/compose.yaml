@@ -28,10 +28,8 @@ x-engine: &engine
     MILLSTREAM_STORE_DSN: postgres://postgres/millstream?sslmode=disable
     PGUSER: millstream
     PGPASSWORD: ${PGPASSWORD:?set PGPASSWORD in .env}
-    # How each engine watches its write connection: a dead engine's lock is free, and a cut-off one steps down,
-    # within lockCheck + 2 x keepalive (docs/deploy.md, Standby and failover).
-    MILLSTREAM_ENGINE_LOCK_CHECK: 5s
-    MILLSTREAM_ENGINE_KEEPALIVE: 5s
+    # A dead engine's lock is free, and a cut-off one steps down, within engine.lockCheck + 2 x engine.keepalive
+    # (5s each by default; MILLSTREAM_ENGINE_LOCK_CHECK and MILLSTREAM_ENGINE_KEEPALIVE tune them, docs/deploy.md).
     # The API listens on every interface of the container so compose can publish it, over HTTPS (HTTP/2) with the
     # certificate in ./tls, for the nodes and the reverse proxy alike. A non-loopback listener needs the token.
     MILLSTREAM_LISTEN: 0.0.0.0:7070
@@ -45,9 +43,8 @@ x-engine: &engine
     MILLSTREAM_RETENTION_EVENTS: 90d
     MILLSTREAM_RETENTION_TRANSCRIPTS: 30d
     MILLSTREAM_RETENTION_ROLLUPS: 400d
-    MILLSTREAM_LESSONS_MAX_TOKENS: "2000"
     # The address of the TLS reverse proxy in front (docs/deploy.md).
-    MILLSTREAM_UI_BASE_URL: https://millstream.example
+    MILLSTREAM_UI_BASE_URL: ${MILLSTREAM_UI_BASE_URL:?set MILLSTREAM_UI_BASE_URL in .env}
     # Artifacts: without a URL the active engine keeps them in its working directory, the volume both engines share.
     # An S3-compatible bucket shared by both engines survives a failover too, and the nodes reach it through
     # presigned URLs; set the three values in .env. An empty variable is unset.
