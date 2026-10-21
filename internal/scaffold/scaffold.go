@@ -119,7 +119,7 @@ func Environment(dir string) (string, error) {
 // ErrName and ErrExists are the scaffold's refusals.
 var (
 	ErrName   = errors.New("a name is lowercase letters, digits and single dashes")
-	ErrExists = errors.New("it exists and is not empty")
+	ErrExists = errors.New("it exists")
 )
 
 // target validates name and returns parent/name, refusing a directory that exists and is not empty.
