@@ -230,13 +230,17 @@ func decode(n *yaml.Node, v reflect.Value, path string) error {
 var scalarKinds = map[reflect.Kind]string{reflect.Bool: "true or false", reflect.Int: "an integer",
 	reflect.Float64: "a number", reflect.String: "a string"}
 
+// fileWidth is the column the generated file's comments wrap at.
+const fileWidth = 120
+
 // DefaultFile is the environment file `millstream init environment` writes: every setting commented out at its
-// default (at an example when it has none), grouped by section, each line naming its variable.
+// default (at an example when it has none), grouped by section, each key under its doc and followed by its variable.
 func DefaultFile() []byte {
 	var b strings.Builder
 	b.WriteString("## millstream.yaml: the environment file (spec section 14).\n##\n" +
-		"## Every key is commented out at its default, or at an example when it has none: uncomment and edit the ones\n" +
-		"## to change. The MILLSTREAM_* variable named on each line overrides this file, and a flag overrides both.\n")
+		"## Every key is commented out at its default, or at an example value when it has none (marked \"example\"):\n" +
+		"## uncomment and edit the ones to change. The MILLSTREAM_* variable named on each key overrides this file,\n" +
+		"## and a flag overrides both.\n")
 	var open []string // the sections the last line sits in
 	for _, s := range Settings(Defaults()) {
 		path := strings.Split(s.Key, ".")
@@ -245,15 +249,28 @@ func DefaultFile() []byte {
 		for common < len(open) && common < len(sections) && open[common] == sections[common] {
 			common++
 		}
-		if common == 0 {
-			b.WriteByte('\n')
-		}
+		b.WriteByte('\n')
 		for i := common; i < len(sections); i++ {
 			fmt.Fprintf(&b, "# %s%s:\n", strings.Repeat("  ", i), sections[i])
 		}
 		open = sections
-		fmt.Fprintf(&b, "# %s%s: %s   # %s (%s)\n", strings.Repeat("  ", len(sections)), leaf,
-			cmp.Or(s.Default, s.Example), s.Doc, s.Var)
+		indent := strings.Repeat("  ", len(sections))
+		line := "## " + indent
+		for _, w := range strings.Fields(s.Doc) {
+			if len(line)+len(w) >= fileWidth && strings.TrimSpace(line) != "##" {
+				b.WriteString(line + "\n")
+				line = "## " + indent
+			} else if line != "## "+indent {
+				line += " "
+			}
+			line += w
+		}
+		b.WriteString(line + "\n")
+		note := ""
+		if s.Default == "" {
+			note = ", example"
+		}
+		fmt.Fprintf(&b, "# %s%s: %s   # %s%s\n", indent, leaf, cmp.Or(s.Default, s.Example), s.Var, note)
 	}
 	return []byte(b.String())
 }

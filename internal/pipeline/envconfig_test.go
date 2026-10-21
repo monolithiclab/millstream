@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -52,10 +53,10 @@ func TestDefaultFileUncommented(t *testing.T) {
 	}
 }
 
-// TestDefaultFileHasEveryKey: every leaf has a doc, a default or an example, and shows its variable and its key.
+// TestDefaultFileHasEveryKey: every leaf has a doc and a default or an example, and its exact key line names its variable.
 func TestDefaultFileHasEveryKey(t *testing.T) {
 	t.Parallel()
-	file := string(DefaultFile())
+	lines := strings.Split(string(DefaultFile()), "\n")
 	vars := map[string]bool{}
 	for _, s := range Settings(Defaults()) {
 		if s.Doc == "" || s.Default == "" && s.Example == "" {
@@ -65,9 +66,15 @@ func TestDefaultFileHasEveryKey(t *testing.T) {
 			t.Errorf("%s: variable %s is used twice", s.Key, s.Var)
 		}
 		vars[s.Var] = true
-		key := s.Key[strings.LastIndex(s.Key, ".")+1:]
-		if !strings.Contains(file, key+": ") || !strings.Contains(file, "("+s.Var+")") {
-			t.Errorf("%s: %s or %s missing from the file", s.Key, key, s.Var)
+		prefix := "# " + strings.Repeat("  ", strings.Count(s.Key, ".")) + s.Key[strings.LastIndex(s.Key, ".")+1:] + ": "
+		suffix := "   # " + s.Var
+		if s.Default == "" {
+			suffix += ", example"
+		}
+		if !slices.ContainsFunc(lines, func(l string) bool {
+			return strings.HasPrefix(l, prefix) && strings.HasSuffix(l, suffix)
+		}) {
+			t.Errorf("%s: no key line %q ... %q", s.Key, prefix, suffix)
 		}
 	}
 }

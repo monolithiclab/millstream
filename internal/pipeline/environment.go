@@ -34,10 +34,10 @@ const (
 // file's syntax (default; none for a key unset by default or computed from another, which has an example
 // instead) and its one-line doc.
 type Environment struct {
-	Mode       string                             `yaml:"environment" env:"ENVIRONMENT" example:"development" doc:"production or development (spec section 11.2); empty: serve defaults to production, run to development"`
+	Mode       string                             `yaml:"environment" env:"ENVIRONMENT" example:"production" doc:"production or development (spec section 11.2); empty: serve defaults to production, run to development"`
 	Store      StoreConfig                        `yaml:"store" env:"STORE"`
 	Artifacts  ArtifactsConfig                    `yaml:"artifacts" env:"ARTIFACTS"`
-	Listen     string                             `yaml:"listen" env:"LISTEN" example:"0.0.0.0:7070" doc:"host:port serve serves the API and the UI on (run: after ui.listen); empty: 127.0.0.1:7070"`
+	Listen     string                             `yaml:"listen" env:"LISTEN" example:"127.0.0.1:7070" doc:"host:port serve serves the API and the UI on (run: after ui.listen); empty: 127.0.0.1:7070"`
 	Auth       AuthConfig                         `yaml:"auth" env:"AUTH"`
 	TLS        TLSConfig                          `yaml:"tls" env:"TLS"`
 	Metrics    MetricsConfig                      `yaml:"metrics" env:"METRICS"`
@@ -122,7 +122,7 @@ type LessonsConfig struct {
 // UIConfig is the ui key.
 type UIConfig struct {
 	BaseURL string `yaml:"baseUrl" env:"BASE_URL" default:"http://127.0.0.1:7070" doc:"where the web UI is reached, for inbox links and the origins a token server accepts"`
-	Listen  string `yaml:"listen" env:"LISTEN" example:"127.0.0.1:7071" doc:"loopback host:port run serves the API and the UI on; unset: listen, else 127.0.0.1:7070"`
+	Listen  string `yaml:"listen" env:"LISTEN" example:"127.0.0.1:7070" doc:"loopback host:port run serves the API and the UI on; unset: listen, else 127.0.0.1:7070"`
 }
 
 // Improve is the improve key (spec sections 11.2 to 11.7).
