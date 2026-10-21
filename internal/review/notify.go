@@ -16,9 +16,6 @@ import (
 	"time"
 )
 
-// DefaultBaseURL is where inbox links point without ui.baseUrl in the environment file: the UI millstream run serves.
-const DefaultBaseURL = "http://127.0.0.1:7070"
-
 // Notification retries: a failed POST is retried this many times, after Backoff, doubling.
 const (
 	Retries       = 3
@@ -121,7 +118,7 @@ func (n Notification) webhookName() string {
 // still fails, or is dropped, is logged and counted (Failures). The notifier has its own lifetime, apart from any
 // request's or engine's context: Shutdown ends it, letting what is queued and in flight finish within a bound.
 type Notifier struct {
-	// BaseURL is where inbox links point: ui.baseUrl, DefaultBaseURL when empty.
+	// BaseURL is where inbox links point: ui.baseUrl.
 	BaseURL string
 	// Client posts the notifications; nil uses http.DefaultClient.
 	Client *http.Client
@@ -252,11 +249,7 @@ func (nt *Notifier) Send(ctx context.Context, n Notification) error { return nt.
 
 // send posts n under ctx, retrying while retryCtx lasts.
 func (nt *Notifier) send(ctx, retryCtx context.Context, n Notification) error {
-	base := nt.BaseURL
-	if base == "" {
-		base = DefaultBaseURL
-	}
-	body, err := json.Marshal(Payload(base, n))
+	body, err := json.Marshal(Payload(nt.BaseURL, n))
 	if err != nil {
 		return err
 	}

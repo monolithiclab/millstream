@@ -224,12 +224,12 @@ func TestNotifier(t *testing.T) {
 		strings.Contains(err.Error(), "namedport") {
 		t.Fatalf("a malformed URL: %v", err)
 	}
-	long := Payload(DefaultBaseURL, Notification{Inbox: "i", DeliveryID: "d", Display: strings.Repeat("é", 4000),
+	long := Payload("http://127.0.0.1:7070", Notification{Inbox: "i", DeliveryID: "d", Display: strings.Repeat("é", 4000),
 		Escalated: true})
 	if len(long.Blocks[0].Text.Text) > maxBlockText || !strings.HasPrefix(long.Text, "Review escalated") {
 		t.Fatalf("long display: %d bytes, %q", len(long.Blocks[0].Text.Text), long.Text[:20])
 	}
-	cut := Payload(DefaultBaseURL, Notification{Inbox: "i", DeliveryID: "d", Display: strings.Repeat("<", 2000)})
+	cut := Payload("http://127.0.0.1:7070", Notification{Inbox: "i", DeliveryID: "d", Display: strings.Repeat("<", 2000)})
 	if body := cut.Blocks[0].Text.Text; strings.Contains(body, "&l…") || strings.Contains(body, "&…") ||
 		!strings.Contains(body, "&lt;…") {
 		t.Fatalf("a cut through an entity: %q", body[len(body)-80:])

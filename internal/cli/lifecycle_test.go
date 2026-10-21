@@ -120,7 +120,7 @@ func Test_commandsThroughTheServer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	srv, err := api.New(api.Options{Store: st, Engine: eng, User: "server", Auth: &api.Auth{Token: testToken}})
+	srv, err := api.New(api.Options{Store: st, Engine: eng, User: "server", Auth: &api.Auth{Token: testToken, User: "operator"}})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -72,28 +72,37 @@ func Defaults() *Environment {
 }
 
 // applyVariables sets every leaf whose variable lookup holds a non-empty value. names are the variables of the
-// process (NAME or NAME=value): one that falls inside a section's prefix (MILLSTREAM_UI_) but names no leaf is an
-// error, so a misspelt setting is never ignored; the others (MILLSTREAM_SERVER, MILLSTREAM_SECRET_<NAME>) are not
-// settings and are left alone.
+// process (NAME or NAME=value): one that names a section (MILLSTREAM_UI) or a map (MILLSTREAM_REGISTRIES), or falls
+// under one (MILLSTREAM_UI_BASEURL, MILLSTREAM_REGISTRIES_LAB), but names no leaf is an error, so a misspelt setting
+// is never ignored; the others (MILLSTREAM_SERVER, MILLSTREAM_SECRET_<NAME>) are not settings and are left alone.
 func applyVariables(e *Environment, lookup func(string) (string, bool), names []string) error {
 	known := map[string]bool{}
 	squeezed := map[string]string{}
+	var scopes []string // the sections, and the maps settable only whole: no variable but a setting is under one
+	t := reflect.TypeFor[Environment]()
+	for i := range t.NumField() {
+		if f := t.Field(i); f.Type.Kind() == reflect.Struct {
+			scopes = append(scopes, VarPrefix+f.Tag.Get("env"))
+		}
+	}
 	for _, s := range Settings(e) {
 		known[s.Var], squeezed[strings.ReplaceAll(s.Var, "_", "")] = true, s.Var
+		if s.Value.Kind() == reflect.Map {
+			scopes = append(scopes, s.Var)
+		}
 		if v, ok := lookup(s.Var); ok && v != "" {
 			if err := setText(s, v); err != nil {
 				return fmt.Errorf("%s: %w", s.Var, err)
 			}
 		}
 	}
-	t := reflect.TypeFor[Environment]()
 	for _, kv := range names {
 		name, _, _ := strings.Cut(kv, "=")
 		if _, set := lookup(name); known[name] || !set {
 			continue
 		}
-		for i := range t.NumField() {
-			if f := t.Field(i); f.Type.Kind() == reflect.Struct && strings.HasPrefix(name, VarPrefix+f.Tag.Get("env")+"_") {
+		for _, p := range scopes {
+			if name == p || strings.HasPrefix(name, p+"_") {
 				err := fmt.Errorf("%s: no such setting", name)
 				if like, ok := squeezed[strings.ReplaceAll(name, "_", "")]; ok {
 					err = fmt.Errorf("%w; did you mean %s?", err, like)
@@ -177,6 +186,11 @@ func decode(n *yaml.Node, v reflect.Value, path string) error {
 				}
 			}
 			return errAt(k, at, "unknown key")
+		}
+		for j := range v.NumField() {
+			if f := v.Type().Field(j); f.Tag.Get("required") != "" && !seen[f.Tag.Get("yaml")] {
+				return errAt(n, joinPath(path, f.Tag.Get("yaml")), "is required")
+			}
 		}
 	case reflect.Map:
 		if n.Kind != yaml.MappingNode {

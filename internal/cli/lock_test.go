@@ -62,8 +62,8 @@ func TestLockAndEnvironmentErrors(t *testing.T) {
 		{"bad environment file for lock", env, []string{"--env-file", bad, "lock", pkg}, 1, "listen"},
 		{"bad environment file for test", env, []string{"--env-file", bad, "test", "pipeline", pkg}, 1, "listen"},
 		{"no container runtime", nil, []string{"--env-file", envFile, "lock", pkg}, 1, "needs Docker or Podman"},
-		{"--db over store.dsn", env, []string{"--db", "/x/m.db", "--env-file", fixture("environments/sqlite.yaml"),
-			"status"}, 2, "--db: want a DSN, such as sqlite:///x/m.db"},
+		{"--db over store.dsn", env, []string{"--db", "host=db password=pw", "--env-file",
+			fixture("environments/sqlite.yaml"), "status"}, 2, "--db takes a DSN such as sqlite://<path>"},
 		{"--db with a password", env, []string{"--db", "postgres://u:pw@db/ms", "status"}, 2,
 			"--db: store.dsn: a password in the DSN is refused"},
 		{"misspelt variable", map[string]string{"MILLSTREAM_STORE_PATH": "x"}, []string{"status"}, 1,
@@ -74,7 +74,7 @@ func TestLockAndEnvironmentErrors(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			code, _, errOut := runCLICtx(t, context.Background(), tt.env, tt.args...)
-			if code != tt.code || !strings.Contains(errOut, tt.wantErr) {
+			if code != tt.code || !strings.Contains(errOut, tt.wantErr) || strings.Contains(errOut, "pw") {
 				t.Fatalf("code %d, stderr:\n%s", code, errOut)
 			}
 		})

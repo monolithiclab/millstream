@@ -88,9 +88,6 @@ type AuthConfig struct {
 	User  string        `yaml:"user" env:"USER" default:"operator" doc:"who decides the reviews of a token session"`
 }
 
-// DefaultAuthUser is auth.user's default.
-const DefaultAuthUser = "operator"
-
 // TLSConfig is the tls key: a PEM certificate chain and its private key, both or neither.
 type TLSConfig struct {
 	Cert string `yaml:"cert" env:"CERT" doc:"PEM certificate chain serve and run serve HTTPS with; unset: plain HTTP behind a TLS proxy"`
@@ -165,9 +162,6 @@ type GitAuthor struct {
 	Email string `yaml:"email" env:"EMAIL" default:"millstream@localhost" doc:"commit author's email"`
 }
 
-// DefaultGitBase is improve.git.base's default.
-const DefaultGitBase = "main"
-
 // BudgetConfig is improve.budget.
 type BudgetConfig struct {
 	DayUSD float64 `yaml:"dayUsd" env:"DAY_USD" doc:"what backtests may spend a day, in USD; unset: no limit"`
@@ -222,8 +216,8 @@ type EngineConfig struct {
 
 // Price is a model's price per million tokens, in US dollars.
 type Price struct {
-	InPerMtok  float64 `yaml:"inPerMtok"`
-	OutPerMtok float64 `yaml:"outPerMtok"`
+	InPerMtok  float64 `yaml:"inPerMtok" required:"true"`
+	OutPerMtok float64 `yaml:"outPerMtok" required:"true"`
 }
 
 // LoadEnvironment loads the environment in three layers over Defaults: the environment file at path (a missing

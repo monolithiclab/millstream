@@ -173,9 +173,9 @@ func (g *gitPR) publish(ctx context.Context, acc Accepted, prep proposals.Prepar
 	}
 	title := fmt.Sprintf("%s: %s proposal %s", acc.Pipeline, acc.Kind, acc.ProposalID)
 	env := append([]string{"MS_FORGE=" + g.forge, "MS_REPO=" + g.cfg.Repo,
-		"MS_BASE=" + cmp.Or(g.cfg.Base, pipeline.DefaultGitBase), "MS_BRANCH=millstream/" + acc.ProposalID,
-		"MS_PATH=" + pkgPath, "MS_TITLE=" + title, "MS_AUTHOR_NAME=" + cmp.Or(g.cfg.Author.Name, "Millstream"),
-		"MS_AUTHOR_EMAIL=" + cmp.Or(g.cfg.Author.Email, "millstream@localhost")}, g.creds...)
+		"MS_BASE=" + g.cfg.Base, "MS_BRANCH=millstream/" + acc.ProposalID,
+		"MS_PATH=" + pkgPath, "MS_TITLE=" + title, "MS_AUTHOR_NAME=" + g.cfg.Author.Name,
+		"MS_AUTHOR_EMAIL=" + g.cfg.Author.Email}, g.creds...)
 	// A run that stopped after its push left the branch: the same patch resumes there, never pushed again.
 	out, err := g.jobs.run(ctx, gitJob{work: work, script: resumeScript, env: env})
 	if err != nil {

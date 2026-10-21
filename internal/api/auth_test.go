@@ -15,7 +15,7 @@ func authServer(t *testing.T, public bool) (*Server, *fakeClock) {
 	t.Helper()
 	f := readFixture(t)
 	clock := &fakeClock{t: t0}
-	srv := must(New(Options{Store: f.st, Clock: clock, User: "tester", Auth: &Auth{Token: "s3cret",
+	srv := must(New(Options{Store: f.st, Clock: clock, User: "tester", Auth: &Auth{Token: "s3cret", User: "operator",
 		Hosts: []string{"millstream.example"}, Origins: []string{"https://millstream.example"}, SecureCookie: true,
 		SessionTTL: time.Hour, MetricsPublic: public}}))
 	return srv, clock

@@ -20,19 +20,19 @@ import (
 	"github.com/monolithiclab/millstream/internal/store"
 )
 
-// DefaultRetentionInterval paces the retention job without retention.every.
-const DefaultRetentionInterval = time.Hour
-
 // ArtifactGrace is how long the artifact sweep leaves a file nothing references after it was last stored, and a
 // package directory or a temporary file after it was written: a delivery in flight may have stored the file and
 // not yet reported. A purge does not wait.
 const ArtifactGrace = 24 * time.Hour
 
-// retentionLoop resumes the purges a crash interrupted, then runs the retention job every retention.every until ctx
-// is cancelled.
+// retentionLoop resumes the purges a crash interrupted, then runs the retention job every retention.every (never
+// when it is zero, as in an engine a test builds) until ctx is cancelled.
 func (e *Engine) retentionLoop(ctx context.Context) {
 	if err := e.ResumePurges(ctx); err != nil && ctx.Err() == nil {
 		e.log.Error("resume purges", "error", err.Error())
+	}
+	if e.opts.Retention.Every <= 0 {
+		return
 	}
 	tick := time.NewTicker(time.Duration(e.opts.Retention.Every))
 	defer tick.Stop()

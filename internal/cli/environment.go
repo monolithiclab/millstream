@@ -30,7 +30,7 @@ func environment(rt *Runtime) (*pipeline.Environment, error) {
 		return env, err
 	}
 	if !strings.Contains(rt.DB, "://") {
-		return nil, usageError("--db: want a DSN, such as sqlite://" + rt.DB)
+		return nil, usageError("--db takes a DSN such as sqlite://<path>") // never echoed: it may hold a password
 	}
 	env.Store.DSN = rt.DB
 	if err := env.Validate(); err != nil {

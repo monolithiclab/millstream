@@ -153,7 +153,7 @@ func (s *server) lead(ctx context.Context) error {
 			select {
 			case <-ctx.Done():
 				return nil
-			case <-time.After(cmp.Or(time.Duration(s.env.Engine.LockCheck), postgres.DefaultCheckEvery)):
+			case <-time.After(time.Duration(s.env.Engine.LockCheck)):
 			}
 			continue
 		}

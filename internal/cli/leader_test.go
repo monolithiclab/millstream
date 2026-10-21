@@ -284,7 +284,7 @@ func TestWithStoreModeRefusals(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := withStore(rt, func(store.Store) error { return nil }); err == nil ||
-		err.Error() != "--db: want a DSN, such as sqlite://a.db" {
+		err.Error() != "--db takes a DSN such as sqlite://<path>" {
 		t.Fatalf("a bare path: %v", err)
 	}
 }

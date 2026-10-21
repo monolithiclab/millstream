@@ -291,7 +291,6 @@ func New(opts Options) (*Server, error) {
 			return nil, errors.New("api: an empty token")
 		}
 		a := *opts.Auth
-		a.User = cmp.Or(a.User, pipeline.DefaultAuthUser)
 		a.SessionTTL = cmp.Or(a.SessionTTL, DefaultSessionTTL)
 		a.Hosts = make([]string, len(opts.Auth.Hosts))
 		for i, h := range opts.Auth.Hosts {

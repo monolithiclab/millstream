@@ -50,7 +50,7 @@ metrics: { public: true }
 node: { embedded: false, token: { file: node.token } }
 registries: { lab: ghcr.io/monolithiclab/millstream-actions/, local: "localhost:5000/actions" }
 secrets:
-  property-sourcing: { homesiteToken: { env: HOMESITE_TOKEN }, apiKey: { file: key } }
+  property-sourcing: { listingsToken: { env: LISTINGS_TOKEN }, apiKey: { file: key } }
   other: {}
 retention: { events: 90d, transcripts: 30d, rollups: 400d, every: 30m }
 lessons: { maxTokens: 500 }
@@ -88,7 +88,7 @@ engine: { lockCheck: 2s, keepalive: 3s }
 		Registries: map[string]string{"lab": "ghcr.io/monolithiclab/millstream-actions/",
 			"local": "localhost:5000/actions"},
 		Secrets: map[string]map[string]SecretSource{
-			"property-sourcing": {"homesiteToken": {Env: "HOMESITE_TOKEN"}, "apiKey": {File: "key"}}, "other": {},
+			"property-sourcing": {"listingsToken": {Env: "LISTINGS_TOKEN"}, "apiKey": {File: "key"}}, "other": {},
 		},
 		Retention: Retention{Events: 90 * day, Transcripts: 30 * day, Rollups: 400 * day,
 			Every: Duration(30 * time.Minute)},
@@ -211,6 +211,7 @@ func TestParseEnvironmentErrors(t *testing.T) {
 		"price negative":    {"prices: { m: { inPerMtok: -1, outPerMtok: 1 } }\n", "prices.m: must be non-negative"},
 		"price number":      {"prices: { m: { inPerMtok: cheap } }\n", "prices.m.inPerMtok: must be a number"},
 		"price key":         {"prices: { m: { in: 1 } }\n", "prices.m.in: unknown key"},
+		"price missing":     {"prices: { m: { inPerMtok: 1 } }\n", "prices.m.outPerMtok: is required"},
 		"prices scalar":     {"prices: 3\n", "prices: must be a mapping"},
 		"price scalar":      {"prices: { m: 3 }\n", "prices.m: must be a mapping"},
 		"agents not bool":   {"agents: { allowUnsandboxed: yes please }\n", "agents.allowUnsandboxed: must be true or false"},
@@ -291,8 +292,17 @@ func TestUnknownVariable(t *testing.T) {
 		"MILLSTREAM_UI_BASE_URL?") {
 		t.Fatalf("a misspelt variable: %v", err)
 	}
-	if _, _, err := load(t, "", map[string]string{"MILLSTREAM_IMPROVE_GIT_AUTHOR_MAIL": "x"}); err == nil {
-		t.Fatal("a nested misspelt variable: no error")
+	// A section or a map named alone, or a variable under one that names no setting: a map is set whole.
+	for _, name := range []string{"MILLSTREAM_IMPROVE_GIT_AUTHOR_MAIL", "MILLSTREAM_UI", "MILLSTREAM_IMPROVE_GIT",
+		"MILLSTREAM_REGISTRIES_LAB", "MILLSTREAM_PRICES_M", "MILLSTREAM_SECRETS_P"} {
+		if _, _, err := load(t, "", map[string]string{name: "x"}); err == nil ||
+			!strings.Contains(err.Error(), name+": no such setting") {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+	if _, _, err := load(t, "", map[string]string{"MILLSTREAM_PRICES": "{ m: { inPerMtok: 1 } }"}); err == nil ||
+		!strings.Contains(err.Error(), "MILLSTREAM_PRICES: prices.m.outPerMtok: is required") {
+		t.Errorf("a price without its output price: %v", err)
 	}
 	// The CLI's own variables, the pipelines' secrets and variables, and the node's join token are no settings,
 	// or (MILLSTREAM_NODE_TOKEN) one on purpose.
@@ -408,7 +418,7 @@ func TestDocTags(t *testing.T) {
 }
 
 func TestSecretLookup(t *testing.T) {
-	vars := map[string]string{"MILLSTREAM_SECRET_API_KEY": "from-default", "HOMESITE": "mapped"}
+	vars := map[string]string{"MILLSTREAM_SECRET_API_KEY": "from-default", "LISTINGS_TOKEN": "mapped"}
 	lookup := func(k string) (string, bool) { v, ok := vars[k]; return v, ok }
 	bare := EnvSecrets(lookup)("p")
 	if v, err := bare("apiKey"); v != "from-default" || err != nil {
@@ -417,7 +427,7 @@ func TestSecretLookup(t *testing.T) {
 	if _, err := bare("other"); !errors.Is(err, ErrSecretUnset) || !strings.Contains(err.Error(), "MILLSTREAM_SECRET_OTHER") {
 		t.Fatalf("unset: %v", err)
 	}
-	env := &Environment{Secrets: map[string]map[string]SecretSource{"p": {"token": {Env: "HOMESITE"}, "gone": {Env: "NOPE"}}}}
+	env := &Environment{Secrets: map[string]map[string]SecretSource{"p": {"token": {Env: "LISTINGS_TOKEN"}, "gone": {Env: "NOPE"}}}}
 	mapped := env.SecretLookup("p", lookup)
 	if v, err := mapped("token"); v != "mapped" || err != nil {
 		t.Fatalf("mapped: %q, %v", v, err)
@@ -450,7 +460,7 @@ func TestSecretLookup(t *testing.T) {
 	if _, ok := envLookup("MILLSTREAM_SECRET_API_KEY"); ok {
 		t.Fatal("an unmapped secret's variable resolved")
 	}
-	if v, ok := envLookup("HOMESITE"); v != "mapped" || !ok {
+	if v, ok := envLookup("LISTINGS_TOKEN"); v != "mapped" || !ok {
 		t.Fatalf("another variable: %q, %v", v, ok)
 	}
 }

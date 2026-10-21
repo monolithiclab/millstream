@@ -122,8 +122,9 @@ func TestGitPRHost(t *testing.T) {
 	_, packages, acc := fixture(t)
 	for _, action := range []string{pipeline.PublishGitPRGH, pipeline.PublishGitPRGLab} {
 		f := newForgeRepo(t)
-		p, err := New(pipeline.Improve{Publish: action, Git: pipeline.GitConfig{Repo: f.bare, Path: "pipelines/extra",
-			Image: gitImage}}, Deps{Packages: packages, jobs: hostJobs{bin: f.bin}})
+		git := pipeline.Defaults().Improve.Git // base and author at their defaults
+		git.Repo, git.Path, git.Image = f.bare, "pipelines/extra", gitImage
+		p, err := New(pipeline.Improve{Publish: action, Git: git}, Deps{Packages: packages, jobs: hostJobs{bin: f.bin}})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -169,8 +170,9 @@ func TestGitPRContainer(t *testing.T) {
 	}
 	_, packages, acc := fixture(t)
 	f := newForgeRepo(t)
-	p, err := New(pipeline.Improve{Publish: pipeline.PublishGitPRGH, Git: pipeline.GitConfig{Repo: f.bare,
-		Path: "pipelines/{pipeline}", Image: gitImage, Env: []string{"GH_TOKEN"}}}, Deps{Packages: packages,
+	git := pipeline.Defaults().Improve.Git
+	git.Repo, git.Path, git.Image, git.Env = f.bare, "pipelines/{pipeline}", gitImage, []string{"GH_TOKEN"}
+	p, err := New(pipeline.Improve{Publish: pipeline.PublishGitPRGH, Git: git}, Deps{Packages: packages,
 		Env: func(k string) (string, bool) { return "not-a-token", k == "GH_TOKEN" },
 		jobs: containerJobs{rt: rt, image: gitImage, mounts: []exec.Mount{
 			{Source: f.bare, Target: f.bare}, {Source: f.rec, Target: f.rec},

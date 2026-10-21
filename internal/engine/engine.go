@@ -97,7 +97,7 @@ type Options struct {
 	// 5.9), what nodes following the active engine across a failover learn it by; zero on SQLite.
 	Leadership Leadership
 	// Retention is the environment file's retention key: how long events, transcripts and rollups are kept (zero
-	// for ever), and how often the retention job runs (Every; zero means DefaultRetentionInterval). Streams carry
+	// for ever), and how often the retention job runs (Every; zero runs none). Streams carry
 	// their own retention in their pipelines (spec section 9.3).
 	Retention pipeline.Retention
 	// Improve is the environment file's improve key: the default minSeverity of insight triggers and the settings
@@ -231,9 +231,6 @@ func New(opts Options) (*Engine, error) {
 	}
 	if opts.ProjectInterval <= 0 {
 		opts.ProjectInterval = DefaultProjectInterval
-	}
-	if opts.Retention.Every <= 0 {
-		opts.Retention.Every = pipeline.Duration(DefaultRetentionInterval)
 	}
 	if opts.Env == nil {
 		opts.Env = func(string) (string, bool) { return "", false }
