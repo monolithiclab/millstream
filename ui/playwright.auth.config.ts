@@ -15,7 +15,7 @@ export default defineConfig({
   webServer: {
     command:
       `rm -rf /tmp/millstream-e2e-auth && MILLSTREAM_TOKEN=${token} ../.build/millstream ` +
-      '--env-file e2e/auth/millstream.yaml --db /tmp/millstream-e2e-auth/millstream.db run --listen 127.0.0.1:4176 ' +
+      '--env-file e2e/auth/millstream.yaml --db sqlite:///tmp/millstream-e2e-auth/millstream.db run --listen 127.0.0.1:4176 ' +
       'e2e/fixture',
     // The UI's index answers without the token.
     url: 'http://127.0.0.1:4176/',

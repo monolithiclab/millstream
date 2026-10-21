@@ -20,7 +20,7 @@ export default defineConfig({
   webServer: {
     // USER names the reviewer of decisions made from the UI, as on a laptop (a server without auth.token).
     command:
-      'rm -rf /tmp/millstream-e2e && USER=e2e ../.build/millstream --db /tmp/millstream-e2e/millstream.db run --listen 127.0.0.1:4173 e2e/fixture',
+      'rm -rf /tmp/millstream-e2e && USER=e2e ../.build/millstream --db sqlite:///tmp/millstream-e2e/millstream.db run --listen 127.0.0.1:4173 e2e/fixture',
     url: 'http://127.0.0.1:4173/api/v1/pipelines',
     reuseExistingServer: false,
   },

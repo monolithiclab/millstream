@@ -194,3 +194,53 @@ func waitFor(t *testing.T, cond func() bool) {
 		time.Sleep(20 * time.Millisecond)
 	}
 }
+
+// serve configured by variables alone, the way Compose and systemd run it: no environment file, MILLSTREAM_LISTEN and
+// MILLSTREAM_AUTH_TOKEN in the environment. The listener and the token took effect when a request without the token
+// is refused and one with it answers.
+func Test_serveFromVariables(t *testing.T) {
+	t.Parallel()
+	const token = "0123456789abcdef0123456789abcdef"
+	dir := t.TempDir()
+	environ := map[string]string{"MILLSTREAM_STORE_DSN": "sqlite://" + filepath.Join(dir, "m.db"),
+		"MILLSTREAM_LISTEN": "127.0.0.1:0", "MILLSTREAM_AUTH_TOKEN": token, "USER": "ops", "PATH": os.Getenv("PATH")}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	serving := regexp.MustCompile(`serving the UI and the API on http://(127\.0\.0\.1:\d+)/`)
+	out := newWatchBuffer(func(s string) bool { return serving.MatchString(s) })
+	errOut := newWatchBuffer(func(string) bool { return false })
+	done := make(chan int, 1)
+	go func() {
+		done <- Run(ctx, []string{"serve"}, IO{In: strings.NewReader(""), Out: out, Err: errOut}, "dev",
+			func(rt *Runtime) { rt.Env = func(k string) (string, bool) { v, ok := environ[k]; return v, ok } })
+	}()
+	select {
+	case <-out.Done:
+	case code := <-done:
+		t.Fatalf("serve exited with %d before serving:\n%s", code, errOut.String())
+	}
+	url := "http://" + serving.FindStringSubmatch(out.String())[1] + "/api/v1/pipelines"
+	status := func(bearer string) int {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if bearer != "" {
+			req.Header.Set("Authorization", "Bearer "+bearer)
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = resp.Body.Close()
+		return resp.StatusCode
+	}
+	if got := status(""); got != http.StatusUnauthorized {
+		t.Errorf("without the token: %d, want 401", got)
+	}
+	if got := status(token); got != http.StatusOK {
+		t.Errorf("with the token: %d, want 200", got)
+	}
+	cancel()
+	<-done
+}

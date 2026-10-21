@@ -1,7 +1,8 @@
 # The VPS deployment of spec section 14: Postgres, two engines (one active, one hot standby) and two nodes.
 #   cp .env.example .env    # then set every value
 #   docker compose up -d
-# docs/deploy.md is the guide: TLS in front, backups, upgrades. Secrets come from .env, never from this file.
+# docs/deploy.md is the guide: TLS in front, backups, upgrades. The engines are configured by MILLSTREAM_* variables
+# (spec section 14): settings below, secrets from .env, never from this file.
 #
 # The engines serve HTTPS with the certificate in ./tls (docs/deploy.md, "Node TLS"), which the nodes check against
 # ./tls/ca.pem: nodes reach an engine on another host over TLS only.
@@ -18,16 +19,46 @@ x-millstream: &millstream
 
 x-engine: &engine
   <<: *millstream
-  # serve runs the engine from the environment file; the packages come from the store (millstream apply --server).
-  command: ["serve", "--env-file", "/etc/millstream/millstream.yaml"]
+  # serve runs the engine from its environment; the packages come from the store (millstream apply --server).
+  command: ["serve"]
   environment:
-    MILLSTREAM_DSN: postgres://millstream:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/millstream?sslmode=disable
-    MILLSTREAM_TOKEN: ${MILLSTREAM_TOKEN:?set MILLSTREAM_TOKEN in .env}
+    MILLSTREAM_ENVIRONMENT: production
+    # Both engines share one Postgres database: the one holding its advisory lock is active, the other waits as the
+    # standby. PGUSER and PGPASSWORD are libpq's, so the DSN carries no credentials.
+    MILLSTREAM_STORE_DSN: postgres://postgres/millstream?sslmode=disable
+    PGUSER: millstream
+    PGPASSWORD: ${PGPASSWORD:?set PGPASSWORD in .env}
+    # How each engine watches its write connection: a dead engine's lock is free, and a cut-off one steps down,
+    # within lockCheck + 2 x keepalive (docs/deploy.md, Standby and failover).
+    MILLSTREAM_ENGINE_LOCK_CHECK: 5s
+    MILLSTREAM_ENGINE_KEEPALIVE: 5s
+    # The API listens on every interface of the container so compose can publish it, over HTTPS (HTTP/2) with the
+    # certificate in ./tls, for the nodes and the reverse proxy alike. A non-loopback listener needs the token.
+    MILLSTREAM_LISTEN: 0.0.0.0:7070
+    MILLSTREAM_AUTH_TOKEN: ${MILLSTREAM_AUTH_TOKEN:?set MILLSTREAM_AUTH_TOKEN in .env}
+    MILLSTREAM_TLS_CERT: /etc/millstream/tls/cert.pem
+    MILLSTREAM_TLS_KEY: /etc/millstream/tls/key.pem
+    # The work runs on the node containers, not inside the engines; nodes authenticate with the node token.
+    MILLSTREAM_NODE_EMBEDDED: "false"
     MILLSTREAM_NODE_TOKEN: ${MILLSTREAM_NODE_TOKEN:?set MILLSTREAM_NODE_TOKEN in .env}
+    MILLSTREAM_REGISTRIES: "{ lab: ghcr.io/monolithiclab/millstream-actions }"
+    MILLSTREAM_RETENTION_EVENTS: 90d
+    MILLSTREAM_RETENTION_TRANSCRIPTS: 30d
+    MILLSTREAM_RETENTION_ROLLUPS: 400d
+    MILLSTREAM_LESSONS_MAX_TOKENS: "2000"
+    # The address of the TLS reverse proxy in front (docs/deploy.md).
+    MILLSTREAM_UI_BASE_URL: https://millstream.example
+    # Artifacts: without a URL the active engine keeps them in its working directory, the volume both engines share.
+    # An S3-compatible bucket shared by both engines survives a failover too, and the nodes reach it through
+    # presigned URLs; set the three values in .env. An empty variable is unset.
+    MILLSTREAM_ARTIFACTS_URL: ${MILLSTREAM_ARTIFACTS_URL:-}
+    AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+    AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+    AWS_ENDPOINT_URL: ${AWS_ENDPOINT_URL:-}
+    # A pipeline's secrets are MILLSTREAM_SECRET_<NAME> variables: add one here for each, taken from .env.
   # The root file system is read-only: the engines' working directory is a volume they share, so artifacts kept in
   # the local directory survive a failover.
   volumes:
-    - ./millstream.yaml:/etc/millstream/millstream.yaml:ro
     - ./tls:/etc/millstream/tls:ro
     - engine:/home/nonroot
   depends_on:
@@ -51,7 +82,7 @@ services:
     environment:
       POSTGRES_USER: millstream
       POSTGRES_DB: millstream
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_PASSWORD: ${PGPASSWORD:?set PGPASSWORD in .env}
     volumes:
       - postgres:/var/lib/postgresql/data
     healthcheck:

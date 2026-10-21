@@ -57,9 +57,9 @@ var (
 
 // soakOverride is the Compose file layered over deploy/compose/compose.yaml: host ports chosen by Docker (the
 // project never collides with a real deployment), Postgres published on the loopback for the final checks, the
-// soak's environment file and certificate in place of the deployment's (volumes merge by target), the scorer's
-// secret, and on the nodes the agent environment file (agents allowed unsandboxed, the fake model priced) and the
-// M2 recordings the harness replays.
+// soak's certificate in place of the deployment's (volumes merge by target), the scorer's secret and the fake
+// model's price on the engines, and on the nodes agents allowed unsandboxed, the same price and the M2 recordings
+// the harness replays.
 const soakOverride = `services:
   postgres:
     ports: ["127.0.0.1::5432"]
@@ -67,17 +67,18 @@ const soakOverride = `services:
     ports: !override ["127.0.0.1::7070"]
     environment:
       MILLSTREAM_SECRET_SCORER_KEY: sk-fake-soak
+      MILLSTREAM_PRICES: ${SOAK_PRICES}
     volumes:
-      - ${SOAK_DIR}/millstream.yaml:/etc/millstream/millstream.yaml:ro
       - ${SOAK_DIR}/tls:/etc/millstream/tls:ro
   engine-standby: *engine
   node-1: &node
     environment:
+      MILLSTREAM_AGENTS_ALLOW_UNSANDBOXED: "true"
+      MILLSTREAM_PRICES: ${SOAK_PRICES}
       MILLSTREAM_HARNESS_MODE: replay
       MILLSTREAM_HARNESS_DIR: /etc/millstream/recordings
     volumes:
       - ${SOAK_DIR}/tls/ca.pem:/etc/millstream/tls/ca.pem:ro
-      - ${SOAK_DIR}/node.yaml:/home/nonroot/millstream.yaml:ro
       - ${SOAK_RECORDINGS}:/etc/millstream/recordings:ro
   node-2: *node
 `
@@ -212,15 +213,12 @@ func newSoak(t *testing.T, cfg soakConfig) *soak {
 	pool.AppendCertsFromPEM(caPEM)
 	s.client = &http.Client{Timeout: 10 * time.Second, Transport: &http.Transport{
 		TLSClientConfig: &tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS12}}}
-	s.env = []string{"MILLSTREAM_IMAGE=" + soakImage, "POSTGRES_PASSWORD=" + s.password,
-		"MILLSTREAM_TOKEN=" + s.token, "MILLSTREAM_NODE_TOKEN=" + randomHex(t), "SOAK_DIR=" + s.dir,
+	// MILLSTREAM_AUTH_TOKEN is the engines' token, MILLSTREAM_TOKEN the one the apply container presents.
+	s.env = []string{"MILLSTREAM_IMAGE=" + soakImage, "PGPASSWORD=" + s.password,
+		"MILLSTREAM_AUTH_TOKEN=" + s.token, "MILLSTREAM_TOKEN=" + s.token, "MILLSTREAM_NODE_TOKEN=" + randomHex(t),
+		"SOAK_DIR=" + s.dir, fmt.Sprintf("SOAK_PRICES={ %s: { inPerMtok: %d, outPerMtok: %d } }", m2Model,
+			m2InPerMtok, m2OutPerMtok),
 		"SOAK_RECORDINGS=" + filepath.Join(root, "examples", "m2-fixture", "recordings")}
-	deployEnv, err := os.ReadFile(filepath.Join(root, "deploy", "compose", "millstream.yaml"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	writeFile(t, filepath.Join(s.dir, "millstream.yaml"), string(deployEnv)+m2Prices)
-	writeFile(t, filepath.Join(s.dir, "node.yaml"), "agents: { allowUnsandboxed: true }\n"+m2Prices)
 	writeFile(t, filepath.Join(s.dir, "compose.soak.yaml"), soakOverride)
 	s.buildPackages()
 	return s

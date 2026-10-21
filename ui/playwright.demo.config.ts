@@ -18,7 +18,7 @@ const server = (port: number) => ({
     `rm -rf /tmp/millstream-demo-${port} &&`,
     'USER=analyst MILLSTREAM_HARNESS_MODE=replay',
     `MILLSTREAM_HARNESS_DIR=${root}/.build/demo-recordings MILLSTREAM_SECRET_SCORER_KEY=sk-fake-0123456789`,
-    `${root}/.build/millstream --db /tmp/millstream-demo-${port}/millstream.db`,
+    `${root}/.build/millstream --db sqlite:///tmp/millstream-demo-${port}/millstream.db`,
     `--env-file ${root}/ui/e2e/demo-fixture/millstream.yaml`,
     `run --listen 127.0.0.1:${port} ${root}/.build/demo`,
   ].join(' '),

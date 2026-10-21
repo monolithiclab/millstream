@@ -1,6 +1,6 @@
-# The Millstream engine (spec section 14, VPS target): `millstream serve` from the environment file.
-# Install: docs/deploy.md, "systemd". The binary goes in /usr/local/bin, the environment file in
-# /etc/millstream/millstream.yaml, its secrets in /etc/millstream/millstream.env (root-owned, mode 0600).
+# The Millstream engine (spec section 14, VPS target): `millstream serve`, configured by the MILLSTREAM_* variables
+# of /etc/millstream/millstream.env (root-owned, mode 0600). Install: docs/deploy.md, "systemd". The binary goes in
+# /usr/local/bin.
 # A second host running the same unit against the same Postgres waits as the standby; its takeover is M4 Task 3.
 
 [Unit]
@@ -11,9 +11,10 @@ After=network-online.target postgresql.service
 
 [Service]
 Type=exec
-ExecStart=/usr/local/bin/millstream serve --env-file /etc/millstream/millstream.yaml
-# MILLSTREAM_DSN, MILLSTREAM_TOKEN, MILLSTREAM_NODE_TOKEN and each pipeline's secrets, read by systemd as root
-# before it drops to the service user, so the file stays unreadable to that user.
+ExecStart=/usr/local/bin/millstream serve
+# The engine's settings and secrets (PGPASSWORD, MILLSTREAM_AUTH_TOKEN, MILLSTREAM_NODE_TOKEN, each pipeline's
+# MILLSTREAM_SECRET_<NAME>), read by systemd as root before it drops to the service user, so the file stays
+# unreadable to that user.
 EnvironmentFile=/etc/millstream/millstream.env
 Environment=USER=millstream
 # SIGTERM drains in-flight deliveries; leave it the lease time to finish before SIGKILL.
