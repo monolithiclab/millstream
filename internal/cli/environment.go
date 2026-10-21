@@ -24,19 +24,11 @@ func environment(rt *Runtime) (*pipeline.Environment, error) {
 	if rt.Environ != nil {
 		names = rt.Environ()
 	}
-	path, required := cmp.Or(rt.EnvFile, pipeline.EnvironmentFile), rt.EnvFile != ""
-	env, err := pipeline.LoadEnvironment(path, required, rt.Env, names)
-	if err != nil || rt.DB == "" {
-		return env, err
-	}
-	if !strings.Contains(rt.DB, "://") {
+	if rt.DB != "" && !strings.Contains(rt.DB, "://") {
 		return nil, usageError("--db takes a DSN such as sqlite://<path>") // never echoed: it may hold a password
 	}
-	env.Store.DSN = rt.DB
-	if err := env.Validate(); err != nil {
-		return nil, usageError("--db: " + err.Error())
-	}
-	return env, nil
+	path, required := cmp.Or(rt.EnvFile, pipeline.EnvironmentFile), rt.EnvFile != ""
+	return pipeline.LoadEnvironment(path, required, rt.Env, names, rt.DB)
 }
 
 // resolver returns the action resolver of a command: container images through the runtime the environment selects,

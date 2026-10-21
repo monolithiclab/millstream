@@ -32,7 +32,7 @@ func load(t *testing.T, src string, m map[string]string) (*Environment, string, 
 		}
 	}
 	lookup, names := vars(m)
-	env, err := LoadEnvironment(path, false, lookup, names)
+	env, err := LoadEnvironment(path, false, lookup, names, "")
 	return env, dir, err
 }
 
@@ -252,7 +252,7 @@ func TestLayers(t *testing.T) {
 		t.Fatalf("no file: %+v, %v", env, err)
 	}
 	lookup, names := vars(nil)
-	if _, err := LoadEnvironment(filepath.Join(testdir.New(t), "absent.yaml"), true, lookup, names); err == nil {
+	if _, err := LoadEnvironment(filepath.Join(testdir.New(t), "absent.yaml"), true, lookup, names, ""); err == nil {
 		t.Fatal("a required missing file: no error")
 	}
 	if _, _, err := load(t, "listen: [\n", nil); err == nil || !strings.Contains(err.Error(), EnvironmentFile) {
@@ -341,6 +341,15 @@ func TestStoreDSN(t *testing.T) {
 	if p, ok := env.Store.SQLitePath(); err != nil || !ok || p != "state/m.db" {
 		t.Fatalf("a relative path in a variable: %q, %v", p, err)
 	}
+	bad := filepath.Join(testdir.New(t), EnvironmentFile)
+	if err := os.WriteFile(bad, []byte("store: { dsn: mysql://x }\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	lookup, names := vars(map[string]string{"MILLSTREAM_STORE_DSN": "mysql://y"})
+	env, err = LoadEnvironment(bad, true, lookup, names, "sqlite://flag.db")
+	if p, ok := env.Store.SQLitePath(); err != nil || !ok || p != "flag.db" {
+		t.Fatalf("the flag, the last layer: %q, %v", p, err)
+	}
 	if _, err := ParseEnvironment([]byte("store: { dsn: \"postgres://db/ms?sslmode=disable\" }\n")); err != nil {
 		t.Fatal(err)
 	}
@@ -348,10 +357,11 @@ func TestStoreDSN(t *testing.T) {
 		t.Fatal("Postgres has a SQLite path")
 	}
 	for dsn, want := range map[string]string{
-		"postgres://u:pw@db/ms": "store.dsn: a password in the DSN is refused: set PGPASSWORD",
-		"mysql://x":             "store.dsn: want sqlite://<path> or postgres://",
-		"state/m.db":            "store.dsn: want sqlite://<path> or postgres://",
-		"sqlite://":             "store.dsn: want sqlite://<path>",
+		"postgres://u:pw@db/ms":        "store.dsn: a password in the DSN is refused: set PGPASSWORD",
+		"postgres://db/ms?password=pw": "store.dsn: a password in the DSN is refused: set PGPASSWORD",
+		"mysql://x":                    "store.dsn: want sqlite://<path> or postgres://",
+		"state/m.db":                   "store.dsn: want sqlite://<path> or postgres://",
+		"sqlite://":                    "store.dsn: want sqlite://<path>",
 	} {
 		_, err := ParseEnvironment([]byte("store: { dsn: \"" + dsn + "\" }\n"))
 		if err == nil || !strings.Contains(err.Error(), want) || strings.Contains(err.Error(), "pw") {
@@ -396,24 +406,6 @@ func TestLoadEnvironmentPaths(t *testing.T) {
 		if err != nil || !filepath.IsAbs(got(env)) || !strings.HasPrefix(got(env), dir) {
 			t.Fatalf("%s: %+v, %v", src, env, err)
 		}
-	}
-}
-
-// TestDocTags: every leaf has a doc, a key and a variable, and no two leaves share a variable.
-func TestDocTags(t *testing.T) {
-	t.Parallel()
-	seen := map[string]string{}
-	for _, s := range Settings(Defaults()) {
-		if s.Doc == "" || strings.HasSuffix(s.Key, ".") || strings.HasSuffix(s.Var, "_") {
-			t.Errorf("%s (%s): a tag is missing", s.Key, s.Var)
-		}
-		if other, ok := seen[s.Var]; ok {
-			t.Errorf("%s and %s share %s", other, s.Key, s.Var)
-		}
-		seen[s.Var] = s.Key
-	}
-	if len(seen) < 40 {
-		t.Fatalf("%d settings", len(seen))
 	}
 }
 

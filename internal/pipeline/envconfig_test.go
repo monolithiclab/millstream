@@ -18,7 +18,7 @@ func loadFile(t *testing.T, src []byte) (*Environment, error) {
 	if err := os.WriteFile(path, src, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	return LoadEnvironment(path, true, func(string) (string, bool) { return "", false }, nil)
+	return LoadEnvironment(path, true, func(string) (string, bool) { return "", false }, nil, "")
 }
 
 // TestDefaultFileLoadsAsDefaults: the generated file is all comments, so loading it changes nothing.
@@ -53,12 +53,16 @@ func TestDefaultFileUncommented(t *testing.T) {
 	}
 }
 
-// TestDefaultFileHasEveryKey: every leaf has a doc and a default or an example, and its exact key line names its variable.
+// TestDefaultFileHasEveryKey: every leaf has a key, a variable, a doc and a default or an example, no two leaves
+// share a variable, and each exact key line names its variable.
 func TestDefaultFileHasEveryKey(t *testing.T) {
 	t.Parallel()
 	lines := strings.Split(string(DefaultFile()), "\n")
 	vars := map[string]bool{}
 	for _, s := range Settings(Defaults()) {
+		if strings.HasSuffix(s.Key, ".") || strings.HasSuffix(s.Var, "_") {
+			t.Errorf("%s (%s): a yaml or env tag is missing", s.Key, s.Var)
+		}
 		if s.Doc == "" || s.Default == "" && s.Example == "" {
 			t.Errorf("%s: needs a doc and a default or an example", s.Key)
 		}
@@ -76,6 +80,9 @@ func TestDefaultFileHasEveryKey(t *testing.T) {
 		}) {
 			t.Errorf("%s: no key line %q ... %q", s.Key, prefix, suffix)
 		}
+	}
+	if len(vars) < 40 {
+		t.Fatalf("%d settings", len(vars))
 	}
 }
 

@@ -223,9 +223,10 @@ type Price struct {
 
 // LoadEnvironment loads the environment in three layers over Defaults: the environment file at path (a missing
 // one is no layer when required is false, an error otherwise), then the variables lookup holds (applyVariables;
-// names are the process's, for its strictness). Flags are the caller's, applied after. Relative paths the file
-// sets resolve against its directory; those of a default or a variable against the working directory.
-func LoadEnvironment(path string, required bool, lookup func(string) (string, bool), names []string) (
+// names are the process's, for its strictness), then the flags: dsn, when not empty, sets store.dsn (--db).
+// Relative paths the file sets resolve against its directory; those of a default, a variable or a flag against the
+// working directory.
+func LoadEnvironment(path string, required bool, lookup func(string) (string, bool), names []string, dsn string) (
 	*Environment, error,
 ) {
 	e := Defaults()
@@ -242,6 +243,7 @@ func LoadEnvironment(path string, required bool, lookup func(string) (string, bo
 	if err := applyVariables(e, lookup, names); err != nil {
 		return nil, err
 	}
+	e.Store.DSN = cmp.Or(dsn, e.Store.DSN)
 	if err := e.Validate(); err != nil {
 		return nil, err
 	}
@@ -385,8 +387,9 @@ func (e *Environment) Validate() error {
 	return errors.Join(errs...)
 }
 
-// validate checks store.dsn: sqlite://<path>, or a postgres:// URI without a password, which libpq's PGPASSWORD
-// (or ~/.pgpass) supplies, so that the DSN is no secret. The DSN is never part of the error.
+// validate checks store.dsn: sqlite://<path>, or a postgres:// URI without a password, in its user info or its
+// query string, which libpq's PGPASSWORD (or ~/.pgpass) supplies, so that the DSN is no secret. The DSN is never
+// part of the error.
 func (c StoreConfig) validate(check func(ok bool, key, format string, args ...any)) {
 	if path, ok := c.SQLitePath(); ok {
 		check(path != "", "store.dsn", "want sqlite://<path>")
@@ -398,7 +401,8 @@ func (c StoreConfig) validate(check func(ok bool, key, format string, args ...an
 		return
 	}
 	_, hasPassword := u.User.Password()
-	check(!hasPassword, "store.dsn", "a password in the DSN is refused: set PGPASSWORD (or use ~/.pgpass) instead")
+	check(!hasPassword && !u.Query().Has("password"), "store.dsn",
+		"a password in the DSN is refused: set PGPASSWORD (or use ~/.pgpass) instead")
 }
 
 // envName is an environment variable's name.

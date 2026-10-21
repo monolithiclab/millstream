@@ -134,10 +134,11 @@ func setText(s Setting, text string) error {
 		n.Tag = "!!str"
 	}
 	var pe *ParseError
-	if err := decode(n, s.Value, s.Key); errors.As(err, &pe) {
+	err := decode(n, s.Value, s.Key)
+	if errors.As(err, &pe) {
 		return fmt.Errorf("%s: %s", pe.Path, pe.Msg)
 	}
-	return nil
+	return err
 }
 
 // decode reads n into v strictly, as the environment file holds it: a mapping key no field's yaml tag names is an
