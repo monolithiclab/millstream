@@ -6,9 +6,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
 	"runtime/debug"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -124,6 +126,7 @@ func runCLICtx(t *testing.T, ctx context.Context, env map[string]string, argv ..
 	var out, errb bytes.Buffer
 	code = Run(ctx, argv, IO{In: strings.NewReader(""), Out: &out, Err: &errb}, "dev", func(rt *Runtime) {
 		rt.Env = func(k string) (string, bool) { v, ok := env[k]; return v, ok }
+		rt.Environ = func() []string { return slices.Collect(maps.Keys(env)) }
 		rt.Launchers = testLaunchers()
 	})
 	return code, out.String(), errb.String()
@@ -197,7 +200,7 @@ func (s *state) exec(ctx context.Context, env map[string]string, out io.Writer, 
 	stderr string,
 ) {
 	var errb bytes.Buffer
-	code = Run(ctx, append([]string{"--db", s.db}, argv...), IO{In: strings.NewReader(""), Out: out, Err: &errb},
+	code = Run(ctx, append([]string{"--db", dsn(s.db)}, argv...), IO{In: strings.NewReader(""), Out: out, Err: &errb},
 		"dev", func(rt *Runtime) {
 			rt.Env = func(k string) (string, bool) { v, ok := env[k]; return v, ok }
 			rt.Launchers = testLaunchers()
@@ -247,6 +250,14 @@ func memoryStore(t *testing.T) *sqlite.Store {
 }
 
 // unusedDB is the --db path of the states whose commands use an in-memory store: nothing creates it.
+// dsn is the store DSN of the SQLite database at path, for --db; empty without a path.
+func dsn(path string) string {
+	if path == "" {
+		return ""
+	}
+	return "sqlite://" + path
+}
+
 func unusedDB() string { return filepath.Join(testDir, "unused", "millstream.db") }
 
 // runner is a command as the parser builds it.
@@ -258,7 +269,7 @@ type runner interface{ Run(rt *Runtime) error }
 func (s *state) call(env map[string]string, cmd runner) (stdout, stderr string, err error) {
 	var out, errb bytes.Buffer
 	rt := &Runtime{Ctx: context.Background(), IO: IO{In: strings.NewReader(""), Out: &out, Err: &errb},
-		Version: "dev", Env: func(k string) (string, bool) { v, ok := env[k]; return v, ok }, DB: s.db,
+		Version: "dev", Env: func(k string) (string, bool) { v, ok := env[k]; return v, ok }, DB: dsn(s.db),
 		Launchers: testLaunchers(), Store: s.st, CurrentUser: noAccount}
 	err = cmd.Run(rt)
 	return out.String(), errb.String(), err

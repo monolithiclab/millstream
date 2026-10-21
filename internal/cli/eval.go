@@ -171,8 +171,8 @@ func packageAbove(dir string) (string, error) {
 	}
 }
 
-// recordsEvals reports whether eval records its scores: when --db names the database, or the environment file's
-// store key names the store.
+// recordsEvals reports whether eval records its scores: when --db names the store, or store.dsn is not its
+// default.
 func recordsEvals(rt *Runtime) (bool, error) {
 	if rt.DBSet {
 		return true, nil
@@ -181,7 +181,7 @@ func recordsEvals(rt *Runtime) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	return env.Store.Set(), nil
+	return env.Store.DSN != pipeline.Defaults().Store.DSN, nil
 }
 
 // recordEval records the scores in the state database and returns each case's previous score.

@@ -93,7 +93,7 @@ func TestStateChangeRefusals(t *testing.T) {
 	}
 	// --direct goes on to open the store, which needs the DSN.
 	code, _, errOut := runCLICtx(t, context.Background(), nil, "--env-file", pg, "--direct", "disable", "p")
-	if code != exitFail || !strings.Contains(errOut, "MILLSTREAM_DSN is not set") {
+	if code != exitFail || !strings.Contains(errOut, "127.0.0.1") {
 		t.Fatalf("--direct: code %d, stderr %q", code, errOut)
 	}
 	code, _, errOut = runCLICtx(t, context.Background(), nil, "--server", "localhost:7070", "disable", "p")
@@ -133,7 +133,7 @@ func Test_commandsThroughTheServer(t *testing.T) {
 	run := func(want int, argv ...string) (string, string) {
 		t.Helper()
 		var out, errb bytes.Buffer
-		code := Run(context.Background(), append([]string{"--db", unusedDB()}, argv...),
+		code := Run(context.Background(), append([]string{"--db", dsn(unusedDB())}, argv...),
 			IO{In: strings.NewReader(""), Out: &out, Err: &errb}, "dev", func(rt *Runtime) {
 				rt.Env = func(k string) (string, bool) { v, ok := env[k]; return v, ok }
 				rt.HTTPClient = &http.Client{Transport: handlerTransport{h}}
@@ -156,7 +156,7 @@ func Test_commandsThroughTheServer(t *testing.T) {
 	call := func(cmd runner) (string, error) {
 		var out, errb bytes.Buffer
 		rt := &Runtime{Ctx: context.Background(), IO: IO{In: strings.NewReader(""), Out: &out, Err: &errb},
-			Env: func(k string) (string, bool) { v, ok := env[k]; return v, ok }, DB: unusedDB(),
+			Env: func(k string) (string, bool) { v, ok := env[k]; return v, ok }, DB: dsn(unusedDB()),
 			HTTPClient: &http.Client{Transport: handlerTransport{h}}, CurrentUser: noAccount}
 		err := cmd.Run(rt)
 		return out.String(), err
@@ -284,11 +284,11 @@ func TestAPIAuth(t *testing.T) {
 		t.Fatalf("without a token: %+v, %v", a, err)
 	}
 	token := &pipeline.SecretSource{Env: "T"}
-	if _, err := apiAuth(rt, &pipeline.Environment{AuthToken: &pipeline.SecretSource{Env: "U"}}, ""); err == nil {
+	if _, err := apiAuth(rt, &pipeline.Environment{Auth: pipeline.AuthConfig{Token: &pipeline.SecretSource{Env: "U"}}}, ""); err == nil {
 		t.Fatal("an unset token: no error")
 	}
 	short := &Runtime{Env: func(string) (string, bool) { return "s3cret", true }}
-	if _, err := apiAuth(short, &pipeline.Environment{AuthToken: token}, ""); err == nil ||
+	if _, err := apiAuth(short, &pipeline.Environment{Auth: pipeline.AuthConfig{Token: token}}, ""); err == nil ||
 		err.Error() != "auth.token: must be at least 32 characters long, not 6" {
 		t.Fatalf("a short token: %v", err)
 	}
@@ -297,16 +297,19 @@ func TestAPIAuth(t *testing.T) {
 		listen string
 		want   api.Auth
 	}{
-		{pipeline.Environment{AuthToken: token}, "127.0.0.1:7070",
+		{pipeline.Environment{Auth: pipeline.AuthConfig{Token: token}}, "127.0.0.1:7070",
 			api.Auth{Token: testToken, Hosts: []string{"127.0.0.1"}}},
-		{pipeline.Environment{AuthToken: token, AuthUser: "ana", MetricsPublic: true,
-			UIBaseURL: "https://millstream.example"}, "0.0.0.0:7070",
+		{pipeline.Environment{Auth: pipeline.AuthConfig{Token: token, User: "ana"},
+			Metrics: pipeline.MetricsConfig{Public: true}, UI: pipeline.UIConfig{BaseURL: "https://millstream.example"}},
+			"0.0.0.0:7070",
 			api.Auth{Token: testToken, User: "ana", MetricsPublic: true, Hosts: []string{"millstream.example"},
 				Origins: []string{"https://millstream.example"}, SecureCookie: true}},
-		{pipeline.Environment{AuthToken: token, UIBaseURL: "http://10.0.0.5:7070"}, "10.0.0.5:7070",
+		{pipeline.Environment{Auth: pipeline.AuthConfig{Token: token}, UI: pipeline.UIConfig{BaseURL: "http://10.0.0.5:7070"}},
+			"10.0.0.5:7070",
 			api.Auth{Token: testToken, Hosts: []string{"10.0.0.5", "10.0.0.5:7070"},
 				Origins: []string{"http://10.0.0.5:7070"}, SecureCookie: true}},
-		{pipeline.Environment{AuthToken: token, TLS: &pipeline.TLSConfig{}}, "localhost:7070",
+		{pipeline.Environment{Auth: pipeline.AuthConfig{Token: token}, TLS: pipeline.TLSConfig{Cert: "c.pem"}},
+			"localhost:7070",
 			api.Auth{Token: testToken, Hosts: []string{"localhost"}, SecureCookie: true}},
 	} {
 		got, err := apiAuth(rt, &tt.env, tt.listen)

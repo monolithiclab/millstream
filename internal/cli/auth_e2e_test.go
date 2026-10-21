@@ -32,7 +32,7 @@ func Test_serveWithTokenAndTLS(t *testing.T) {
 	dir := t.TempDir()
 	pool := selfSigned(t, dir)
 	envFile := filepath.Join(dir, "millstream.yaml")
-	if err := os.WriteFile(envFile, []byte("store: { sqlite: { path: state/millstream.db } }\nlisten: 127.0.0.1:0\n"+
+	if err := os.WriteFile(envFile, []byte("store: { dsn: sqlite://state/millstream.db }\nlisten: 127.0.0.1:0\n"+
 		"auth: { token: { env: MILLSTREAM_TOKEN }, user: ana }\ntls: { cert: cert.pem, key: key.pem }\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}

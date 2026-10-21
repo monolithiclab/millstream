@@ -96,8 +96,8 @@ func (e *Engine) projectInsights(ctx context.Context, ps store.PipelineState, fo
 	}
 	steps := insights.StepsOf(rev.p, func(ref string) *pipeline.Action { return e.action(rev, ref).a })
 	if err := insights.Project(ctx, e.st, rev.p, now, insights.Config{Steps: steps, Pending: pending,
-		DistillMinDeliveries: e.opts.Improve.DistillMinDeliveries,
-		FilterMaxFalseDrop:   e.opts.Improve.FilterMaxFalseDrop}); err != nil {
+		DistillMinDeliveries: e.opts.Improve.Distill.MinDeliveries,
+		FilterMaxFalseDrop:   e.opts.Improve.Filter.MaxFalseDrop}); err != nil {
 		return err
 	}
 	e.lastInsights[ps.Name] = now

@@ -9,6 +9,7 @@ import (
 	"os"
 	"strings"
 	"text/tabwriter"
+	"time"
 
 	"github.com/monolithiclab/millstream/internal/api"
 	"github.com/monolithiclab/millstream/internal/backtest"
@@ -39,9 +40,9 @@ func proposalOptions(rt *Runtime, env *pipeline.Environment, bt backtest.Runner)
 	evals := proposals.Evals{Launchers: launchers(rt, env), Prices: env.Prices,
 		Env:     func(name string) func(string) (string, bool) { return env.SecretEnvLookup(name, rt.Env) },
 		Sandbox: candidateSandbox(rt, env)}
-	opts := engine.ProposalOptions{Evals: evals, Backtest: backtest.ForProposals(bt, env.Improve.FilterMaxFalseDrop),
-		Distill: distill.Thresholds{MinAgreement: env.Improve.DistillMinAgreement,
-			MinCoverage: env.Improve.DistillMinCoverage}, ValidationTimeout: env.Improve.ValidationTimeout}
+	opts := engine.ProposalOptions{Evals: evals, Backtest: backtest.ForProposals(bt, env.Improve.Filter.MaxFalseDrop),
+		Distill: distill.Thresholds{MinAgreement: env.Improve.Distill.MinAgreement,
+			MinCoverage: env.Improve.Distill.MinCoverage}, ValidationTimeout: time.Duration(env.Improve.Validation.Timeout)}
 	if h, ok := bt.(proposals.HoldoutSource); ok {
 		opts.Holdout = h
 	}
@@ -53,7 +54,7 @@ func proposalOptions(rt *Runtime, env *pipeline.Environment, bt backtest.Runner)
 // with the variables improve.git.env names from this process's environment. Nil without improve.publish.
 func newPublisher(rt *Runtime, env *pipeline.Environment, e *engine.Engine) (publish.Publisher, error) {
 	d := publish.Deps{Packages: e.StoredPackage, Applier: e, Env: rt.Env}
-	if crt, ok := container.Find(env.ContainerRuntime, rt.Env); ok {
+	if crt, ok := container.Find(env.Runtime.Container, rt.Env); ok {
 		d.Runtime = crt
 	}
 	return publish.New(env.Improve, d)
@@ -68,7 +69,7 @@ func withProposalEngine(rt *Runtime, st store.Store, fn func(*engine.Engine) err
 	mode := env.EffectiveMode(pipeline.ModeDevelopment)
 	bt := newBacktester(rt, env, st, arts, mode, nil)
 	e, err := engine.New(engine.Options{Store: st, Env: rt.Env, Secrets: secrets(rt, env),
-		Resolver: resolver(rt, env, false), Check: checkOptions(rt, env), PackageDir: packageDir(rt, env),
+		Resolver: resolver(rt, env, false), Check: checkOptions(rt, env), PackageDir: packageDir(env),
 		Agents: agents(rt, env), Proposals: proposalOptions(rt, env, bt), Mode: mode})
 	if err != nil {
 		return err

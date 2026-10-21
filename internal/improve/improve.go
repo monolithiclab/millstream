@@ -87,11 +87,11 @@ func Files(env *pipeline.Environment) (map[string][]byte, error) {
 	im := env.Improve
 	p := string(files[pipeline.FileName])
 	vars := map[string]string{"publisher": strconv.Quote(im.Publish)}
-	if env.LessonsMaxTokens > 0 {
-		vars["lessonsMaxTokens"] = strconv.Itoa(env.LessonsMaxTokens)
+	if env.Lessons.MaxTokens > 0 {
+		vars["lessonsMaxTokens"] = strconv.Itoa(env.Lessons.MaxTokens)
 	}
-	if im.FilterMaxFalseDrop > 0 {
-		vars["maxFalseDrop"] = strconv.FormatFloat(im.FilterMaxFalseDrop, 'f', -1, 64)
+	if im.Filter.MaxFalseDrop > 0 {
+		vars["maxFalseDrop"] = strconv.FormatFloat(im.Filter.MaxFalseDrop, 'f', -1, 64)
 	}
 	if im.MinSeverity != "" {
 		vars["minSeverity"] = im.MinSeverity
@@ -101,8 +101,8 @@ func Files(env *pipeline.Environment) (map[string][]byte, error) {
 			return nil, err
 		}
 	}
-	if im.BudgetDayUSD > 0 {
-		p += "\nbudget: { dayUsd: " + strconv.FormatFloat(im.BudgetDayUSD, 'f', -1, 64) + " }\n"
+	if im.Budget.DayUSD > 0 {
+		p += "\nbudget: { dayUsd: " + strconv.FormatFloat(im.Budget.DayUSD, 'f', -1, 64) + " }\n"
 	}
 	if im.Harness == pipeline.HarnessAPI {
 		const draft = "actions/draft/action.yaml"

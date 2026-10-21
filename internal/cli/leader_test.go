@@ -108,7 +108,7 @@ func testServer(t *testing.T) *server {
 	if err != nil {
 		t.Fatal(err)
 	}
-	rt := &Runtime{Ctx: t.Context(), IO: IO{Out: io.Discard, Err: io.Discard}, Version: "v-test", DB: unusedDB(),
+	rt := &Runtime{Ctx: t.Context(), IO: IO{Out: io.Discard, Err: io.Discard}, Version: "v-test", DB: dsn(unusedDB()),
 		Launchers: testLaunchers()}
 	rt.Env = func(k string) (string, bool) { v, ok := map[string]string{"USER": "ops"}[k]; return v, ok }
 	return &server{cmd: ServeCmd{Slots: 1, LeaseTTL: time.Second}, rt: rt, env: env,
@@ -119,8 +119,8 @@ func testServer(t *testing.T) *server {
 // site answers unavailable once it ended.
 func TestTermStepsDown(t *testing.T) {
 	s := testServer(t)
-	s.env.NodeEmbedded = false // the node's abandon has its own test (internal/node)
-	s.nodeToken = "node-token" // the term serves remote nodes
+	s.env.Node.Embedded = false // the node's abandon has its own test (internal/node)
+	s.nodeToken = "node-token"  // the term serves remote nodes
 	lose := make(chan struct{})
 	close(lose)
 	err := s.term(t.Context(), lostStore{Store: memoryStore(t), lose: lose}, leadership{identity: api.Identity{ID: s.id}})
@@ -174,7 +174,7 @@ func TestTermNamesEmbeddedNodeAfterEngine(t *testing.T) {
 // opens the store anew, retrying while it cannot; any other end of a term ends serve, and so does ctx.
 func TestLeadLoop(t *testing.T) {
 	s := testServer(t)
-	s.env.Engine.LockCheck = time.Millisecond
+	s.env.Engine.LockCheck = pipeline.Duration(time.Millisecond)
 	ctx := t.Context()
 	s.open = func(context.Context) (store.Store, error) { return nil, errors.New("unreachable") }
 	if err := s.lead(ctx); err == nil || err.Error() != "unreachable" {
@@ -211,7 +211,7 @@ func TestLeadLoop(t *testing.T) {
 // for the standby's context, refuses actions and is gone once that context ends.
 func TestAcquireAndStandby(t *testing.T) {
 	s := testServer(t)
-	s.rt.DB = sqlite.Memory
+	s.rt.DB = dsn(sqlite.Memory)
 	s.nodeToken = "node-token" // the standby refuses remote nodes, naming the active engine
 	st, err := s.acquire(t.Context())
 	if err != nil {
@@ -241,20 +241,21 @@ func TestServeOn(t *testing.T) {
 		t.Fatalf("serve on SQLite: %v", err)
 	}
 	s.rt.Store = nil
-	env, err := pipeline.ParseEnvironment([]byte("store: { postgres: { dsn: { env: MILLSTREAM_DSN } } }\n"))
+	env, err := pipeline.ParseEnvironment([]byte("store: { dsn: \"postgres://127.0.0.1:1/ms?connect_timeout=1\" }\n"))
 	if err != nil {
 		t.Fatal(err)
 	}
+	s.rt.DB = ""
 	if err := s.cmd.serveOn(t.Context(), s.rt, env, s.log, s.site, s.sec, s.arts, ""); err == nil ||
-		!strings.Contains(err.Error(), "store.postgres.dsn") {
-		t.Fatalf("serve on Postgres without its DSN: %v", err)
+		!strings.Contains(err.Error(), "127.0.0.1") {
+		t.Fatalf("serve on an unreachable Postgres: %v", err)
 	}
 }
 
 // Without test launchers, the embedded node runs exec actions, and container ones when the runtime is installed;
-// the artifact store and package cache sit under artifacts.local.path when it is set.
+// the artifact store and package cache sit under artifacts.url's directory when it is set.
 func TestHostDefaults(t *testing.T) {
-	env, err := pipeline.ParseEnvironment([]byte("artifacts: { local: { path: /srv/arts } }\nruntime: { container: podman }\n"))
+	env, err := pipeline.ParseEnvironment([]byte("artifacts: { url: \"file:///srv/arts\" }\nruntime: { container: podman }\n"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -262,26 +263,28 @@ func TestHostDefaults(t *testing.T) {
 	if l := launchers(rt, env); l[pipeline.KindExec] == nil {
 		t.Fatalf("launchers %v", l)
 	}
-	if got := artifactsDir(rt, env); got != "/srv/arts" {
+	if got := artifactsDir(env); got != "/srv/arts" {
 		t.Fatalf("artifacts at %s", got)
 	}
-	if got := packageDir(rt, env); got != "/srv/packages" {
+	if got := packageDir(env); got != "/srv/packages" {
 		t.Fatalf("packages at %s", got)
 	}
 }
 
-// withStoreMode reports an environment file it cannot read, and a store named twice, before it opens anything.
+// withStoreMode reports an environment file it cannot read, and a --db that is no DSN, before it opens anything.
 func TestWithStoreModeRefusals(t *testing.T) {
-	rt := &Runtime{Ctx: t.Context(), EnvFile: filepath.Join(testdir.New(t), "missing.yaml"), DB: unusedDB()}
+	rt := &Runtime{Ctx: t.Context(), EnvFile: filepath.Join(testdir.New(t), "missing.yaml"), DB: dsn(unusedDB()),
+		Env: func(string) (string, bool) { return "", false }}
 	if err := withStore(rt, func(store.Store) error { return nil }); err == nil {
 		t.Fatal("a missing environment file was read")
 	}
 	dir := testdir.New(t)
-	rt.EnvFile, rt.DBSet = filepath.Join(dir, "millstream.yaml"), true
-	if err := os.WriteFile(rt.EnvFile, []byte("store: { sqlite: { path: a.db } }\n"), 0o600); err != nil {
+	rt.EnvFile, rt.DB = filepath.Join(dir, "millstream.yaml"), "a.db"
+	if err := os.WriteFile(rt.EnvFile, []byte("store: { dsn: sqlite://b.db }\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := withStore(rt, func(store.Store) error { return nil }); err == nil || !strings.Contains(err.Error(), "--db") {
-		t.Fatalf("a store named twice: %v", err)
+	if err := withStore(rt, func(store.Store) error { return nil }); err == nil ||
+		err.Error() != "--db: want a DSN, such as sqlite://a.db" {
+		t.Fatalf("a bare path: %v", err)
 	}
 }

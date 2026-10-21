@@ -15,7 +15,7 @@ func Test_proposalsLifecycle(t *testing.T) {
 	db, pkg := migratedDB(t), runPackage(t, "lifecycle-v1")
 	run := func(want int, args ...string) string {
 		t.Helper()
-		out, _ := mustRun(t, want, append([]string{"--db", db}, args...)...)
+		out, _ := mustRun(t, want, append([]string{"--db", dsn(db)}, args...)...)
 		return out
 	}
 	run(0, "apply", pkg)
@@ -53,7 +53,7 @@ func Test_proposalsLifecycle(t *testing.T) {
 	if out := run(0, "proposals", "list", "--state", "rejected"); !strings.Contains(out, "one filter change at a time") {
 		t.Fatalf("rejected: %q", out)
 	}
-	if _, errOut := mustRun(t, 1, "--db", db, "proposals", "create", fixture("proposals/ci.diff"), "--pipeline", "extra",
+	if _, errOut := mustRun(t, 1, "--db", dsn(db), "proposals", "create", fixture("proposals/ci.diff"), "--pipeline", "extra",
 		"--kind", "topology"); !strings.Contains(errOut, "may not create .github/workflows/ci.yaml") {
 		t.Fatalf("a path outside the kind's: %q", errOut)
 	}

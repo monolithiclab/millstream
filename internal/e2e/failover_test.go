@@ -68,8 +68,7 @@ func newFailover(t *testing.T) *failover {
 	db := pgDB(t)
 	dir, _ := pgDirs.Load(db)
 	f := &failover{t: t, db: db, dir: dir.(string), envFile: filepath.Join(dir.(string), "millstream.yaml")}
-	if err := os.WriteFile(f.envFile, []byte("store: { postgres: { dsn: { env: MILLSTREAM_DSN } } }\n"+
-		"listen: 127.0.0.1:0\nauth: { token: { env: MILLSTREAM_TOKEN } }\n"+failoverEngine), 0o600); err != nil {
+	if err := os.WriteFile(f.envFile, []byte("listen: 127.0.0.1:0\nauth: { token: { env: MILLSTREAM_TOKEN } }\n"+failoverEngine), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	return f
@@ -79,13 +78,16 @@ func newFailover(t *testing.T) *failover {
 // the DSN, the token (the engines' auth.token, the clients' bearer token), a user to record decisions under, and
 // extra.
 func (f *failover) environ(dsn string, extra ...string) []string {
+	if !isPostgres(dsn) {
+		dsn = "sqlite://" + dsn
+	}
 	var env []string
 	for _, kv := range os.Environ() {
 		if !strings.HasPrefix(kv, "MILLSTREAM_") && !strings.HasPrefix(kv, "USER=") {
 			env = append(env, kv)
 		}
 	}
-	return append(env, append([]string{"MILLSTREAM_DSN=" + dsn, "MILLSTREAM_TOKEN=" + failoverToken, "USER=ops"},
+	return append(env, append([]string{"MILLSTREAM_STORE_DSN=" + dsn, "MILLSTREAM_TOKEN=" + failoverToken, "USER=ops"},
 		extra...)...)
 }
 

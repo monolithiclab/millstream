@@ -79,7 +79,7 @@ func (c RunPackagesCmd) Run(rt *Runtime) error {
 	listen := ""
 	var sec apiSecurity
 	if !c.Once {
-		listen = cmp.Or(c.Listen, env.UIListen, env.Listen, defaultListen)
+		listen = cmp.Or(c.Listen, env.UI.Listen, env.Listen, defaultListen)
 		if err := api.CheckLoopback(listen); err != nil {
 			return usageError(err.Error())
 		}
@@ -88,7 +88,7 @@ func (c RunPackagesCmd) Run(rt *Runtime) error {
 		}
 		// The API records the decisions of requests that name nobody under the server's user (spec section 12.1),
 		// those of a token session under auth.user.
-		if identity(rt) == "" && env.AuthToken == nil {
+		if identity(rt) == "" && env.Auth.Token == nil {
 			return usageError("run: no user to record review decisions under: set $USER, or auth.token and auth.user")
 		}
 	} else if c.Listen != "" {
@@ -118,7 +118,7 @@ func (c RunPackagesCmd) Run(rt *Runtime) error {
 		e, err := engine.New(engine.Options{
 			Store: st, Logger: log, LeaseTTL: c.LeaseTTL, Env: rt.Env, Secrets: im.secrets(secrets(rt, env)), Flags: c.Var,
 			NoCron: c.Once, Artifacts: arts, Resolver: actions, Agents: agents(rt, env),
-			Notifier: notes, PackageDir: packageDir(rt, env), Check: im.check(checkOptions(rt, env)), Retention: env.Retention,
+			Notifier: notes, PackageDir: packageDir(env), Check: im.check(checkOptions(rt, env)), Retention: env.Retention,
 			Leadership: engine.Leadership{ID: id}, Improve: env.Improve, Proposals: proposalOptions(rt, env, bt),
 			Mode: mode,
 		})
@@ -262,7 +262,7 @@ func (h engineHost) run(ctx context.Context, rt *Runtime, env *pipeline.Environm
 		if err == nil {
 			srv, err = newAPIServer(st, e, notes, logs, apiExtras{rt: rt, arts: h.arts, nodes: nodes, nodeAPI: nodeAPI,
 				leaseTTL: h.leaseTTL, mode: h.mode, evidence: api.EvidenceSettings{Mode: h.mode,
-					Sample: env.Improve.EvidenceSample, TTL: env.Improve.EvidenceTTL},
+					Sample: env.Improve.Evidence.Sample, TTL: time.Duration(env.Improve.Evidence.TTL)},
 				backtests: backtest.NewJobs(runCtx, h.backtests, nil), publisher: pub}, h.lead, h.sec, log)
 		}
 		if err != nil {

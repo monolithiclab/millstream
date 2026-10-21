@@ -65,7 +65,7 @@ func checkTokens(rt *Runtime, env *pipeline.Environment) error {
 	for _, t := range []struct {
 		key string
 		src *pipeline.SecretSource
-	}{{"auth.token", env.AuthToken}, {"node.token", env.NodeToken}} {
+	}{{"auth.token", env.Auth.Token}, {"node.token", env.Node.Token}} {
 		if t.src == nil {
 			continue
 		}

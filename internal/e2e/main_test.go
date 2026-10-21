@@ -28,7 +28,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/monolithiclab/millstream/internal/pipeline"
 	"github.com/monolithiclab/millstream/internal/store"
 	"github.com/monolithiclab/millstream/internal/store/postgres/pgtest"
 	"github.com/monolithiclab/millstream/internal/store/stores"
@@ -69,11 +68,6 @@ func runTests(m *testing.M) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	pgEnvFile = filepath.Join(dir, "postgres.yaml")
-	if err := os.WriteFile(pgEnvFile, []byte("store: { postgres: { dsn: { env: MILLSTREAM_DSN } } }\n"), 0o600); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
 	return m.Run()
 }
 
@@ -89,10 +83,6 @@ var (
 	// backends are the stores the crash suite runs on.
 	backends = []backend{sqliteBackend, postgresBackend}
 )
-
-// pgEnvFile is the environment file the binary reads on a Postgres database: the store key, the DSN in
-// MILLSTREAM_DSN.
-var pgEnvFile string
 
 // pgDirs maps each Postgres database of a test to the directory its commands run in, where the binary keeps what
 // lives next to the state database (the artifacts).
@@ -112,11 +102,11 @@ func isPostgres(db string) bool { return strings.HasPrefix(db, "postgres://") }
 // openStore opens db as a store, for the checks that read it once the commands ended.
 func openStore(t *testing.T, db string) store.Store {
 	t.Helper()
-	cfg := pipeline.StoreConfig{SQLitePath: db}
-	if isPostgres(db) {
-		cfg = pipeline.StoreConfig{PostgresDSN: &pipeline.SecretSource{Env: "MILLSTREAM_DSN"}}
+	dsn := db
+	if !isPostgres(db) {
+		dsn = "sqlite://" + db
 	}
-	st, err := stores.Open(t.Context(), cfg, db, func(string) (string, bool) { return db, true })
+	st, err := stores.Open(t.Context(), dsn)
 	if err != nil {
 		t.Fatalf("open %s: %v", db, err)
 	}
@@ -347,15 +337,15 @@ func lastLines(s string, n int) string {
 }
 
 // command returns a millstream invocation on db, with the environment of the test process minus every
-// MILLSTREAM_ variable, plus env. On a Postgres database, the store key of pgEnvFile names it, the command runs in
+// MILLSTREAM_ variable, plus env. On a Postgres database, MILLSTREAM_STORE_DSN names it, the command runs in
 // the database's directory, and --direct lets a command that changes state write from its own process, taking the
 // leadership lock: the suite runs its commands while no engine runs.
 func command(ctx context.Context, db string, env []string, args ...string) (*osexec.Cmd, *bytes.Buffer,
 	*bytes.Buffer,
 ) {
-	global := []string{"--db", db}
+	global := []string{"--db", "sqlite://" + db}
 	if isPostgres(db) {
-		global = []string{"--env-file", pgEnvFile, "--direct"}
+		global = []string{"--direct"}
 	}
 	cmd := osexec.CommandContext(ctx, binary, append(global, args...)...) // #nosec G204 -- test binary
 	for _, kv := range os.Environ() {
@@ -365,7 +355,7 @@ func command(ctx context.Context, db string, env []string, args ...string) (*ose
 	}
 	cmd.Env = append(cmd.Env, env...)
 	if isPostgres(db) {
-		cmd.Env = append(cmd.Env, "MILLSTREAM_DSN="+db)
+		cmd.Env = append(cmd.Env, "MILLSTREAM_STORE_DSN="+db)
 		if dir, ok := pgDirs.Load(db); ok {
 			cmd.Dir = dir.(string)
 		}

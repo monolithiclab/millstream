@@ -277,12 +277,12 @@ func Test_tailCommand(t *testing.T) {
 func Test_storeCommandsFailOnUnopenableDB(t *testing.T) {
 	t.Parallel()
 	dir := testdir.New(t)
-	mustRun(t, 1, "--db", dir, "status") // a directory is not a database
+	mustRun(t, 1, "--db", dsn(dir), "status") // a directory is not a database
 	file := filepath.Join(dir, "file")
 	if err := os.WriteFile(file, nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	_, errOut := mustRun(t, 1, "--db", filepath.Join(file, "x.db"), "tail") // the directory cannot be created
+	_, errOut := mustRun(t, 1, "--db", dsn(filepath.Join(file, "x.db")), "tail") // the directory cannot be created
 	if !strings.Contains(errOut, "create database directory") {
 		t.Fatalf("stderr = %q", errOut)
 	}

@@ -233,7 +233,7 @@ func New(opts Options) (*Engine, error) {
 		opts.ProjectInterval = DefaultProjectInterval
 	}
 	if opts.Retention.Every <= 0 {
-		opts.Retention.Every = DefaultRetentionInterval
+		opts.Retention.Every = pipeline.Duration(DefaultRetentionInterval)
 	}
 	if opts.Env == nil {
 		opts.Env = func(string) (string, bool) { return "", false }

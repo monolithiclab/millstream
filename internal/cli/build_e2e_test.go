@@ -69,7 +69,7 @@ func applyRun(extra []string) (appliedRun, error) {
 		return appliedRun{}, err
 	}
 	var errOut bytes.Buffer
-	argv := append(append([]string{"--db", db, "run", "--once", "--request-id", "r1"}, extra...), pkg)
+	argv := append(append([]string{"--db", dsn(db), "run", "--once", "--request-id", "r1"}, extra...), pkg)
 	code := Run(context.Background(), argv, IO{In: strings.NewReader(""), Out: io.Discard, Err: &errOut}, "dev",
 		func(rt *Runtime) {
 			rt.Env = func(string) (string, bool) { return "", false }

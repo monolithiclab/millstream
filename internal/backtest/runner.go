@@ -36,7 +36,7 @@ type Options struct {
 	Mode string
 	// Improve is the environment file's improve key: backtest.sample and budget.dayUsd.
 	Improve pipeline.Improve
-	// Budget records what backtests spent today against Improve.BudgetDayUSD; nil keeps a Ledger of its own.
+	// Budget records what backtests spent today against Improve.Budget.DayUSD; nil keeps a Ledger of its own.
 	Budget Budget
 	// Resolver, Launchers, Agents, Env and Secrets run the replayed steps as the deployment's embedded node would.
 	Resolver  pipeline.ActionResolver
@@ -296,13 +296,13 @@ func (b *Backtester) remaining() (float64, bool) {
 
 // left is what is left of the day's improve budget, held by no running backtest; b.mu is held.
 func (b *Backtester) left() (float64, bool) {
-	limit := b.opts.Improve.BudgetDayUSD
+	limit := b.opts.Improve.Budget.DayUSD
 	return limit - b.opts.Budget.Spent(b.opts.Now()) - b.reserved, limit > 0
 }
 
 // errBudgetSpent is the refusal of a backtest that finds nothing left.
 func (b *Backtester) errBudgetSpent() error {
-	return fmt.Errorf("%w: %.2f USD spent or held by running backtests today", ErrBudget, b.opts.Improve.BudgetDayUSD)
+	return fmt.Errorf("%w: %.2f USD spent or held by running backtests today", ErrBudget, b.opts.Improve.Budget.DayUSD)
 }
 
 // reserve holds what is left of the day's improve budget for a backtest until release: a concurrent backtest finds
@@ -378,7 +378,7 @@ func (b *Backtester) packages(ctx context.Context, req Request, p *patch.Patch, 
 // history reads the history to sample and draws the sample over the affected steps: local history unless it has
 // nothing to replay there, or unless the request names its source.
 func (b *Backtester) history(ctx context.Context, req Request, steps map[string]bool) (*history, sample, error) {
-	n := cmp.Or(req.Sample, b.opts.Improve.BacktestSample, DefaultSample)
+	n := cmp.Or(req.Sample, b.opts.Improve.Backtest.Sample, DefaultSample)
 	var h *history
 	var s sample
 	var err error

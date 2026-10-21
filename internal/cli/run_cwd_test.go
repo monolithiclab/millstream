@@ -31,7 +31,7 @@ func Test_runOnceCurrentDir(t *testing.T) {
 		return serveAction(ctx, args, env, stdin, stdout, stderr)
 	}}}
 	var out, errb bytes.Buffer
-	code := Run(t.Context(), []string{"--db", unusedDB(), "run", "--once", "--request-id", "r1"},
+	code := Run(t.Context(), []string{"--db", dsn(unusedDB()), "run", "--once", "--request-id", "r1"},
 		IO{In: strings.NewReader(""), Out: &out, Err: &errb}, "dev", func(rt *Runtime) {
 			rt.Env = func(string) (string, bool) { return "", false }
 			rt.Launchers, rt.Store, rt.CurrentUser = launchers, memoryStore(t), noAccount

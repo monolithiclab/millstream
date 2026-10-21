@@ -18,7 +18,7 @@ import (
 func Test_evidenceExportImport(t *testing.T) {
 	t.Parallel()
 	pkg, prod, dev := runPackage(t, "run"), migratedDB(t), migratedDB(t)
-	mustRun(t, 0, "--db", prod, "run", "--once", pkg)
+	mustRun(t, 0, "--db", dsn(prod), "run", "--once", pkg)
 	dir := testdir.New(t)
 	bundle := filepath.Join(dir, "bundle.tar.gz")
 	envFile := func(mode string) string {
@@ -28,7 +28,7 @@ func Test_evidenceExportImport(t *testing.T) {
 		}
 		return path
 	}
-	out, _ := mustRun(t, 0, "--db", prod, "evidence", "export", "--pipeline", "listings", "--since", "1d",
+	out, _ := mustRun(t, 0, "--db", dsn(prod), "evidence", "export", "--pipeline", "listings", "--since", "1d",
 		"--out", bundle)
 	if !strings.HasPrefix(out, "evidence_") || !strings.Contains(out, "written to "+bundle) {
 		t.Fatalf("export: %q", out)
@@ -36,17 +36,17 @@ func Test_evidenceExportImport(t *testing.T) {
 	if info, err := os.Stat(bundle); err != nil || info.Mode().Perm() != 0o600 {
 		t.Fatalf("bundle file: %v, %v", info, err)
 	}
-	if _, errOut := mustRun(t, 1, "--db", prod, "--env-file", envFile("production"), "evidence", "import",
+	if _, errOut := mustRun(t, 1, "--db", dsn(prod), "--env-file", envFile("production"), "evidence", "import",
 		bundle); !strings.Contains(errOut, "a production deployment does not import evidence") {
 		t.Fatalf("import in production: %q", errOut)
 	}
 	devEnv := envFile("development")
-	if out, _ := mustRun(t, 0, "--db", dev, "--env-file", devEnv, "evidence", "import", bundle); !strings.Contains(out,
+	if out, _ := mustRun(t, 0, "--db", dsn(dev), "--env-file", devEnv, "evidence", "import", bundle); !strings.Contains(out,
 		" of listings imported, expires ") || !strings.Contains(out, "listings is not applied here") {
 		t.Fatalf("import: %q", out)
 	}
-	mustRun(t, 0, "--db", dev, "--env-file", devEnv, "apply", pkg)
-	if out, _ := mustRun(t, 0, "--db", dev, "--env-file", devEnv, "evidence", "import", bundle); !strings.Contains(out,
+	mustRun(t, 0, "--db", dsn(dev), "--env-file", devEnv, "apply", pkg)
+	if out, _ := mustRun(t, 0, "--db", dsn(dev), "--env-file", devEnv, "evidence", "import", bundle); !strings.Contains(out,
 		"(imported already)\n") || strings.Contains(out, "diverged") {
 		t.Fatalf("import again on the same package: %q", out)
 	}
@@ -56,12 +56,12 @@ func Test_evidenceExportImport(t *testing.T) {
 	}
 	_, _ = f.WriteString("description: changed in development\n")
 	_ = f.Close()
-	mustRun(t, 0, "--db", dev, "--env-file", devEnv, "apply", pkg)
-	if out, _ := mustRun(t, 0, "--db", dev, "--env-file", devEnv, "evidence", "import", bundle); !strings.Contains(out,
+	mustRun(t, 0, "--db", dsn(dev), "--env-file", devEnv, "apply", pkg)
+	if out, _ := mustRun(t, 0, "--db", dsn(dev), "--env-file", devEnv, "evidence", "import", bundle); !strings.Contains(out,
 		"has diverged from the production revision") {
 		t.Fatalf("import on a diverged package: %q", out)
 	}
-	if out, _ := mustRun(t, 0, "--db", prod, "purge", "--key", "k0"); !strings.Contains(out,
+	if out, _ := mustRun(t, 0, "--db", dsn(prod), "purge", "--key", "k0"); !strings.Contains(out,
 		"evidence bundles that held it: evidence_") {
 		t.Fatalf("purge: %q", out)
 	}

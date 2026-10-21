@@ -62,7 +62,7 @@ func TestConfigChange(t *testing.T) {
 func TestTopologyRerun(t *testing.T) {
 	st, hash := recordHistory(t)
 	_, data := edit(t, hash, fixtureFiles(), "minScore: 50", "minScore: 30")
-	rep, err := newBacktester(st, pipeline.Improve{BacktestSample: 50}).Run(context.Background(),
+	rep, err := newBacktester(st, pipeline.Improve{Backtest: pipeline.BacktestConfig{Sample: 50}}).Run(context.Background(),
 		Request{Pipeline: "bt", BaseRevision: hash, Patch: data})
 	if err != nil {
 		t.Fatal(err)
@@ -85,7 +85,7 @@ func TestBudgetReached(t *testing.T) {
 	st, hash := recordHistory(t)
 	_, data := edit(t, hash, fixtureFiles(), "mode: score, bonus: 0", "mode: score, bonus: 15, cost: 0.01")
 	ledger := &Ledger{}
-	b := New(Options{Store: st, Launchers: launchers(), Improve: pipeline.Improve{BudgetDayUSD: 0.025},
+	b := New(Options{Store: st, Launchers: launchers(), Improve: pipeline.Improve{Budget: pipeline.BudgetConfig{DayUSD: 0.025}},
 		Budget: ledger, Timeout: time.Minute})
 	_, err := b.Run(context.Background(), Request{Pipeline: "bt", BaseRevision: hash, Patch: data})
 	if !errors.Is(err, ErrBudget) {

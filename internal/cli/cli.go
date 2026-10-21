@@ -43,8 +43,11 @@ type Runtime struct {
 	Version string
 	// Env looks up an environment variable: variables and secrets resolve through it.
 	Env func(string) (string, bool)
-	// DB is the state database path, from the global --db flag; DBSet says the flag was given, for the commands
-	// that write to the database only when asked to (eval).
+	// Environ lists the variables of the process (NAME=value), for the environment's strictness: a MILLSTREAM_*
+	// variable inside a section's prefix that names no setting is an error. nil checks none.
+	Environ func() []string
+	// DB is the global --db flag: the store's DSN, overriding store.dsn when not empty; DBSet says the flag was
+	// given, for the commands that write to the database only when asked to (eval).
 	DB    string
 	DBSet bool
 	// EnvFile is the environment file named by the global --env-file flag; empty reads ./millstream.yaml when it
@@ -118,8 +121,8 @@ type exitSignal int
 
 // CLI is the command tree.
 type CLI struct {
-	DB      string `name:"db" default:".millstream/millstream.db" help:"State database path (created with its directory)."`
-	EnvFile string `name:"env-file" type:"path" help:"Environment file (default: ./millstream.yaml when it exists)."`
+	DB      string `name:"db" placeholder:"DSN" help:"Store DSN, overriding store.dsn: sqlite://<path> (created with its directory) or postgres://host/db (default: sqlite://.millstream/millstream.db)."`
+	EnvFile string `name:"env-file" type:"path" env:"MILLSTREAM_ENV_FILE" help:"Environment file (default: $MILLSTREAM_ENV_FILE, else ./millstream.yaml when it exists)."`
 	Server  string `name:"server" placeholder:"URL" help:"Change state through the API of the engine serving at this URL (default: $MILLSTREAM_SERVER; token: $MILLSTREAM_TOKEN)."`
 	Direct  bool   `name:"direct" help:"Change state from this process, not through --server; on Postgres this takes the leadership lock, waiting while an engine runs."`
 	Color   string `name:"color" enum:"auto,always,never" default:"auto" placeholder:"WHEN" help:"Color the help: auto (on a terminal, unless NO_COLOR or TERM=dumb), always or never (default: $MILLSTREAM_COLOR, else auto)."`
@@ -168,7 +171,7 @@ func Main(ctx context.Context, argv []string, stdio IO, version string) int {
 // Run parses argv and runs the selected command, returning its exit code. configure, when not nil, adjusts the
 // Runtime before the command runs: the seam tests use to inject fakes.
 func Run(ctx context.Context, argv []string, stdio IO, version string, configure func(*Runtime)) (code int) {
-	rt := &Runtime{Ctx: ctx, IO: stdio, Version: version, Env: os.LookupEnv}
+	rt := &Runtime{Ctx: ctx, IO: stdio, Version: version, Env: os.LookupEnv, Environ: os.Environ}
 	if configure != nil {
 		configure(rt)
 	}

@@ -70,7 +70,7 @@ func TestLockMismatch(t *testing.T) {
 	if code != 1 || !strings.Contains(out, want) {
 		t.Fatalf("check: %d\n%s", code, out)
 	}
-	code, _, errOut := runCLICtx(t, ctx, env, "--env-file", envFile, "--db", dbPath(t), "run", "--once", pkg)
+	code, _, errOut := runCLICtx(t, ctx, env, "--env-file", envFile, "--db", dsn(dbPath(t)), "run", "--once", pkg)
 	if code != 1 || !strings.Contains(errOut, "millstream.lock pins") {
 		t.Fatalf("run: %d\n%s", code, errOut)
 	}

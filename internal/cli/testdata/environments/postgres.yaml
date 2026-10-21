@@ -1,1 +1,1 @@
-store: { postgres: { dsn: { env: MILLSTREAM_DSN } } }
+store: { dsn: "postgres://127.0.0.1:1/millstream?connect_timeout=1" }

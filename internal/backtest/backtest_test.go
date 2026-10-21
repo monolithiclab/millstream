@@ -99,7 +99,7 @@ func TestPrepareRefusals(t *testing.T) {
 		"other base":   {Options{}, Request{Pipeline: "bt", BaseRevision: "ff" + fixtureHash[2:], Patch: ok}, store.ErrInvalid},
 		"negative":     {Options{}, Request{Pipeline: "bt", BaseRevision: fixtureHash, Patch: ok, Sample: -1}, store.ErrInvalid},
 		"bad source":   {Options{}, Request{Pipeline: "bt", BaseRevision: fixtureHash, Patch: ok, Source: "x"}, store.ErrInvalid},
-		"budget spent": {Options{Budget: spent, Now: func() time.Time { return now }, Improve: pipeline.Improve{BudgetDayUSD: 5}}, req, ErrBudget},
+		"budget spent": {Options{Budget: spent, Now: func() time.Time { return now }, Improve: pipeline.Improve{Budget: pipeline.BudgetConfig{DayUSD: 5}}}, req, ErrBudget},
 	} {
 		c.opts.Store = revisionOnly
 		if _, err := New(c.opts).Prepare(c.req); !errors.Is(err, c.want) {

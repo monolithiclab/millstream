@@ -53,7 +53,7 @@ func (c EvidenceExportCmd) Run(rt *Runtime) error {
 		now := time.Now()
 		var rec store.EvidenceExport
 		data, rec, err = evidence.Export(rt.Ctx, st, arts, now, evidence.ExportRequest{Pipeline: c.Pipeline,
-			Since: now.Add(-since), Insight: c.Insight, Sample: env.Improve.EvidenceSample, TTL: env.Improve.EvidenceTTL,
+			Since: now.Add(-since), Insight: c.Insight, Sample: env.Improve.Evidence.Sample, TTL: time.Duration(env.Improve.Evidence.TTL),
 			By: identity(rt)})
 		id = rec.ID
 		return err

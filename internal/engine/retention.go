@@ -34,7 +34,7 @@ func (e *Engine) retentionLoop(ctx context.Context) {
 	if err := e.ResumePurges(ctx); err != nil && ctx.Err() == nil {
 		e.log.Error("resume purges", "error", err.Error())
 	}
-	tick := time.NewTicker(e.opts.Retention.Every)
+	tick := time.NewTicker(time.Duration(e.opts.Retention.Every))
 	defer tick.Stop()
 	for {
 		select {
@@ -77,8 +77,9 @@ func (e *Engine) Retain(ctx context.Context) error {
 
 // retain applies the retention in passes of the store's unit until none is left with more to do.
 func (e *Engine) retain(ctx context.Context) error {
-	req := store.RetentionRequest{Events: e.opts.Retention.Events, Transcripts: e.opts.Retention.Transcripts,
-		Rollups: e.opts.Retention.Rollups}
+	r := e.opts.Retention
+	req := store.RetentionRequest{Events: time.Duration(r.Events), Transcripts: time.Duration(r.Transcripts),
+		Rollups: time.Duration(r.Rollups)}
 	pipelines, err := e.st.Pipelines(ctx)
 	if err != nil {
 		return fmt.Errorf("retention: %w", err)

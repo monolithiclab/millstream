@@ -2,8 +2,8 @@ package cli
 
 import (
 	"context"
-	"fmt"
 	"path/filepath"
+	"time"
 
 	"github.com/monolithiclab/millstream/internal/artifacts"
 	"github.com/monolithiclab/millstream/internal/artifacts/s3"
@@ -13,13 +13,17 @@ import (
 	"github.com/monolithiclab/millstream/internal/store/stores"
 )
 
-// artifactsDir is the local artifact store's directory: artifacts.local.path, else artifacts beside the state
-// database (the store key's SQLite path, else --db; with Postgres, --db's directory).
-func artifactsDir(rt *Runtime, env *pipeline.Environment) string {
-	if env.Artifacts.LocalPath != "" {
-		return env.Artifacts.LocalPath
+// artifactsDir is the local artifact store's directory: artifacts.url's file:// directory, else artifacts beside
+// the SQLite database (with Postgres, beside the default one, in .millstream/).
+func artifactsDir(env *pipeline.Environment) string {
+	if dir, ok := env.Artifacts.Local(); ok {
+		return dir
 	}
-	return filepath.Join(filepath.Dir(env.Store.Path(rt.DB)), "artifacts")
+	db, ok := env.Store.SQLitePath()
+	if !ok {
+		db, _ = pipeline.Defaults().Store.SQLitePath()
+	}
+	return filepath.Join(filepath.Dir(db), "artifacts")
 }
 
 // localArtifacts reads the environment file and opens its artifact store: what a command writing from its own
@@ -33,37 +37,22 @@ func localArtifacts(rt *Runtime) (*pipeline.Environment, artifacts.Store, error)
 	return env, arts, err
 }
 
-// artifactStore is the artifact store the environment file names (spec section 9.2): the S3-compatible bucket of
-// artifacts.s3, its credentials read from their sources (else AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY), or the
-// local directory.
+// artifactStore is the artifact store artifacts.url names (spec section 9.2): an S3-compatible bucket, configured by
+// the AWS variables, or the local directory.
 func artifactStore(rt *Runtime, env *pipeline.Environment) (artifacts.Store, error) {
-	c := env.Artifacts.S3
-	if c == nil {
-		return artifacts.New(artifactsDir(rt, env)), nil
+	bucket, prefix, ok := env.Artifacts.S3()
+	if !ok {
+		return artifacts.New(artifactsDir(env)), nil
 	}
-	read := func(src *pipeline.SecretSource, variable string) (string, error) {
-		if src != nil {
-			return src.Value(rt.Env)
-		}
-		v, _ := rt.Env(variable)
-		return v, nil
-	}
-	key, err := read(c.AccessKeyID, "AWS_ACCESS_KEY_ID")
-	if err != nil {
-		return nil, fmt.Errorf("artifacts.s3.accessKeyId: %w", err)
-	}
-	secret, err := read(c.SecretAccessKey, "AWS_SECRET_ACCESS_KEY")
-	if err != nil {
-		return nil, fmt.Errorf("artifacts.s3.secretAccessKey: %w", err)
-	}
-	return s3.New(s3.Config{Bucket: c.Bucket, Endpoint: c.Endpoint, Region: c.Region, Prefix: c.Prefix,
-		AccessKeyID: key, SecretAccessKey: secret, HTTP: rt.HTTPClient})
+	cfg := s3.FromEnv(bucket, prefix, rt.Env)
+	cfg.HTTP = rt.HTTPClient
+	return s3.New(cfg)
 }
 
 // packageDir is where an engine writes the packages it loads from the store: packages, beside the local artifact
 // store.
-func packageDir(rt *Runtime, env *pipeline.Environment) string {
-	return filepath.Join(filepath.Dir(artifactsDir(rt, env)), "packages")
+func packageDir(env *pipeline.Environment) string {
+	return filepath.Join(filepath.Dir(artifactsDir(env)), "packages")
 }
 
 // storeMode is how a command opens the store.
@@ -78,27 +67,23 @@ const (
 	engineStore
 )
 
-// openStore opens, within ctx, the log store the environment file's store key names, else the SQLite database --db
-// names, creating its directory, in the mode the command needs. --db given with a store key is a usage error: two
-// places would name the store. pg are the options a store taking Postgres's leadership lock opens with (an engine's id,
-// what it calls while it waits), the environment file's engine key setting how its write connection is watched.
+// openStore opens, within ctx, the log store store.dsn names, creating a SQLite database's directory, in the mode
+// the command needs. pg are the options a store taking Postgres's leadership lock opens with (an engine's id, what it
+// calls while it waits), the environment file's engine key setting how its write connection is watched.
 func openStore(ctx context.Context, rt *Runtime, env *pipeline.Environment, mode storeMode, pg postgres.Options) (
 	store.Store, error,
 ) {
-	if rt.DBSet && env.Store.Set() {
-		return nil, usageError("--db: the environment file's store key names the store already")
-	}
-	onPostgres := env.Store.PostgresDSN != nil
+	_, onSQLite := env.Store.SQLitePath()
 	switch {
 	case mode == readStore:
-		return stores.OpenReader(ctx, env.Store, rt.DB, rt.Env)
-	case mode == writeStore && onPostgres && !rt.Direct:
+		return stores.OpenReader(ctx, env.Store.DSN)
+	case mode == writeStore && !onSQLite && !rt.Direct:
 		return nil, usageError("on Postgres the active engine is the only writer: pass --server URL (or set " +
 			ServerEnv + ") to go through its API, or --direct to take the leadership lock while no engine runs")
 	}
-	pg.CheckEvery, pg.Keepalive = env.Engine.LockCheck, env.Engine.Keepalive
+	pg.CheckEvery, pg.Keepalive = time.Duration(env.Engine.LockCheck), time.Duration(env.Engine.Keepalive)
 	pg.TryLock = mode == writeStore // --direct: fail naming the active engine rather than wait for it
-	return stores.OpenLeader(ctx, env.Store, rt.DB, rt.Env, pg)
+	return stores.OpenLeader(ctx, env.Store.DSN, pg)
 }
 
 // withStore opens the log store for reading, runs fn and closes it, reporting the first error; with Runtime.Store

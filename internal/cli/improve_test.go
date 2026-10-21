@@ -26,11 +26,11 @@ func Test_improveRefusals(t *testing.T) {
 		if err := os.WriteFile(file, []byte(c.env), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		if _, errOut := mustRun(t, 1, "--db", unusedDB(), "--env-file", file, "improve", "--insight", "x"); !strings.Contains(errOut, c.want) {
+		if _, errOut := mustRun(t, 1, "--db", dsn(unusedDB()), "--env-file", file, "improve", "--insight", "x"); !strings.Contains(errOut, c.want) {
 			t.Errorf("%q: stderr %q, want %q", c.env, errOut, c.want)
 		}
 		if c.want == "improve.harness" {
-			if _, errOut := mustRun(t, 1, "--db", unusedDB(), "--env-file", file, "run", dir); !strings.Contains(errOut,
+			if _, errOut := mustRun(t, 1, "--db", dsn(unusedDB()), "--env-file", file, "run", dir); !strings.Contains(errOut,
 				c.want) {
 				t.Errorf("run with %q: stderr %q", c.env, errOut)
 			}
@@ -56,7 +56,7 @@ func Test_improveRefusals(t *testing.T) {
 func Test_improveHost(t *testing.T) {
 	t.Parallel()
 	dir := testdir.New(t)
-	rt := &Runtime{DB: filepath.Join(dir, "state", "millstream.db"), Env: func(string) (string, bool) { return "", false }}
+	rt := &Runtime{DB: dsn(filepath.Join(dir, "state", "millstream.db")), Env: func(string) (string, bool) { return "", false }}
 	env, err := pipeline.ParseEnvironment([]byte("environment: development\nimprove: { enabled: true, harness: claude-code }\n"))
 	if err != nil {
 		t.Fatal(err)

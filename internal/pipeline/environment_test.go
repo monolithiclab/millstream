@@ -12,95 +12,115 @@ import (
 	"github.com/monolithiclab/millstream/internal/testdir"
 )
 
+// vars is a variable lookup and its names, from a map.
+func vars(m map[string]string) (func(string) (string, bool), []string) {
+	names := make([]string, 0, len(m))
+	for k := range m {
+		names = append(names, k)
+	}
+	return func(k string) (string, bool) { v, ok := m[k]; return v, ok }, names
+}
+
+// load loads the environment file src (none when empty) from a new directory, with the variables m.
+func load(t *testing.T, src string, m map[string]string) (*Environment, string, error) {
+	t.Helper()
+	dir := testdir.New(t)
+	path := filepath.Join(dir, EnvironmentFile)
+	if src != "" {
+		if err := os.WriteFile(path, []byte(src), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	lookup, names := vars(m)
+	env, err := LoadEnvironment(path, false, lookup, names)
+	return env, dir, err
+}
+
+// TestParseEnvironment reads every key, each to its field.
 func TestParseEnvironment(t *testing.T) {
 	t.Parallel()
 	env, err := ParseEnvironment([]byte(`
-registries: { lab: ghcr.io/monolithiclab/millstream-actions/, local: "localhost:5000/actions" }
-runtime: { container: podman }
-prices: { claude-sonnet-5-5: { inPerMtok: 3, outPerMtok: 15.5 } }
-agents: { allowUnsandboxed: true, image: "agents:1", linuxBinary: /opt/millstream-linux }
-lessons: { maxTokens: 500 }
-ui: { baseUrl: "https://millstream.example", listen: "127.0.0.1:8080" }
-`))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if env.Registries["lab"] != "ghcr.io/monolithiclab/millstream-actions" ||
-		env.Registries["local"] != "localhost:5000/actions" || env.ContainerRuntime != RuntimePodman ||
-		env.Prices["claude-sonnet-5-5"] != (Price{InPerMtok: 3, OutPerMtok: 15.5}) || !env.AllowUnsandboxed ||
-		env.AgentImage != "agents:1" || env.AgentBinary != "/opt/millstream-linux" || env.LessonsMaxTokens != 500 || env.UIBaseURL != "https://millstream.example" ||
-		env.UIListen != "127.0.0.1:8080" {
-		t.Fatalf("environment %+v", env)
-	}
-	empty, err := ParseEnvironment(nil)
-	if err != nil || empty.ContainerRuntime != RuntimeDocker || empty.Registries != nil ||
-		empty.LessonsMaxTokens != 0 || !empty.NodeEmbedded || empty.Secrets != nil || empty.Mode != "" {
-		t.Fatalf("empty environment %+v, %v", empty, err)
-	}
-}
-
-// TestParseEnvironmentServerKeys reads every key the server uses, each to its field.
-func TestParseEnvironmentServerKeys(t *testing.T) {
-	env, err := ParseEnvironment([]byte(`
 environment: development
-artifacts: { s3: { bucket: arts, endpoint: "https://s3.example", region: fr-par, prefix: m/,
-  accessKeyId: { env: S3_KEY }, secretAccessKey: { file: s3.secret } } }
+store: { dsn: "postgres://db:5432/ms?sslmode=disable" }
+artifacts: { url: s3://arts/m }
 listen: 0.0.0.0:7070
 auth: { token: { env: MILLSTREAM_TOKEN }, user: ana }
 tls: { cert: tls/cert.pem, key: tls/key.pem }
 metrics: { public: true }
 node: { embedded: false, token: { file: node.token } }
+registries: { lab: ghcr.io/monolithiclab/millstream-actions/, local: "localhost:5000/actions" }
 secrets:
   property-sourcing: { homesiteToken: { env: HOMESITE_TOKEN }, apiKey: { file: key } }
   other: {}
 retention: { events: 90d, transcripts: 30d, rollups: 400d, every: 30m }
-engine: { lockCheck: 2s, keepalive: 3s }
+lessons: { maxTokens: 500 }
+ui: { baseUrl: "https://millstream.example", listen: "127.0.0.1:8080" }
 improve:
   enabled: true
   harness: api
-  minSeverity: warning
+  minSeverity: error
   publish: apply
   patchFile: { dir: proposals }
   git: { repo: "https://git.example/p.git", base: trunk, path: "pipelines/{pipeline}", env: [GH_TOKEN],
     image: "ghcr.io/x/publish@sha256:0000000000000000000000000000000000000000000000000000000000000000",
     author: { name: Bot, email: bot@example.invalid } }
   budget: { dayUsd: 5 }
-  evidence: { sample: 500, ttl: 30d }
-  backtest: { sample: 200 }
+  evidence: { sample: 50, ttl: 3d }
+  backtest: { sample: 20 }
   validation: { timeout: 45m }
-  distill: { minDeliveries: 500, language: go, minAgreement: 0.98, minCoverage: 0.6 }
-  filter: { maxFalseDrop: 0.01 }
+  distill: { minDeliveries: 50, language: go, minAgreement: 0.9, minCoverage: 0.5 }
+  filter: { maxFalseDrop: 0.02 }
+prices: { claude-sonnet-5-5: { inPerMtok: 3, outPerMtok: 15.5 } }
+runtime: { container: podman }
+agents: { allowUnsandboxed: true, image: "agents:1", linuxBinary: /opt/millstream-linux }
+engine: { lockCheck: 2s, keepalive: 3s }
 `))
 	if err != nil {
 		t.Fatal(err)
 	}
-	day := 24 * time.Hour
+	day := Duration(24 * time.Hour)
 	want := &Environment{
-		ContainerRuntime: RuntimeDocker, Mode: ModeDevelopment, Listen: "0.0.0.0:7070",
-		Artifacts: ArtifactsConfig{S3: &S3Config{Bucket: "arts", Endpoint: "https://s3.example", Region: "fr-par",
-			Prefix: "m/", AccessKeyID: &SecretSource{Env: "S3_KEY"}, SecretAccessKey: &SecretSource{File: "s3.secret"}}},
-		AuthToken: &SecretSource{Env: "MILLSTREAM_TOKEN"}, AuthUser: "ana",
-		TLS: &TLSConfig{Cert: "tls/cert.pem", Key: "tls/key.pem"}, MetricsPublic: true,
-		NodeToken: &SecretSource{File: "node.token"},
+		Mode: ModeDevelopment, Store: StoreConfig{DSN: "postgres://db:5432/ms?sslmode=disable"},
+		Artifacts: ArtifactsConfig{URL: "s3://arts/m"}, Listen: "0.0.0.0:7070",
+		Auth: AuthConfig{Token: &SecretSource{Env: "MILLSTREAM_TOKEN"}, User: "ana"},
+		TLS:  TLSConfig{Cert: "tls/cert.pem", Key: "tls/key.pem"}, Metrics: MetricsConfig{Public: true},
+		Node: NodeConfig{Token: &SecretSource{File: "node.token"}},
+		Registries: map[string]string{"lab": "ghcr.io/monolithiclab/millstream-actions/",
+			"local": "localhost:5000/actions"},
 		Secrets: map[string]map[string]SecretSource{
 			"property-sourcing": {"homesiteToken": {Env: "HOMESITE_TOKEN"}, "apiKey": {File: "key"}}, "other": {},
 		},
-		Retention: Retention{Events: 90 * day, Transcripts: 30 * day, Rollups: 400 * day, Every: 30 * time.Minute},
-		Engine:    EngineConfig{LockCheck: 2 * time.Second, Keepalive: 3 * time.Second},
-		Improve: Improve{Enabled: true, Harness: "api", MinSeverity: "warning", Publish: PublishApply, BudgetDayUSD: 5,
-			PatchFile: PatchFileConfig{Dir: "proposals"}, Git: GitConfig{Repo: "https://git.example/p.git", Base: "trunk",
-				Path: "pipelines/{pipeline}", Env: []string{"GH_TOKEN"}, AuthorName: "Bot", AuthorEmail: "bot@example.invalid",
-				Image: "ghcr.io/x/publish@sha256:0000000000000000000000000000000000000000000000000000000000000000"},
-			EvidenceSample: 500, EvidenceTTL: 30 * day, BacktestSample: 200, ValidationTimeout: 45 * time.Minute, DistillMinDeliveries: 500,
-			DistillLanguage: "go", DistillMinAgreement: 0.98, DistillMinCoverage: 0.6, FilterMaxFalseDrop: 0.01},
+		Retention: Retention{Events: 90 * day, Transcripts: 30 * day, Rollups: 400 * day,
+			Every: Duration(30 * time.Minute)},
+		Lessons: LessonsConfig{MaxTokens: 500},
+		UI:      UIConfig{BaseURL: "https://millstream.example", Listen: "127.0.0.1:8080"},
+		Improve: Improve{Enabled: true, Harness: "api", MinSeverity: "error", Publish: PublishApply,
+			PatchFile: PatchFileConfig{Dir: "proposals"}, Git: GitConfig{Repo: "https://git.example/p.git",
+				Base: "trunk", Path: "pipelines/{pipeline}", Env: []string{"GH_TOKEN"},
+				Author: GitAuthor{Name: "Bot", Email: "bot@example.invalid"},
+				Image:  "ghcr.io/x/publish@sha256:0000000000000000000000000000000000000000000000000000000000000000"},
+			Budget: BudgetConfig{DayUSD: 5}, Evidence: EvidenceConfig{Sample: 50, TTL: 3 * day},
+			Backtest: BacktestConfig{Sample: 20}, Validation: ValidationConfig{Timeout: Duration(45 * time.Minute)},
+			Distill: DistillConfig{MinDeliveries: 50, Language: "go", MinAgreement: 0.9, MinCoverage: 0.5},
+			Filter:  FilterConfig{MaxFalseDrop: 0.02}},
+		Prices:  map[string]Price{"claude-sonnet-5-5": {InPerMtok: 3, OutPerMtok: 15.5}},
+		Runtime: RuntimeConfig{Container: RuntimePodman},
+		Agents:  AgentsConfig{AllowUnsandboxed: true, Image: "agents:1", LinuxBinary: "/opt/millstream-linux"},
+		Engine:  EngineConfig{LockCheck: Duration(2 * time.Second), Keepalive: Duration(3 * time.Second)},
 	}
 	if !reflect.DeepEqual(env, want) {
 		t.Fatalf("environment\n%+v\nwant\n%+v", env, want)
 	}
-	local, err := ParseEnvironment([]byte("artifacts: { local: { path: arts } }\n"))
-	if err != nil || local.Artifacts.LocalPath != "arts" || local.Artifacts.S3 != nil {
-		t.Fatalf("local artifacts %+v, %v", local, err)
+	for _, src := range []string{"", "# nothing\n", "ui: ~\n"} {
+		if empty, err := ParseEnvironment([]byte(src)); err != nil || !reflect.DeepEqual(empty, Defaults()) {
+			t.Fatalf("%q: %+v, %v", src, empty, err)
+		}
 	}
+}
+
+func TestCheckMode(t *testing.T) {
+	t.Parallel()
+	env := &Environment{Mode: ModeDevelopment, Improve: Improve{Enabled: true}}
 	if err := env.CheckMode(ModeProduction); err != nil {
 		t.Fatalf("development, explicit: %v", err)
 	}
@@ -124,14 +144,266 @@ improve:
 	}
 }
 
-// TestDeployEnvironmentParses: the Compose deployment's environment file parses strictly.
-func TestDeployEnvironmentParses(t *testing.T) {
-	env, err := LoadEnvironment(filepath.Join("..", "..", "deploy", "compose", "millstream.yaml"), true)
+func TestParseEnvironmentErrors(t *testing.T) {
+	t.Parallel()
+	const pinned = "x@sha256:0000000000000000000000000000000000000000000000000000000000000000"
+	tests := map[string]struct{ src, want string }{
+		"unknown key":       {"registry: {}\n", "line 1: registry: unknown key"},
+		"duplicate key":     {"listen: a:1\nlisten: b:2\n", "line 2: listen: duplicate key"},
+		"environment":       {"environment: staging\n", "environment: must be one of production, development"},
+		"listen":            {"listen: 7070\n", "listen: want host:port"},
+		"ui listen":         {"ui: { listen: here }\n", "ui.listen: want host:port"},
+		"artifacts key":     {"artifacts: { local: { path: a } }\n", "artifacts.local: unknown key"},
+		"artifacts scheme":  {"artifacts: { url: \"ftp://x\" }\n", "artifacts.url: want file://<dir> or s3://"},
+		"artifacts bucket":  {"artifacts: { url: \"s3://\" }\n", "artifacts.url: want"},
+		"auth inline":       {"auth: { token: s3cret }\n", "auth.token: want { env: NAME }"},
+		"auth key":          {"auth: { oidc: {} }\n", "auth.oidc: unknown key"},
+		"auth user":         {"auth: { token: { env: T }, user: \"\" }\n", "auth.user: must not be empty"},
+		"tls no key":        {"tls: { cert: c.pem }\n", "tls: set both cert and key, or neither"},
+		"tls key":           {"tls: { cert: c, key: k, ca: x }\n", "tls.ca: unknown key"},
+		"metrics public":    {"metrics: { public: maybe }\n", "metrics.public: must be true or false"},
+		"metrics key":       {"metrics: { path: /m }\n", "metrics.path: unknown key"},
+		"node embedded":     {"node: { embedded: maybe }\n", "node.embedded: must be true or false"},
+		"node token":        {"node: { token: { env: \"a b\" } }\n", "node.token.env: want an environment"},
+		"node key":          {"node: { tls: {} }\n", "node.tls: unknown key"},
+		"secrets scalar":    {"secrets: x\n", "secrets: must be a mapping"},
+		"secrets pipeline":  {"secrets: { p: [a] }\n", "secrets.p: must be a mapping"},
+		"secret inline":     {"secrets: { p: { token: abc } }\n", "secrets.p.token: want { env: NAME }"},
+		"secret source":     {"secrets: { p: { token: { vault: x } } }\n", "secrets.p.token.vault: unknown key"},
+		"secret both":       {"secrets: { p: { token: { env: A, file: f } } }\n", "secrets.p.token: want exactly one"},
+		"secret none":       {"secrets: { p: { token: {} } }\n", "secrets.p.token: want exactly one"},
+		"retention":         {"retention: { events: forever }\n", "retention.events: invalid duration"},
+		"retention key":     {"retention: { items: 3d }\n", "retention.items: unknown key"},
+		"engine key":        {"engine: { id: a }\n", "engine.id: unknown key"},
+		"engine zero":       {"engine: { lockCheck: 0s }\n", "engine.lockCheck: duration \"0s\" must be positive"},
+		"engine keepalive":  {"engine: { keepalive: [often] }\n", "engine.keepalive: must be a duration"},
+		"improve key":       {"improve: { autoApply: true }\n", "improve.autoApply: unknown key"},
+		"improve harness":   {"improve: { harness: gpt }\n", "improve.harness: must be one of claude-code, api"},
+		"improve publish":   {"improve: { publish: email }\n", "improve.publish: must be one of apply"},
+		"improve severity":  {"improve: { minSeverity: high }\n", "improve.minSeverity: must be one of"},
+		"improve sample":    {"improve: { evidence: { sample: 0 } }\n", "improve.evidence.sample: must be a positive"},
+		"improve ttl":       {"improve: { evidence: { ttl: soon } }\n", "improve.evidence.ttl:"},
+		"improve evidence":  {"improve: { evidence: { size: 3 } }\n", "improve.evidence.size: unknown key"},
+		"improve budget":    {"improve: { budget: { dayUsd: -1 } }\n", "improve.budget.dayUsd: must be a non-negative"},
+		"improve backtest":  {"improve: { backtest: { sample: -1 } }\n", "improve.backtest.sample: must be a positive"},
+		"improve agreement": {"improve: { distill: { minAgreement: 2 } }\n", "improve.distill.minAgreement: must be a number from 0 to 1"},
+		"improve language":  {"improve: { distill: { language: python } }\n", `improve.distill.language: "python" is not supported yet: distilled actions are written in go`},
+		"improve filter":    {"improve: { filter: 3 }\n", "improve.filter: must be a mapping"},
+		"improve prod":      {"environment: production\nimprove: { enabled: true }\n", "improve.enabled: the improve pipeline runs in development"},
+		"patch-file dir":    {"improve: { publish: patch-file }\n", "improve.publish: patch-file needs improve.patchFile.dir"},
+		"git repo":          {"improve: { publish: git-pr-gh }\n", "improve.publish: git-pr-gh needs improve.git.repo"},
+		"git image":         {"improve: { git: { repo: r, image: alpine/git } }\n", "improve.git.image: must be pinned by digest"},
+		"git path":          {"improve: { git: { repo: r, path: ../x, image: " + pinned + " } }\n", "improve.git.path: must be a clean"},
+		"git env":           {"improve: { git: { repo: r, env: [GH-TOKEN], image: " + pinned + " } }\n", "improve.git.env[0]: must be an environment"},
+		"git env list":      {"improve: { git: { env: GH_TOKEN } }\n", "improve.git.env: must be a list"},
+		"improve prod pub":  {"environment: production\nimprove: { publish: apply }\n", "improve.publish: apply is refused in production"},
+		"store scalar":      {"store: sqlite\n", "store: must be a mapping"},
+		"store key":         {"store: { sqlite: { path: a } }\n", "store.sqlite: unknown key"},
+		"not a mapping":     {"- a\n", "must be a mapping"},
+		"bad namespace":     {"registries: { Lab: ghcr.io/x }\n", "registries.Lab: a namespace is lowercase"},
+		"scheme":            {"registries: { lab: https://ghcr.io/x }\n", "registries.lab: want a repository prefix"},
+		"digest":            {"registries: { lab: ghcr.io/x@sha256:1 }\n", "registries.lab: want a repository prefix"},
+		"empty prefix":      {"registries: { lab: \"\" }\n", "registries.lab: want a repository prefix"},
+		"registries scalar": {"registries: x\n", "registries: must be a mapping"},
+		"bad runtime":       {"runtime: { container: lxc }\n", "runtime.container: must be one of docker, podman"},
+		"runtime key":       {"runtime: { exec: true }\n", "runtime.exec: unknown key"},
+		"runtime scalar":    {"runtime: docker\n", "runtime: must be a mapping"},
+		"price negative":    {"prices: { m: { inPerMtok: -1, outPerMtok: 1 } }\n", "prices.m: must be non-negative"},
+		"price number":      {"prices: { m: { inPerMtok: cheap } }\n", "prices.m.inPerMtok: must be a number"},
+		"price key":         {"prices: { m: { in: 1 } }\n", "prices.m.in: unknown key"},
+		"prices scalar":     {"prices: 3\n", "prices: must be a mapping"},
+		"price scalar":      {"prices: { m: 3 }\n", "prices.m: must be a mapping"},
+		"agents not bool":   {"agents: { allowUnsandboxed: yes please }\n", "agents.allowUnsandboxed: must be true or false"},
+		"agents key":        {"agents: { sandbox: none }\n", "agents.sandbox: unknown key"},
+		"agents scalar":     {"agents: true\n", "agents: must be a mapping"},
+		"agents binary":     {"agents: { linuxBinary: [x] }\n", "agents.linuxBinary: must be a string"},
+		"lessons zero":      {"lessons: { maxTokens: 0 }\n", "lessons.maxTokens: must be a positive integer"},
+		"lessons int":       {"lessons: { maxTokens: 1.5 }\n", "lessons.maxTokens: must be an integer"},
+		"lessons key":       {"lessons: { max: 3 }\n", "lessons.max: unknown key"},
+		"lessons scalar":    {"lessons: 3\n", "lessons: must be a mapping"},
+		"ui scalar":         {"ui: x\n", "ui: must be a mapping"},
+		"ui key":            {"ui: { url: x }\n", "ui.url: unknown key"},
+		"ui base url":       {"ui: { baseUrl: \"ftp://x\" }\n", "ui.baseUrl: want an http or https URL"},
+		"yaml":              {"registries: [\n", "parse YAML"},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			_, err := ParseEnvironment([]byte(tt.src))
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("err = %v, want %q", err, tt.want)
+			}
+		})
+	}
+}
+
+// TestLayers: a variable overrides the file, which overrides the default tag.
+func TestLayers(t *testing.T) {
+	t.Parallel()
+	const src = "runtime: { container: podman }\n"
+	if env, _, err := load(t, src, map[string]string{"MILLSTREAM_RUNTIME_CONTAINER": "docker"}); err != nil ||
+		env.Runtime.Container != RuntimeDocker {
+		t.Fatalf("file and variable: %+v, %v", env, err)
+	}
+	if env, _, err := load(t, src, nil); err != nil || env.Runtime.Container != RuntimePodman {
+		t.Fatalf("file alone: %+v, %v", env, err)
+	}
+	if env, _, err := load(t, "", nil); err != nil || !reflect.DeepEqual(env, Defaults()) {
+		t.Fatalf("no file: %+v, %v", env, err)
+	}
+	lookup, names := vars(nil)
+	if _, err := LoadEnvironment(filepath.Join(testdir.New(t), "absent.yaml"), true, lookup, names); err == nil {
+		t.Fatal("a required missing file: no error")
+	}
+	if _, _, err := load(t, "listen: [\n", nil); err == nil || !strings.Contains(err.Error(), EnvironmentFile) {
+		t.Fatalf("a bad file: %v", err)
+	}
+}
+
+func TestVariableShapes(t *testing.T) {
+	t.Parallel()
+	env, _, err := load(t, "listen: 127.0.0.1:9000\nauth: { token: { file: tok } }\n", map[string]string{
+		"MILLSTREAM_REGISTRIES":         "{ lab: ghcr.io/x/actions }",
+		"MILLSTREAM_AUTH_TOKEN":         strings.Repeat("t", MinTokenLength),
+		"MILLSTREAM_RETENTION_EVENTS":   "90d",
+		"MILLSTREAM_LISTEN":             "",
+		"MILLSTREAM_IMPROVE_GIT_ENV":    "[GH_TOKEN, GITLAB_TOKEN]",
+		"MILLSTREAM_PRICES":             "{ m: { inPerMtok: 1, outPerMtok: 2 } }",
+		"MILLSTREAM_LESSONS_MAX_TOKENS": "300",
+		"MILLSTREAM_UI_BASE_URL":        "https://ms.example",
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if env.Store.PostgresDSN == nil || env.AuthToken == nil || env.NodeEmbedded || env.Listen != "0.0.0.0:7070" {
-		t.Fatalf("deploy environment %+v", env)
+	if !reflect.DeepEqual(env.Registries, map[string]string{"lab": "ghcr.io/x/actions"}) ||
+		*env.Auth.Token != (SecretSource{Env: "MILLSTREAM_AUTH_TOKEN"}) ||
+		env.Retention.Events != Duration(90*24*time.Hour) || env.Listen != "127.0.0.1:9000" ||
+		!reflect.DeepEqual(env.Improve.Git.Env, []string{"GH_TOKEN", "GITLAB_TOKEN"}) ||
+		env.Prices["m"] != (Price{InPerMtok: 1, OutPerMtok: 2}) || env.Lessons.MaxTokens != 300 ||
+		env.UI.BaseURL != "https://ms.example" {
+		t.Fatalf("environment %+v", env)
+	}
+}
+
+func TestUnknownVariable(t *testing.T) {
+	t.Parallel()
+	_, _, err := load(t, "", map[string]string{"MILLSTREAM_UI_BASEURL": "x"})
+	if err == nil || !strings.Contains(err.Error(), "MILLSTREAM_UI_BASEURL: no such setting; did you mean "+
+		"MILLSTREAM_UI_BASE_URL?") {
+		t.Fatalf("a misspelt variable: %v", err)
+	}
+	if _, _, err := load(t, "", map[string]string{"MILLSTREAM_IMPROVE_GIT_AUTHOR_MAIL": "x"}); err == nil {
+		t.Fatal("a nested misspelt variable: no error")
+	}
+	// The CLI's own variables, the pipelines' secrets and variables, and the node's join token are no settings,
+	// or (MILLSTREAM_NODE_TOKEN) one on purpose.
+	for _, name := range []string{"MILLSTREAM_SERVER", "MILLSTREAM_TOKEN", "MILLSTREAM_COLOR", "MILLSTREAM_SECRET_X",
+		"MILLSTREAM_LIVE", "MILLSTREAM_LIVE_MODEL", "MILLSTREAM_VAR_CITY", "MILLSTREAM_ENV_FILE", "MILLSTREAM_DSN",
+		"MILLSTREAM_WORKDIR", "MILLSTREAM_NODE_TOKEN"} {
+		if _, _, err := load(t, "", map[string]string{name: strings.Repeat("x", MinTokenLength)}); err != nil {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+}
+
+func TestVariableTypeError(t *testing.T) {
+	t.Parallel()
+	for name, want := range map[string]string{
+		"MILLSTREAM_NODE_EMBEDDED":    "MILLSTREAM_NODE_EMBEDDED: node.embedded: must be true or false",
+		"MILLSTREAM_REGISTRIES":       "MILLSTREAM_REGISTRIES: registries: want YAML flow syntax",
+		"MILLSTREAM_ENGINE_KEEPALIVE": "MILLSTREAM_ENGINE_KEEPALIVE: engine.keepalive: invalid duration",
+	} {
+		if _, _, err := load(t, "", map[string]string{name: "{maybe"}); err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("%s: %v, want %q", name, err, want)
+		}
+	}
+}
+
+func TestStoreDSN(t *testing.T) {
+	t.Parallel()
+	if p, ok := Defaults().Store.SQLitePath(); !ok || p != ".millstream/millstream.db" {
+		t.Fatalf("default store: %q, %v", p, ok)
+	}
+	env, dir, err := load(t, "store: { dsn: sqlite://state/m.db }\n", nil)
+	if p, ok := env.Store.SQLitePath(); err != nil || !ok || p != filepath.Join(dir, "state", "m.db") {
+		t.Fatalf("a relative path in the file: %q, %v", p, err)
+	}
+	env, _, err = load(t, "", map[string]string{"MILLSTREAM_STORE_DSN": "sqlite://state/m.db"})
+	if p, ok := env.Store.SQLitePath(); err != nil || !ok || p != "state/m.db" {
+		t.Fatalf("a relative path in a variable: %q, %v", p, err)
+	}
+	if _, err := ParseEnvironment([]byte("store: { dsn: \"postgres://db/ms?sslmode=disable\" }\n")); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := (StoreConfig{DSN: "postgres://db/ms"}).SQLitePath(); ok {
+		t.Fatal("Postgres has a SQLite path")
+	}
+	for dsn, want := range map[string]string{
+		"postgres://u:pw@db/ms": "store.dsn: a password in the DSN is refused: set PGPASSWORD",
+		"mysql://x":             "store.dsn: want sqlite://<path> or postgres://",
+		"state/m.db":            "store.dsn: want sqlite://<path> or postgres://",
+		"sqlite://":             "store.dsn: want sqlite://<path>",
+	} {
+		_, err := ParseEnvironment([]byte("store: { dsn: \"" + dsn + "\" }\n"))
+		if err == nil || !strings.Contains(err.Error(), want) || strings.Contains(err.Error(), "pw") {
+			t.Errorf("%s: %v, want %q", dsn, err, want)
+		}
+	}
+}
+
+func TestArtifactsURL(t *testing.T) {
+	t.Parallel()
+	env, dir, err := load(t, "artifacts: { url: file://arts }\n", nil)
+	if p, ok := env.Artifacts.Local(); err != nil || !ok || p != filepath.Join(dir, "arts") {
+		t.Fatalf("a relative directory: %q, %v", p, err)
+	}
+	if _, ok := Defaults().Artifacts.Local(); ok {
+		t.Fatal("artifacts.url has a default")
+	}
+	b, p, ok := ArtifactsConfig{URL: "s3://bucket/pre/fix"}.S3()
+	if !ok || b != "bucket" || p != "pre/fix" {
+		t.Fatalf("S3() = %q, %q, %v", b, p, ok)
+	}
+	if _, _, ok := (ArtifactsConfig{URL: "file://a"}).S3(); ok {
+		t.Fatal("a directory is a bucket")
+	}
+	if _, err := ParseEnvironment([]byte("artifacts: { url: \"ftp://x\" }\n")); err == nil {
+		t.Fatal("ftp://: no error")
+	}
+}
+
+// TestLoadEnvironmentPaths: the relative paths the file sets resolve against its directory.
+func TestLoadEnvironmentPaths(t *testing.T) {
+	t.Parallel()
+	for src, got := range map[string]func(*Environment) string{
+		"agents: { linuxBinary: bin/millstream }\n": func(e *Environment) string { return e.Agents.LinuxBinary },
+		"auth: { token: { file: tok } }\n":          func(e *Environment) string { return e.Auth.Token.File },
+		"node: { token: { file: tok } }\n":          func(e *Environment) string { return e.Node.Token.File },
+		"tls: { cert: c.pem, key: k.pem }\n":        func(e *Environment) string { return e.TLS.Key },
+		"improve: { patchFile: { dir: p } }\n":      func(e *Environment) string { return e.Improve.PatchFile.Dir },
+		"secrets: { p: { k: { file: k.txt } } }\n":  func(e *Environment) string { return e.Secrets["p"]["k"].File },
+	} {
+		env, dir, err := load(t, src, nil)
+		if err != nil || !filepath.IsAbs(got(env)) || !strings.HasPrefix(got(env), dir) {
+			t.Fatalf("%s: %+v, %v", src, env, err)
+		}
+	}
+}
+
+// TestDocTags: every leaf has a doc, a key and a variable, and no two leaves share a variable.
+func TestDocTags(t *testing.T) {
+	t.Parallel()
+	seen := map[string]string{}
+	for _, s := range Settings(Defaults()) {
+		if s.Doc == "" || strings.HasSuffix(s.Key, ".") || strings.HasSuffix(s.Var, "_") {
+			t.Errorf("%s (%s): a tag is missing", s.Key, s.Var)
+		}
+		if other, ok := seen[s.Var]; ok {
+			t.Errorf("%s and %s share %s", other, s.Key, s.Var)
+		}
+		seen[s.Var] = s.Key
+	}
+	if len(seen) < 40 {
+		t.Fatalf("%d settings", len(seen))
 	}
 }
 
@@ -183,130 +455,6 @@ func TestSecretLookup(t *testing.T) {
 	}
 }
 
-func TestParseEnvironmentErrors(t *testing.T) {
-	t.Parallel()
-	const pinned = "x@sha256:0000000000000000000000000000000000000000000000000000000000000000"
-	tests := map[string]struct{ src, want string }{
-		"unknown key":       {"registry: {}\n", "line 1: registry: unknown key"},
-		"environment":       {"environment: staging\n", "environment: must be one of production, development"},
-		"listen":            {"listen: 7070\n", "listen: want host:port"},
-		"listen empty":      {"listen: \"\"\n", "listen: must not be empty"},
-		"artifacts none":    {"artifacts: {}\n", "artifacts: want exactly one of local and s3"},
-		"artifacts both":    {"artifacts: { local: { path: a }, s3: { bucket: b } }\n", "artifacts: want exactly one"},
-		"artifacts key":     {"artifacts: { gcs: {} }\n", "artifacts.gcs: unknown key"},
-		"local no path":     {"artifacts: { local: {} }\n", "artifacts.local.path: is required"},
-		"s3 no bucket":      {"artifacts: { s3: { region: fr-par } }\n", "artifacts.s3.bucket: is required"},
-		"s3 endpoint":       {"artifacts: { s3: { bucket: b, endpoint: s3.example } }\n", "artifacts.s3.endpoint: want an http"},
-		"s3 key":            {"artifacts: { s3: { bucket: b, acl: private } }\n", "artifacts.s3.acl: unknown key"},
-		"s3 inline key":     {"artifacts: { s3: { bucket: b, accessKeyId: AKIA } }\n", "artifacts.s3.accessKeyId: want { env: NAME }"},
-		"s3 half creds":     {"artifacts: { s3: { bucket: b, accessKeyId: { env: K } } }\n", "artifacts.s3: set both"},
-		"auth empty":        {"auth: {}\n", "auth.token: is required"},
-		"auth inline":       {"auth: { token: s3cret }\n", "auth.token: want { env: NAME }"},
-		"auth key":          {"auth: { oidc: {} }\n", "auth.oidc: unknown key"},
-		"auth user":         {"auth: { token: { env: T }, user: \"\" }\n", "auth.user: must not be empty"},
-		"tls no key":        {"tls: { cert: c.pem }\n", "tls.key: is required"},
-		"tls key":           {"tls: { cert: c, key: k, ca: x }\n", "tls.ca: unknown key"},
-		"metrics public":    {"metrics: { public: maybe }\n", "metrics.public: must be true or false"},
-		"metrics key":       {"metrics: { path: /m }\n", "metrics.path: unknown key"},
-		"node embedded":     {"node: { embedded: maybe }\n", "node.embedded: must be true or false"},
-		"node token":        {"node: { token: { env: \"a b\" } }\n", "node.token.env: want an environment"},
-		"node key":          {"node: { tls: {} }\n", "node.tls: unknown key"},
-		"secrets scalar":    {"secrets: x\n", "secrets: must be a mapping"},
-		"secrets pipeline":  {"secrets: { p: [a] }\n", "secrets.p: must be a mapping"},
-		"secret inline":     {"secrets: { p: { token: abc } }\n", "secrets.p.token: want { env: NAME }"},
-		"secret source":     {"secrets: { p: { token: { vault: x } } }\n", "secrets.p.token.vault: unknown key"},
-		"retention":         {"retention: { events: forever }\n", "retention.events:"},
-		"retention key":     {"retention: { items: 3d }\n", "retention.items: unknown key"},
-		"engine key":        {"engine: { id: a }\n", "engine.id: unknown key"},
-		"engine zero":       {"engine: { lockCheck: 0s }\n", "engine.lockCheck: duration \"0s\" must be positive"},
-		"engine keepalive":  {"engine: { keepalive: often }\n", "engine.keepalive:"},
-		"improve key":       {"improve: { autoApply: true }\n", "improve.autoApply: unknown key"},
-		"improve harness":   {"improve: { harness: gpt }\n", "improve.harness: must be one of claude-code, api"},
-		"improve publish":   {"improve: { publish: email }\n", "improve.publish: must be one of apply"},
-		"improve severity":  {"improve: { minSeverity: high }\n", "improve.minSeverity: must be one of"},
-		"improve sample":    {"improve: { evidence: { sample: 0 } }\n", "improve.evidence.sample: must be a positive"},
-		"improve ttl":       {"improve: { evidence: { ttl: soon } }\n", "improve.evidence.ttl:"},
-		"improve evidence":  {"improve: { evidence: { size: 3 } }\n", "improve.evidence.size: unknown key"},
-		"improve budget":    {"improve: { budget: { dayUsd: -1 } }\n", "improve.budget.dayUsd: must be a non-negative"},
-		"improve agreement": {"improve: { distill: { minAgreement: 2 } }\n", "improve.distill.minAgreement: must be a number from 0 to 1"},
-		"improve language":  {"improve: { distill: { language: python } }\n", `improve.distill.language: "python" is not supported yet: distilled actions are written in go`},
-		"improve filter":    {"improve: { filter: 3 }\n", "improve.filter: must be a mapping"},
-		"improve prod":      {"environment: production\nimprove: { enabled: true }\n", "improve: enabled: the improve pipeline runs in development"},
-		"patch-file dir":    {"improve: { publish: patch-file }\n", "improve.publish: patch-file needs improve.patchFile.dir"},
-		"git repo":          {"improve: { publish: git-pr-gh }\n", "improve.publish: git-pr-gh needs improve.git"},
-		"git image":         {"improve: { git: { repo: r, image: alpine/git } }\n", "improve.git.image: must be pinned by digest"},
-		"git path":          {"improve: { git: { repo: r, path: ../x, image: " + pinned + " } }\n", "improve.git.path: must be a clean"},
-		"git env":           {"improve: { git: { repo: r, env: [GH-TOKEN], image: " + pinned + " } }\n", "improve.git.env[0]: must be an environment"},
-		"improve prod pub":  {"environment: production\nimprove: { publish: apply }\n", "improve: publish: apply is refused in production"},
-		"store both":        {"store: { sqlite: { path: a }, postgres: { dsn: { env: D } } }\n", "store: want exactly one"},
-		"store none":        {"store: {}\n", "store: want exactly one of sqlite and postgres"},
-		"store scalar":      {"store: sqlite\n", "store: must be a mapping"},
-		"store key":         {"store: { mysql: {} }\n", "store.mysql: unknown key"},
-		"sqlite no path":    {"store: { sqlite: {} }\n", "store.sqlite.path: is required"},
-		"sqlite key":        {"store: { sqlite: { file: a } }\n", "store.sqlite.file: unknown key"},
-		"dsn missing":       {"store: { postgres: {} }\n", "store.postgres.dsn: is required"},
-		"dsn inline":        {"store: { postgres: { dsn: \"postgres://u:pw@h/db\" } }\n", "store.postgres.dsn: want { env: NAME }"},
-		"dsn both":          {"store: { postgres: { dsn: { env: D, file: f } } }\n", "store.postgres.dsn: want exactly one"},
-		"dsn bad env":       {"store: { postgres: { dsn: { env: \"my dsn\" } } }\n", "store.postgres.dsn.env: want an environment"},
-		"dsn source key":    {"store: { postgres: { dsn: { vault: x } } }\n", "store.postgres.dsn.vault: unknown key"},
-		"postgres key":      {"store: { postgres: { dsn: { env: D }, pool: 3 } }\n", "store.postgres.pool: unknown key"},
-		"not a mapping":     {"- a\n", "must be a mapping"},
-		"bad namespace":     {"registries: { Lab: ghcr.io/x }\n", "registries.Lab: a namespace is lowercase"},
-		"scheme":            {"registries: { lab: https://ghcr.io/x }\n", "registries.lab: want a repository prefix"},
-		"digest":            {"registries: { lab: ghcr.io/x@sha256:1 }\n", "registries.lab"},
-		"empty prefix":      {"registries: { lab: \"\" }\n", "registries.lab: must not be empty"},
-		"bad runtime":       {"runtime: { container: lxc }\n", "runtime.container: must be one of docker, podman"},
-		"runtime key":       {"runtime: { exec: true }\n", "runtime.exec: unknown key"},
-		"runtime scalar":    {"runtime: docker\n", "runtime: must be a mapping"},
-		"price missing":     {"prices: { m: { inPerMtok: 1 } }\n", "prices.m.outPerMtok: is required"},
-		"price negative":    {"prices: { m: { inPerMtok: -1, outPerMtok: 1 } }\n", "prices.m.inPerMtok: must be a non-negative"},
-		"price key":         {"prices: { m: { in: 1 } }\n", "prices.m.in: unknown key"},
-		"prices scalar":     {"prices: 3\n", "prices: must be a mapping"},
-		"price scalar":      {"prices: { m: 3 }\n", "prices.m: must be a mapping"},
-		"agents not bool":   {"agents: { allowUnsandboxed: yes please }\n", "agents.allowUnsandboxed: must be true or false"},
-		"agents key":        {"agents: { sandbox: none }\n", "agents.sandbox: unknown key"},
-		"agents scalar":     {"agents: true\n", "agents: must be a mapping"},
-		"agents image":      {"agents: { image: \"\" }\n", "agents.image: must not be empty"},
-		"agents binary":     {"agents: { linuxBinary: [x] }\n", "agents.linuxBinary: must be a string"},
-		"registries scalar": {"registries: x\n", "registries: must be a mapping"},
-		"lessons zero":      {"lessons: { maxTokens: 0 }\n", "lessons.maxTokens: must be a positive integer"},
-		"lessons key":       {"lessons: { max: 3 }\n", "lessons.max: unknown key"},
-		"lessons scalar":    {"lessons: 3\n", "lessons: must be a mapping"},
-		"ui scalar":         {"ui: x\n", "ui: must be a mapping"},
-		"ui key":            {"ui: { url: x }\n", "ui.url: unknown key"},
-		"ui base url":       {"ui: { baseUrl: \"ftp://x\" }\n", "ui.baseUrl: want an http or https URL"},
-		"yaml":              {"registries: [\n", "parse YAML"},
-	}
-	for name, tt := range tests {
-		t.Run(name, func(t *testing.T) {
-			_, err := ParseEnvironment([]byte(tt.src))
-			if err == nil || !strings.Contains(err.Error(), tt.want) {
-				t.Fatalf("err = %v, want %q", err, tt.want)
-			}
-		})
-	}
-}
-
-func TestParseEnvironmentStore(t *testing.T) {
-	t.Parallel()
-	for src, want := range map[string]StoreConfig{
-		"store: { sqlite: { path: state/m.db } }\n":                  {SQLitePath: "state/m.db"},
-		"store: { postgres: { dsn: { env: MILLSTREAM_DSN } } }\n":    {PostgresDSN: &SecretSource{Env: "MILLSTREAM_DSN"}},
-		"store: { postgres: { dsn: { file: /run/secrets/dsn } } }\n": {PostgresDSN: &SecretSource{File: "/run/secrets/dsn"}},
-		"registries: {}\n": {},
-	} {
-		env, err := ParseEnvironment([]byte(src))
-		if err != nil {
-			t.Fatalf("%s: %v", src, err)
-		}
-		got := env.Store
-		if got.SQLitePath != want.SQLitePath || (got.PostgresDSN == nil) != (want.PostgresDSN == nil) ||
-			got.PostgresDSN != nil && *got.PostgresDSN != *want.PostgresDSN {
-			t.Errorf("%s: store %+v, want %+v", src, got, want)
-		}
-	}
-}
-
 func TestSecretSourceValue(t *testing.T) {
 	t.Parallel()
 	lookup := func(name string) (string, bool) {
@@ -339,52 +487,6 @@ func TestSecretSourceValue(t *testing.T) {
 	}
 }
 
-func TestLoadEnvironment(t *testing.T) {
-	t.Parallel()
-	dir := testdir.New(t)
-	missing := filepath.Join(dir, "absent.yaml")
-	if env, err := LoadEnvironment(missing, false); err != nil || env.ContainerRuntime != RuntimeDocker {
-		t.Fatalf("an optional missing file: %+v, %v", env, err)
-	}
-	if _, err := LoadEnvironment(missing, true); err == nil {
-		t.Fatal("a required missing file: no error")
-	}
-	bad := filepath.Join(dir, "bad.yaml")
-	if err := os.WriteFile(bad, []byte("store: {}\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := LoadEnvironment(bad, false); err == nil || !strings.Contains(err.Error(), bad) {
-		t.Fatalf("a bad file: %v", err)
-	}
-	// agents.linuxBinary is relative to the environment file.
-	rel := filepath.Join(dir, "rel.yaml")
-	if err := os.WriteFile(rel, []byte("agents: { linuxBinary: bin/millstream }\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if env, err := LoadEnvironment(rel, true); err != nil || env.AgentBinary != filepath.Join(dir, "bin", "millstream") {
-		t.Fatalf("relative linuxBinary: %+v, %v", env, err)
-	}
-	// So are store.sqlite.path and a DSN's file.
-	for src, want := range map[string]func(*Environment) string{
-		"store: { sqlite: { path: state/m.db } }\n":             func(e *Environment) string { return e.Store.SQLitePath },
-		"store: { postgres: { dsn: { file: secrets/dsn } } }\n": func(e *Environment) string { return e.Store.PostgresDSN.File },
-		"artifacts: { local: { path: arts } }\n":                func(e *Environment) string { return e.Artifacts.LocalPath },
-		"auth: { token: { file: tok } }\n":                      func(e *Environment) string { return e.AuthToken.File },
-		"tls: { cert: c.pem, key: k.pem }\n":                    func(e *Environment) string { return e.TLS.Key },
-		"secrets: { p: { k: { file: k.txt } } }\n":              func(e *Environment) string { return e.Secrets["p"]["k"].File },
-	} {
-		if err := os.WriteFile(rel, []byte(src), 0o600); err != nil {
-			t.Fatal(err)
-		}
-		env, err := LoadEnvironment(rel, true)
-		if err != nil || !filepath.IsAbs(want(env)) || !strings.HasPrefix(want(env), dir) {
-			t.Fatalf("%s: %+v, %v", src, env, err)
-		}
-	}
-}
-
-// TestEnvironmentFileIsNotPartOfThePackage: millstream.yaml at a package's root changes neither its files nor its
-// hash.
 func TestEnvironmentFileIsNotPartOfThePackage(t *testing.T) {
 	t.Parallel()
 	dir := testdir.New(t)
@@ -465,15 +567,5 @@ func TestParseLockErrors(t *testing.T) {
 				t.Fatalf("err = %v, want %q", err, tt.want)
 			}
 		})
-	}
-}
-
-func TestStoreConfig(t *testing.T) {
-	if (StoreConfig{}).Set() || (StoreConfig{}).Path("d.db") != "d.db" {
-		t.Fatal("the zero store config")
-	}
-	c := StoreConfig{SQLitePath: "s.db"}
-	if !c.Set() || c.Path("d.db") != "s.db" {
-		t.Fatal("a SQLite path")
 	}
 }

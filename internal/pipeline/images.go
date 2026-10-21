@@ -119,7 +119,7 @@ func (g Registry) Resolve(pkg *Package, ref string) (*Action, error) {
 	if err != nil {
 		return nil, fmt.Errorf("registry action %s: %w", ref, err)
 	}
-	repo := prefix + "/" + name
+	repo := strings.TrimSuffix(prefix, "/") + "/" + name
 	version, err := g.version(pkg, ref, repo, want)
 	if err != nil {
 		return nil, fmt.Errorf("registry action %s: %w", ref, err)

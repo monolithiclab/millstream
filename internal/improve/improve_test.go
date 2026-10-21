@@ -32,7 +32,7 @@ func TestMain(m *testing.M) {
 		if files, err = Files(env); err == nil {
 			if checked, err = pipeline.FromFiles("", files); err == nil {
 				checkDiags = pipeline.Check(checked, pipeline.Resolver{}, func(string) (string, bool) { return "", false },
-					pipeline.CheckOptions{LessonsMaxTokens: env.LessonsMaxTokens,
+					pipeline.CheckOptions{LessonsMaxTokens: env.Lessons.MaxTokens,
 						Secrets: func(string) pipeline.SecretLookup {
 							return func(string) (string, error) { return "set", nil }
 						}})

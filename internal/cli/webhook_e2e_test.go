@@ -29,12 +29,12 @@ func Test_webhookOnPostgres(t *testing.T) {
 	dir := t.TempDir()
 	pool := selfSigned(t, dir)
 	envFile := filepath.Join(dir, "millstream.yaml")
-	if err := os.WriteFile(envFile, []byte("store: { postgres: { dsn: { env: MILLSTREAM_DSN } } }\n"+
+	if err := os.WriteFile(envFile, []byte("store: { dsn: \""+dsn+"\" }\n"+
 		"listen: 127.0.0.1:0\nauth: { token: { env: MILLSTREAM_TOKEN } }\ntls: { cert: cert.pem, key: key.pem }\n"),
 		0o600); err != nil {
 		t.Fatal(err)
 	}
-	environ := map[string]string{"MILLSTREAM_DSN": dsn, "MILLSTREAM_TOKEN": testToken}
+	environ := map[string]string{"MILLSTREAM_TOKEN": testToken}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 	serving := regexp.MustCompile(`serving the UI and the API on https://(127\.0\.0\.1:\d+)/`)

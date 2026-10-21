@@ -42,7 +42,7 @@ func newImproveHost(rt *Runtime, env *pipeline.Environment, def string) (*improv
 	if err != nil {
 		return nil, err
 	}
-	pkg, err := pipeline.Materialize(packageDir(rt, env), files)
+	pkg, err := pipeline.Materialize(packageDir(env), files)
 	if err != nil {
 		return nil, fmt.Errorf("the improve package: %w", err)
 	}
@@ -203,7 +203,7 @@ func (c ImproveCmd) direct(rt *Runtime, payload json.RawMessage) error {
 		e, err := engine.New(engine.Options{
 			Store: st, Logger: log, LeaseTTL: c.LeaseTTL, Env: rt.Env, Secrets: im.secrets(secrets(rt, env)),
 			NoCron: true, Artifacts: arts, Resolver: resolver(rt, env, false), Agents: agents(rt, env),
-			Notifier: notifier(rt, env, log), PackageDir: packageDir(rt, env), Check: im.check(checkOptions(rt, env)),
+			Notifier: notifier(rt, env, log), PackageDir: packageDir(env), Check: im.check(checkOptions(rt, env)),
 			Leadership: engine.Leadership{ID: id}, Improve: env.Improve, Proposals: proposalOptions(rt, env, bt),
 		})
 		if err != nil {

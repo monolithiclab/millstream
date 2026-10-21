@@ -26,11 +26,10 @@ func Test_serveOnPostgres(t *testing.T) {
 	dsn := pgtest.DSN(t)
 	dir := t.TempDir()
 	envFile := filepath.Join(dir, "millstream.yaml")
-	if err := os.WriteFile(envFile, []byte("store: { postgres: { dsn: { env: MILLSTREAM_DSN } } }\n"+
-		"listen: 127.0.0.1:0\nartifacts: { local: { path: state/artifacts } }\n"), 0o600); err != nil {
+	if err := os.WriteFile(envFile, []byte("listen: 127.0.0.1:0\nartifacts: { url: file://state/artifacts }\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	environ := map[string]string{"MILLSTREAM_DSN": dsn, "USER": "ops", "PATH": os.Getenv("PATH")}
+	environ := map[string]string{"MILLSTREAM_STORE_DSN": dsn, "USER": "ops", "PATH": os.Getenv("PATH")}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
@@ -65,7 +64,7 @@ func Test_serveOnPostgres(t *testing.T) {
 	}()
 
 	client := func(argv ...string) (int, string, string) {
-		env := map[string]string{ServerEnv: base, "MILLSTREAM_DSN": dsn}
+		env := map[string]string{ServerEnv: base, "MILLSTREAM_STORE_DSN": dsn}
 		return runCLICtx(t, ctx, env, append([]string{"--env-file", envFile}, argv...)...)
 	}
 	// An internal error names nothing to the client (the API logs the cause, not the store's internals): the serve

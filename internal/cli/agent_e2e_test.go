@@ -55,7 +55,7 @@ func Test_runAgentRecordReplay(t *testing.T) {
 		}
 		env["MILLSTREAM_HARNESS_MODE"] = mode
 		db := migratedDB(t)
-		code, out, errOut := runCLICtx(t, context.Background(), env, "--db", db, "--env-file", envFile, "run", "--once",
+		code, out, errOut := runCLICtx(t, context.Background(), env, "--db", dsn(db), "--env-file", envFile, "run", "--once",
 			"--request-id", "r1", pkg)
 		if code != 0 || out != want || !strings.Contains(errOut, "agent running without a sandbox") {
 			t.Fatalf("%s: code %d\nstdout:\n%s\nstderr:\n%s", mode, code, out, errOut)

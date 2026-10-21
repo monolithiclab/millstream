@@ -97,7 +97,7 @@ func newAPISecurity(rt *Runtime, env *pipeline.Environment, listen string) (apiS
 
 // apiTLS is the API server's TLS configuration from tls, nil without it.
 func apiTLS(env *pipeline.Environment) (*tls.Config, error) {
-	if env.TLS == nil {
+	if env.TLS.Cert == "" {
 		return nil, nil
 	}
 	cert, err := tls.LoadX509KeyPair(env.TLS.Cert, env.TLS.Key)
@@ -112,22 +112,22 @@ func apiTLS(env *pipeline.Environment) (*tls.Config, error) {
 // takes state-changing requests from ui.baseUrl's origin; the session cookie is Secure when the UI is reached over
 // HTTPS: tls, a non-loopback listener (behind a TLS-terminating proxy) or an https ui.baseUrl.
 func apiAuth(rt *Runtime, env *pipeline.Environment, listen string) (*api.Auth, error) {
-	if env.AuthToken == nil {
+	if env.Auth.Token == nil {
 		return nil, nil
 	}
-	token, err := env.AuthToken.Token("auth.token", rt.Env)
+	token, err := env.Auth.Token.Token("auth.token", rt.Env)
 	if err != nil {
 		return nil, err
 	}
-	a := &api.Auth{Token: token, User: env.AuthUser, MetricsPublic: env.MetricsPublic,
-		SecureCookie: env.TLS != nil || api.CheckLoopback(listen) != nil, Sessions: api.NewSessions()}
+	a := &api.Auth{Token: token, User: env.Auth.User, MetricsPublic: env.Metrics.Public,
+		SecureCookie: env.TLS.Cert != "" || api.CheckLoopback(listen) != nil, Sessions: api.NewSessions()}
 	if host, _, err := net.SplitHostPort(listen); err == nil && host != "" {
 		if ip := net.ParseIP(host); ip == nil || !ip.IsUnspecified() {
 			a.Hosts = append(a.Hosts, host)
 		}
 	}
-	if env.UIBaseURL != "" {
-		u, err := url.Parse(env.UIBaseURL)
+	if env.UI.BaseURL != "" {
+		u, err := url.Parse(env.UI.BaseURL)
 		if err != nil {
 			return nil, fmt.Errorf("ui.baseUrl: %w", err)
 		}

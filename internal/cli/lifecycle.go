@@ -46,7 +46,7 @@ func (c ApplyCmd) Run(rt *Runtime) error {
 		// its backtest on local history.
 		mode := env.EffectiveMode(pipeline.ModeDevelopment)
 		e, err := engine.New(engine.Options{Store: st, Env: rt.Env, Secrets: secrets(rt, env),
-			Resolver: resolver(rt, env, false), Check: checkOptions(rt, env), PackageDir: packageDir(rt, env),
+			Resolver: resolver(rt, env, false), Check: checkOptions(rt, env), PackageDir: packageDir(env),
 			Agents: agents(rt, env), Mode: mode,
 			Proposals: proposalOptions(rt, env, newBacktester(rt, env, st, nil, mode, nil))})
 		if err != nil {

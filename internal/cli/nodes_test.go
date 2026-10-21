@@ -82,7 +82,7 @@ func Test_nodeJoinsAndDrains(t *testing.T) {
 	})
 	dir := testdir.New(t)
 	var out, errb bytes.Buffer
-	code := Run(ctx, []string{"--db", unusedDB(), "node", "--join", "https://engine:7070", "--state-dir", dir,
+	code := Run(ctx, []string{"--db", dsn(unusedDB()), "node", "--join", "https://engine:7070", "--state-dir", dir,
 		"--labels", "gpu=true", "--slots", "2"}, IO{In: strings.NewReader(""), Out: &out, Err: &errb}, "dev",
 		func(rt *Runtime) {
 			rt.Env = func(k string) (string, bool) { v, ok := map[string]string{NodeTokenEnv: testToken}[k]; return v, ok }
@@ -107,7 +107,7 @@ func Test_nodeJoinsAndDrains(t *testing.T) {
 	}
 }
 
-// artifacts.s3 builds the S3 store with its credentials' sources, else the AWS variables; node.token is read from
+// An s3:// artifacts.url builds the S3 store from the AWS variables; node.token is read from
 // its source, and refused, as check refuses it, when too short.
 func Test_artifactStoreAndNodeToken(t *testing.T) {
 	parse := func(src string) *pipeline.Environment {
@@ -118,24 +118,21 @@ func Test_artifactStoreAndNodeToken(t *testing.T) {
 		return env
 	}
 	rt := func(vars map[string]string) *Runtime {
-		return &Runtime{DB: unusedDB(), Env: func(k string) (string, bool) { v, ok := vars[k]; return v, ok }}
+		return &Runtime{DB: dsn(unusedDB()), Env: func(k string) (string, bool) { v, ok := vars[k]; return v, ok }}
 	}
-	s3env := parse("artifacts: { s3: { bucket: b, endpoint: http://s3.test } }\n")
-	if _, err := artifactStore(rt(nil), s3env); err == nil {
-		t.Error("an S3 store without credentials")
-	}
-	if a, err := artifactStore(rt(map[string]string{"AWS_ACCESS_KEY_ID": "k", "AWS_SECRET_ACCESS_KEY": "s"}), s3env); err != nil ||
-		fmt.Sprintf("%T", a) != "*s3.Store" {
-		t.Errorf("S3 store from the AWS variables = %T, %v", a, err)
-	}
-	sources := parse("artifacts: { s3: { bucket: b, accessKeyId: { env: K }, secretAccessKey: { env: S } } }\n")
-	for _, vars := range []map[string]string{{"S": "s"}, {"K": "k"}} {
-		if _, err := artifactStore(rt(vars), sources); err == nil {
-			t.Errorf("S3 store with %v", vars)
+	s3env := parse("artifacts: { url: s3://b/pre }\n")
+	for _, vars := range []map[string]string{nil, {"AWS_ACCESS_KEY_ID": "k"}, {"AWS_SECRET_ACCESS_KEY": "s"}} {
+		if _, err := artifactStore(rt(vars), s3env); err == nil || !strings.Contains(err.Error(), "AWS_ACCESS_KEY_ID") {
+			t.Errorf("an S3 store with %v: %v", vars, err)
 		}
 	}
-	if _, err := artifactStore(rt(map[string]string{"K": "k", "S": "s"}), sources); err != nil {
-		t.Error(err)
+	if a, err := artifactStore(rt(map[string]string{"AWS_ACCESS_KEY_ID": "k", "AWS_SECRET_ACCESS_KEY": "s",
+		"AWS_ENDPOINT_URL": "http://s3.test"}), s3env); err != nil || fmt.Sprintf("%T", a) != "*s3.Store" {
+		t.Errorf("S3 store from the AWS variables = %T, %v", a, err)
+	}
+	if _, err := artifactStore(rt(map[string]string{"AWS_ACCESS_KEY_ID": "k", "AWS_SECRET_ACCESS_KEY": "s",
+		"AWS_ENDPOINT_URL": "s3.test"}), s3env); err == nil || !strings.Contains(err.Error(), "AWS_ENDPOINT_URL") {
+		t.Errorf("an endpoint without a scheme: %v", err)
 	}
 	if a, err := artifactStore(rt(nil), parse("")); err != nil || fmt.Sprintf("%T", a) != "*artifacts.Dir" {
 		t.Errorf("default store = %T, %v", a, err)

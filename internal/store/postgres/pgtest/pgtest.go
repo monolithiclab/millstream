@@ -57,8 +57,8 @@ var (
 // errNoDocker is why the tests skip without Docker.
 var errNoDocker = errors.New("postgres tests skipped: Docker is unavailable")
 
-// DSN returns the DSN of a new database for t, a copy of the migrated template, superuser access. It skips t when
-// Docker is unavailable, and fails it when the server cannot start.
+// DSN returns the DSN of a new database for t, a copy of the migrated template, superuser access, its password in
+// PGPASSWORD. It skips t when Docker is unavailable, and fails it when the server cannot start.
 func DSN(t testing.TB) string {
 	t.Helper()
 	s, err := started()
@@ -81,7 +81,7 @@ func DSN(t testing.TB) string {
 		defer s.mu.Unlock()
 		_, _ = s.admin.Exec(context.Background(), `DROP DATABASE IF EXISTS `+name+` WITH (FORCE)`)
 	})
-	return s.dsn(name)
+	return "postgres://postgres@" + s.addr + "/" + name + "?sslmode=disable"
 }
 
 // Database returns the name of the database dsn names, for the queries Admin runs about it.
@@ -151,6 +151,11 @@ func start() (*server, error) {
 		return fail(fmt.Errorf("postgres port: %w", err))
 	}
 	s.addr = strings.TrimSpace(strings.SplitN(port, "\n", 2)[0])
+	// The DSNs DSN returns hold no password, as store.dsn may not: libpq's variable supplies it, to this process
+	// and the commands it starts.
+	if err := os.Setenv("PGPASSWORD", password); err != nil {
+		return fail(err)
+	}
 	if s.admin, err = connect(s.dsn("postgres")); err != nil {
 		return fail(err)
 	}

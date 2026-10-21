@@ -41,8 +41,7 @@ const (
 func newNodeDeployment(t *testing.T) *failover {
 	t.Helper()
 	f := newFailover(t)
-	if err := os.WriteFile(f.envFile, []byte("store: { postgres: { dsn: { env: MILLSTREAM_DSN } } }\n"+
-		"listen: 127.0.0.1:0\nauth: { token: { env: MILLSTREAM_TOKEN } }\n"+failoverEngine+
+	if err := os.WriteFile(f.envFile, []byte("listen: 127.0.0.1:0\nauth: { token: { env: MILLSTREAM_TOKEN } }\n"+failoverEngine+
 		"node: { embedded: false, token: { env: MILLSTREAM_NODE_TOKEN } }\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}

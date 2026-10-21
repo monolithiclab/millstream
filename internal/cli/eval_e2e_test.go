@@ -45,7 +45,7 @@ func Test_evalCommand(t *testing.T) {
 	}
 	srv.Close()
 	for i, want := range []string{`keyed\s+1/1\s+-\s+\$0\.0000\s+1\.00\s+-\n`, `keyed\s+1/1\s+-\s+\$0\.0000\s+1\.00\s+1\.00\n`} {
-		out, _ := mustRun(t, 0, "--db", db, "eval", action)
+		out, _ := mustRun(t, 0, "--db", dsn(db), "eval", action)
 		if !regexp.MustCompile(want).MatchString(out) {
 			t.Fatalf("replay %d:\n%s", i, out)
 		}

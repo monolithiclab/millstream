@@ -57,7 +57,7 @@ func (c ServeCmd) Run(rt *Runtime) error {
 	if c.Slots <= 0 || c.LeaseTTL <= 0 {
 		return usageError("--slots and --lease-ttl must be positive")
 	}
-	listen := cmp.Or(c.Listen, env.Listen, env.UIListen, defaultListen)
+	listen := cmp.Or(c.Listen, env.Listen, env.UI.Listen, defaultListen)
 	if err := checkListen(listen, env); err != nil {
 		return err
 	}
@@ -73,7 +73,7 @@ func (c ServeCmd) Run(rt *Runtime) error {
 	if err != nil {
 		return err
 	}
-	if identity(rt) == "" && env.AuthToken == nil {
+	if identity(rt) == "" && env.Auth.Token == nil {
 		return usageError("serve: no user to record review decisions under: set $USER, or auth.token and auth.user")
 	}
 	var site *site
@@ -97,7 +97,7 @@ func (c ServeCmd) serveOn(ctx context.Context, rt *Runtime, env *pipeline.Enviro
 	s := &server{cmd: c, rt: rt, env: env, log: log, site: site, sec: sec, id: newEngineID(), arts: arts,
 		nodeToken: nodeToken}
 	s.open, s.run = s.acquire, s.term
-	if rt.Store == nil && env.Store.PostgresDSN != nil {
+	if _, onSQLite := env.Store.SQLitePath(); rt.Store == nil && !onSQLite {
 		return s.lead(ctx)
 	}
 	return withStoreMode(rt, engineStore, postgres.Options{}, func(st store.Store) error {
@@ -153,7 +153,7 @@ func (s *server) lead(ctx context.Context) error {
 			select {
 			case <-ctx.Done():
 				return nil
-			case <-time.After(cmp.Or(s.env.Engine.LockCheck, postgres.DefaultCheckEvery)):
+			case <-time.After(cmp.Or(time.Duration(s.env.Engine.LockCheck), postgres.DefaultCheckEvery)):
 			}
 			continue
 		}
@@ -239,7 +239,7 @@ func (s *server) standby(ctx context.Context, since time.Time) {
 func (s *server) term(ctx context.Context, st store.Store, lead leadership) error {
 	mode := s.env.EffectiveMode(pipeline.ModeProduction)
 	s.log.Info("leading the deployment", "engine", s.id, "epoch", lead.identity.Epoch, "listen", s.site.url,
-		"embeddedNode", s.env.NodeEmbedded, "mode", mode)
+		"embeddedNode", s.env.Node.Embedded, "mode", mode)
 	rt, env := s.rt, s.env
 	notes := notifier(rt, env, s.log)
 	bt := newBacktester(rt, env, st, s.arts, mode, s.log)
@@ -252,7 +252,7 @@ func (s *server) term(ctx context.Context, st store.Store, lead leadership) erro
 	e, err := engine.New(engine.Options{
 		Store: st, Logger: s.log, LeaseTTL: s.cmd.LeaseTTL, Env: rt.Env, Secrets: im.secrets(secrets(rt, env)),
 		Artifacts: s.arts, Resolver: resolver(rt, env, false), Agents: agents(rt, env),
-		Notifier: notes, PackageDir: packageDir(rt, env), Check: im.check(checkOptions(rt, env)),
+		Notifier: notes, PackageDir: packageDir(env), Check: im.check(checkOptions(rt, env)),
 		Leadership: engine.Leadership{ID: s.id, Epoch: lead.identity.Epoch}, Takeover: true, Retention: env.Retention,
 		Improve: env.Improve, Proposals: proposalOptions(rt, env, bt), Mode: mode,
 	})
@@ -285,7 +285,7 @@ func (s *server) term(ctx context.Context, st store.Store, lead leadership) erro
 			}
 		}
 	}
-	h := engineHost{site: s.site, sec: s.sec, embedded: env.NodeEmbedded, slots: s.cmd.Slots, leaseTTL: s.cmd.LeaseTTL,
+	h := engineHost{site: s.site, sec: s.sec, embedded: env.Node.Embedded, slots: s.cmd.Slots, leaseTTL: s.cmd.LeaseTTL,
 		lead: lead, arts: s.arts, nodeToken: s.nodeToken, mode: mode, backtests: bt}
 	return h.run(ctx, rt, env, st, e, notes, s.log, wait)
 }
@@ -336,10 +336,10 @@ func newEngineID() string {
 
 // readNodeToken reads node.token, empty without it: an engine serves remote nodes only with it (spec section 15.7).
 func readNodeToken(rt *Runtime, env *pipeline.Environment) (string, error) {
-	if env.NodeToken == nil {
+	if env.Node.Token == nil {
 		return "", nil
 	}
-	return env.NodeToken.Token("node.token", rt.Env)
+	return env.Node.Token.Token("node.token", rt.Env)
 }
 
 // checkListen refuses a listen address that is not a loopback one without auth.token: exposed, the API requires the
@@ -348,7 +348,7 @@ func checkListen(listen string, env *pipeline.Environment) error {
 	if _, _, err := net.SplitHostPort(listen); err != nil {
 		return usageError(fmt.Sprintf("listen %q: want host:port, such as 127.0.0.1:7070", listen))
 	}
-	if api.CheckLoopback(listen) != nil && env.AuthToken == nil {
+	if api.CheckLoopback(listen) != nil && env.Auth.Token == nil {
 		return usageError(fmt.Sprintf("listen %s is not a loopback address: a non-loopback listener requires "+
 			"auth.token (spec section 15.2)", listen))
 	}

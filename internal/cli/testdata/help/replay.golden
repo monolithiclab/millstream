@@ -36,9 +36,11 @@ Flags:
   --var=KEY=VALUE;...         With --step or --stream, set a variable (name=value).
 
 Global flags:
-  --db=DB                     State database path (created with its directory) (default:
-                              .millstream/millstream.db).
-  --env-file=ENV_FILE         Environment file (default: ./millstream.yaml when it exists).
+  --db=DSN                    Store DSN, overriding store.dsn: sqlite://<path> (created with its
+                              directory) or postgres://host/db (default:
+                              sqlite://.millstream/millstream.db).
+  --env-file=ENV_FILE         Environment file (default: $MILLSTREAM_ENV_FILE, else
+                              ./millstream.yaml when it exists).
   --server=URL                Change state through the API of the engine serving at this URL
                               (default: $MILLSTREAM_SERVER; token: $MILLSTREAM_TOKEN).
   --direct                    Change state from this process, not through --server; on Postgres this

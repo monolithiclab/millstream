@@ -62,10 +62,12 @@ func TestLockAndEnvironmentErrors(t *testing.T) {
 		{"bad environment file for lock", env, []string{"--env-file", bad, "lock", pkg}, 1, "listen"},
 		{"bad environment file for test", env, []string{"--env-file", bad, "test", "pipeline", pkg}, 1, "listen"},
 		{"no container runtime", nil, []string{"--env-file", envFile, "lock", pkg}, 1, "needs Docker or Podman"},
-		{"--db and a store key", env, []string{"--db", unusedDB(), "--env-file", fixture("environments/sqlite.yaml"),
-			"status"}, 2, "--db: the environment file's store key names the store already"},
-		{"postgres DSN unset", env, []string{"--env-file", fixture("environments/postgres.yaml"), "status"}, 1,
-			"store.postgres.dsn: environment variable MILLSTREAM_DSN is not set"},
+		{"--db over store.dsn", env, []string{"--db", "/x/m.db", "--env-file", fixture("environments/sqlite.yaml"),
+			"status"}, 2, "--db: want a DSN, such as sqlite:///x/m.db"},
+		{"--db with a password", env, []string{"--db", "postgres://u:pw@db/ms", "status"}, 2,
+			"--db: store.dsn: a password in the DSN is refused"},
+		{"misspelt variable", map[string]string{"MILLSTREAM_STORE_PATH": "x"}, []string{"status"}, 1,
+			"MILLSTREAM_STORE_PATH: no such setting"},
 		{"no package", env, []string{"lock", filepath.Join(pkg, "absent")}, 1, "load package"},
 	}
 	for _, tt := range tests {

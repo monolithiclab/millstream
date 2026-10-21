@@ -1,1 +1,1 @@
-store: { sqlite: { path: state/millstream.db } }
+store: { dsn: sqlite://state/millstream.db }

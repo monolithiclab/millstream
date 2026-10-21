@@ -78,7 +78,7 @@ func TestForProposals(t *testing.T) {
 		t.Fatal(err)
 	}
 	res, err := ForProposals(New(Options{Store: seeded, Launchers: launchers(), Timeout: time.Minute,
-		Improve: pipeline.Improve{BacktestSample: 1}}), 0).Backtest(ctx, proposals.BacktestRequest{Pipeline: "bt",
+		Improve: pipeline.Improve{Backtest: pipeline.BacktestConfig{Sample: 1}}}), 0).Backtest(ctx, proposals.BacktestRequest{Pipeline: "bt",
 		BaseRevision: historyHash, Patch: string(harmless), Steps: []string{"score"}})
 	var rep Report
 	if err != nil || !res.Passed || json.Unmarshal(res.Report, &rep) != nil || rep.Sampled != 1 ||
@@ -100,7 +100,7 @@ func TestReserve(t *testing.T) {
 	now := time.Date(2026, 10, 20, 9, 0, 0, 0, time.UTC)
 	ledger := &Ledger{}
 	ledger.Charge(now, 1)
-	b := New(Options{Budget: ledger, Now: func() time.Time { return now }, Improve: pipeline.Improve{BudgetDayUSD: 5}})
+	b := New(Options{Budget: ledger, Now: func() time.Time { return now }, Improve: pipeline.Improve{Budget: pipeline.BudgetConfig{DayUSD: 5}}})
 	left, limited, release, err := b.reserve()
 	if err != nil || !limited || left != 4 {
 		t.Fatalf("reserve = %v, %v, %v", left, limited, err)

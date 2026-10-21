@@ -71,7 +71,7 @@ func TestNodeOverTLS(t *testing.T) {
 	dir := t.TempDir()
 	caPath, certPath, keyPath := writeCA(t, dir)
 	f := &failover{t: t, db: dbPath(t), dir: dir, envFile: filepath.Join(dir, "millstream.yaml")}
-	if err := os.WriteFile(f.envFile, []byte("store: { sqlite: { path: "+f.db+" } }\nlisten: 127.0.0.1:0\n"+
+	if err := os.WriteFile(f.envFile, []byte("listen: 127.0.0.1:0\n"+
 		"tls: { cert: "+certPath+", key: "+keyPath+" }\n"+
 		"node: { embedded: false, token: { env: MILLSTREAM_NODE_TOKEN } }\n"), 0o600); err != nil {
 		t.Fatal(err)

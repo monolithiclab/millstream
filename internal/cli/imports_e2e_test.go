@@ -15,7 +15,7 @@ import (
 func Test_runImports(t *testing.T) {
 	t.Parallel()
 	src, deals, db := runPackage(t, "run"), runPackage(t, "imports"), migratedDB(t)
-	out, _ := mustRun(t, 0, "--db", db, "run", "--once", "--request-id", "r1", src, deals)
+	out, _ := mustRun(t, 0, "--db", dsn(db), "run", "--once", "--request-id", "r1", src, deals)
 	importRun := ids.ImportRun("approved", "run_r1_adhoc")
 	for _, want := range []string{
 		"listings run_r1_adhoc succeeded\n",
@@ -25,12 +25,12 @@ func Test_runImports(t *testing.T) {
 			t.Fatalf("summary lacks %q:\n%s", want, out)
 		}
 	}
-	out, _ = mustRun(t, 0, "--db", db, "replay", "--pipeline", "deals", "--stream", "approved", "--since", "7d",
+	out, _ = mustRun(t, 0, "--db", dsn(db), "replay", "--pipeline", "deals", "--stream", "approved", "--since", "7d",
 		"--request-id", "bf")
 	if out != "run_replay_bf\n" {
 		t.Fatalf("replay --stream stdout = %q", out)
 	}
-	out, _ = mustRun(t, 0, "--db", db, "run", "--once", "--request-id", "r1", src, deals)
+	out, _ = mustRun(t, 0, "--db", dsn(db), "run", "--once", "--request-id", "r1", src, deals)
 	if !strings.Contains(out, "deals run_replay_bf succeeded\n") {
 		t.Fatalf("summary after the back-fill:\n%s", out)
 	}

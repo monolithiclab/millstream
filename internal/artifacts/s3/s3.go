@@ -60,10 +60,18 @@ var (
 	_ artifacts.Toucher   = (*Store)(nil)
 )
 
+// FromEnv is the Config of artifacts.url's s3://<bucket>[/<prefix>], completed from the AWS SDK's variables read
+// through lookup: AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION and AWS_ENDPOINT_URL.
+func FromEnv(bucket, prefix string, lookup func(string) (string, bool)) Config {
+	get := func(name string) string { v, _ := lookup(name); return v }
+	return Config{Bucket: bucket, Prefix: prefix, AccessKeyID: get("AWS_ACCESS_KEY_ID"),
+		SecretAccessKey: get("AWS_SECRET_ACCESS_KEY"), Region: get("AWS_REGION"), Endpoint: get("AWS_ENDPOINT_URL")}
+}
+
 // New returns the store of cfg.
 func New(cfg Config) (*Store, error) {
 	if cfg.Bucket == "" || cfg.AccessKeyID == "" || cfg.SecretAccessKey == "" {
-		return nil, errors.New("artifacts.s3: a bucket and credentials are required")
+		return nil, errors.New("artifacts.url: an s3:// bucket needs AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY")
 	}
 	if cfg.Region == "" {
 		cfg.Region = DefaultRegion
@@ -73,7 +81,7 @@ func New(cfg Config) (*Store, error) {
 	}
 	u, err := url.Parse(cfg.Endpoint)
 	if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" {
-		return nil, fmt.Errorf("artifacts.s3.endpoint %q: want an http or https URL", cfg.Endpoint)
+		return nil, fmt.Errorf("AWS_ENDPOINT_URL %q: want an http or https URL", cfg.Endpoint)
 	}
 	if cfg.HTTP == nil {
 		cfg.HTTP = &http.Client{Timeout: 5 * time.Minute}
