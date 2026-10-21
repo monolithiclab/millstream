@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/monolithiclab/millstream/internal/pipeline"
-
 	"github.com/monolithiclab/millstream/internal/testdir"
 )
 
@@ -49,7 +48,7 @@ func Test_initPipeline(t *testing.T) {
 		t.Errorf("--lang sh: stderr %q", errOut)
 	}
 	(&state{t: t}).checkRefusals(t, nil, []refusal{
-		{InitPipelineCmd{Name: "greetings", Dir: parent}, true, "the directory exists and is not empty"},
+		{InitPipelineCmd{Name: "greetings", Dir: parent}, true, "exists and is not empty"},
 		{InitPipelineCmd{Name: "Greetings", Dir: parent}, true, "lowercase letters, digits and single dashes"},
 		{InitActionCmd{Name: "a--b", Dir: parent, Lang: "go"}, true, "lowercase letters, digits and single dashes"},
 	})
@@ -98,5 +97,23 @@ func Test_initAction(t *testing.T) {
 				t.Fatalf("action = %+v", a)
 			}
 		})
+	}
+}
+
+// Test_initEnvironment: init environment writes the default file, says what is next, and refuses to overwrite it.
+func Test_initEnvironment(t *testing.T) {
+	t.Parallel()
+	dir := testdir.New(t)
+	out, _ := mustRun(t, 0, "init", "environment", "--dir", dir)
+	path := filepath.Join(dir, "millstream.yaml")
+	if !strings.HasPrefix(out, "created "+path+"\nnext: ") {
+		t.Fatalf("stdout = %q", out)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil || string(got) != string(pipeline.DefaultFile()) {
+		t.Fatalf("file: %v, %d bytes", err, len(got))
+	}
+	if _, errOut := mustRun(t, 2, "init", "environment", "--dir", dir); !strings.Contains(errOut, "exists and is not empty") {
+		t.Errorf("second run: stderr %q", errOut)
 	}
 }

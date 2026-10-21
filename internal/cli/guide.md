@@ -76,6 +76,11 @@ The environment file, `millstream.yaml` by default, says where the packages run:
 Postgres), `artifacts`, `listen`, `auth`, `tls`, `node`, `secrets`, `retention`, `ui` and `improve`. The
 platform design (section 14) and the deployment guide describe every key.
 
+Three layers set every key, the last one winning: the environment file, then a `MILLSTREAM_` variable, then a
+flag. A variable is `MILLSTREAM_<SECTION>_<KEY>` in upper snake case, down the key's path: `ui.baseUrl` is
+`MILLSTREAM_UI_BASE_URL`, `improve.git.author.name` is `MILLSTREAM_IMPROVE_GIT_AUTHOR_NAME`. `millstream init
+environment` writes the file with every key commented out at its default, each line naming its variable.
+
 - `MILLSTREAM_SERVER`, `MILLSTREAM_TOKEN`: the engine API that commands changing state go through, and
   its bearer token.
 - `MILLSTREAM_VAR_<NAME>`: a pipeline variable, its name in upper snake case (`minScore` reads

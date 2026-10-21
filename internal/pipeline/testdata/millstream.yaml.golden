@@ -1,0 +1,93 @@
+## millstream.yaml: the environment file (spec section 14).
+##
+## Every key is commented out at its default, or at an example when it has none: uncomment and edit the ones
+## to change. The MILLSTREAM_* variable named on each line overrides this file, and a flag overrides both.
+
+# environment: development   # production or development (spec section 11.2); empty: serve defaults to production, run to development (MILLSTREAM_ENVIRONMENT)
+
+# store:
+#   dsn: sqlite://.millstream/millstream.db   # sqlite://<path>, or postgres://[host][:port]/[database][?options] with libpq's PG* variables (PGPASSWORD) for the rest (MILLSTREAM_STORE_DSN)
+
+# artifacts:
+#   url: file://.millstream/artifacts   # file://<dir>, or s3://<bucket>[/<prefix>] with the AWS_* variables for credentials, region and endpoint; empty: artifacts beside the SQLite database (else beside .millstream/) (MILLSTREAM_ARTIFACTS_URL)
+
+# listen: 0.0.0.0:7070   # host:port serve serves the API and the UI on (run: after ui.listen); empty: 127.0.0.1:7070 (MILLSTREAM_LISTEN)
+
+# auth:
+#   token: { env: MILLSTREAM_AUTH_TOKEN }   # source of the API's bearer token (at least 32 characters); unset: the API serves loopback clients only (MILLSTREAM_AUTH_TOKEN)
+#   user: operator   # who decides the reviews of a token session (MILLSTREAM_AUTH_USER)
+
+# tls:
+#   cert: /etc/millstream/tls/cert.pem   # PEM certificate chain serve and run serve HTTPS with; unset: plain HTTP behind a TLS proxy (MILLSTREAM_TLS_CERT)
+#   key: /etc/millstream/tls/key.pem   # PEM private key of tls.cert (MILLSTREAM_TLS_KEY)
+
+# metrics:
+#   public: false   # /metrics answers without the token (MILLSTREAM_METRICS_PUBLIC)
+
+# node:
+#   embedded: true   # serve runs a node inside the engine (MILLSTREAM_NODE_EMBEDDED)
+#   token: { env: MILLSTREAM_NODE_TOKEN }   # source of the token remote nodes join with (at least 32 characters); unset: no remote nodes (MILLSTREAM_NODE_TOKEN)
+
+# registries: { lab: ghcr.io/monolithiclab/millstream-actions }   # registry namespace to OCI repository prefix, such as { lab: ghcr.io/monolithiclab/millstream-actions } (MILLSTREAM_REGISTRIES)
+
+# secrets: { my-pipeline: { apiKey: { env: MY_API_KEY } } }   # per pipeline, each secret's source ({ env } or { file }); unset: secrets read MILLSTREAM_SECRET_<NAME> (MILLSTREAM_SECRETS)
+
+# retention:
+#   events: 90d   # how long events are kept, such as 90d; unset: for ever (MILLSTREAM_RETENTION_EVENTS)
+#   transcripts: 30d   # how long agent transcripts are kept, such as 30d; unset: for ever (MILLSTREAM_RETENTION_TRANSCRIPTS)
+#   rollups: 400d   # how long metric rollups are kept, such as 400d; unset: for ever (MILLSTREAM_RETENTION_ROLLUPS)
+#   every: 1h   # how often the engine's retention job runs (MILLSTREAM_RETENTION_EVERY)
+
+# lessons:
+#   maxTokens: 2000   # size limit of a lessons file, in approximate tokens (MILLSTREAM_LESSONS_MAX_TOKENS)
+
+# ui:
+#   baseUrl: http://127.0.0.1:7070   # where the web UI is reached, for inbox links and the origins a token server accepts (MILLSTREAM_UI_BASE_URL)
+#   listen: 127.0.0.1:7071   # loopback host:port run serves the API and the UI on; unset: listen, else 127.0.0.1:7070 (MILLSTREAM_UI_LISTEN)
+
+# improve:
+#   enabled: false   # run the improve pipeline (development only) (MILLSTREAM_IMPROVE_ENABLED)
+#   harness: claude-code   # agent harness drafting proposals: claude-code or api (MILLSTREAM_IMPROVE_HARNESS)
+#   minSeverity: warning   # the least severity of the insights considered: info, warning or error (MILLSTREAM_IMPROVE_MIN_SEVERITY)
+#   publish: patch-file   # publisher of accepted proposals: apply, patch-file, git-pr-gh or git-pr-glab (MILLSTREAM_IMPROVE_PUBLISH)
+#   patchFile:
+#     dir: ./patches   # where the patch-file publisher writes each accepted proposal's patch (MILLSTREAM_IMPROVE_PATCH_FILE_DIR)
+#   git:
+#     repo: https://git.example.com/org/repo.git   # clone URL of the repository pull requests are opened on (MILLSTREAM_IMPROVE_GIT_REPO)
+#     base: main   # branch pull requests target (MILLSTREAM_IMPROVE_GIT_BASE)
+#     path: pipelines/{pipeline}   # the package's directory in the repository, {pipeline} for its name; unset: the root (MILLSTREAM_IMPROVE_GIT_PATH)
+#     image: ghcr.io/org/git-pr@sha256:0000000000000000000000000000000000000000000000000000000000000000   # the action's image, with git and the forge's CLI, pinned by digest (MILLSTREAM_IMPROVE_GIT_IMAGE)
+#     env: [GH_TOKEN]   # variables of the engine passed to the action's container, such as [GH_TOKEN] (MILLSTREAM_IMPROVE_GIT_ENV)
+#     author:
+#       name: Millstream   # commit author's name (MILLSTREAM_IMPROVE_GIT_AUTHOR_NAME)
+#       email: millstream@localhost   # commit author's email (MILLSTREAM_IMPROVE_GIT_AUTHOR_EMAIL)
+#   budget:
+#     dayUsd: 5   # what backtests may spend a day, in USD; unset: no limit (MILLSTREAM_IMPROVE_BUDGET_DAY_USD)
+#   evidence:
+#     sample: 500   # items an evidence bundle samples (MILLSTREAM_IMPROVE_EVIDENCE_SAMPLE)
+#     ttl: 30d   # how long an evidence bundle lasts (MILLSTREAM_IMPROVE_EVIDENCE_TTL)
+#   backtest:
+#     sample: 200   # past items a backtest replays (MILLSTREAM_IMPROVE_BACKTEST_SAMPLE)
+#   validation:
+#     timeout: 30m   # how long a proposal's validation may run (MILLSTREAM_IMPROVE_VALIDATION_TIMEOUT)
+#   distill:
+#     minDeliveries: 500   # deliveries of an agent step before a distill is proposed (MILLSTREAM_IMPROVE_DISTILL_MIN_DELIVERIES)
+#     language: go   # language of distilled actions: go, the only one for now (MILLSTREAM_IMPROVE_DISTILL_LANGUAGE)
+#     minAgreement: 0.98   # agreement with the agent a distilled action needs, from 0 to 1 (MILLSTREAM_IMPROVE_DISTILL_MIN_AGREEMENT)
+#     minCoverage: 0.6   # share of the holdout a distilled action must answer, from 0 to 1 (MILLSTREAM_IMPROVE_DISTILL_MIN_COVERAGE)
+#   filter:
+#     maxFalseDrop: 0.01   # share of past approvals a proposed filter may drop, from 0 to 1 (MILLSTREAM_IMPROVE_FILTER_MAX_FALSE_DROP)
+
+# prices: { claude-sonnet-5: { inPerMtok: 3, outPerMtok: 15 } }   # token prices of agent models, by model: { <model>: { inPerMtok, outPerMtok } } in USD per million tokens (MILLSTREAM_PRICES)
+
+# runtime:
+#   container: docker   # container runtime: docker or podman (MILLSTREAM_RUNTIME_CONTAINER)
+
+# agents:
+#   allowUnsandboxed: false   # agents may run without a container sandbox (MILLSTREAM_AGENTS_ALLOW_UNSANDBOXED)
+#   image: ghcr.io/org/agent-sandbox@sha256:0000000000000000000000000000000000000000000000000000000000000000   # image the agent sandbox runs (CA certificates, the claude CLI for claude-code); unset: no sandbox (MILLSTREAM_AGENTS_IMAGE)
+#   linuxBinary: ./millstream-linux-arm64   # Linux build of millstream mounted into the sandbox as the adapter; unset: the running binary, on Linux (MILLSTREAM_AGENTS_LINUX_BINARY)
+
+# engine:
+#   lockCheck: 5s   # how often an idle engine checks its write connection, and the lock with it (MILLSTREAM_ENGINE_LOCK_CHECK)
+#   keepalive: 5s   # period of the write connection's TCP keepalives (MILLSTREAM_ENGINE_KEEPALIVE)

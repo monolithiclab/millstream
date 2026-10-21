@@ -1,6 +1,7 @@
 package pipeline
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"reflect"
@@ -32,10 +33,10 @@ func (d *Duration) UnmarshalYAML(n *yaml.Node) error {
 }
 
 // Setting is one leaf of the environment: its file key, its variable, its default (in the file's syntax, empty
-// without one), its one-line doc, and the field holding its value.
+// without one), an example value for one without, its one-line doc, and the field holding its value.
 type Setting struct {
-	Key, Var, Default, Doc string
-	Value                  reflect.Value
+	Key, Var, Default, Example, Doc string
+	Value                           reflect.Value
 }
 
 // Settings returns e's leaves in declaration order: every field of a section struct that is not a section itself.
@@ -51,7 +52,7 @@ func Settings(e *Environment) []Setting {
 				continue
 			}
 			out = append(out, Setting{Key: k, Var: VarPrefix + n[1:], Default: f.Tag.Get("default"),
-				Doc: f.Tag.Get("doc"), Value: v.Field(i)})
+				Example: f.Tag.Get("example"), Doc: f.Tag.Get("doc"), Value: v.Field(i)})
 		}
 	}
 	walk(reflect.ValueOf(e).Elem(), "", "")
@@ -228,3 +229,31 @@ func decode(n *yaml.Node, v reflect.Value, path string) error {
 // scalarKinds names what a scalar leaf of each kind holds, for decode's errors.
 var scalarKinds = map[reflect.Kind]string{reflect.Bool: "true or false", reflect.Int: "an integer",
 	reflect.Float64: "a number", reflect.String: "a string"}
+
+// DefaultFile is the environment file `millstream init environment` writes: every setting commented out at its
+// default (at an example when it has none), grouped by section, each line naming its variable.
+func DefaultFile() []byte {
+	var b strings.Builder
+	b.WriteString("## millstream.yaml: the environment file (spec section 14).\n##\n" +
+		"## Every key is commented out at its default, or at an example when it has none: uncomment and edit the ones\n" +
+		"## to change. The MILLSTREAM_* variable named on each line overrides this file, and a flag overrides both.\n")
+	var open []string // the sections the last line sits in
+	for _, s := range Settings(Defaults()) {
+		path := strings.Split(s.Key, ".")
+		sections, leaf := path[:len(path)-1], path[len(path)-1]
+		common := 0
+		for common < len(open) && common < len(sections) && open[common] == sections[common] {
+			common++
+		}
+		if common == 0 {
+			b.WriteByte('\n')
+		}
+		for i := common; i < len(sections); i++ {
+			fmt.Fprintf(&b, "# %s%s:\n", strings.Repeat("  ", i), sections[i])
+		}
+		open = sections
+		fmt.Fprintf(&b, "# %s%s: %s   # %s (%s)\n", strings.Repeat("  ", len(sections)), leaf,
+			cmp.Or(s.Default, s.Example), s.Doc, s.Var)
+	}
+	return []byte(b.String())
+}

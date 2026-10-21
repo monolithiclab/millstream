@@ -12,6 +12,7 @@ import (
 type InitCmd struct {
 	Pipeline InitPipelineCmd `cmd:"" help:"Scaffold a pipeline package: a manual trigger, one Go action step, a fixture, an eval and a package test."`
 	Action   InitActionCmd   `cmd:"" help:"Scaffold an action: Go with the SDK, or raw protocol in Python 3 (a POSIX sh JSON implementation is not realistic)."`
+	Env      InitEnvCmd      `cmd:"" name:"environment" help:"Write millstream.yaml, the environment file, with every key commented out at its default."`
 }
 
 // InitPipelineCmd is "millstream init pipeline".
@@ -65,6 +66,31 @@ func (c InitActionCmd) Run(rt *Runtime) error {
 		return nil
 	}
 	fmt.Fprintf(rt.IO.Out, "next: millstream test action %s\n", dir)
+	return nil
+}
+
+// InitEnvCmd is "millstream init environment".
+type InitEnvCmd struct {
+	Dir string `type:"path" help:"The directory to write millstream.yaml in (default: the current one)."`
+}
+
+// Help is the command's detail, printed by its --help.
+func (InitEnvCmd) Help() string {
+	return `Every key is commented out at its default, or at an example when it has none, and each line names the
+MILLSTREAM_* variable that sets it. Uncomment and edit the keys to change.
+
+Examples:
+  millstream init environment
+  millstream init environment --dir /etc/millstream`
+}
+
+// Run writes the file and says what to do next.
+func (c InitEnvCmd) Run(rt *Runtime) error {
+	path, err := scaffold.Environment(dirOrCurrent(c.Dir))
+	if err != nil {
+		return initErr(err)
+	}
+	fmt.Fprintf(rt.IO.Out, "created %s\nnext: uncomment the keys to change, then millstream serve --env-file %s\n", path, path)
 	return nil
 }
 

@@ -97,10 +97,29 @@ func Files(parent, name string, files map[string][]byte) (string, error) {
 	return dir, nil
 }
 
+// Environment writes the default environment file as dir/millstream.yaml and returns its path, refusing to
+// overwrite one.
+func Environment(dir string) (string, error) {
+	path := filepath.Join(dir, pipeline.EnvironmentFile)
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		return "", err
+	}
+	// #nosec G302 G304 -- the user's configuration file, in the directory they name
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+	if errors.Is(err, fs.ErrExist) {
+		return "", fmt.Errorf("%s: %w", path, ErrExists)
+	}
+	if err != nil {
+		return "", err
+	}
+	_, err = f.Write(pipeline.DefaultFile())
+	return path, errors.Join(err, f.Close())
+}
+
 // ErrName and ErrExists are the scaffold's refusals.
 var (
 	ErrName   = errors.New("a name is lowercase letters, digits and single dashes")
-	ErrExists = errors.New("the directory exists and is not empty")
+	ErrExists = errors.New("it exists and is not empty")
 )
 
 // target validates name and returns parent/name, refusing a directory that exists and is not empty.

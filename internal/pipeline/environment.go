@@ -31,23 +31,24 @@ const (
 
 // Environment is the environment file (spec section 14): one section struct per top-level key. Each leaf's tags
 // are its file key (yaml), its variable's name segment (env: MILLSTREAM_<SECTION>_<KEY>), its default in the
-// file's syntax (default; none for a key unset by default or computed from another) and its one-line doc.
+// file's syntax (default; none for a key unset by default or computed from another, which has an example
+// instead) and its one-line doc.
 type Environment struct {
-	Mode       string                             `yaml:"environment" env:"ENVIRONMENT" doc:"production or development (spec section 11.2); empty: serve defaults to production, run to development"`
+	Mode       string                             `yaml:"environment" env:"ENVIRONMENT" example:"development" doc:"production or development (spec section 11.2); empty: serve defaults to production, run to development"`
 	Store      StoreConfig                        `yaml:"store" env:"STORE"`
 	Artifacts  ArtifactsConfig                    `yaml:"artifacts" env:"ARTIFACTS"`
-	Listen     string                             `yaml:"listen" env:"LISTEN" doc:"host:port serve serves the API and the UI on (run: after ui.listen); empty: 127.0.0.1:7070"`
+	Listen     string                             `yaml:"listen" env:"LISTEN" example:"0.0.0.0:7070" doc:"host:port serve serves the API and the UI on (run: after ui.listen); empty: 127.0.0.1:7070"`
 	Auth       AuthConfig                         `yaml:"auth" env:"AUTH"`
 	TLS        TLSConfig                          `yaml:"tls" env:"TLS"`
 	Metrics    MetricsConfig                      `yaml:"metrics" env:"METRICS"`
 	Node       NodeConfig                         `yaml:"node" env:"NODE"`
-	Registries map[string]string                  `yaml:"registries" env:"REGISTRIES" doc:"registry namespace to OCI repository prefix, such as { lab: ghcr.io/monolithiclab/millstream-actions }"`
-	Secrets    map[string]map[string]SecretSource `yaml:"secrets" env:"SECRETS" doc:"per pipeline, each secret's source ({ env } or { file }); unset: secrets read MILLSTREAM_SECRET_<NAME>"`
+	Registries map[string]string                  `yaml:"registries" env:"REGISTRIES" example:"{ lab: ghcr.io/monolithiclab/millstream-actions }" doc:"registry namespace to OCI repository prefix, such as { lab: ghcr.io/monolithiclab/millstream-actions }"`
+	Secrets    map[string]map[string]SecretSource `yaml:"secrets" env:"SECRETS" example:"{ my-pipeline: { apiKey: { env: MY_API_KEY } } }" doc:"per pipeline, each secret's source ({ env } or { file }); unset: secrets read MILLSTREAM_SECRET_<NAME>"`
 	Retention  Retention                          `yaml:"retention" env:"RETENTION"`
 	Lessons    LessonsConfig                      `yaml:"lessons" env:"LESSONS"`
 	UI         UIConfig                           `yaml:"ui" env:"UI"`
 	Improve    Improve                            `yaml:"improve" env:"IMPROVE"`
-	Prices     map[string]Price                   `yaml:"prices" env:"PRICES" doc:"token prices of agent models, by model: { <model>: { inPerMtok, outPerMtok } } in USD per million tokens"`
+	Prices     map[string]Price                   `yaml:"prices" env:"PRICES" example:"{ claude-sonnet-5: { inPerMtok: 3, outPerMtok: 15 } }" doc:"token prices of agent models, by model: { <model>: { inPerMtok, outPerMtok } } in USD per million tokens"`
 	Runtime    RuntimeConfig                      `yaml:"runtime" env:"RUNTIME"`
 	Agents     AgentsConfig                       `yaml:"agents" env:"AGENTS"`
 	Engine     EngineConfig                       `yaml:"engine" env:"ENGINE"`
@@ -63,7 +64,7 @@ func (c StoreConfig) SQLitePath() (string, bool) { return strings.CutPrefix(c.DS
 
 // ArtifactsConfig is the artifacts key: where artifacts are kept (spec section 9.2), named by its URL's scheme.
 type ArtifactsConfig struct {
-	URL string `yaml:"url" env:"URL" doc:"file://<dir>, or s3://<bucket>[/<prefix>] with the AWS_* variables for credentials, region and endpoint; empty: artifacts beside the SQLite database (else beside .millstream/)"`
+	URL string `yaml:"url" env:"URL" example:"file://.millstream/artifacts" doc:"file://<dir>, or s3://<bucket>[/<prefix>] with the AWS_* variables for credentials, region and endpoint; empty: artifacts beside the SQLite database (else beside .millstream/)"`
 }
 
 // Local is the local artifact directory, false unless the URL is file://.
@@ -84,14 +85,14 @@ const (
 
 // AuthConfig is the auth key.
 type AuthConfig struct {
-	Token *SecretSource `yaml:"token" env:"TOKEN" doc:"source of the API's bearer token (at least 32 characters); unset: the API serves loopback clients only"`
+	Token *SecretSource `yaml:"token" env:"TOKEN" example:"{ env: MILLSTREAM_AUTH_TOKEN }" doc:"source of the API's bearer token (at least 32 characters); unset: the API serves loopback clients only"`
 	User  string        `yaml:"user" env:"USER" default:"operator" doc:"who decides the reviews of a token session"`
 }
 
 // TLSConfig is the tls key: a PEM certificate chain and its private key, both or neither.
 type TLSConfig struct {
-	Cert string `yaml:"cert" env:"CERT" doc:"PEM certificate chain serve and run serve HTTPS with; unset: plain HTTP behind a TLS proxy"`
-	Key  string `yaml:"key" env:"KEY" doc:"PEM private key of tls.cert"`
+	Cert string `yaml:"cert" env:"CERT" example:"/etc/millstream/tls/cert.pem" doc:"PEM certificate chain serve and run serve HTTPS with; unset: plain HTTP behind a TLS proxy"`
+	Key  string `yaml:"key" env:"KEY" example:"/etc/millstream/tls/key.pem" doc:"PEM private key of tls.cert"`
 }
 
 // MetricsConfig is the metrics key.
@@ -102,14 +103,14 @@ type MetricsConfig struct {
 // NodeConfig is the node key.
 type NodeConfig struct {
 	Embedded bool          `yaml:"embedded" env:"EMBEDDED" default:"true" doc:"serve runs a node inside the engine"`
-	Token    *SecretSource `yaml:"token" env:"TOKEN" doc:"source of the token remote nodes join with (at least 32 characters); unset: no remote nodes"`
+	Token    *SecretSource `yaml:"token" env:"TOKEN" example:"{ env: MILLSTREAM_NODE_TOKEN }" doc:"source of the token remote nodes join with (at least 32 characters); unset: no remote nodes"`
 }
 
 // Retention is the retention key (spec section 9.3).
 type Retention struct {
-	Events      Duration `yaml:"events" env:"EVENTS" doc:"how long events are kept, such as 90d; unset: for ever"`
-	Transcripts Duration `yaml:"transcripts" env:"TRANSCRIPTS" doc:"how long agent transcripts are kept, such as 30d; unset: for ever"`
-	Rollups     Duration `yaml:"rollups" env:"ROLLUPS" doc:"how long metric rollups are kept, such as 400d; unset: for ever"`
+	Events      Duration `yaml:"events" env:"EVENTS" example:"90d" doc:"how long events are kept, such as 90d; unset: for ever"`
+	Transcripts Duration `yaml:"transcripts" env:"TRANSCRIPTS" example:"30d" doc:"how long agent transcripts are kept, such as 30d; unset: for ever"`
+	Rollups     Duration `yaml:"rollups" env:"ROLLUPS" example:"400d" doc:"how long metric rollups are kept, such as 400d; unset: for ever"`
 	Every       Duration `yaml:"every" env:"EVERY" default:"1h" doc:"how often the engine's retention job runs"`
 }
 
@@ -121,15 +122,15 @@ type LessonsConfig struct {
 // UIConfig is the ui key.
 type UIConfig struct {
 	BaseURL string `yaml:"baseUrl" env:"BASE_URL" default:"http://127.0.0.1:7070" doc:"where the web UI is reached, for inbox links and the origins a token server accepts"`
-	Listen  string `yaml:"listen" env:"LISTEN" doc:"loopback host:port run serves the API and the UI on; unset: listen, else 127.0.0.1:7070"`
+	Listen  string `yaml:"listen" env:"LISTEN" example:"127.0.0.1:7071" doc:"loopback host:port run serves the API and the UI on; unset: listen, else 127.0.0.1:7070"`
 }
 
 // Improve is the improve key (spec sections 11.2 to 11.7).
 type Improve struct {
 	Enabled     bool             `yaml:"enabled" env:"ENABLED" default:"false" doc:"run the improve pipeline (development only)"`
-	Harness     string           `yaml:"harness" env:"HARNESS" doc:"agent harness drafting proposals: claude-code or api"`
+	Harness     string           `yaml:"harness" env:"HARNESS" example:"claude-code" doc:"agent harness drafting proposals: claude-code or api"`
 	MinSeverity string           `yaml:"minSeverity" env:"MIN_SEVERITY" default:"warning" doc:"the least severity of the insights considered: info, warning or error"`
-	Publish     string           `yaml:"publish" env:"PUBLISH" doc:"publisher of accepted proposals: apply, patch-file, git-pr-gh or git-pr-glab"`
+	Publish     string           `yaml:"publish" env:"PUBLISH" example:"patch-file" doc:"publisher of accepted proposals: apply, patch-file, git-pr-gh or git-pr-glab"`
 	PatchFile   PatchFileConfig  `yaml:"patchFile" env:"PATCH_FILE"`
 	Git         GitConfig        `yaml:"git" env:"GIT"`
 	Budget      BudgetConfig     `yaml:"budget" env:"BUDGET"`
@@ -142,17 +143,17 @@ type Improve struct {
 
 // PatchFileConfig is improve.patchFile.
 type PatchFileConfig struct {
-	Dir string `yaml:"dir" env:"DIR" doc:"where the patch-file publisher writes each accepted proposal's patch"`
+	Dir string `yaml:"dir" env:"DIR" example:"./patches" doc:"where the patch-file publisher writes each accepted proposal's patch"`
 }
 
 // GitConfig is improve.git: the repository the git-pr-gh and git-pr-glab actions open pull requests on. Millstream
 // holds no forge credential (D32): Env names the variables passed to the action's container.
 type GitConfig struct {
-	Repo   string    `yaml:"repo" env:"REPO" doc:"clone URL of the repository pull requests are opened on"`
+	Repo   string    `yaml:"repo" env:"REPO" example:"https://git.example.com/org/repo.git" doc:"clone URL of the repository pull requests are opened on"`
 	Base   string    `yaml:"base" env:"BASE" default:"main" doc:"branch pull requests target"`
-	Path   string    `yaml:"path" env:"PATH" doc:"the package's directory in the repository, {pipeline} for its name; unset: the root"`
-	Image  string    `yaml:"image" env:"IMAGE" doc:"the action's image, with git and the forge's CLI, pinned by digest"`
-	Env    []string  `yaml:"env" env:"ENV" doc:"variables of the engine passed to the action's container, such as [GH_TOKEN]"`
+	Path   string    `yaml:"path" env:"PATH" example:"pipelines/{pipeline}" doc:"the package's directory in the repository, {pipeline} for its name; unset: the root"`
+	Image  string    `yaml:"image" env:"IMAGE" example:"ghcr.io/org/git-pr@sha256:0000000000000000000000000000000000000000000000000000000000000000" doc:"the action's image, with git and the forge's CLI, pinned by digest"`
+	Env    []string  `yaml:"env" env:"ENV" example:"[GH_TOKEN]" doc:"variables of the engine passed to the action's container, such as [GH_TOKEN]"`
 	Author GitAuthor `yaml:"author" env:"AUTHOR"`
 }
 
@@ -164,7 +165,7 @@ type GitAuthor struct {
 
 // BudgetConfig is improve.budget.
 type BudgetConfig struct {
-	DayUSD float64 `yaml:"dayUsd" env:"DAY_USD" doc:"what backtests may spend a day, in USD; unset: no limit"`
+	DayUSD float64 `yaml:"dayUsd" env:"DAY_USD" example:"5" doc:"what backtests may spend a day, in USD; unset: no limit"`
 }
 
 // EvidenceConfig is improve.evidence (spec section 11.2).
@@ -204,8 +205,8 @@ type RuntimeConfig struct {
 // AgentsConfig is the agents key: the agent sandbox (spec section 7.3).
 type AgentsConfig struct {
 	AllowUnsandboxed bool   `yaml:"allowUnsandboxed" env:"ALLOW_UNSANDBOXED" default:"false" doc:"agents may run without a container sandbox"`
-	Image            string `yaml:"image" env:"IMAGE" doc:"image the agent sandbox runs (CA certificates, the claude CLI for claude-code); unset: no sandbox"`
-	LinuxBinary      string `yaml:"linuxBinary" env:"LINUX_BINARY" doc:"Linux build of millstream mounted into the sandbox as the adapter; unset: the running binary, on Linux"`
+	Image            string `yaml:"image" env:"IMAGE" example:"ghcr.io/org/agent-sandbox@sha256:0000000000000000000000000000000000000000000000000000000000000000" doc:"image the agent sandbox runs (CA certificates, the claude CLI for claude-code); unset: no sandbox"`
+	LinuxBinary      string `yaml:"linuxBinary" env:"LINUX_BINARY" example:"./millstream-linux-arm64" doc:"Linux build of millstream mounted into the sandbox as the adapter; unset: the running binary, on Linux"`
 }
 
 // EngineConfig is the engine key: how an engine on Postgres watches its write connection (spec section 5.9).

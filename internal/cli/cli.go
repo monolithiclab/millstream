@@ -122,7 +122,7 @@ type exitSignal int
 // CLI is the command tree.
 type CLI struct {
 	DB      string `name:"db" placeholder:"DSN" help:"Store DSN, overriding store.dsn: sqlite://<path> (created with its directory) or postgres://host/db (default: sqlite://.millstream/millstream.db)."`
-	EnvFile string `name:"env-file" type:"path" env:"MILLSTREAM_ENV_FILE" help:"Environment file (default: $MILLSTREAM_ENV_FILE, else ./millstream.yaml when it exists)."`
+	EnvFile string `name:"env-file" type:"path" env:"MILLSTREAM_ENV_FILE" help:"Environment file (default: $MILLSTREAM_ENV_FILE, else ./millstream.yaml when it exists); millstream init environment writes one."`
 	Server  string `name:"server" placeholder:"URL" help:"Change state through the API of the engine serving at this URL (default: $MILLSTREAM_SERVER; token: $MILLSTREAM_TOKEN)."`
 	Direct  bool   `name:"direct" help:"Change state from this process, not through --server; on Postgres this takes the leadership lock, waiting while an engine runs."`
 	Color   string `name:"color" enum:"auto,always,never" default:"auto" placeholder:"WHEN" help:"Color the help: auto (on a terminal, unless NO_COLOR or TERM=dumb), always or never (default: $MILLSTREAM_COLOR, else auto)."`

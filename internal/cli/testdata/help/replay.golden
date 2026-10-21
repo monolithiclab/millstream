@@ -40,7 +40,8 @@ Global flags:
                               directory) or postgres://host/db (default:
                               sqlite://.millstream/millstream.db).
   --env-file=ENV_FILE         Environment file (default: $MILLSTREAM_ENV_FILE, else
-                              ./millstream.yaml when it exists).
+                              ./millstream.yaml when it exists); millstream init environment writes
+                              one.
   --server=URL                Change state through the API of the engine serving at this URL
                               (default: $MILLSTREAM_SERVER; token: $MILLSTREAM_TOKEN).
   --direct                    Change state from this process, not through --server; on Postgres this
