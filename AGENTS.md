@@ -103,6 +103,7 @@ and `make help` for every command.
 
 - No host toolchain (D35): npm, Vite, Vitest and Playwright run only in containers, from images pinned by digest in
   `ui/images.mk`. Never install Node on the host.
+- Screens use `ScreenPage`'s slots; explanations go in `help`, never in the body.
 - `make ui` builds into `internal/ui/dist/`, embedded by `internal/ui`. The build is not committed; the committed
   `internal/ui/dist/placeholder.html` is served until it exists, so `go build` never needs npm.
 - Only token utilities exist: `ui/src/styles/index.css` clears Tailwind's palette, and every colour, font, radius,
