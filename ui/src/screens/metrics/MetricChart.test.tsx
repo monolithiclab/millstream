@@ -5,14 +5,17 @@ import { MetricChart } from './MetricChart';
 
 // jsdom has no canvas: uPlot is replaced by a recorder of the options it was built with.
 const built = vi.hoisted(() => [] as { series: Record<string, unknown>[] }[]);
+const redraw = vi.hoisted(() => vi.fn());
 vi.mock('uplot', () => ({
   default: class {
     constructor(opts: { series: Record<string, unknown>[] }) {
       built.push(opts);
     }
+    // uPlot is ready after its first commit, a microtask after construction.
+    status = 0;
     setData = vi.fn();
     setSize = vi.fn();
-    redraw = vi.fn();
+    redraw = redraw;
     destroy = vi.fn();
   },
 }));
@@ -51,5 +54,22 @@ describe('MetricChart', () => {
         false,
       ),
     ).toBeNull();
+  });
+
+  it('does not redraw before uPlot is ready: a redraw ahead of its first commit left the chart empty', () => {
+    redraw.mockClear();
+    render(
+      <PreferencesProvider>
+        <MetricChart
+          times={[0, 60_000]}
+          series={[{ group: 'crawl', tone: '--ms-accent', dash: [], values: [null, 19] }]}
+          marks={[]}
+          format={String}
+          label="chart"
+          onHover={() => undefined}
+        />
+      </PreferencesProvider>,
+    );
+    expect(redraw).not.toHaveBeenCalled();
   });
 });

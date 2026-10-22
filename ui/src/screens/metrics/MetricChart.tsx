@@ -147,8 +147,10 @@ export function MetricChart({
     plotRef.current?.setData([times.map((t) => t / 1000), ...series.map((s) => s.values)]);
   }, [times, series]);
 
+  // Not before the plot is ready: a redraw ahead of uPlot's first commit (on mount, in the same effects flush) draws
+  // axes it has not measured yet, throws, and leaves the plot empty until it is rebuilt.
   useEffect(() => {
-    plotRef.current?.redraw();
+    if (plotRef.current?.status === 1) plotRef.current.redraw();
   }, [marks, format]);
 
   return <div ref={host} role="img" aria-label={label} className="min-h-[320px] w-full" />;
