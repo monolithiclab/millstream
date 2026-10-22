@@ -22,6 +22,7 @@ import { PipelinesScreen } from './screens/pipelines/PipelinesScreen';
 import { RunScreen } from './screens/runs/RunScreen';
 import { RunsScreen } from './screens/runs/RunsScreen';
 import { Loading } from './common/States';
+import { PipelinesProvider } from './common/usePipelines';
 import { routePattern, screens, type ScreenId } from './routes';
 import { AppShell } from './shell/AppShell';
 import { ShellNoticeProvider } from './shell/ShellNotice';
@@ -90,7 +91,9 @@ export function App({
       <SessionGate api={api}>
         {(guarded) => (
           <ApiProvider api={guarded} eventSource={eventSource} demo={demo}>
-            <ShellNoticeProvider>{children}</ShellNoticeProvider>
+            <PipelinesProvider>
+              <ShellNoticeProvider>{children}</ShellNoticeProvider>
+            </PipelinesProvider>
           </ApiProvider>
         )}
       </SessionGate>

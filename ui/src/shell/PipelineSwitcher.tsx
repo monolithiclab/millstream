@@ -1,20 +1,15 @@
 import { useId, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
-import type { QueryState } from '../common/useResource';
-import type { Pipeline } from '../api/schema';
+import { usePipelines } from '../common/usePipelines';
 import { pipelinePath } from '../routes';
 import { useDismiss } from './useDismiss';
 
-// A disclosure listing every pipeline: picking one opens its graph, "All pipelines" the list.
-export function PipelineSwitcher({
-  current,
-  pipelines,
-}: {
-  current: string | undefined;
-  pipelines: QueryState<Pipeline[]>;
-}) {
+// A disclosure listing every pipeline: picking one opens its graph, "All pipelines" the list. Opening it reads the
+// list again, so a pipeline applied since shows up.
+export function PipelineSwitcher({ current }: { current: string | undefined }) {
   const { t } = useTranslation();
+  const pipelines = usePipelines();
   const [open, setOpen] = useState(false);
   const button = useRef<HTMLButtonElement>(null);
   const panel = useRef<HTMLDivElement>(null);
@@ -33,7 +28,10 @@ export function PipelineSwitcher({
         aria-expanded={open}
         aria-controls={panelId}
         aria-label={t('switcher.label', { name })}
-        onClick={() => setOpen(!open)}
+        onClick={() => {
+          if (!open) pipelines.refresh();
+          setOpen(!open);
+        }}
         className={`flex w-full items-center gap-2 rounded-1 border bg-surface px-2.5 py-2 text-left text-small font-bold text-ink ${current ? 'border-line font-mono' : 'border-ink'}`}
       >
         <span className="min-w-0 flex-1 truncate">{name}</span>

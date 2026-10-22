@@ -5,7 +5,7 @@ import type { Insight } from '../../api/schema';
 import { useSession } from '../../auth/SessionGate';
 import { runAction, type Notice } from '../../common/Notice';
 import { requestId } from '../../common/requestId';
-import { useResource } from '../../common/useResource';
+import { usePipelines } from '../../common/usePipelines';
 
 // The improve pipeline (spec 11.3): the package millstream/improve, loaded only where improve.enabled is set. Its
 // manual trigger is "Propose a fix"; the API fires a pipeline's first manual trigger when none is named. The payload
@@ -18,7 +18,7 @@ export function useProposeFix(pipeline: string, setNotice: (notice: Notice | nul
   const { t } = useTranslation();
   const api = useApi();
   const { session } = useSession();
-  const pipelines = useResource('pipelines', (a) => a.listPipelines());
+  const pipelines = usePipelines();
   const improve = pipelines.status === 'ready' ? pipelines.data.find((p) => p.name === IMPROVE_PIPELINE) : undefined;
   let reason: string | null = null;
   if (session?.environment === 'production') reason = t('improve.propose.production');

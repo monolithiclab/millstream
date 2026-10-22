@@ -1,5 +1,6 @@
 import { act, cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
+import { demoFixtures } from '../api/demo';
 import { FakeApi } from '../api/fake';
 import { FakeEventSource } from '../live/fakeEventSource';
 import { renderApp } from '../test/render';
@@ -87,6 +88,26 @@ describe('app shell', () => {
     expect(screen.getByText('Loading pipelines…')).toBeInTheDocument();
     act(() => fail(new Error('down')));
     expect(await screen.findByRole('alert')).toHaveTextContent('Pipelines could not be loaded.');
+  });
+
+  it('shares one pipeline list, read again when the switcher opens and when the window gets focus', async () => {
+    const [first, second, third] = demoFixtures.pipelines;
+    const api = new FakeApi({ ...demoFixtures, pipelines: [first!] });
+    const { user } = renderApp({ api, route: '/logs' });
+    const filter = screen.getByRole('combobox', { name: 'Pipeline' });
+    const filterOptions = () =>
+      within(filter)
+        .getAllByRole('option')
+        .map((o) => o.textContent);
+    await waitFor(() => expect(filterOptions()).toEqual(['All pipelines', first!.name]));
+    api.listPipelines = () => Promise.resolve([first!, second!]);
+    await user.click(screen.getByRole('button', { name: /Switch pipeline/ }));
+    expect(await nav().findByRole('link', { name: second!.name })).toBeInTheDocument();
+    expect(filterOptions()).toEqual(['All pipelines', first!.name, second!.name]);
+    await user.keyboard('{Escape}');
+    api.listPipelines = () => Promise.resolve([first!, second!, third!]);
+    fireEvent.focus(window);
+    await waitFor(() => expect(filterOptions()).toEqual(['All pipelines', first!.name, second!.name, third!.name]));
   });
 
   it('opens the command palette with Ctrl+K and runs a command', async () => {

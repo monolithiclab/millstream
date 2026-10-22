@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { NavLink, Outlet, useMatch, useNavigate } from 'react-router-dom';
-import { useResource } from '../common/useResource';
+import { usePipelines } from '../common/usePipelines';
 import { liveUrls } from '../api/api';
 import { useDemo } from '../api/context';
 import { useSession } from '../auth/SessionGate';
@@ -78,7 +78,7 @@ export function AppShell() {
   const prefs = usePreferences();
   const navigate = useNavigate();
   const pipeline = useMatch('/p/:pipeline/*')?.params.pipeline;
-  const pipelines = useResource('pipelines', (api) => api.listPipelines());
+  const pipelines = usePipelines();
   const demo = useDemo();
   const { session, signOut } = useSession();
   const live = useLiveStream(pipeline === undefined ? null : liveUrls.pipeline(pipeline));
@@ -165,7 +165,7 @@ export function AppShell() {
           <Logo />
           <span className="font-display text-[26px] leading-[26px] tracking-[-0.01em]">{t('app.name')}</span>
         </div>
-        <PipelineSwitcher current={pipeline} pipelines={pipelines} />
+        <PipelineSwitcher current={pipeline} />
         <NavGroup title={t('shell.workspace')} items={workspaceScreens} pipeline={pipeline} onNavigate={closeMenu} />
         {pipeline !== undefined && (
           <NavGroup title={t('shell.pipeline')} items={pipelineScreens} pipeline={pipeline} onNavigate={closeMenu} />

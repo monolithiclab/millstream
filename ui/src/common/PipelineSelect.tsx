@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import { field } from './styles';
-import { useResource } from './useResource';
+import { usePipelines } from './usePipelines';
 
 // A pipeline filter: every pipeline, or "All pipelines" for the empty value.
 export function PipelineSelect({
@@ -13,7 +13,7 @@ export function PipelineSelect({
   className?: string;
 }) {
   const { t } = useTranslation();
-  const pipelines = useResource('pipelines', (api) => api.listPipelines());
+  const pipelines = usePipelines();
   return (
     <select value={value} onChange={(e) => onChange(e.target.value)} className={`${field} ${className}`}>
       <option value="">{t('switcher.allPipelines')}</option>
