@@ -7,7 +7,8 @@ import { renderApp } from '../test/render';
 import { DEMO_KEY } from '../storage';
 import { exitDemo } from './DemoBadge';
 
-const nav = () => within(screen.getByRole('navigation'));
+// The sidebar: pipeline screens also hold a breadcrumb navigation.
+const nav = () => within(document.getElementById('main-nav')!);
 
 describe('app shell', () => {
   it('shows the workspace navigation and the page, with landmarks and a skip link', async () => {
@@ -68,7 +69,7 @@ describe('app shell', () => {
       'false',
     );
     await user.click(screen.getByRole('button', { name: /Switch pipeline/ }));
-    expect(screen.getByRole('link', { name: 'photo-tagging' })).toHaveAttribute('aria-current', 'true');
+    expect(nav().getByRole('link', { name: 'photo-tagging' })).toHaveAttribute('aria-current', 'true');
     await user.keyboard('{Escape}');
     expect(screen.queryByRole('group', { name: 'Pipelines' })).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: /Switch pipeline/ }));

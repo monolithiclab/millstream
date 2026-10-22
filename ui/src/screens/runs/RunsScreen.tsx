@@ -8,6 +8,7 @@ import { formatDuration, formatMoney } from '../../i18n/format';
 import { usePreferences } from '../../preferences';
 import { runPath } from '../../routes';
 import { ScreenPage } from '../ScreenPage';
+import { Breadcrumb, pipelineCrumb } from '../../common/Breadcrumb';
 import { Segmented } from '../../common/Segmented';
 import { NoticeRegion, runAction, useNotice } from '../../common/Notice';
 import { StatusBadge, useStatusLabel } from '../../common/Status';
@@ -86,11 +87,10 @@ export function RunsScreen() {
   return (
     <ScreenPage
       title={t('nav.runs')}
-      eyebrow={<p className="m-0 font-mono text-small text-ink-2">{pipeline}</p>}
-      header={
-        fireable.length > 0 && (
-          <div className="flex flex-wrap gap-2 md:ml-auto">
-            {fireable.map((tr) => (
+      context={<Breadcrumb items={[pipelineCrumb(pipeline)]} />}
+      actions={
+        fireable.length > 0
+          ? fireable.map((tr) => (
               <button
                 key={tr.name}
                 type="button"
@@ -100,17 +100,18 @@ export function RunsScreen() {
               >
                 {t('runs.fire', { trigger: tr.name })}
               </button>
-            ))}
-          </div>
-        )
+            ))
+          : undefined
+      }
+      toolbar={
+        <Segmented
+          label={t('runs.filter.label')}
+          options={filters.map((value) => ({ value, label: label(value) }))}
+          value={state}
+          onChange={setState}
+        />
       }
     >
-      <Segmented
-        label={t('runs.filter.label')}
-        options={filters.map((value) => ({ value, label: label(value) }))}
-        value={state}
-        onChange={setState}
-      />
       <QueryView query={runs}>
         {(page) => {
           if (page.items.length === 0) {

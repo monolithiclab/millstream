@@ -33,7 +33,7 @@ describe('links between screens', () => {
 
   it('opens the step a lesson belongs to in the graph', async () => {
     const { user } = renderApp({ route: '/p/listings-daily/lessons' });
-    const score = await screen.findByRole('region', { name: 'score' });
+    const score = await screen.findByRole('region', { name: 'Step score' });
     await user.click(within(score).getByRole('link', { name: 'Open in the graph' }));
     expect(await screen.findByRole('complementary', { name: 'score' })).toBeInTheDocument();
   });

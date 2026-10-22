@@ -50,8 +50,26 @@ describe('ScreenPage', () => {
     );
     const page = screen.getByRole('region', { name: 'Nodes' });
     expect(page.children).toHaveLength(2);
-    expect(page.children[0]!.tagName).toBe('H1');
+    expect(page.children[0]).toHaveTextContent(/^Nodes$/);
     expect(screen.queryByRole('button')).not.toBeInTheDocument();
+  });
+
+  it('keeps the h1, and the focus on it, when a status and actions arrive', () => {
+    const page = (ready: boolean) => (
+      <ScreenPage title="Run" status={ready ? 'running' : undefined} actions={ready ? 'Cancel' : undefined}>
+        <p>content</p>
+      </ScreenPage>
+    );
+    const { rerender } = renderPage(page(false));
+    const h1 = screen.getByRole('heading', { level: 1 });
+    h1.focus();
+    rerender(
+      <I18nextProvider i18n={createI18n('en')}>
+        <MemoryRouter>{page(true)}</MemoryRouter>
+      </I18nextProvider>,
+    );
+    expect(screen.getByRole('heading', { level: 1 })).toBe(h1);
+    expect(h1).toHaveFocus();
   });
 
   it('draws the breadcrumb as links separated by slashes, pipeline names mono', () => {

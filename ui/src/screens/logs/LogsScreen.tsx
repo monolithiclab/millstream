@@ -4,7 +4,7 @@ import { useSearchParams } from 'react-router-dom';
 import { liveUrls } from '../../api/api';
 import { LogTail } from '../../common/LogTail';
 import { PipelineSelect } from '../../common/PipelineSelect';
-import { field } from '../../common/styles';
+import { field, filterLabel } from '../../common/styles';
 import { ScreenPage } from '../ScreenPage';
 
 const scopes = ['run', 'step', 'item'] as const;
@@ -36,12 +36,12 @@ export function LogsScreen() {
   const scopeLabels: Record<Scope, string> = { run: t('logs.run'), step: t('logs.step'), item: t('logs.item') };
   const toolbar = (
     <>
-      <label className="flex flex-col gap-1 text-tiny font-bold text-ink-2">
+      <label className={filterLabel}>
         {t('logs.pipeline')}
         <PipelineSelect value={filter.pipeline} onChange={(p) => setFilter('pipeline', p)} className="font-normal" />
       </label>
       {scopes.map((scope) => (
-        <label key={scope} htmlFor={`${ids}-${scope}`} className="flex flex-col gap-1 text-tiny font-bold text-ink-2">
+        <label key={scope} htmlFor={`${ids}-${scope}`} className={filterLabel}>
           {scopeLabels[scope]}
           <input
             id={`${ids}-${scope}`}

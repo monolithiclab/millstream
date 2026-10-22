@@ -52,7 +52,7 @@
     "improve": "Improve"
   },
   "screen": {
-    "inPipeline": "Pipeline {{pipeline}}",
+    "breadcrumb": "Breadcrumb",
     "notFound": {
       "title": "Page not found",
       "body": "Nothing lives at this address.",
@@ -475,16 +475,15 @@
     }
   },
   "items": {
-    "filters": "Filter items",
     "stream": "Stream",
     "allStreams": "All streams",
     "streamOption": "{{stream}} ({{n}})",
     "run": "Run",
     "runPlaceholder": "Any run",
     "where": "Where (CEL)",
+    "whereHelp": "About the CEL filter",
     "whereHint": "Over item (the payload), envelope, vars and run, as replay --where.",
     "whereInvalid": "This expression doesn’t work: {{message}}",
-    "apply": "Apply",
     "clear": "Clear filters",
     "list": "Items, oldest first",
     "shownOne": "{{n}} item shown",
@@ -1070,6 +1069,7 @@
     "explain": "Read-only: lessons change in the step's lessons file.",
     "empty": "No lessons yet",
     "emptyBody": "An agent step learns from a lessons file in the package, next to its pipeline:",
+    "step": "Step",
     "openStep": "Open in the graph",
     "rules": "Rules",
     "noRules": "No rule.",

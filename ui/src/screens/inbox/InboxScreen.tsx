@@ -23,7 +23,7 @@ import { Select } from '../../common/Select';
 import { EmptyState, ErrorState, Loading } from '../../common/States';
 import { StatusGlyph, useStatusLabel } from '../../common/Status';
 import { useNow } from '../../common/useNow';
-import { buttons } from '../../common/styles';
+import { buttons, filterLabel } from '../../common/styles';
 import { changes, fieldKind, initialText, lookup, parseField, payloadEntries, toPatch } from './patch';
 import { ReasonDialog } from './ReasonDialog';
 import { ChangeList, fieldId, ReviewPanel, titleOf, type Field } from './ReviewPanel';
@@ -236,7 +236,7 @@ export function InboxScreen() {
     ) : undefined;
   const toolbar = (
     <>
-      <label className="flex flex-col gap-1 text-tiny font-bold text-ink-2">
+      <label className={filterLabel}>
         {t('inbox.pipelineFilter')}
         <PipelineSelect
           value={pipelineFilter ?? ''}
@@ -244,7 +244,7 @@ export function InboxScreen() {
           className="font-normal"
         />
       </label>
-      <label className="flex flex-col gap-1 text-tiny font-bold text-ink-2">
+      <label className={filterLabel}>
         {t('inbox.inboxFilter')}
         <Select value={inboxFilter ?? ''} onChange={(e) => setFilter('inbox', e.target.value)} className="font-normal">
           <option value="">{t('inbox.allInboxes')}</option>

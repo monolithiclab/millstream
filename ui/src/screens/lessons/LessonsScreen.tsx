@@ -4,6 +4,7 @@ import { enc, withQuery } from '../../api/api';
 import type { StepLessons } from '../../api/schema';
 import { pipelinePath, proposalPath } from '../../routes';
 import { ScreenPage } from '../ScreenPage';
+import { Breadcrumb, pipelineCrumb } from '../../common/Breadcrumb';
 import { EmptyState, QueryView } from '../../common/States';
 import { card, cardTitle } from '../../common/styles';
 import { useResource } from '../../common/useResource';
@@ -36,8 +37,8 @@ export function LessonsScreen() {
   return (
     <ScreenPage
       title={t('nav.lessons')}
-      eyebrow={<p className="m-0 font-mono text-small text-ink-2">{pipeline}</p>}
-      header={<p className="m-0 text-tiny text-ink-3 md:ml-auto">{t('lessons.explain')}</p>}
+      context={<Breadcrumb items={[pipelineCrumb(pipeline)]} />}
+      help={t('lessons.explain')}
     >
       <QueryView query={lessons}>
         {(steps) =>
@@ -66,8 +67,8 @@ function StepCard({ pipeline, lessons }: { pipeline: string; lessons: StepLesson
   return (
     <section aria-labelledby={`lessons-${lessons.step}`} className={`${card} flex flex-col gap-3 px-5 py-[18px]`}>
       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-        <h2 id={`lessons-${lessons.step}`} className={`${cardTitle} font-mono text-[20px]`}>
-          {lessons.step}
+        <h2 id={`lessons-${lessons.step}`} className={cardTitle}>
+          {t('lessons.step')} <span className="font-mono text-ui">{lessons.step}</span>
         </h2>
         <Link to={withQuery(pipelinePath(pipeline, 'graph'), { step: lessons.step })} className="text-tiny">
           {t('lessons.openStep')}

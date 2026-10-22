@@ -52,7 +52,7 @@
     "improve": "Améliorer"
   },
   "screen": {
-    "inPipeline": "Pipeline {{pipeline}}",
+    "breadcrumb": "Fil d’Ariane",
     "notFound": {
       "title": "Page introuvable",
       "body": "Rien ne se trouve à cette adresse.",
@@ -475,16 +475,15 @@
     }
   },
   "items": {
-    "filters": "Filtrer les items",
     "stream": "Flux",
     "allStreams": "Tous les flux",
     "streamOption": "{{stream}} ({{n}})",
     "run": "Run",
     "runPlaceholder": "Tous les runs",
     "where": "Condition (CEL)",
+    "whereHelp": "À propos du filtre CEL",
     "whereHint": "Sur item (le contenu), envelope, vars et run, comme replay --where.",
     "whereInvalid": "Cette expression ne fonctionne pas : {{message}}",
-    "apply": "Appliquer",
     "clear": "Effacer les filtres",
     "list": "Items, du plus ancien au plus récent",
     "shownOne": "{{n}} item affiché",
@@ -1070,6 +1069,7 @@
     "explain": "Lecture seule : les leçons se modifient dans le fichier de leçons de l’étape.",
     "empty": "Aucune leçon pour l’instant",
     "emptyBody": "Une étape agent apprend d’un fichier de leçons du package, à côté de son pipeline :",
+    "step": "Étape",
     "openStep": "Ouvrir dans le graphe",
     "rules": "Règles",
     "noRules": "Aucune règle.",

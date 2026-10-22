@@ -10,6 +10,7 @@ import { useResource } from '../../common/useResource';
 import { SH, StatusBadge, StatusGlyph } from '../../common/Status';
 import { ScrollRegion } from '../../common/ScrollRegion';
 import { Segmented } from '../../common/Segmented';
+import { Breadcrumb, pipelineCrumb } from '../../common/Breadcrumb';
 import { screenKeyAllowed } from '../../shell/useShortcuts';
 import { shortId } from '../../common/Id';
 import { useFormat } from '../../common/useFormat';
@@ -136,50 +137,74 @@ export function DeadLettersScreen() {
   const shown = total(groups);
   const kinds = { dead: 0, unrouted: 0 };
   for (const g of groups) kinds[g.kind] += g.count;
+  const listed = ready !== null && groups.length > 0;
 
   return (
     <ScreenPage
       title={t('nav.deadLetters')}
-      eyebrow={<p className="m-0 font-mono text-small text-ink-2">{t('screen.inPipeline', { pipeline })}</p>}
+      context={<Breadcrumb items={[pipelineCrumb(pipeline)]} />}
+      summary={
+        listed
+          ? t('deadLetters.summary', {
+              groups: t(f.plural(groups.length, 'deadLetters.groupsOne', 'deadLetters.groupsOther'), {
+                n: f.num(groups.length),
+              }),
+              items: t(f.plural(shown, 'deadLetters.itemsOne', 'deadLetters.itemsOther'), { n: f.num(shown) }),
+            })
+          : undefined
+      }
+      toolbar={
+        <>
+          <Segmented
+            label={t('deadLetters.stateFilter')}
+            value={state}
+            onChange={(s) => {
+              setSelected(new Set());
+              setParams(s === 'open' ? {} : { state: s }, { replace: true });
+            }}
+            options={states.map((s) => ({ value: s, label: stateLabels[s] }))}
+          />
+          {listed && (
+            <span className="flex flex-wrap items-center gap-x-3 gap-y-1 self-center text-small text-ink-2">
+              <span className="inline-flex items-center gap-1.5">
+                <StatusGlyph status="dead" size={11} />
+                {t('deadLetters.kindDead', { n: f.num(kinds.dead) })}
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <StatusGlyph status="unrouted" size={11} />
+                {t('deadLetters.kindUnrouted', { n: f.num(kinds.unrouted) })}
+              </span>
+            </span>
+          )}
+          {state === 'open' && openLetters.length > 0 && (
+            <div className="ml-auto flex flex-wrap gap-2">
+              {chosen.length > 0 ? (
+                <>
+                  <button type="button" className={buttons.primary} onClick={() => requestSelection('replay')}>
+                    {t('deadLetters.replaySelection', { n: f.num(chosen.length) })}
+                  </button>
+                  <button type="button" className={buttons.secondary} onClick={() => requestSelection('discard')}>
+                    {t('deadLetters.discardSelection', { n: f.num(chosen.length) })}
+                  </button>
+                  <button type="button" className={buttons.link} onClick={() => setSelected(new Set())}>
+                    {t('deadLetters.clearSelection')}
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button type="button" className={buttons.secondary} onClick={() => requestAll('replay')}>
+                    {t('deadLetters.replayAll', { n: f.num(openLetters.length) })}
+                  </button>
+                  <button type="button" className={buttons.secondary} onClick={() => requestAll('discard')}>
+                    {t('deadLetters.discardAll', { n: f.num(openLetters.length) })}
+                  </button>
+                </>
+              )}
+            </div>
+          )}
+        </>
+      }
     >
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-2.5">
-        <Segmented
-          label={t('deadLetters.stateFilter')}
-          value={state}
-          onChange={(s) => {
-            setSelected(new Set());
-            setParams(s === 'open' ? {} : { state: s }, { replace: true });
-          }}
-          options={states.map((s) => ({ value: s, label: stateLabels[s] }))}
-        />
-        {state === 'open' && openLetters.length > 0 && (
-          <div className="flex flex-wrap gap-2 md:ml-auto">
-            {chosen.length > 0 ? (
-              <>
-                <button type="button" className={buttons.primary} onClick={() => requestSelection('replay')}>
-                  {t('deadLetters.replaySelection', { n: f.num(chosen.length) })}
-                </button>
-                <button type="button" className={buttons.secondary} onClick={() => requestSelection('discard')}>
-                  {t('deadLetters.discardSelection', { n: f.num(chosen.length) })}
-                </button>
-                <button type="button" className={buttons.link} onClick={() => setSelected(new Set())}>
-                  {t('deadLetters.clearSelection')}
-                </button>
-              </>
-            ) : (
-              <>
-                <button type="button" className={buttons.secondary} onClick={() => requestAll('replay')}>
-                  {t('deadLetters.replayAll', { n: f.num(openLetters.length) })}
-                </button>
-                <button type="button" className={buttons.secondary} onClick={() => requestAll('discard')}>
-                  {t('deadLetters.discardAll', { n: f.num(openLetters.length) })}
-                </button>
-              </>
-            )}
-          </div>
-        )}
-      </div>
-
       {data.status === 'loading' && <Loading rows={2} className="h-48" />}
       {data.status === 'error' && (
         <ErrorState title={t('deadLetters.error')} message={data.error.message} onRetry={data.reload} />
@@ -192,29 +217,11 @@ export function DeadLettersScreen() {
           <p className="m-0">{state === 'open' ? t('deadLetters.empty.openBody') : t('deadLetters.empty.otherBody')}</p>
         </EmptyState>
       )}
-      {ready !== null && groups.length > 0 && (
+      {listed && (
         // The list takes the lists-and-tables keys of its rows.
         // eslint-disable-next-line jsx-a11y/no-static-element-interactions
         <div ref={list} onKeyDown={onKeyDown} className="flex flex-col gap-3">
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-small text-ink-2">
-            <span>
-              {t('deadLetters.summary', {
-                groups: t(f.plural(groups.length, 'deadLetters.groupsOne', 'deadLetters.groupsOther'), {
-                  n: f.num(groups.length),
-                }),
-                items: t(f.plural(shown, 'deadLetters.itemsOne', 'deadLetters.itemsOther'), { n: f.num(shown) }),
-              })}
-            </span>
-            <span className="inline-flex items-center gap-1.5 md:ml-auto">
-              <StatusGlyph status="dead" size={11} />
-              {t('deadLetters.kindDead', { n: f.num(kinds.dead) })}
-            </span>
-            <span className="inline-flex items-center gap-1.5">
-              <StatusGlyph status="unrouted" size={11} />
-              {t('deadLetters.kindUnrouted', { n: f.num(kinds.unrouted) })}
-            </span>
-            {state === 'open' && <span className="sr-only">{t('deadLetters.keys')}</span>}
-          </div>
+          {state === 'open' && <span className="sr-only">{t('deadLetters.keys')}</span>}
           {groups.map((g, index) => (
             <Group
               key={g.fingerprint}

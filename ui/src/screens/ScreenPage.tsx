@@ -48,35 +48,28 @@ export function ScreenPage({
     loaded = true;
   }, [pathname]);
 
-  const h1 = (
-    <h1
-      ref={heading}
-      id="page-title"
-      tabIndex={-1}
-      className="m-0 font-display text-title font-normal focus-visible:outline-none"
-    >
-      {title}
-    </h1>
-  );
-  const row = help !== undefined || status !== undefined || actions !== undefined || header !== undefined;
   return (
     <section aria-labelledby="page-title" className="flex flex-col gap-2">
       {context ?? eyebrow}
-      {row ? (
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-2.5">
-          <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2">
-            {h1}
-            {help !== undefined && <HelpTip>{help}</HelpTip>}
-            {status}
-          </div>
-          {header}
-          {actions !== undefined && (
-            <div className="ml-auto flex max-w-full min-w-0 flex-wrap items-center gap-2">{actions}</div>
-          )}
+      {/* Always the same wrappers, so the h1 (and the focus on it) stays when a status or an action arrives. */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2.5">
+        <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2">
+          <h1
+            ref={heading}
+            id="page-title"
+            tabIndex={-1}
+            className="m-0 font-display text-title font-normal focus-visible:outline-none"
+          >
+            {title}
+          </h1>
+          {help !== undefined && <HelpTip>{help}</HelpTip>}
+          {status}
         </div>
-      ) : (
-        h1
-      )}
+        {header}
+        {actions !== undefined && (
+          <div className="ml-auto flex max-w-full min-w-0 flex-wrap items-center gap-2">{actions}</div>
+        )}
+      </div>
       {summary !== undefined && <div className="text-small text-ink-2">{summary}</div>}
       {toolbar !== undefined && <div className="flex flex-wrap items-end gap-x-4 gap-y-2.5">{toolbar}</div>}
       {children}

@@ -1,13 +1,16 @@
-import { useId, useState, type FormEvent } from 'react';
+import { useId, useState, type ChangeEvent, type KeyboardEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { ApiError, type ItemQuery } from '../../api/api';
 import { useApi } from '../../api/context';
 import type { Item, ItemPage } from '../../api/schema';
+import { Breadcrumb, pipelineCrumb } from '../../common/Breadcrumb';
+import { HelpTip } from '../../common/HelpTip';
 import { Id } from '../../common/Id';
+import { Select } from '../../common/Select';
 import { EmptyState, ErrorState, Loading } from '../../common/States';
 import { StatusBadge } from '../../common/Status';
-import { buttons, card, field } from '../../common/styles';
+import { buttons, card, field, filterLabel } from '../../common/styles';
 import { useFormat } from '../../common/useFormat';
 import { appendPage, useLoadMore } from '../../common/useLoadMore';
 import { useResource } from '../../common/useResource';
@@ -57,99 +60,99 @@ export function ItemsScreen() {
     merge: appendPage,
   });
 
-  // The run and where fields as typed, until applied; a new URL (back, a link) starts them over.
+  // The run and where fields as typed, until applied (Enter or leaving the field); a new URL (back, a link) starts
+  // them over.
   const fromUrl = { key, run: filters.run ?? '', where: filters.where ?? '' };
   const [draft, setDraft] = useState(fromUrl);
   const typed = draft.key === key ? draft : fromUrl;
-  const ids = { run: useId(), where: useId(), whereHint: useId(), whereError: useId(), stream: useId() };
+  const ids = { run: useId(), where: useId(), whereError: useId() };
 
   const apply = (next: Filters) => {
     const params: Record<string, string> = {};
     for (const [name, value] of Object.entries({ ...filters, ...next })) if (value) params[name] = value;
     setSearch(params);
   };
-  const submit = (event: FormEvent) => {
-    event.preventDefault();
-    apply({ run: typed.run.trim(), where: typed.where.trim() });
+  // A text field applies what it holds when it changed.
+  const commit = (name: 'run' | 'where') => {
+    const value = typed[name].trim();
+    if (value !== (filters[name] ?? '')) apply({ [name]: value });
   };
+  const textField = (name: 'run' | 'where') => ({
+    id: ids[name],
+    value: typed[name],
+    onChange: (e: ChangeEvent<HTMLInputElement>) => setDraft({ ...typed, [name]: e.target.value }),
+    onKeyDown: (e: KeyboardEvent<HTMLInputElement>) => {
+      if (e.key === 'Enter') commit(name);
+    },
+    onBlur: () => commit(name),
+    spellCheck: false,
+    autoComplete: 'off',
+  });
 
   const invalid = items.status === 'error' ? whereError(items.error, filters) : null;
   const streamList = streams.status === 'ready' ? streams.data : [];
   const filtered = filters.where !== undefined || filters.run !== undefined;
+  const shown = items.status === 'ready' ? items.data.items.length : 0;
 
   return (
     <ScreenPage
       title={t('nav.items')}
-      eyebrow={<p className="m-0 font-mono text-small text-ink-2">{t('screen.inPipeline', { pipeline })}</p>}
-    >
-      <form
-        onSubmit={submit}
-        aria-label={t('items.filters')}
-        className={`${card} mt-2 flex flex-wrap items-end gap-x-4 gap-y-3 p-4`}
-      >
-        <div className="flex min-w-0 flex-[1_1_180px] flex-col gap-1">
-          <label htmlFor={ids.stream} className="text-tiny font-bold text-ink-2">
+      context={<Breadcrumb items={[pipelineCrumb(pipeline)]} />}
+      summary={
+        shown > 0 ? (
+          <span role="status">{t(f.plural(shown, 'items.shownOne', 'items.shownOther'), { n: f.num(shown) })}</span>
+        ) : undefined
+      }
+      toolbar={
+        <>
+          <label className={`${filterLabel} min-w-0 flex-[1_1_180px]`}>
             {t('items.stream')}
+            <Select
+              value={filters.stream ?? ''}
+              onChange={(e) => apply({ stream: e.target.value })}
+              className="font-normal"
+            >
+              <option value="">{t('items.allStreams')}</option>
+              {streamList.map((s) => (
+                <option key={s.name} value={s.name}>
+                  {t('items.streamOption', { stream: s.name, n: f.num(s.items) })}
+                </option>
+              ))}
+              {filters.stream !== undefined && !streamList.some((s) => s.name === filters.stream) && (
+                <option value={filters.stream}>{filters.stream}</option>
+              )}
+            </Select>
           </label>
-          <select
-            id={ids.stream}
-            value={filters.stream ?? ''}
-            onChange={(e) => apply({ stream: e.target.value })}
-            className={field}
-          >
-            <option value="">{t('items.allStreams')}</option>
-            {streamList.map((s) => (
-              <option key={s.name} value={s.name}>
-                {t('items.streamOption', { stream: s.name, n: f.num(s.items) })}
-              </option>
-            ))}
-            {filters.stream !== undefined && !streamList.some((s) => s.name === filters.stream) && (
-              <option value={filters.stream}>{filters.stream}</option>
+          <div className="flex min-w-0 flex-[1_1_160px] flex-col gap-1">
+            <label htmlFor={ids.run} className="text-tiny font-bold text-ink-2">
+              {t('items.run')}
+            </label>
+            <input
+              {...textField('run')}
+              placeholder={t('items.runPlaceholder')}
+              className={`${field} min-h-[34px] font-mono`}
+            />
+          </div>
+          <div className="flex min-w-0 flex-[3_1_320px] flex-col gap-1">
+            <span className="flex items-center gap-1.5">
+              <label htmlFor={ids.where} className="text-tiny font-bold text-ink-2">
+                {t('items.where')}
+              </label>
+              <HelpTip label={t('items.whereHelp')}>{t('items.whereHint')}</HelpTip>
+            </span>
+            <input
+              {...textField('where')}
+              placeholder="item.priceEur < 300000"
+              aria-invalid={invalid !== null}
+              aria-describedby={invalid === null ? undefined : ids.whereError}
+              className={`${field} min-h-[34px] font-mono ${invalid === null ? '' : 'border-bad'}`}
+            />
+            {invalid !== null && (
+              <p id={ids.whereError} role="alert" className="m-0 text-tiny break-words text-bad">
+                {t('items.whereInvalid', { message: invalid })}
+              </p>
             )}
-          </select>
-        </div>
-        <div className="flex min-w-0 flex-[1_1_160px] flex-col gap-1">
-          <label htmlFor={ids.run} className="text-tiny font-bold text-ink-2">
-            {t('items.run')}
-          </label>
-          <input
-            id={ids.run}
-            value={typed.run}
-            onChange={(e) => setDraft({ ...typed, run: e.target.value })}
-            placeholder={t('items.runPlaceholder')}
-            spellCheck={false}
-            autoComplete="off"
-            className={`${field} font-mono`}
-          />
-        </div>
-        <div className="flex min-w-0 flex-[3_1_320px] flex-col gap-1">
-          <label htmlFor={ids.where} className="text-tiny font-bold text-ink-2">
-            {t('items.where')}
-          </label>
-          <input
-            id={ids.where}
-            value={typed.where}
-            onChange={(e) => setDraft({ ...typed, where: e.target.value })}
-            placeholder="item.priceEur < 300000"
-            spellCheck={false}
-            autoComplete="off"
-            aria-invalid={invalid !== null}
-            aria-describedby={invalid === null ? ids.whereHint : `${ids.whereError} ${ids.whereHint}`}
-            className={`${field} font-mono ${invalid === null ? '' : 'border-bad'}`}
-          />
-          {invalid !== null && (
-            <p id={ids.whereError} role="alert" className="m-0 text-tiny break-words text-bad">
-              {t('items.whereInvalid', { message: invalid })}
-            </p>
-          )}
-          <p id={ids.whereHint} className="m-0 text-tiny text-ink-3">
-            {t('items.whereHint')}
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <button type="submit" className={buttons.primary}>
-            {t('items.apply')}
-          </button>
+          </div>
           {Object.keys(filters).length > 0 && (
             <button
               type="button"
@@ -157,15 +160,15 @@ export function ItemsScreen() {
                 setDraft({ key, run: '', where: '' });
                 setSearch({});
               }}
-              className={buttons.secondary}
+              className={`${buttons.secondary} ml-auto`}
             >
               {t('items.clear')}
             </button>
           )}
-        </div>
-      </form>
-
-      <div className="mt-4">
+        </>
+      }
+    >
+      <div>
         {items.status === 'loading' && <Loading rows={4} />}
         {items.status === 'error' && invalid === null && (
           <ErrorState message={items.error.message} onRetry={items.reload} />
@@ -201,7 +204,6 @@ function ItemList({
   onMore: (cursor: string) => void;
 }) {
   const { t } = useTranslation();
-  const f = useFormat();
   const { items, next } = page;
   const more = next !== undefined && (
     <div className="flex flex-col gap-2">
@@ -233,9 +235,6 @@ function ItemList({
 
   return (
     <div className="flex flex-col gap-3">
-      <p className="m-0 text-small text-ink-2" role="status">
-        {t(f.plural(items.length, 'items.shownOne', 'items.shownOther'), { n: f.num(items.length) })}
-      </p>
       <ul aria-label={t('items.list')} className={`${card} m-0 flex list-none flex-col px-4 py-1 md:px-6`}>
         {items.map((item) => (
           <ItemRow key={item.id} pipeline={pipeline} item={item} />

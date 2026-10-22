@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useLocation, useParams, useSearchParams } from 'react-router-dom';
 import type { InsightState } from '../../api/schema';
 import { ScreenPage } from '../ScreenPage';
+import { Breadcrumb, pipelineCrumb } from '../../common/Breadcrumb';
 import { Segmented } from '../../common/Segmented';
 import { EmptyState, QueryView } from '../../common/States';
 import { useResource } from '../../common/useResource';
@@ -45,21 +46,19 @@ export function InsightsScreen() {
   return (
     <ScreenPage
       title={t('nav.insights')}
-      eyebrow={<p className="m-0 font-mono text-small text-ink-2">{pipeline}</p>}
-      header={
-        <>
-          <Segmented<Tab>
-            label={t('insights.stateLabel')}
-            value={tab}
-            options={[
-              { value: 'attention', label: t('insights.tab.attention', { count: counts.attention }) },
-              { value: 'resolved', label: t('insights.tab.resolved', { count: counts.resolved }) },
-              { value: 'muted', label: t('insights.tab.muted', { count: counts.muted }) },
-            ]}
-            onChange={(value) => setSearch(value === 'attention' ? {} : { state: value })}
-          />
-          <p className="m-0 text-tiny text-ink-3 md:ml-auto">{t('insights.explain')}</p>
-        </>
+      context={<Breadcrumb items={[pipelineCrumb(pipeline)]} />}
+      help={t('insights.explain')}
+      toolbar={
+        <Segmented<Tab>
+          label={t('insights.stateLabel')}
+          value={tab}
+          options={[
+            { value: 'attention', label: t('insights.tab.attention', { count: counts.attention }) },
+            { value: 'resolved', label: t('insights.tab.resolved', { count: counts.resolved }) },
+            { value: 'muted', label: t('insights.tab.muted', { count: counts.muted }) },
+          ]}
+          onChange={(value) => setSearch(value === 'attention' ? {} : { state: value })}
+        />
       }
     >
       <QueryView query={insights}>

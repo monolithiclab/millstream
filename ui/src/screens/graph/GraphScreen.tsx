@@ -16,6 +16,7 @@ import { liveUrls } from '../../api/api';
 import type { Pipeline, PipelineSnapshot, Run } from '../../api/schema';
 import { useApi } from '../../api/context';
 import { useResource } from '../../common/useResource';
+import { Breadcrumb, pipelineCrumb } from '../../common/Breadcrumb';
 import { card } from '../../common/styles';
 import { useDocumentVisible, useReducedMotion } from '../../common/motion';
 import { NoticeRegion, runAction, useNotice } from '../../common/Notice';
@@ -430,7 +431,7 @@ function RunStrip({ pipeline, run }: { pipeline: Pipeline; run: Run | null }) {
 function Legend() {
   const kindLabel = useKindLabel();
   return (
-    <ul className="m-0 flex list-none flex-wrap items-center gap-x-4 gap-y-1 p-0 text-tiny text-ink-2">
+    <ul className="m-0 flex list-none flex-wrap items-center gap-x-4 gap-y-1 self-center p-0 text-tiny text-ink-2">
       {(['action', 'filter', 'review', 'dedupe'] as const).map((kind) => (
         <li key={kind} className={`inline-flex items-center gap-1.5 ${kind === 'review' ? 'text-human' : ''}`}>
           <KindIcon kind={kind} />
@@ -526,24 +527,25 @@ export function GraphScreen() {
   return (
     <ScreenPage
       title={t('nav.graph')}
-      eyebrow={<p className="m-0 font-mono text-small text-ink-2">{t('screen.inPipeline', { pipeline })}</p>}
+      context={<Breadcrumb items={[pipelineCrumb(pipeline)]} />}
+      help={t('graph.hint')}
+      toolbar={
+        <>
+          <Segmented
+            label={t('graph.overlay')}
+            value={overlay}
+            onChange={setOverlay}
+            options={[
+              { value: 'flow', label: t('graph.overlays.flow') },
+              { value: 'errors', label: t('graph.overlays.errors') },
+              { value: 'latency', label: t('graph.overlays.latency') },
+              { value: 'queues', label: t('graph.overlays.queues') },
+            ]}
+          />
+          <Legend />
+        </>
+      }
     >
-      <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
-        <Segmented
-          label={t('graph.overlay')}
-          value={overlay}
-          onChange={setOverlay}
-          options={[
-            { value: 'flow', label: t('graph.overlays.flow') },
-            { value: 'errors', label: t('graph.overlays.errors') },
-            { value: 'latency', label: t('graph.overlays.latency') },
-            { value: 'queues', label: t('graph.overlays.queues') },
-          ]}
-        />
-        <Legend />
-        <p className="m-0 text-tiny text-ink-3 md:ml-auto">{t('graph.hint')}</p>
-      </div>
-
       {data.status === 'loading' && <Loading rows={1} className="h-[420px]" />}
       {data.status === 'error' && <ErrorState title={t('graph.error')} message={data.error.message} onRetry={reload} />}
       {model !== null && positions !== null && ready !== null && (

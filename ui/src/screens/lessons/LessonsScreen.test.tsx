@@ -8,7 +8,7 @@ import { renderApp } from '../../test/render';
 describe('LessonsScreen', () => {
   it('shows each step’s rules and examples with the source they cite', async () => {
     renderApp({ route: '/p/listings-daily/lessons' });
-    const score = await screen.findByRole('region', { name: 'score' });
+    const score = await screen.findByRole('region', { name: 'Step score' });
     const rules = within(score).getAllByRole('listitem');
     expect(rules).toHaveLength(3);
     expect(rules[0]).toHaveTextContent('Listings without a surface area are not scored');
@@ -28,7 +28,7 @@ describe('LessonsScreen', () => {
       'href',
       '/p/listings-daily/graph?step=score',
     );
-    const enrich = screen.getByRole('region', { name: 'enrich' });
+    const enrich = screen.getByRole('region', { name: 'Step enrich' });
     expect(enrich).toHaveTextContent('No example.');
   });
 
@@ -45,7 +45,7 @@ describe('LessonsScreen', () => {
         patch: [{ op: 'replace', path: '/marginPct', value: 12 }],
       });
     const { user, location } = renderApp({ route: '/p/listings-daily/lessons', api });
-    const score = await screen.findByRole('region', { name: 'score' });
+    const score = await screen.findByRole('region', { name: 'Step score' });
     await user.click(within(score).getByRole('button', { name: 'from review dl_4b2e' }));
     const dialog = await screen.findByRole('dialog', { name: 'Review dl_4b2e' });
     expect(await within(dialog).findByText('Approved with changes')).toBeInTheDocument();
@@ -62,7 +62,7 @@ describe('LessonsScreen', () => {
       'listings-daily': [{ step: 'tag', rules: [], examples: [{ input: 1, output: 2, source: 'chat/42' }] }],
     };
     renderApp({ route: '/p/listings-daily/lessons', api: new FakeApi({ ...demoFixtures, lessons }) });
-    const tag = await screen.findByRole('region', { name: 'tag' });
+    const tag = await screen.findByRole('region', { name: 'Step tag' });
     expect(tag).toHaveTextContent('No rule.');
     expect(tag).toHaveTextContent('chat/42');
   });
@@ -82,6 +82,8 @@ describe('LessonsScreen', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('Le chargement a échoué. boom');
     fail = false;
     await user.click(screen.getByRole('button', { name: 'Réessayer' }));
-    expect(await screen.findByRole('region', { name: 'score' })).toHaveTextContent('d’après la proposition p-0142');
+    expect(await screen.findByRole('region', { name: 'Étape score' })).toHaveTextContent(
+      'd’après la proposition p-0142',
+    );
   });
 });

@@ -9,7 +9,7 @@ import { CopyButton } from '../../common/Copy';
 import { ScrollRegion } from '../../common/ScrollRegion';
 import { Segmented } from '../../common/Segmented';
 import { EmptyState, QueryView } from '../../common/States';
-import { card, cardTitle, field } from '../../common/styles';
+import { card, cardTitle, field, filterLabel } from '../../common/styles';
 import { useNow } from '../../common/useNow';
 import { useResource } from '../../common/useResource';
 import { PipelineSelect } from '../../common/PipelineSelect';
@@ -132,7 +132,7 @@ export function MetricsScreen() {
 
   const toolbar = (
     <>
-      <label className="flex flex-col gap-1 text-tiny font-bold text-ink-2">
+      <label className={filterLabel}>
         {t('metrics.metric')}
         <Select
           value={view.metric}
@@ -147,7 +147,7 @@ export function MetricsScreen() {
           ))}
         </Select>
       </label>
-      <label className="flex flex-col gap-1 text-tiny font-bold text-ink-2">
+      <label className={filterLabel}>
         {t('metrics.pipeline')}
         <PipelineSelect value={view.pipeline} onChange={(pipeline) => set({ pipeline })} className="font-normal" />
       </label>
@@ -207,7 +207,7 @@ export function MetricsScreen() {
       {view.range === 'custom' && (
         <div className="flex flex-wrap gap-2">
           {(['from', 'to'] as const).map((end) => (
-            <label key={end} className="flex flex-col gap-1 text-tiny font-bold text-ink-2">
+            <label key={end} className={filterLabel}>
               {end === 'from' ? t('metrics.from') : t('metrics.to')}
               <input
                 type="datetime-local"

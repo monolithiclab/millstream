@@ -4,10 +4,12 @@ import { Link, useParams, useSearchParams } from 'react-router-dom';
 import type { Proposal, ProposalKind, ProposalState } from '../../api/schema';
 import { NoticeRegion, useNotice } from '../../common/Notice';
 import { isOpenProposal, useProposalKindLabel } from '../../common/proposal';
+import { Breadcrumb, pipelineCrumb } from '../../common/Breadcrumb';
 import { Segmented } from '../../common/Segmented';
+import { Select } from '../../common/Select';
 import { EmptyState, QueryView } from '../../common/States';
 import { StatusBadge, StatusText, Tag } from '../../common/Status';
-import { buttons, card, field } from '../../common/styles';
+import { buttons, card, filterLabel } from '../../common/styles';
 import { useFormat } from '../../common/useFormat';
 import { useNow } from '../../common/useNow';
 import { useResource } from '../../common/useResource';
@@ -32,11 +34,34 @@ export function ImproveScreen() {
   const insights = useResource(`insights:${pipeline}`, (api) => api.listInsights({ pipeline }));
   const { notice, setNotice, dismiss } = useNotice();
   const fix = useProposeFix(pipeline, setNotice);
+  const kindLabel = useProposalKindLabel();
   const reasonId = useId();
   const view: View = search.get('view') === 'insights' ? 'insights' : 'proposals';
   const attention =
     insights.status === 'ready' ? insights.data.filter((i) => i.state === 'open' || i.state === 'acknowledged') : [];
-  const open = proposals.status === 'ready' ? proposals.data.filter((p) => tabOf(p.state) === 'open').length : 0;
+
+  // The proposals by state tab, then by kind; both in the URL.
+  const all = proposals.status === 'ready' ? proposals.data : [];
+  const set = (key: string, value: string | null) => {
+    const next = new URLSearchParams(search);
+    if (value === null) next.delete(key);
+    else next.set(key, value);
+    setSearch(next);
+  };
+  const tab = tabs.find((x) => x === search.get('state')) ?? 'open';
+  const counts: Record<Tab, number> = { open: 0, stale: 0, accepted: 0, rejected: 0 };
+  for (const p of all) counts[tabOf(p.state)] += 1;
+  const inTab = all.filter((p) => tabOf(p.state) === tab);
+  const kinds = [...new Set(inTab.map((p) => p.kind))].sort();
+  const kind = kinds.find((k) => k === search.get('kind'));
+  const shown = inTab.filter((p) => kind === undefined || p.kind === kind);
+  const tabLabels: Record<Tab, string> = {
+    open: t('improve.tab.open', { count: counts.open }),
+    stale: t('improve.tab.stale', { count: counts.stale }),
+    accepted: t('improve.tab.accepted', { count: counts.accepted }),
+    rejected: t('improve.tab.rejected', { count: counts.rejected }),
+  };
+
   const proposeButton = (label: string, onClick: () => void, className: string) => (
     <button
       type="button"
@@ -52,32 +77,67 @@ export function ImproveScreen() {
   return (
     <ScreenPage
       title={t('nav.improve')}
-      eyebrow={<p className="m-0 font-mono text-small text-ink-2">{pipeline}</p>}
-      header={
+      context={<Breadcrumb items={[pipelineCrumb(pipeline)]} />}
+      help={
+        <>
+          <p className="m-0">{t('improve.explain')}</p>
+          {fix.reason !== null && <p className="m-0 mt-2">{fix.reason}</p>}
+        </>
+      }
+      actions={
+        <>
+          {/* Why Propose a fix is held back, read with each of its buttons; the help shows it too. */}
+          {fix.reason !== null && (
+            <span id={reasonId} className="sr-only">
+              {fix.reason}
+            </span>
+          )}
+          {proposeButton(t('improve.proposeFix'), () => fix.propose(), buttons.primary)}
+        </>
+      }
+      toolbar={
         <>
           <Segmented<View>
             label={t('improve.viewLabel')}
             value={view}
             options={[
-              { value: 'proposals', label: t('improve.view.proposals', { count: open }) },
+              { value: 'proposals', label: t('improve.view.proposals', { count: counts.open }) },
               { value: 'insights', label: t('improve.view.insights', { count: attention.length }) },
             ]}
             onChange={(value) => setSearch(value === 'proposals' ? {} : { view: value })}
           />
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 md:ml-auto">
-            {fix.reason !== null && (
-              <p id={reasonId} className="m-0 max-w-[420px] text-tiny text-ink-2">
-                {fix.reason}
-              </p>
-            )}
-            {proposeButton(t('improve.proposeFix'), () => fix.propose(), buttons.primary)}
-          </div>
+          {view === 'proposals' && proposals.status === 'ready' && (
+            <Segmented<Tab>
+              label={t('improve.stateLabel')}
+              value={tab}
+              options={tabs.map((value) => ({ value, label: tabLabels[value] }))}
+              onChange={(value) => set('state', value === 'open' ? null : value)}
+            />
+          )}
+          {view === 'proposals' && kinds.length > 1 && (
+            <label className={filterLabel}>
+              {t('improve.kindLabel')}
+              <Select
+                value={kind ?? ''}
+                onChange={(e) => set('kind', e.target.value === '' ? null : e.target.value)}
+                className="font-normal"
+              >
+                <option value="">{t('improve.allKinds')}</option>
+                {kinds.map((k: ProposalKind) => (
+                  <option key={k} value={k}>
+                    {kindLabel(k)}
+                  </option>
+                ))}
+              </Select>
+            </label>
+          )}
         </>
       }
     >
-      <p className="m-0 max-w-[760px] text-small text-ink-2">{t('improve.explain')}</p>
       {view === 'proposals' ? (
-        <QueryView query={proposals}>{(all) => <ProposalList pipeline={pipeline} proposals={all} />}</QueryView>
+        <QueryView query={proposals}>
+          {() => <ProposalList pipeline={pipeline} proposals={shown} tab={tab} />}
+        </QueryView>
       ) : (
         <QueryView query={insights}>
           {() => (
@@ -101,77 +161,29 @@ export function ImproveScreen() {
   );
 }
 
-function ProposalList({ pipeline, proposals }: { pipeline: string; proposals: Proposal[] }) {
+// The proposals of the tab and kind chosen, or why there are none.
+function ProposalList({ pipeline, proposals, tab }: { pipeline: string; proposals: Proposal[]; tab: Tab }) {
   const { t } = useTranslation();
-  const [search, setSearch] = useSearchParams();
   const kindLabel = useProposalKindLabel();
   const now = useNow();
   const summarize = useValidationSummary();
-  const set = (key: string, value: string | null) => {
-    const next = new URLSearchParams(search);
-    if (value === null) next.delete(key);
-    else next.set(key, value);
-    setSearch(next);
-  };
-  const tab = tabs.find((x) => x === search.get('state')) ?? 'open';
-  const counts: Record<Tab, number> = { open: 0, stale: 0, accepted: 0, rejected: 0 };
-  for (const p of proposals) counts[tabOf(p.state)] += 1;
-  const inTab = proposals.filter((p) => tabOf(p.state) === tab);
-  const kinds = [...new Set(inTab.map((p) => p.kind))].sort();
-  const kind = kinds.find((k) => k === search.get('kind'));
-  const shown = inTab.filter((p) => kind === undefined || p.kind === kind);
-  const tabLabels: Record<Tab, string> = {
-    open: t('improve.tab.open', { count: counts.open }),
-    stale: t('improve.tab.stale', { count: counts.stale }),
-    accepted: t('improve.tab.accepted', { count: counts.accepted }),
-    rejected: t('improve.tab.rejected', { count: counts.rejected }),
-  };
-  return (
-    <div className="flex flex-col gap-3">
-      <div className="flex flex-wrap items-end gap-3">
-        <Segmented<Tab>
-          label={t('improve.stateLabel')}
-          value={tab}
-          options={tabs.map((value) => ({ value, label: tabLabels[value] }))}
-          onChange={(value) => set('state', value === 'open' ? null : value)}
+  return proposals.length === 0 ? (
+    <EmptyState title={tab === 'open' ? t('improve.none') : t('improve.noneHere')} done={tab === 'open'}>
+      {tab === 'open' && t('improve.noneBody')}
+    </EmptyState>
+  ) : (
+    <ul aria-label={t('improve.listLabel')} className="m-0 flex list-none flex-col gap-3 p-0">
+      {proposals.map((p) => (
+        <ProposalRow
+          key={p.id}
+          pipeline={pipeline}
+          proposal={p}
+          now={now}
+          kind={kindLabel(p.kind)}
+          summary={summarize(p)}
         />
-        {kinds.length > 1 && (
-          <label className="flex flex-col gap-1 text-tiny font-bold text-ink-2">
-            {t('improve.kindLabel')}
-            <select
-              value={kind ?? ''}
-              onChange={(e) => set('kind', e.target.value === '' ? null : e.target.value)}
-              className={`${field} font-normal`}
-            >
-              <option value="">{t('improve.allKinds')}</option>
-              {kinds.map((k: ProposalKind) => (
-                <option key={k} value={k}>
-                  {kindLabel(k)}
-                </option>
-              ))}
-            </select>
-          </label>
-        )}
-      </div>
-      {shown.length === 0 ? (
-        <EmptyState title={tab === 'open' ? t('improve.none') : t('improve.noneHere')} done={tab === 'open'}>
-          {tab === 'open' && t('improve.noneBody')}
-        </EmptyState>
-      ) : (
-        <ul aria-label={t('improve.listLabel')} className="m-0 flex list-none flex-col gap-3 p-0">
-          {shown.map((p) => (
-            <ProposalRow
-              key={p.id}
-              pipeline={pipeline}
-              proposal={p}
-              now={now}
-              kind={kindLabel(p.kind)}
-              summary={summarize(p)}
-            />
-          ))}
-        </ul>
-      )}
-    </div>
+      ))}
+    </ul>
   );
 }
 

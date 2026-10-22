@@ -66,6 +66,18 @@ describe('items list', () => {
     expect(screen.getByRole('textbox', { name: 'Where (CEL)' })).toHaveValue('');
   });
 
+  it('applies the run on leaving its field, with no Apply button, and explains CEL in the field’s help', async () => {
+    const { user, location } = renderApp({ route });
+    const run = await screen.findByRole('textbox', { name: 'Run' });
+    expect(screen.queryByRole('button', { name: 'Apply' })).not.toBeInTheDocument();
+    await user.type(run, 'run_0600');
+    expect(location()).toBe(route);
+    await user.tab();
+    expect(location()).toBe(`${route}?run=run_0600`);
+    await user.click(screen.getByRole('button', { name: 'About the CEL filter' }));
+    expect(screen.getByText(/Over item \(the payload\), envelope, vars and run/)).toBeInTheDocument();
+  });
+
   it('says a bad expression at the field, with the server’s message', async () => {
     const api = new FakeApi();
     const real = api.listItems;
@@ -163,7 +175,7 @@ describe('items list', () => {
   it('is in French', async () => {
     renderApp({ route, language: 'fr' });
     expect(await screen.findByRole('combobox', { name: 'Flux' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Appliquer' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'À propos du filtre CEL' })).toBeInTheDocument();
     await waitFor(() =>
       expect(screen.getByRole('list', { name: 'Items, du plus ancien au plus récent' })).toBeInTheDocument(),
     );
