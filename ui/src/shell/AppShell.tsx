@@ -5,6 +5,7 @@ import { usePipelines } from '../common/usePipelines';
 import { liveUrls } from '../api/api';
 import { useDemo } from '../api/context';
 import { useSession } from '../auth/SessionGate';
+import { Select } from '../common/Select';
 import { buttons } from '../common/styles';
 import { languages, type Language } from '../i18n';
 import { useLiveStream } from '../live/useLiveStream';
@@ -68,8 +69,6 @@ function NavGroup({
     </div>
   );
 }
-
-const selectClass = 'w-full rounded-1 border border-control-line bg-surface px-2 py-1 text-small text-ink';
 
 // The frame around every screen: skip link, main navigation, header with the live mark and the palette, the
 // command palette and the shortcut help.
@@ -174,31 +173,27 @@ export function AppShell() {
           <h2 className="sr-only">{t('shell.preferences')}</h2>
           <label className="flex flex-col gap-1">
             {t('theme.label')}
-            <select
-              value={prefs.theme}
-              onChange={(e) => prefs.setTheme(e.target.value as Theme)}
-              className={selectClass}
-            >
+            <Select value={prefs.theme} onChange={(e) => prefs.setTheme(e.target.value as Theme)} className="w-full">
               {themes.map((theme) => (
                 <option key={theme} value={theme}>
                   {t(themeNames[theme])}
                 </option>
               ))}
-            </select>
+            </Select>
           </label>
           <label className="flex flex-col gap-1">
             {t('language.label')}
-            <select
+            <Select
               value={prefs.language}
               onChange={(e) => prefs.setLanguage(e.target.value as Language)}
-              className={selectClass}
+              className="w-full"
             >
               {languages.map((language) => (
                 <option key={language} value={language} lang={language}>
                   {t(languageNames[language])}
                 </option>
               ))}
-            </select>
+            </Select>
           </label>
           {session?.auth === true && (
             <button type="button" onClick={() => void signOut()} className={buttons.secondary}>

@@ -168,6 +168,9 @@ earlier designs are in the git history of the spec.
   the report could say so, or `validate` refuse such a draft before the sandbox runs it.
 - Crash suite on Postgres: the failpoint matrices (run and commands) run on both stores; the seeded random kill
   points, the M2 agent path and the review fixtures still run on SQLite only.
+- Live streams exhaust Chrome's six HTTP/1.1 connections per host: each page holds one or two server-sent event
+  streams, sockets of left pages drain slowly (7 open, 3 after a minute), and several tabs hit the cap; the run page
+  then stays on its skeletons. Fix: one multiplexed stream per tab, or HTTP/2 (API change).
 
 ## Execution (icebox)
 
