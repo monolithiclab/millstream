@@ -3,6 +3,9 @@
     "name": "Millstream",
     "pageTitle": "{{page}} · Millstream"
   },
+  "help": {
+    "toggle": "À propos de cette page"
+  },
   "shell": {
     "skipToContent": "Aller au contenu principal",
     "mainNav": "Principale",
