@@ -67,3 +67,46 @@ export async function expectNoClipping(page: Page) {
   });
   expect(clipped).toEqual([]);
 }
+
+// The page never scrolls sideways, at any width.
+export async function expectNoPageScroll(page: Page) {
+  const widths = await page.evaluate(() => ({
+    scroll: document.documentElement.scrollWidth,
+    client: document.documentElement.clientWidth,
+  }));
+  expect(widths.scroll).toBeLessThanOrEqual(widths.client);
+}
+
+// Where the screen has a help toggle: the keyboard opens it onto its text, axe passes with it open, and Escape
+// closes it with focus back on the toggle. A screen without one passes.
+export async function expectHelpToggleWorks(page: Page) {
+  const toggle = page.getByRole('button', { name: /^(About this page|À propos de cette page)$/ }).first();
+  if ((await toggle.count()) === 0) return;
+  await toggle.focus();
+  await page.keyboard.press('Enter');
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+  const popover = page.locator(`[id="${(await toggle.getAttribute('aria-controls')) ?? ''}"]`);
+  await expect(popover).toBeVisible();
+  await expect(popover).not.toHaveText('');
+  await expectNoViolations(page);
+  await page.keyboard.press('Escape');
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  await expect(toggle).toBeFocused();
+}
+
+// Every select draws its chevron inside its own box (Chromium put the platform arrow against the border).
+export async function expectChevronsInsideSelects(page: Page) {
+  const outside = await page.evaluate(() =>
+    [...document.querySelectorAll<HTMLSelectElement>('select')]
+      .filter((select) => select.offsetParent !== null)
+      .flatMap((select) => {
+        const chevron = select.parentElement?.querySelector('svg');
+        if (!chevron) return [`select "${select.getAttribute('aria-label') ?? select.name}" has no chevron`];
+        const s = select.getBoundingClientRect();
+        const c = chevron.getBoundingClientRect();
+        const inside = c.left >= s.left && c.right <= s.right && c.top >= s.top && c.bottom <= s.bottom;
+        return inside ? [] : [`select "${select.getAttribute('aria-label') ?? select.name}": chevron outside its box`];
+      }),
+  );
+  expect(outside).toEqual([]);
+}

@@ -1,11 +1,18 @@
 import { expect, test, type Page } from '@playwright/test';
-import { expectNoClipping, expectNoViolations } from './checks';
+import {
+  expectChevronsInsideSelects,
+  expectHelpToggleWorks,
+  expectNoClipping,
+  expectNoPageScroll,
+  expectNoViolations,
+} from './checks';
 import { toAccept, toReject } from './proposals';
 
 // Every built screen against millstream run on the e2e fixture, seeded by global.setup.ts: in both themes, both
-// languages, at 375 and 1280 px, axe finds no WCAG 2.2 AA violation and no text is clipped. Then the flows that
-// cross screens: the graph to an item to a replayed dead letter, the reject sheet, the timeline's density strip and
-// the metrics explorer.
+// languages, at 375 and 1280 px, axe finds no WCAG 2.2 AA violation, no text is clipped, the page does not scroll
+// sideways, every select's chevron lies inside it, and the help toggle (where there is one) opens and closes by
+// keyboard. Then the flows that cross screens: the graph to an item to a replayed dead letter, the reject sheet, the
+// timeline's density strip and the metrics explorer.
 const themes = ['light', 'dark'] as const;
 const languages = ['en', 'fr'] as const;
 const widths = [375, 1280] as const;
@@ -185,6 +192,9 @@ for (const screen of screens) {
           await screen.ready(page);
           await expectNoViolations(page);
           await expectNoClipping(page);
+          await expectNoPageScroll(page);
+          await expectChevronsInsideSelects(page);
+          await expectHelpToggleWorks(page);
           if (screen.open) {
             await screen.open(page);
             await expectNoViolations(page);
