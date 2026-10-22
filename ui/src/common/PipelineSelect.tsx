@@ -1,8 +1,8 @@
 import { useTranslation } from 'react-i18next';
-import { field } from './styles';
+import { Select } from './Select';
 import { usePipelines } from './usePipelines';
 
-// A pipeline filter: every pipeline, or "All pipelines" for the empty value.
+// A pipeline filter: every pipeline, or "All pipelines" for the empty value. `className` sizes the wrapper.
 export function PipelineSelect({
   value,
   onChange,
@@ -15,13 +15,13 @@ export function PipelineSelect({
   const { t } = useTranslation();
   const pipelines = usePipelines();
   return (
-    <select value={value} onChange={(e) => onChange(e.target.value)} className={`${field} ${className}`}>
+    <Select value={value} onChange={(e) => onChange(e.target.value)} className={className}>
       <option value="">{t('switcher.allPipelines')}</option>
       {(pipelines.status === 'ready' ? pipelines.data : []).map((p) => (
         <option key={p.name} value={p.name}>
           {p.name}
         </option>
       ))}
-    </select>
+    </Select>
   );
 }

@@ -105,6 +105,15 @@ describe('LogsScreen', () => {
     expect(tail()).toHaveTextContent('Waiting for log lines…');
   });
 
+  it('puts the live mark, Pause and Clear after the filters, in the toolbar', () => {
+    renderApp({ route: '/logs' });
+    const item = screen.getByRole('textbox', { name: 'Item' });
+    const pause = screen.getByRole('button', { name: 'Pause scroll' });
+    expect(item.compareDocumentPosition(pause) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(pause.parentElement).toContainElement(screen.getByRole('button', { name: 'Clear' }));
+    expect(pause.parentElement).not.toContainElement(tail());
+  });
+
   it('filters by pipeline, run, step and item in the URL, starting a new tail', async () => {
     const { user, location } = renderApp({ route: '/logs?run=run_0600' });
     expect(source().url).toBe('/api/v1/live/logs?run=run_0600');

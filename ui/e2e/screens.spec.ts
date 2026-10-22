@@ -319,6 +319,23 @@ test('the metrics explorer draws a chart and keeps the view in the URL', async (
   await expectNoViolations(page);
 });
 
+test('the metrics toolbar wraps at 390 px in French, nothing wider than the page', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.addInitScript(() => window.localStorage.setItem('millstream.language', 'fr'));
+  // A long path in the copy box, and every toolbar field shown: the label box and the revision marks.
+  await page.goto('/metrics?range=1h&p=listings-daily&m=delivery_latency_seconds&by=stream&marks=1');
+  await expect(page.getByRole('combobox', { name: 'Métrique' })).toBeEnabled();
+  await expect(page.locator('canvas')).toBeVisible();
+  const wide = await page.evaluate(() =>
+    [...document.querySelectorAll<HTMLElement>('body *')]
+      .filter((el) => el.offsetParent !== null && !el.closest('[role="log"], table, .overflow-x-auto'))
+      .filter((el) => el.getBoundingClientRect().right > window.innerWidth + 1)
+      .map((el) => `${el.tagName}.${el.className.toString().split(' ').slice(0, 3).join('.')}`),
+  );
+  expect(wide).toEqual([]);
+  await expectNoClipping(page);
+});
+
 test('open a proposal, read its diff and validation, reject one with a reason, accept another', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto('/p/listings-daily/improve');

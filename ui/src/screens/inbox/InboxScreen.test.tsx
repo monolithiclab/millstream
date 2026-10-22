@@ -377,6 +377,12 @@ describe('InboxScreen', () => {
 
   it('filters by pipeline and inbox through the URL', async () => {
     const { user, location } = await openInbox();
+    // Labeled filters in the toolbar, the label shown above each select.
+    for (const name of ['Pipeline', 'Inbox']) {
+      const label = screen.getByText(name, { selector: 'label' });
+      expect(label).not.toHaveClass('sr-only');
+      expect(within(label).getByRole('combobox', { name })).toBeInTheDocument();
+    }
     await user.selectOptions(screen.getByRole('combobox', { name: 'Pipeline' }), 'photo-tagging');
     expect(location()).toBe('/inbox?pipeline=photo-tagging');
     expect(await screen.findByText('Inbox zero')).toBeInTheDocument();

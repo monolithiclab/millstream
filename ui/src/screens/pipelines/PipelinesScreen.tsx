@@ -78,10 +78,16 @@ export function PipelinesScreen() {
   const dead = pipelines.reduce((n, p) => n + p.openDeadLetters, 0);
 
   return (
-    <ScreenPage title={t('nav.pipelines')}>
-      <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1 text-small text-ink-2">
-        {list.status === 'ready' && pipelines.length > 0 && (
-          <span>
+    <ScreenPage
+      title={t('nav.pipelines')}
+      help={
+        <>
+          {t('pipelines.files')} <code className="font-mono">millstream apply</code>
+        </>
+      }
+      summary={
+        list.status === 'ready' && pipelines.length > 0 ? (
+          <>
             {t(f.plural(pipelines.length, 'pipelines.countOne', 'pipelines.countOther'), {
               n: f.num(pipelines.length),
             })}{' '}
@@ -89,13 +95,10 @@ export function PipelinesScreen() {
             <span className={dead > 0 ? 'font-bold text-bad' : ''}>
               {t(f.plural(dead, 'pipelines.deadOne', 'pipelines.deadOther'), { n: f.num(dead) })}
             </span>
-          </span>
-        )}
-        <span className="text-tiny text-ink-3 md:ml-auto">
-          {t('pipelines.files')} <code className="font-mono">millstream apply</code>
-        </span>
-      </div>
-
+          </>
+        ) : undefined
+      }
+    >
       {list.status === 'loading' && <Loading rows={3} className="h-14" />}
       {list.status === 'error' && (
         <ErrorState title={t('pipelines.error')} message={list.error.message} onRetry={list.reload} />

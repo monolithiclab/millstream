@@ -38,6 +38,17 @@ describe('pipelines list', () => {
     expect(screen.queryByRole('columnheader', { name: /today/i })).not.toBeInTheDocument();
   });
 
+  it('says pipelines change through their files behind the help toggle, not beside the counts', async () => {
+    const { user } = renderApp({ route: '/pipelines' });
+    await screen.findByRole('table');
+    expect(screen.queryByText(/Pipelines are files/)).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'About this page' }));
+    expect(screen.getByText(/Pipelines are files/)).toHaveTextContent(
+      'Pipelines are files: edit their package, then millstream apply',
+    );
+    expect(screen.getByText('millstream apply').tagName).toBe('CODE');
+  });
+
   it('pauses after a confirmation that states the consequence, opening on its primary action', async () => {
     const api = new FakeApi();
     const { user } = renderApp({ api, route: '/pipelines' });

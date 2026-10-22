@@ -193,6 +193,9 @@ describe('MetricsScreen', () => {
     await user.click(details);
     const table = screen.getByRole('table', { name: /items_in, Sum over 1 h/ });
     expect(within(table).getAllByRole('row').length).toBeGreaterThan(50);
+    // The path and its copy button are the title row's action.
+    const title = screen.getByRole('heading', { level: 1 }).parentElement!.parentElement!;
+    expect(title).toContainElement(screen.getByRole('button', { name: 'Copy link' }));
     await user.click(screen.getByRole('button', { name: 'Copy link' }));
     expect(writeText).toHaveBeenCalledWith('http://localhost:3000/metrics?m=items_in&range=1h');
     expect(await screen.findByRole('button', { name: 'Copied' })).toBeInTheDocument();

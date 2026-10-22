@@ -1,4 +1,4 @@
-import { useId } from 'react';
+import { useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
 import { liveUrls } from '../../api/api';
@@ -15,6 +15,8 @@ export function LogsScreen() {
   const { t } = useTranslation();
   const [search, setSearch] = useSearchParams();
   const ids = useId();
+  // The tail's live mark, Pause and Clear render here, at the toolbar's right end.
+  const [controls, setControls] = useState<HTMLDivElement | null>(null);
   const filter = {
     pipeline: search.get('pipeline') ?? '',
     run: search.get('run') ?? '',
@@ -34,36 +36,34 @@ export function LogsScreen() {
     setSearch(next);
   };
   const scopeLabels: Record<Scope, string> = { run: t('logs.run'), step: t('logs.step'), item: t('logs.item') };
-  return (
-    <ScreenPage title={t('nav.logs')}>
-      <div className="flex flex-wrap items-end gap-x-4 gap-y-3">
-        <label className="flex flex-col gap-1 text-tiny font-bold text-ink-2">
-          {t('logs.pipeline')}
-          <PipelineSelect
-            value={filter.pipeline}
-            onChange={(p) => setFilter('pipeline', p)}
-            className="min-h-[34px] font-normal"
+  const toolbar = (
+    <>
+      <label className="flex flex-col gap-1 text-tiny font-bold text-ink-2">
+        {t('logs.pipeline')}
+        <PipelineSelect value={filter.pipeline} onChange={(p) => setFilter('pipeline', p)} className="font-normal" />
+      </label>
+      {scopes.map((scope) => (
+        <label key={scope} htmlFor={`${ids}-${scope}`} className="flex flex-col gap-1 text-tiny font-bold text-ink-2">
+          {scopeLabels[scope]}
+          <input
+            id={`${ids}-${scope}`}
+            key={`${scope}-${filter[scope]}`}
+            defaultValue={filter[scope]}
+            placeholder={t('logs.any')}
+            onBlur={(e) => e.currentTarget.value.trim() !== filter[scope] && setFilter(scope, e.currentTarget.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') setFilter(scope, e.currentTarget.value);
+            }}
+            className={`${field} min-h-[34px] w-40 font-mono font-normal`}
           />
         </label>
-        {scopes.map((scope) => (
-          <label key={scope} htmlFor={`${ids}-${scope}`} className="flex flex-col gap-1 text-tiny font-bold text-ink-2">
-            {scopeLabels[scope]}
-            <input
-              id={`${ids}-${scope}`}
-              key={`${scope}-${filter[scope]}`}
-              defaultValue={filter[scope]}
-              placeholder={t('logs.any')}
-              onBlur={(e) => e.currentTarget.value.trim() !== filter[scope] && setFilter(scope, e.currentTarget.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') setFilter(scope, e.currentTarget.value);
-              }}
-              className={`${field} min-h-[34px] w-40 font-mono font-normal`}
-            />
-          </label>
-        ))}
-      </div>
-
-      <LogTail url={url} title={t('logs.tail')} className="h-[min(60vh,560px)]" />
+      ))}
+      <div ref={setControls} className="ml-auto flex flex-wrap items-center gap-x-4 gap-y-2" />
+    </>
+  );
+  return (
+    <ScreenPage title={t('nav.logs')} toolbar={toolbar}>
+      <LogTail url={url} title={t('logs.tail')} className="h-[min(60vh,560px)]" controls={controls} />
     </ScreenPage>
   );
 }

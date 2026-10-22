@@ -58,7 +58,8 @@ describe('NodesScreen', () => {
   it('shows the engine, the free capacity and the embedded node', async () => {
     renderApp({ route: '/nodes' });
     const row = await nodeRow('mill-01');
-    expect(screen.getByText('6 of 16 slots busy')).toBeInTheDocument();
+    // The summary line, under the title row.
+    expect(screen.getByText('6 of 16 slots busy').closest('div')).toHaveTextContent('6 of 16 slots busy · nodes: 3');
     expect(screen.getByRole('region', { name: 'Active engine' })).toHaveTextContent('mill-01');
     // The draining node's free slots take nothing new.
     expect(screen.getByRole('region', { name: 'Free capacity' })).toHaveTextContent('7');

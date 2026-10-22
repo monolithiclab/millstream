@@ -68,14 +68,14 @@ export function NodesScreen() {
   return (
     <ScreenPage
       title={t('nav.nodes')}
-      header={
-        data && (
-          <p className="m-0 text-small text-ink-2" data-live>
+      summary={
+        data ? (
+          <span data-live>
             <strong className="text-ink">{t('nodes.busy', { leases: f.num(leases), slots: f.num(slots) })}</strong>
             {' · '}
             {t('nodes.connected', { count: data.nodes.length })}
-          </p>
-        )
+          </span>
+        ) : undefined
       }
     >
       <QueryView query={nodes} rows={2}>

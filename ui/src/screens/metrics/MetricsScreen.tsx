@@ -13,6 +13,7 @@ import { card, cardTitle, field } from '../../common/styles';
 import { useNow } from '../../common/useNow';
 import { useResource } from '../../common/useResource';
 import { PipelineSelect } from '../../common/PipelineSelect';
+import { Select } from '../../common/Select';
 import { MetricChart, type ChartSeries, type Mark } from './MetricChart';
 import {
   bucket,
@@ -118,8 +119,8 @@ export function MetricsScreen() {
 
   const path = `/metrics${search.toString() ? `?${search.toString()}` : ''}`;
 
-  const header = (
-    <div className="flex max-w-full min-w-0 items-center rounded-1 border border-line bg-bg md:ml-auto">
+  const copyLink = (
+    <div className="flex max-w-full min-w-0 items-center rounded-1 border border-line bg-bg">
       <span className="min-w-0 truncate px-2.5 py-1 font-mono text-tiny text-ink-2">{path}</span>
       <CopyButton
         text={window.location.origin + path}
@@ -129,124 +130,122 @@ export function MetricsScreen() {
     </div>
   );
 
-  return (
-    <ScreenPage title={t('nav.metrics')} header={header}>
-      <div className="flex flex-wrap items-end gap-x-5 gap-y-3.5">
-        <label className="flex flex-col gap-1 text-tiny font-bold text-ink-2">
-          {t('metrics.metric')}
-          <select
-            value={view.metric}
-            onChange={(e) => set({ metric: e.target.value, stat: defaultStat(e.target.value), hidden: [] })}
-            className={`${field} min-h-[34px] min-w-[240px] font-mono font-normal`}
-          >
-            {available.length === 0 && <option value="">{t('metrics.noMetric')}</option>}
-            {available.map((name) => (
-              <option key={name} value={name}>
-                {name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="flex flex-col gap-1 text-tiny font-bold text-ink-2">
-          {t('metrics.pipeline')}
-          <PipelineSelect
-            value={view.pipeline}
-            onChange={(pipeline) => set({ pipeline })}
-            className="min-h-[34px] font-normal"
+  const toolbar = (
+    <>
+      <label className="flex flex-col gap-1 text-tiny font-bold text-ink-2">
+        {t('metrics.metric')}
+        <Select
+          value={view.metric}
+          onChange={(e) => set({ metric: e.target.value, stat: defaultStat(e.target.value), hidden: [] })}
+          className="min-w-[240px] font-mono font-normal"
+        >
+          {available.length === 0 && <option value="">{t('metrics.noMetric')}</option>}
+          {available.map((name) => (
+            <option key={name} value={name}>
+              {name}
+            </option>
+          ))}
+        </Select>
+      </label>
+      <label className="flex flex-col gap-1 text-tiny font-bold text-ink-2">
+        {t('metrics.pipeline')}
+        <PipelineSelect value={view.pipeline} onChange={(pipeline) => set({ pipeline })} className="font-normal" />
+      </label>
+      <div className="flex flex-col gap-1">
+        <span className="text-tiny font-bold text-ink-2">{t('metrics.groupBy')}</span>
+        <div className="flex flex-wrap items-center gap-2">
+          <Segmented<GroupMode>
+            label={t('metrics.groupBy')}
+            value={groupMode}
+            options={[
+              { value: 'none', label: t('metrics.group.none') },
+              { value: 'step', label: t('metrics.group.step') },
+              { value: 'label', label: t('metrics.group.label') },
+            ]}
+            onChange={(mode) => set({ by: mode === 'none' ? '' : mode === 'step' ? 'step' : 'stream', hidden: [] })}
           />
-        </label>
-        <div className="flex flex-col gap-1">
-          <span className="text-tiny font-bold text-ink-2">{t('metrics.groupBy')}</span>
-          <div className="flex flex-wrap items-center gap-2">
-            <Segmented<GroupMode>
-              label={t('metrics.groupBy')}
-              value={groupMode}
-              options={[
-                { value: 'none', label: t('metrics.group.none') },
-                { value: 'step', label: t('metrics.group.step') },
-                { value: 'label', label: t('metrics.group.label') },
-              ]}
-              onChange={(mode) => set({ by: mode === 'none' ? '' : mode === 'step' ? 'step' : 'stream', hidden: [] })}
-            />
-            {groupMode === 'label' && (
-              <>
-                <label htmlFor={labelInput} className="sr-only">
-                  {t('metrics.labelName')}
-                </label>
-                <input
-                  id={labelInput}
-                  list={`${labelInput}-list`}
-                  defaultValue={view.by}
-                  onBlur={(e) => commitLabel(e.currentTarget.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') commitLabel(e.currentTarget.value);
-                  }}
-                  className={`${field} min-h-[34px] w-32 font-mono`}
-                />
-                <datalist id={`${labelInput}-list`}>
-                  {knownLabels.map((l) => (
-                    <option key={l} value={l} />
-                  ))}
-                </datalist>
-              </>
-            )}
-          </div>
-        </div>
-        <div className="flex flex-col gap-1">
-          <span className="text-tiny font-bold text-ink-2">{t('metrics.rangeLabel')}</span>
-          <Segmented<Range>
-            label={t('metrics.rangeLabel')}
-            value={view.range}
-            options={ranges.map((value) => ({ value, label: rangeLabels[value] }))}
-            onChange={(range) => {
-              const w = windowOf(view, now);
-              set(
-                range === 'custom'
-                  ? { range, from: new Date(w.from).toISOString(), to: new Date(w.to).toISOString() }
-                  : { range },
-              );
-            }}
-          />
-        </div>
-        {view.range === 'custom' && (
-          <div className="flex flex-wrap gap-2">
-            {(['from', 'to'] as const).map((end) => (
-              <label key={end} className="flex flex-col gap-1 text-tiny font-bold text-ink-2">
-                {end === 'from' ? t('metrics.from') : t('metrics.to')}
-                <input
-                  type="datetime-local"
-                  value={toLocalInput(view[end])}
-                  onChange={(e) => {
-                    const date = new Date(e.target.value);
-                    if (!Number.isNaN(date.getTime())) set({ [end]: date.toISOString() });
-                  }}
-                  className={`${field} min-h-[34px] font-normal`}
-                />
+          {groupMode === 'label' && (
+            <>
+              <label htmlFor={labelInput} className="sr-only">
+                {t('metrics.labelName')}
               </label>
-            ))}
-          </div>
-        )}
-        <div className="flex flex-col gap-1">
-          <span className="text-tiny font-bold text-ink-2">{t('metrics.statLabel')}</span>
-          <Segmented<Stat>
-            label={t('metrics.statLabel')}
-            value={view.stat}
-            options={stats.map((value) => ({ value, label: statLabels[value] }))}
-            onChange={(stat) => set({ stat })}
-          />
+              <input
+                id={labelInput}
+                list={`${labelInput}-list`}
+                defaultValue={view.by}
+                onBlur={(e) => commitLabel(e.currentTarget.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') commitLabel(e.currentTarget.value);
+                }}
+                className={`${field} min-h-[34px] w-32 font-mono`}
+              />
+              <datalist id={`${labelInput}-list`}>
+                {knownLabels.map((l) => (
+                  <option key={l} value={l} />
+                ))}
+              </datalist>
+            </>
+          )}
         </div>
-        <label className="inline-flex min-h-[34px] items-center gap-2 text-small text-ink-2">
-          <input
-            type="checkbox"
-            checked={view.marks}
-            disabled={!view.pipeline}
-            onChange={(e) => set({ marks: e.target.checked })}
-            className="size-[15px] accent-accent"
-          />
-          {view.pipeline ? t('metrics.marks') : t('metrics.marksNeedPipeline')}
-        </label>
       </div>
+      <div className="flex flex-col gap-1">
+        <span className="text-tiny font-bold text-ink-2">{t('metrics.rangeLabel')}</span>
+        <Segmented<Range>
+          label={t('metrics.rangeLabel')}
+          value={view.range}
+          options={ranges.map((value) => ({ value, label: rangeLabels[value] }))}
+          onChange={(range) => {
+            const w = windowOf(view, now);
+            set(
+              range === 'custom'
+                ? { range, from: new Date(w.from).toISOString(), to: new Date(w.to).toISOString() }
+                : { range },
+            );
+          }}
+        />
+      </div>
+      {view.range === 'custom' && (
+        <div className="flex flex-wrap gap-2">
+          {(['from', 'to'] as const).map((end) => (
+            <label key={end} className="flex flex-col gap-1 text-tiny font-bold text-ink-2">
+              {end === 'from' ? t('metrics.from') : t('metrics.to')}
+              <input
+                type="datetime-local"
+                value={toLocalInput(view[end])}
+                onChange={(e) => {
+                  const date = new Date(e.target.value);
+                  if (!Number.isNaN(date.getTime())) set({ [end]: date.toISOString() });
+                }}
+                className={`${field} min-h-[34px] font-normal`}
+              />
+            </label>
+          ))}
+        </div>
+      )}
+      <div className="flex flex-col gap-1">
+        <span className="text-tiny font-bold text-ink-2">{t('metrics.statLabel')}</span>
+        <Segmented<Stat>
+          label={t('metrics.statLabel')}
+          value={view.stat}
+          options={stats.map((value) => ({ value, label: statLabels[value] }))}
+          onChange={(stat) => set({ stat })}
+        />
+      </div>
+      <label className="inline-flex min-h-[34px] items-center gap-2 text-small text-ink-2">
+        <input
+          type="checkbox"
+          checked={view.marks}
+          disabled={!view.pipeline}
+          onChange={(e) => set({ marks: e.target.checked })}
+          className="size-[15px] accent-accent"
+        />
+        {view.pipeline ? t('metrics.marks') : t('metrics.marksNeedPipeline')}
+      </label>
+    </>
+  );
 
+  return (
+    <ScreenPage title={t('nav.metrics')} actions={copyLink} toolbar={toolbar}>
       <QueryView query={names}>
         {(list) =>
           list.length === 0 ? (

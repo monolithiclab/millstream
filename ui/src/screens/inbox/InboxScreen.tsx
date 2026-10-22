@@ -19,10 +19,11 @@ import { screenKeyAllowed } from '../../shell/useShortcuts';
 import { useLatest } from '../../useLatest';
 import { ScreenPage } from '../ScreenPage';
 import { PipelineSelect } from '../../common/PipelineSelect';
+import { Select } from '../../common/Select';
 import { EmptyState, ErrorState, Loading } from '../../common/States';
 import { StatusGlyph, useStatusLabel } from '../../common/Status';
 import { useNow } from '../../common/useNow';
-import { buttons, field as fieldClass } from '../../common/styles';
+import { buttons } from '../../common/styles';
 import { changes, fieldKind, initialText, lookup, parseField, payloadEntries, toPatch } from './patch';
 import { ReasonDialog } from './ReasonDialog';
 import { ChangeList, fieldId, ReviewPanel, titleOf, type Field } from './ReviewPanel';
@@ -224,38 +225,41 @@ export function InboxScreen() {
     void navigate(withQuery('/inbox', { pipeline: pipelineFilter, inbox: inboxFilter, [name]: value || undefined }));
   };
 
-  const header = (
+  const summary =
+    queue.status === 'ready' ? (
+      <span data-live>
+        <strong className="text-human">{t('inbox.toReview', { count: reviews })}</strong>
+        {' · '}
+        {t('inbox.samples', { count: samples })}
+        {oldest && ` · ${t('inbox.oldest', { age: formatDuration(now - Date.parse(oldest.at), language) })}`}
+      </span>
+    ) : undefined;
+  const toolbar = (
     <>
-      {queue.status === 'ready' && (
-        <p className="m-0 text-small text-ink-2" data-live>
-          <strong className="text-human">{t('inbox.toReview', { count: reviews })}</strong>
-          {' · '}
-          {t('inbox.samples', { count: samples })}
-          {oldest && ` · ${t('inbox.oldest', { age: formatDuration(now - Date.parse(oldest.at), language) })}`}
-        </p>
-      )}
-      <div className="flex flex-wrap gap-2">
-        <label className="flex items-center gap-1.5 text-tiny text-ink-2">
-          <span className="sr-only">{t('inbox.pipelineFilter')}</span>
-          <PipelineSelect value={pipelineFilter ?? ''} onChange={(p) => setFilter('pipeline', p)} />
-        </label>
-        <label className="flex items-center gap-1.5 text-tiny text-ink-2">
-          <span className="sr-only">{t('inbox.inboxFilter')}</span>
-          <select value={inboxFilter ?? ''} onChange={(e) => setFilter('inbox', e.target.value)} className={fieldClass}>
-            <option value="">{t('inbox.allInboxes')}</option>
-            {inboxes.map((name) => (
-              <option key={name} value={name}>
-                {name}
-              </option>
-            ))}
-          </select>
-        </label>
-      </div>
+      <label className="flex flex-col gap-1 text-tiny font-bold text-ink-2">
+        {t('inbox.pipelineFilter')}
+        <PipelineSelect
+          value={pipelineFilter ?? ''}
+          onChange={(p) => setFilter('pipeline', p)}
+          className="font-normal"
+        />
+      </label>
+      <label className="flex flex-col gap-1 text-tiny font-bold text-ink-2">
+        {t('inbox.inboxFilter')}
+        <Select value={inboxFilter ?? ''} onChange={(e) => setFilter('inbox', e.target.value)} className="font-normal">
+          <option value="">{t('inbox.allInboxes')}</option>
+          {inboxes.map((name) => (
+            <option key={name} value={name}>
+              {name}
+            </option>
+          ))}
+        </Select>
+      </label>
     </>
   );
 
   return (
-    <ScreenPage title={t('nav.inbox')} header={header}>
+    <ScreenPage title={t('nav.inbox')} summary={summary} toolbar={toolbar}>
       <p role="status" aria-live="polite" className="sr-only">
         {announcement}
       </p>
