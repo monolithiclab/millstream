@@ -31,6 +31,17 @@ function resolve(host: HTMLElement, token: string): string {
 
 const HEIGHT = 320;
 
+// The buckets a line cannot show: a value between two empty buckets (or an edge) is a path of zero length, so with
+// points hidden a series that has data only there draws nothing. uPlot draws the points this returns.
+const lonePoints = (u: uPlot, si: number, show: boolean): number[] | null => {
+  if (show) return null;
+  const values = u.data[si] ?? [];
+  const lone: number[] = [];
+  for (let i = 0; i < values.length; i++)
+    if (values[i] != null && values[i - 1] == null && values[i + 1] == null) lone.push(i);
+  return lone.length > 0 ? lone : null;
+};
+
 // The uPlot line chart of the explorer: one line per visible series, dashes as well as colours, revision marks as
 // dashed rules, and the hovered bucket reported to the caller (the readout and the data table carry the values for
 // people who cannot see the canvas).
@@ -88,7 +99,7 @@ export function MetricChart({
             stroke: resolve(el, s.tone),
             dash: s.dash,
             width: 2,
-            points: { show: false },
+            points: { show: false, filter: lonePoints },
           })),
         ],
         hooks: {
