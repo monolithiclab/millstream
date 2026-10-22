@@ -39,8 +39,10 @@ describe('page anatomy', () => {
       expect(context).not.toBeNull();
       // The context line comes before the title.
       expect(context!.compareDocumentPosition(h1!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-      const [first] = within(context!).getAllByRole('link');
-      expect(first).toHaveAttribute('href', pipelinePath(PIPELINE));
+      // On the Graph screen the pipeline crumb is the page itself: text marked current, not a link to here.
+      const first = within(context!).queryAllByRole('link')[0] ?? context!.querySelector('[aria-current="page"]');
+      if (first!.tagName === 'A') expect(first).toHaveAttribute('href', pipelinePath(PIPELINE));
+      else expect(route).toBe(pipelinePath(PIPELINE));
       expect(first).toHaveTextContent(PIPELINE);
     } else {
       expect(context).toBeNull();

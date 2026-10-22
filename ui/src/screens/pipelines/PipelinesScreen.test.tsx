@@ -38,6 +38,24 @@ describe('pipelines list', () => {
     expect(screen.queryByRole('columnheader', { name: /today/i })).not.toBeInTheDocument();
   });
 
+  it('reads the app-wide pipeline list, and refreshes it on arrival and after an action', async () => {
+    const api = new FakeApi();
+    const read = api.listPipelines.bind(api);
+    let reads = 0;
+    api.listPipelines = () => {
+      reads++;
+      return read();
+    };
+    const { user } = renderApp({ api, route: '/pipelines' });
+    await screen.findByRole('table');
+    // The provider's read, and the screen's background read on arrival.
+    await waitFor(() => expect(reads).toBe(2));
+    const before = reads;
+    await user.click(within(row('listings-daily')).getByRole('button', { name: 'Pause listings-daily' }));
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Pause listings-daily' }));
+    await waitFor(() => expect(reads).toBe(before + 1));
+  });
+
   it('says pipelines change through their files behind the help toggle, not beside the counts', async () => {
     const { user } = renderApp({ route: '/pipelines' });
     await screen.findByRole('table');

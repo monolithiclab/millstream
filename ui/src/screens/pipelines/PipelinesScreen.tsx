@@ -1,9 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 import type { Pipeline } from '../../api/schema';
 import { useApi } from '../../api/context';
-import { useResource } from '../../common/useResource';
+import { usePipelines } from '../../common/usePipelines';
 import { buttons, card } from '../../common/styles';
 import { ConfirmDialog, Consequences } from '../../common/ConfirmDialog';
 import { NoticeRegion, runAction, useNotice } from '../../common/Notice';
@@ -28,7 +28,10 @@ export function PipelinesScreen() {
     null,
   );
   const close = () => setConfirm(null);
-  const list = useResource('pipelines:list', (a) => a.listPipelines());
+  const list = usePipelines();
+  // The shared list may be minutes old on arrival: read it again, in the background, for the figures shown here.
+  const { refresh } = list;
+  useEffect(refresh, [refresh]);
 
   const lifecycle = ({ name, state }: Pipeline) => {
     const pausing = state === 'active';

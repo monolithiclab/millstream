@@ -88,7 +88,9 @@ describe('app shell', () => {
     await user.click(screen.getByRole('button', { name: /Switch pipeline/ }));
     expect(screen.getByText('Loading pipelines…')).toBeInTheDocument();
     act(() => fail(new Error('down')));
-    expect(await screen.findByRole('alert')).toHaveTextContent('Pipelines could not be loaded.');
+    expect(await within(screen.getByRole('navigation', { name: 'Main' })).findByRole('alert')).toHaveTextContent(
+      'Pipelines could not be loaded.',
+    );
   });
 
   it('shares one pipeline list, read again when the switcher opens and when the window gets focus', async () => {
