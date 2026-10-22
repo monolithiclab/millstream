@@ -13,7 +13,7 @@ export function HelpTip({ label, children }: { label?: string; children: ReactNo
   const [open, setOpen] = useState(false);
   const [shift, setShift] = useState(0);
   const button = useRef<HTMLButtonElement>(null);
-  const popover = useRef<HTMLDivElement>(null);
+  const popover = useRef<HTMLSpanElement>(null);
   const popoverId = useId();
 
   useDismiss(open, () => setOpen(false), { inside: [popover, button], returnFocus: button });
@@ -40,14 +40,14 @@ export function HelpTip({ label, children }: { label?: string; children: ReactNo
         <span aria-hidden="true">?</span>
       </button>
       {open && (
-        <div
+        <span
           ref={popover}
           id={popoverId}
           style={shift ? { left: shift } : undefined}
-          className={`${card} absolute top-full left-0 z-40 mt-1.5 w-max max-w-[min(320px,calc(100vw-32px))] p-3 text-small font-normal text-ink`}
+          className={`${card} absolute block top-full left-0 z-40 mt-1.5 w-max max-w-[min(320px,calc(100vw-32px))] p-3 text-small font-normal text-ink`}
         >
           {children}
-        </div>
+        </span>
       )}
     </span>
   );

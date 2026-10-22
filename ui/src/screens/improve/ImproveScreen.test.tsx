@@ -76,6 +76,10 @@ describe('ImproveScreen', () => {
     const propose = screen.getByRole('button', { name: 'Propose a fix' });
     await vi.waitFor(() => expect(propose).toHaveAccessibleDescription(/^Improve is off in this deployment/));
     expect(propose).toBeDisabled();
+    // The reason is on screen, in the title's row beside the button, not only in the button's description.
+    const reason = screen.getByText(/^Improve is off in this deployment/);
+    expect(reason).toBeVisible();
+    expect(reason.closest('section')!.querySelector('h1')!.parentElement!.parentElement).toContainElement(reason);
   });
 
   it('holds Propose a fix back in production, whatever improve says', async () => {

@@ -113,11 +113,7 @@ export function ImproveScreen() {
           {view === 'proposals' && kinds.length > 1 && (
             <label className={filterLabel}>
               {t('improve.kindLabel')}
-              <Select
-                value={kind ?? ''}
-                onChange={(e) => set('kind', e.target.value === '' ? null : e.target.value)}
-                className="font-normal"
-              >
+              <Select value={kind ?? ''} onChange={(e) => set('kind', e.target.value === '' ? null : e.target.value)}>
                 <option value="">{t('improve.allKinds')}</option>
                 {kinds.map((k: ProposalKind) => (
                   <option key={k} value={k}>

@@ -143,12 +143,14 @@ export function MetricChart({
     };
   }, [shape, theme, scheme, hover, latest, data]);
 
+  // (On mount this repeats the data the constructor just took: harmless, uPlot's own init does the same.)
   useEffect(() => {
     plotRef.current?.setData([times.map((t) => t / 1000), ...series.map((s) => s.values)]);
   }, [times, series]);
 
-  // Not before the plot is ready: a redraw ahead of uPlot's first commit (on mount, in the same effects flush) draws
-  // axes it has not measured yet, throws, and leaves the plot empty until it is rebuilt.
+  // Not before the plot is ready: a redraw ahead of uPlot's first commit (on mount, in the same effects flush) sets
+  // the x scale from its still-null range, over the auto range the commit is about to apply, and leaves the plot
+  // empty until it is rebuilt. A plot built meanwhile already reads the latest marks and format on its first draw.
   useEffect(() => {
     if (plotRef.current?.status === 1) plotRef.current.redraw();
   }, [marks, format]);

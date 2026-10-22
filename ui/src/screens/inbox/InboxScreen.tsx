@@ -238,15 +238,11 @@ export function InboxScreen() {
     <>
       <label className={filterLabel}>
         {t('inbox.pipelineFilter')}
-        <PipelineSelect
-          value={pipelineFilter ?? ''}
-          onChange={(p) => setFilter('pipeline', p)}
-          className="font-normal"
-        />
+        <PipelineSelect value={pipelineFilter ?? ''} onChange={(p) => setFilter('pipeline', p)} />
       </label>
       <label className={filterLabel}>
         {t('inbox.inboxFilter')}
-        <Select value={inboxFilter ?? ''} onChange={(e) => setFilter('inbox', e.target.value)} className="font-normal">
+        <Select value={inboxFilter ?? ''} onChange={(e) => setFilter('inbox', e.target.value)}>
           <option value="">{t('inbox.allInboxes')}</option>
           {inboxes.map((name) => (
             <option key={name} value={name}>

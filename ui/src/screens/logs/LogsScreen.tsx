@@ -38,7 +38,7 @@ export function LogsScreen() {
     <>
       <label className={filterLabel}>
         {t('logs.pipeline')}
-        <PipelineSelect value={filter.pipeline} onChange={(p) => setFilter('pipeline', p)} className="font-normal" />
+        <PipelineSelect value={filter.pipeline} onChange={(p) => setFilter('pipeline', p)} />
       </label>
       {scopes.map((scope) => (
         <label key={scope} htmlFor={`${ids}-${scope}`} className={filterLabel}>

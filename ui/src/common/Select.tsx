@@ -6,7 +6,7 @@ import { field } from './styles';
 export function Select({ className = '', ...props }: SelectHTMLAttributes<HTMLSelectElement>) {
   return (
     <span className={`relative inline-flex ${className}`}>
-      <select {...props} className={`${field} min-h-[34px] w-full min-w-0 appearance-none pr-8`} />
+      <select {...props} className={`${field} min-h-[34px] w-full font-normal min-w-0 appearance-none pr-8`} />
       <svg
         width="12"
         height="12"

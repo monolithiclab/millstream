@@ -23,5 +23,6 @@ export const cardTitle = 'm-0 font-display text-[24px] leading-7 font-normal';
 // A text field or select.
 export const field = 'rounded-1 border border-control-line bg-surface px-2.5 py-1.5 text-small text-ink';
 
-// A filter field's label, wrapping its control: the label text above, in the toolbar.
-export const filterLabel = 'flex flex-col gap-1 text-tiny font-bold text-ink-2';
+// A filter field's caption, over its control in the toolbar; `filterLabel` wraps a control with it.
+export const filterCaption = 'text-tiny font-bold text-ink-2';
+export const filterLabel = `flex flex-col gap-1 ${filterCaption}`;

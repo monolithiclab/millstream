@@ -10,7 +10,7 @@ import { Id } from '../../common/Id';
 import { Select } from '../../common/Select';
 import { EmptyState, ErrorState, Loading } from '../../common/States';
 import { StatusBadge } from '../../common/Status';
-import { buttons, card, field, filterLabel } from '../../common/styles';
+import { buttons, card, field, filterCaption, filterLabel } from '../../common/styles';
 import { useFormat } from '../../common/useFormat';
 import { appendPage, useLoadMore } from '../../common/useLoadMore';
 import { useResource } from '../../common/useResource';
@@ -107,11 +107,7 @@ export function ItemsScreen() {
         <>
           <label className={`${filterLabel} min-w-0 flex-[1_1_180px]`}>
             {t('items.stream')}
-            <Select
-              value={filters.stream ?? ''}
-              onChange={(e) => apply({ stream: e.target.value })}
-              className="font-normal"
-            >
+            <Select value={filters.stream ?? ''} onChange={(e) => apply({ stream: e.target.value })}>
               <option value="">{t('items.allStreams')}</option>
               {streamList.map((s) => (
                 <option key={s.name} value={s.name}>
@@ -123,19 +119,17 @@ export function ItemsScreen() {
               )}
             </Select>
           </label>
-          <div className="flex min-w-0 flex-[1_1_160px] flex-col gap-1">
-            <label htmlFor={ids.run} className="text-tiny font-bold text-ink-2">
-              {t('items.run')}
-            </label>
+          <label className={`${filterLabel} min-w-0 flex-[1_1_160px]`}>
+            {t('items.run')}
             <input
               {...textField('run')}
               placeholder={t('items.runPlaceholder')}
-              className={`${field} min-h-[34px] font-mono`}
+              className={`${field} min-h-[34px] font-mono font-normal`}
             />
-          </div>
+          </label>
           <div className="flex min-w-0 flex-[3_1_320px] flex-col gap-1">
             <span className="flex items-center gap-1.5">
-              <label htmlFor={ids.where} className="text-tiny font-bold text-ink-2">
+              <label htmlFor={ids.where} className={filterCaption}>
                 {t('items.where')}
               </label>
               <HelpTip label={t('items.whereHelp')}>{t('items.whereHint')}</HelpTip>

@@ -56,7 +56,7 @@ export function InsightsBoard({
         {steps.length > 1 && (
           <label className={`${filterLabel} mt-3 px-2`}>
             {t('insights.step')}
-            <Select value={activeStep} onChange={(e) => setStep(e.target.value)} className="font-mono font-normal">
+            <Select value={activeStep} onChange={(e) => setStep(e.target.value)} className="font-mono">
               <option value="">{t('insights.allSteps')}</option>
               {steps.map((s) => (
                 <option key={s} value={s}>

@@ -9,7 +9,7 @@ import { CopyButton } from '../../common/Copy';
 import { ScrollRegion } from '../../common/ScrollRegion';
 import { Segmented } from '../../common/Segmented';
 import { EmptyState, QueryView } from '../../common/States';
-import { card, cardTitle, field, filterLabel } from '../../common/styles';
+import { card, cardTitle, field, filterCaption, filterLabel } from '../../common/styles';
 import { useNow } from '../../common/useNow';
 import { useResource } from '../../common/useResource';
 import { PipelineSelect } from '../../common/PipelineSelect';
@@ -137,7 +137,7 @@ export function MetricsScreen() {
         <Select
           value={view.metric}
           onChange={(e) => set({ metric: e.target.value, stat: defaultStat(e.target.value), hidden: [] })}
-          className="min-w-[240px] font-mono font-normal"
+          className="min-w-[240px] font-mono"
         >
           {available.length === 0 && <option value="">{t('metrics.noMetric')}</option>}
           {available.map((name) => (
@@ -149,10 +149,10 @@ export function MetricsScreen() {
       </label>
       <label className={filterLabel}>
         {t('metrics.pipeline')}
-        <PipelineSelect value={view.pipeline} onChange={(pipeline) => set({ pipeline })} className="font-normal" />
+        <PipelineSelect value={view.pipeline} onChange={(pipeline) => set({ pipeline })} />
       </label>
       <div className="flex flex-col gap-1">
-        <span className="text-tiny font-bold text-ink-2">{t('metrics.groupBy')}</span>
+        <span className={filterCaption}>{t('metrics.groupBy')}</span>
         <div className="flex flex-wrap items-center gap-2">
           <Segmented<GroupMode>
             label={t('metrics.groupBy')}
@@ -189,7 +189,7 @@ export function MetricsScreen() {
         </div>
       </div>
       <div className="flex flex-col gap-1">
-        <span className="text-tiny font-bold text-ink-2">{t('metrics.rangeLabel')}</span>
+        <span className={filterCaption}>{t('metrics.rangeLabel')}</span>
         <Segmented<Range>
           label={t('metrics.rangeLabel')}
           value={view.range}
@@ -223,7 +223,7 @@ export function MetricsScreen() {
         </div>
       )}
       <div className="flex flex-col gap-1">
-        <span className="text-tiny font-bold text-ink-2">{t('metrics.statLabel')}</span>
+        <span className={filterCaption}>{t('metrics.statLabel')}</span>
         <Segmented<Stat>
           label={t('metrics.statLabel')}
           value={view.stat}
