@@ -66,10 +66,10 @@ describe('item detail', () => {
     expect(await within(journey).findByText('Final output · invalid')).toBeInTheDocument();
     expect(within(journey).getAllByRole('button', { name: /Show full error/ }).length).toBeGreaterThan(0);
     // The dead letter's own item has nothing waiting: no step reads its stream, so it stands done there.
-    expect(screen.getByRole('heading', { level: 1, name: 'it_dl_9d02' })).toBeInTheDocument();
-    const id = screen.getAllByText('it_dl_9d02').find((e) => e.tagName === 'SPAN');
-    expect(id?.parentElement).toHaveTextContent(/Done/);
-    expect(id?.parentElement).not.toHaveTextContent(/Pending/);
+    // Its state is a chip in the title row.
+    const row = screen.getByRole('heading', { level: 1, name: 'it_dl_9d02' }).parentElement;
+    expect(row).toHaveTextContent(/Done/);
+    expect(row).not.toHaveTextContent(/Pending/);
   });
 
   it('shows the payload collapsible with Copy, the artifacts by type, and the lineage up and down', async () => {

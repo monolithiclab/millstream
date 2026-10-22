@@ -11,6 +11,7 @@ import { usePreferences } from '../../preferences';
 import { useFormat } from '../../common/useFormat';
 import { itemPath, pipelinePath, runPath } from '../../routes';
 import { ScreenPage } from '../ScreenPage';
+import { Breadcrumb, pipelineCrumb } from '../../common/Breadcrumb';
 import { ConfirmDialog } from '../../common/ConfirmDialog';
 import { Id } from '../../common/Id';
 import { errorMessage } from '../../common/Notice';
@@ -89,18 +90,12 @@ export function RunScreen() {
   return (
     <ScreenPage
       title={title}
-      eyebrow={
-        <p className="m-0 flex items-center gap-2 text-small">
-          <Link to={pipelinePath(pipeline, 'runs')} className="text-ink-2">
-            {t('nav.runs')}
-          </Link>
-          <span aria-hidden="true" className="text-ink-3">
-            /
-          </span>
-          <span className="font-mono text-ink-3">{pipeline}</span>
-        </p>
+      context={
+        <Breadcrumb items={[pipelineCrumb(pipeline), { label: t('nav.runs'), to: pipelinePath(pipeline, 'runs') }]} />
       }
-      header={data.status === 'ready' && <RunHeader data={data.data} onChanged={refresh} />}
+      status={data.status === 'ready' ? <StatusBadge status={data.data.run.state} /> : undefined}
+      summary={data.status === 'ready' ? <RunSummary data={data.data} /> : undefined}
+      actions={data.status === 'ready' ? <RunActions data={data.data} onChanged={refresh} /> : undefined}
     >
       <QueryView query={data} rows={4}>
         {(d) => <RunBody data={d} />}
@@ -109,13 +104,33 @@ export function RunScreen() {
   );
 }
 
-function RunHeader({ data, onChanged }: { data: RunData; onChanged: () => void }) {
+// The run's figures under its title: origin, revision, items, deliveries and cost.
+function RunSummary({ data }: { data: RunData }) {
   const { t } = useTranslation();
   const origin = useRunOrigin();
   const { language } = usePreferences();
-  const name = useRunName();
-  const { run, deliveries, neighbours } = data;
+  const { run, deliveries } = data;
   const items = Object.values(run.items ?? {}).reduce((a, b) => a + b, 0);
+  return (
+    <>
+      {origin(run)}
+      {' · '}
+      {t('runs.revision', { revision: run.revision })}
+      {' · '}
+      {t('runs.items', { count: formatNumber(items, language) })}
+      {' · '}
+      {t('runs.deliveries', { count: formatNumber(deliveries.length, language) })}
+      {' · '}
+      {formatMoney(run.costUsd, language)}
+    </>
+  );
+}
+
+// The neighbouring runs and Cancel, at the title row's end.
+function RunActions({ data, onChanged }: { data: RunData; onChanged: () => void }) {
+  const { t } = useTranslation();
+  const name = useRunName();
+  const { run, neighbours } = data;
   const at = neighbours.findIndex((r) => r.id === run.id);
   const older = at >= 0 ? neighbours[at + 1] : undefined;
   const newer = at > 0 ? neighbours[at - 1] : undefined;
@@ -129,37 +144,23 @@ function RunHeader({ data, onChanged }: { data: RunData; onChanged: () => void }
       .finally(() => setConfirm(false));
   return (
     <>
-      <StatusBadge status={run.state} />
-      <p className="m-0 text-small text-ink-2">
-        {origin(run)}
-        {' · '}
-        {t('runs.revision', { revision: run.revision })}
-        {' · '}
-        {t('runs.items', { count: formatNumber(items, language) })}
-        {' · '}
-        {t('runs.deliveries', { count: formatNumber(deliveries.length, language) })}
-        {' · '}
-        {formatMoney(run.costUsd, language)}
-      </p>
-      <div className="flex flex-1 flex-wrap justify-end gap-1.5">
-        <nav aria-label={t('runs.neighbours')} className="flex flex-wrap gap-1.5">
-          {older && (
-            <Link to={runPath(run.pipeline, older.id)} className={`${buttons.secondary} no-underline`}>
-              ← {name(older)}
-            </Link>
-          )}
-          {newer && (
-            <Link to={runPath(run.pipeline, newer.id)} className={`${buttons.secondary} no-underline`}>
-              {name(newer)} →
-            </Link>
-          )}
-        </nav>
-        {!settledStates.has(run.state) && (
-          <button type="button" onClick={() => setConfirm(true)} className={buttons.secondary}>
-            {t('runs.cancel')}
-          </button>
+      <nav aria-label={t('runs.neighbours')} className="flex flex-wrap gap-1.5">
+        {older && (
+          <Link to={runPath(run.pipeline, older.id)} className={`${buttons.secondary} no-underline`}>
+            ← {name(older)}
+          </Link>
         )}
-      </div>
+        {newer && (
+          <Link to={runPath(run.pipeline, newer.id)} className={`${buttons.secondary} no-underline`}>
+            {name(newer)} →
+          </Link>
+        )}
+      </nav>
+      {!settledStates.has(run.state) && (
+        <button type="button" onClick={() => setConfirm(true)} className={buttons.secondary}>
+          {t('runs.cancel')}
+        </button>
+      )}
       {error !== null && (
         <p role="alert" className="m-0 w-full text-small text-bad">
           {t('runs.cancelFailed')} {error}

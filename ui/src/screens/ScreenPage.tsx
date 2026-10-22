@@ -10,7 +10,6 @@ let loaded = false;
 // Every screen's frame, one anatomy top to bottom: the context line (its parents), the title row (h1, help toggle,
 // status, then the actions at the right end), the summary line (figures), the toolbar (state tabs, filters,
 // secondary actions), then the content. It also sets the document title and moves focus on navigation.
-// `eyebrow` and `header` are the free-form slots the screens used before the anatomy; they go once all migrate.
 export function ScreenPage({
   title,
   context,
@@ -19,8 +18,6 @@ export function ScreenPage({
   actions,
   summary,
   toolbar,
-  eyebrow,
-  header,
   children,
 }: {
   title: string;
@@ -30,8 +27,6 @@ export function ScreenPage({
   actions?: ReactNode;
   summary?: ReactNode;
   toolbar?: ReactNode;
-  eyebrow?: ReactNode;
-  header?: ReactNode;
   children: ReactNode;
 }) {
   const { t } = useTranslation();
@@ -50,7 +45,7 @@ export function ScreenPage({
 
   return (
     <section aria-labelledby="page-title" className="flex flex-col gap-2">
-      {context ?? eyebrow}
+      {context}
       {/* Always the same wrappers, so the h1 (and the focus on it) stays when a status or an action arrives. */}
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2.5">
         <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2">
@@ -65,7 +60,6 @@ export function ScreenPage({
           {help !== undefined && <HelpTip>{help}</HelpTip>}
           {status}
         </div>
-        {header}
         {actions !== undefined && (
           <div className="ml-auto flex max-w-full min-w-0 flex-wrap items-center gap-2">{actions}</div>
         )}

@@ -366,7 +366,6 @@
     "discardItem": "Discard {{id}}"
   },
   "item": {
-    "breadcrumb": "Breadcrumb",
     "error": "The item could not be loaded.",
     "copyId": "Copy item id",
     "reviewNow": "Review now",
@@ -939,7 +938,6 @@
       "backtest": "backtest"
     },
     "title": "Proposal {{id}}",
-    "back": "Improve · {{pipeline}}",
     "loadFailed": "Proposal {{id}} could not be loaded.",
     "why": "What and why",
     "facts": {

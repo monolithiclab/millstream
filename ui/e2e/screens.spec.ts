@@ -367,7 +367,7 @@ test('open a proposal, read its diff and validation, reject one with a reason, a
   await expect(page.getByRole('button', { name: 'Reject…' })).toHaveCount(0);
 
   // Accept the other: the confirmation says what follows, and sends the patch read.
-  await page.getByRole('link', { name: 'Improve · listings-daily' }).click();
+  await page.getByRole('navigation', { name: 'Breadcrumb' }).getByRole('link', { name: 'Improve' }).click();
   await list.getByRole('link', { name: new RegExp(toAccept.rationale) }).click();
   await page.getByRole('button', { name: 'Accept…' }).click();
   const confirm = page.getByRole('dialog', { name: /^Accept proposal / });

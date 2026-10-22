@@ -22,10 +22,9 @@ describe('ProposalScreen', () => {
   it('shows a ready proposal: why, its base, the patch, the validation, the evidence and its history', async () => {
     await open('p-0151');
     expect(screen.getByRole('heading', { level: 1, name: 'Proposal p-0151' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Improve · listings-daily' })).toHaveAttribute(
-      'href',
-      '/p/listings-daily/improve',
-    );
+    expect(
+      within(screen.getByRole('navigation', { name: 'Breadcrumb' })).getByRole('link', { name: 'Improve' }),
+    ).toHaveAttribute('href', '/p/listings-daily/improve');
     const why = section('What and why');
     expect(why).toHaveTextContent('Reviewers lowered marginPct on 6 of 18 approvals');
     await vi.waitFor(() => expect(why).toHaveTextContent('sha256:9f2c41d07a r14, the active revision'));

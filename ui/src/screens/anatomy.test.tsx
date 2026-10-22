@@ -6,7 +6,7 @@ import { renderApp } from '../test/render';
 
 const PIPELINE = 'listings-daily';
 
-// Every screen, with whether it sits in a pipeline and has help (the spec's
+// Every screen, the three detail screens included, with whether it sits in a pipeline and has help (the spec's
 // screen table).
 const withHelp = new Set(['pipelines', 'graph', 'insights', 'improve', 'lessons']);
 const pages = [
@@ -16,6 +16,9 @@ const pages = [
     pipeline: s.scope === 'pipeline',
     help: withHelp.has(s.id),
   })),
+  { name: 'run', route: pipelinePath(PIPELINE, 'runs/run_0600'), pipeline: true, help: false },
+  { name: 'item', route: pipelinePath(PIPELINE, 'items/it_7f3a9c21'), pipeline: true, help: false },
+  { name: 'proposal', route: pipelinePath(PIPELINE, 'improve/p-0151'), pipeline: true, help: false },
 ];
 
 // The page anatomy (ScreenPage): one h1, the context line of a pipeline screen leading with the pipeline, help only

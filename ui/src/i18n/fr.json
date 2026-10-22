@@ -366,7 +366,6 @@
     "discardItem": "Abandonner {{id}}"
   },
   "item": {
-    "breadcrumb": "Fil d’Ariane",
     "error": "L’item n’a pas pu être chargé.",
     "copyId": "Copier l’identifiant",
     "reviewNow": "Passer en revue",
@@ -939,7 +938,6 @@
       "backtest": "rejeu"
     },
     "title": "Proposition {{id}}",
-    "back": "Améliorer · {{pipeline}}",
     "loadFailed": "La proposition {{id}} n’a pas pu être chargée.",
     "why": "Quoi et pourquoi",
     "facts": {

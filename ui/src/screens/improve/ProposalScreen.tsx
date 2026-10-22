@@ -4,6 +4,7 @@ import { Link, useParams } from 'react-router-dom';
 import { ApiError, enc } from '../../api/api';
 import { useApi } from '../../api/context';
 import type { Insight, Proposal, Revision } from '../../api/schema';
+import { Breadcrumb, pipelineCrumb } from '../../common/Breadcrumb';
 import { ConfirmDialog, Consequences } from '../../common/ConfirmDialog';
 import { Id } from '../../common/Id';
 import { errorMessage, NoticeRegion, useNotice } from '../../common/Notice';
@@ -48,17 +49,17 @@ export function ProposalScreen() {
   return (
     <ScreenPage
       title={t('improve.title', { id })}
-      eyebrow={
-        <p className="m-0 text-small">
-          <Link to={pipelinePath(pipeline, 'improve')}>{t('improve.back', { pipeline })}</Link>
-        </p>
+      context={
+        <Breadcrumb
+          items={[pipelineCrumb(pipeline), { label: t('nav.improve'), to: pipelinePath(pipeline, 'improve') }]}
+        />
       }
-      header={
+      status={
         proposal.status === 'ready' ? (
-          <div className="flex flex-wrap items-center gap-2">
+          <>
             <StatusBadge status={proposal.data.state} />
             <Tag tone="human">{kindLabel(proposal.data.kind)}</Tag>
-          </div>
+          </>
         ) : undefined
       }
     >

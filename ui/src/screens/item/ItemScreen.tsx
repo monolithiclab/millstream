@@ -5,6 +5,7 @@ import { liveUrls } from '../../api/api';
 import type { Delivery, Event, Item, Lineage } from '../../api/schema';
 import { arrowKeys, optionAttrs } from '../../common/arrowKeys';
 import { buttons, card } from '../../common/styles';
+import { Breadcrumb, pipelineCrumb } from '../../common/Breadcrumb';
 import { CopyButton } from '../../common/Copy';
 import { JsonViewer } from '../../common/JsonViewer';
 import { LogTail } from '../../common/LogTail';
@@ -190,25 +191,12 @@ export function ItemScreen() {
   const tabs: { id: Tab; label: string }[] = [];
   const title = ready === null ? itemId : itemTitle(ready.item);
   const breadcrumb = (
-    <nav
-      aria-label={t('item.breadcrumb')}
-      className="flex flex-wrap items-center gap-2 font-mono text-small text-ink-2"
-    >
-      <Link to={pipelinePath(pipeline)} className="text-ink-2 no-underline">
-        {pipeline}
-      </Link>
-      <span aria-hidden="true" className="text-ink-3">
-        /
-      </span>
-      <Link to={pipelinePath(pipeline, 'items')} className="font-sans text-ink-2 no-underline">
-        {t('nav.items')}
-      </Link>
-    </nav>
+    <Breadcrumb items={[pipelineCrumb(pipeline), { label: t('nav.items'), to: pipelinePath(pipeline, 'items') }]} />
   );
 
   if (ready === null) {
     return (
-      <ScreenPage title={title} eyebrow={breadcrumb}>
+      <ScreenPage title={title} context={breadcrumb}>
         {data.status === 'error' ? (
           <ErrorState title={t('item.error')} message={data.error.message} onRetry={data.reload} />
         ) : (
@@ -260,20 +248,19 @@ export function ItemScreen() {
   return (
     <ScreenPage
       title={title}
-      eyebrow={
-        <div className="flex flex-col gap-2">
-          {breadcrumb}
-          <div className="flex flex-wrap items-center gap-2.5">
-            <span className="font-mono text-ui break-all text-ink-2">{item.id}</span>
-            <CopyButton text={item.id} label={t('item.copyId')} icon />
-            <StatusBadge status={state.status} label={stateLabel} />
-            {item.tombstone !== undefined && <StatusBadge status={item.tombstone} />}
-          </div>
-        </div>
+      context={breadcrumb}
+      status={
+        <>
+          <StatusBadge status={state.status} label={stateLabel} />
+          {item.tombstone !== undefined && <StatusBadge status={item.tombstone} />}
+        </>
       }
-    >
-      <div className="flex flex-wrap items-end gap-x-8 gap-y-4">
-        <div className="flex min-w-0 flex-[1_1_480px] flex-wrap gap-x-[18px] gap-y-1.5 text-small text-ink-2">
+      summary={
+        <div className="flex flex-wrap items-center gap-x-[18px] gap-y-1.5">
+          <span className="inline-flex items-center gap-2.5">
+            <span className="font-mono break-all">{item.id}</span>
+            <CopyButton text={item.id} label={t('item.copyId')} icon />
+          </span>
           <Meta label={t('item.meta.run')}>
             <Link to={runPath(pipeline, item.runId)} className="text-ink">
               {item.runId}
@@ -299,17 +286,19 @@ export function ItemScreen() {
               ` · ${t(f.plural(item.parents.length, 'item.meta.sourcesOne', 'item.meta.sourcesOther'), { n: f.num(item.parents.length) })}`}
           </span>
         </div>
-        {review !== undefined && (
+      }
+      actions={
+        review !== undefined ? (
           <Link
             to={`/inbox?pipeline=${encodeURIComponent(pipeline)}&delivery=${encodeURIComponent(review.id)}`}
             className={`${buttons.primary} w-full py-3 text-body no-underline md:w-auto md:py-2 md:text-small`}
           >
             {t('item.reviewNow')}
           </Link>
-        )}
-      </div>
-
-      <div className="mt-4 flex flex-wrap items-start gap-6">
+        ) : undefined
+      }
+    >
+      <div className="mt-2 flex flex-wrap items-start gap-6">
         <section aria-label={t('item.journey.label')} className={`${card} min-w-0 flex-[999_1_640px]`}>
           <Tabs label={t('item.tabs.label')} current={tab} onChange={setTab} tabs={tabs} />
           <div role="tabpanel" id={`panel-${tab}`} aria-labelledby={`tab-${tab}`}>
