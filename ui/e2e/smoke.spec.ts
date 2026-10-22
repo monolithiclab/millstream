@@ -30,10 +30,10 @@ for (const theme of themes) {
 
         if (width < 768) {
           await page.getByRole('button', { expanded: false }).first().click();
-          await expect(page.getByRole('navigation')).toBeVisible();
+          await expect(page.locator('#main-nav')).toBeVisible();
           await expectNoViolations(page);
           await page.keyboard.press('Escape');
-          await expect(page.getByRole('navigation')).toBeHidden();
+          await expect(page.locator('#main-nav')).toBeHidden();
         }
 
         await page.keyboard.press('Control+k');

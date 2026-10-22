@@ -2,7 +2,8 @@ import { useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { Insight } from '../../api/schema';
 import { useInsightKindLabel } from '../../common/insightKind';
-import { field } from '../../common/styles';
+import { Select } from '../../common/Select';
+import { filterLabel } from '../../common/styles';
 import { useNow } from '../../common/useNow';
 import { InsightCard } from './InsightCard';
 
@@ -53,20 +54,16 @@ export function InsightsBoard({
           </label>
         ))}
         {steps.length > 1 && (
-          <label className="mt-3 flex flex-col gap-1 px-2 text-tiny font-bold text-ink-2">
+          <label className={`${filterLabel} mt-3 px-2`}>
             {t('insights.step')}
-            <select
-              value={activeStep}
-              onChange={(e) => setStep(e.target.value)}
-              className={`${field} font-mono font-normal`}
-            >
+            <Select value={activeStep} onChange={(e) => setStep(e.target.value)} className="font-mono font-normal">
               <option value="">{t('insights.allSteps')}</option>
               {steps.map((s) => (
                 <option key={s} value={s}>
                   {s}
                 </option>
               ))}
-            </select>
+            </Select>
           </label>
         )}
       </aside>

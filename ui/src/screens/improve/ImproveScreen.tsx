@@ -78,17 +78,13 @@ export function ImproveScreen() {
     <ScreenPage
       title={t('nav.improve')}
       context={<Breadcrumb items={[pipelineCrumb(pipeline)]} />}
-      help={
-        <>
-          <p className="m-0">{t('improve.explain')}</p>
-          {fix.reason !== null && <p className="m-0 mt-2">{fix.reason}</p>}
-        </>
-      }
+      help={t('improve.explain')}
       actions={
         <>
-          {/* Why Propose a fix is held back, read with each of its buttons; the help shows it too. */}
+          {/* Why Propose a fix is held back, beside it and read with each of its buttons: it is the button's state,
+              not the page's explanation. */}
           {fix.reason !== null && (
-            <span id={reasonId} className="sr-only">
+            <span id={reasonId} className="max-w-[44ch] text-tiny text-ink-2">
               {fix.reason}
             </span>
           )}
