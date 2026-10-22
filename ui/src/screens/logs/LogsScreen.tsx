@@ -1,4 +1,4 @@
-import { useId, useState } from 'react';
+import { useId } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
 import { liveUrls } from '../../api/api';
@@ -15,8 +15,6 @@ export function LogsScreen() {
   const { t } = useTranslation();
   const [search, setSearch] = useSearchParams();
   const ids = useId();
-  // The tail's live mark, Pause and Clear render here, at the toolbar's right end.
-  const [controls, setControls] = useState<HTMLDivElement | null>(null);
   const filter = {
     pipeline: search.get('pipeline') ?? '',
     run: search.get('run') ?? '',
@@ -58,12 +56,11 @@ export function LogsScreen() {
           />
         </label>
       ))}
-      <div ref={setControls} className="ml-auto flex flex-wrap items-center gap-x-4 gap-y-2" />
     </>
   );
   return (
     <ScreenPage title={t('nav.logs')} toolbar={toolbar}>
-      <LogTail url={url} title={t('logs.tail')} className="h-[min(60vh,560px)]" controls={controls} />
+      <LogTail url={url} title={t('logs.tail')} className="h-[min(60vh,560px)]" />
     </ScreenPage>
   );
 }

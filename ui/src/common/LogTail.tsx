@@ -1,5 +1,4 @@
 import { memo, useEffect, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import type { LogLine } from '../api/schema';
 import { formatClock } from '../i18n/format';
@@ -25,9 +24,8 @@ const levelTone: Record<string, string> = { WARN: 'text-log-warn', ERROR: 'text-
 // A live log tail over /live/logs (Components board): dark, monospace, painted in batches. Best effort: after a
 // reconnection the server marks lost lines with a gap, shown as a dashed rule with the missing window. Scrolling
 // follows new lines unless paused; a paused tail keeps its lines, buffers and counts what arrives (a bounded number,
-// counting what it had to drop), and shows it on resume. A new url is a new tail. Given `controls`, the live mark,
-// Pause and Clear render there (a screen's toolbar) instead of above the tail; null while that element mounts.
-export function LogTail(props: { url: string; title: string; className?: string; controls?: HTMLElement | null }) {
+// counting what it had to drop), and shows it on resume. A new url is a new tail.
+export function LogTail(props: { url: string; title: string; className?: string }) {
   return <Tail key={props.url} {...props} />;
 }
 
@@ -44,17 +42,7 @@ function append(list: Entry[], batch: Entry[]): Entry[] {
   return merged;
 }
 
-function Tail({
-  url,
-  title,
-  className = 'max-h-80',
-  controls,
-}: {
-  url: string;
-  title: string;
-  className?: string;
-  controls?: HTMLElement | null;
-}) {
+function Tail({ url, title, className = 'max-h-80' }: { url: string; title: string; className?: string }) {
   const { t } = useTranslation();
   const [entries, setEntries] = useState<Entry[]>([]);
   const [paused, setPaused] = useState(false);
@@ -120,30 +108,22 @@ function Tail({
     setEntries((current) => append(current, waited).slice(-MAX_LINES));
   };
 
-  const controlRow = (
-    <>
-      <LiveIndicator state={live} />
-      <button
-        type="button"
-        aria-pressed={paused}
-        onClick={() => (paused ? resume() : setPaused(true))}
-        className={buttons.secondary}
-      >
-        {paused ? t('logs.resume') : t('logs.pause')}
-      </button>
-      <button type="button" onClick={clear} className={buttons.secondary}>
-        {t('logs.clear')}
-      </button>
-    </>
-  );
-
   return (
     <div className="flex flex-col gap-2.5">
-      {controls === undefined ? (
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">{controlRow}</div>
-      ) : (
-        controls && createPortal(controlRow, controls)
-      )}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+        <LiveIndicator state={live} />
+        <button
+          type="button"
+          aria-pressed={paused}
+          onClick={() => (paused ? resume() : setPaused(true))}
+          className={buttons.secondary}
+        >
+          {paused ? t('logs.resume') : t('logs.pause')}
+        </button>
+        <button type="button" onClick={clear} className={buttons.secondary}>
+          {t('logs.clear')}
+        </button>
+      </div>
       <div className="relative">
         <ScrollRegion
           ref={tail}

@@ -105,7 +105,7 @@ describe('LogsScreen', () => {
     expect(tail()).toHaveTextContent('Waiting for log lines…');
   });
 
-  it('puts the live mark, Pause and Clear after the filters, in the toolbar', () => {
+  it('keeps the live mark, Pause and Clear with the tail, after the filters', () => {
     renderApp({ route: '/logs' });
     const item = screen.getByRole('textbox', { name: 'Item' });
     const pause = screen.getByRole('button', { name: 'Pause scroll' });
