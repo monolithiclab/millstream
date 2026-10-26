@@ -79,11 +79,11 @@ test-e2e-locked:
 	@go tool cover -func=build/cover-e2e.out | awk '/^total:/ {print "Total coverage, e2e build: " $$NF}'
 	@cd $(SDK_DIR) && go test -race -count=1 -tags e2e ./...
 
-# The M5 exit scenario alone (internal/e2e/m5_exit_test.go, docs/m5-exit.md), verbose so that it prints what it
+# The M5 exit scenario alone (internal/e2e/m5_exit_test.go, docs/development/m5-exit.md), verbose so that it prints what it
 # measured: production evidence to accepted lessons and distill proposals in development. It needs Docker (the
 # distill's sandbox).
 .PHONY: test-exit test-exit-locked
-test-exit: ## Run the M5 exit scenario alone and print its measures (docs/m5-exit.md; Docker for the sandbox)
+test-exit: ## Run the M5 exit scenario alone and print its measures (docs/development/m5-exit.md; Docker for the sandbox)
 	$(locked)
 
 test-exit-locked:

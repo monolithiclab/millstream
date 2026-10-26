@@ -11,7 +11,7 @@ import (
 )
 
 // guide is the guide millstream help prints, and its topics: Markdown that reads as documentation as well
-// (docs/tutorial.md links it). The text before the first ### heading is the guide; each ### section is a topic.
+// (docs/guides/getting-started.md links it). The text before the first ### heading is the guide; each ### section is a topic.
 //
 //go:embed guide.md
 var guide string

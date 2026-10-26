@@ -19,5 +19,5 @@ deploy/compose/.env
 # Go test binaries (go test -c)
 *.test
 
-# The Compose engines' certificate and key (docs/deploy.md)
+# The Compose engines' certificate and key (docs/guides/deployment.md)
 deploy/compose/tls/

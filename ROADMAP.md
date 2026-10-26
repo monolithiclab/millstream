@@ -195,8 +195,8 @@ earlier designs are in the git history of the spec.
   formula in `monolithiclab/homebrew-tap`, and Dependabot for the `docker` ecosystem so the pinned digests refresh.
 - Publish the Go SDK at the first public release: tag the nested module `sdk/go/v0.1.0` (no separate repository, so
   the protocol, its spec, the conformance suite and the sandbox's embedded SDK stay in one commit). In the same
-  commit, the scaffold's `go.mod.tmpl` requires that version and drops its replace comment, and `docs/tutorial.md`
-  drops `MILLSTREAM_REPO` and both `go mod edit -replace` steps.
+  commit, the scaffold's `go.mod.tmpl` requires that version and drops its replace comment, and
+  `docs/guides/getting-started.md` drops `MILLSTREAM_REPO` and both `go mod edit -replace` steps.
 - An image variant for nodes that run interpreted or container actions (a shell, Python, the Docker CLI): the
   distroless image runs static exec binaries only.
 

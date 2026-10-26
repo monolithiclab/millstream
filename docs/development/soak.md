@@ -2,7 +2,7 @@
 
 The M4 exit criterion (spec section 19) asks for several pipelines, one importing another's stream, to run
 unattended for a week with a standby engine and two node hosts. `make soak` is that week compressed: the Compose
-deployment of [`deploy/compose/`](../deploy/compose/) under chaos for 30 minutes, with triggers every minute standing
+deployment of [`deploy/compose/`](../../deploy/compose/) under chaos for 30 minutes, with triggers every minute standing
 in for the reference schedule. A real seven-day run is out of scope for this proof of concept; the same command runs
 it:
 

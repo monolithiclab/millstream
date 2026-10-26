@@ -1,4 +1,4 @@
-// Package protocol is the action protocol (spec section 6.3, docs/protocol.md): JSON objects, one per line, on an
+// Package protocol is the action protocol (spec section 6.3, docs/reference/action-protocol.md): JSON objects, one per line, on an
 // action process's stdin (engine to action) and stdout (action to engine). Every message carries its kind in
 // "type"; keys are lowerCamelCase. A line longer than MaxLine, a line that is not a JSON object, and an unknown
 // type are protocol violations (ErrProtocol), on which the engine kills the process and retries the delivery.

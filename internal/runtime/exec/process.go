@@ -26,7 +26,7 @@ import (
 	"github.com/monolithiclab/millstream/internal/store"
 )
 
-// Default timeouts (docs/protocol.md, ordering; spec section 6.5).
+// Default timeouts (docs/reference/action-protocol.md, ordering; spec section 6.5).
 const (
 	DefaultReadyTimeout    = 10 * time.Second
 	DefaultShutdownTimeout = 5 * time.Second

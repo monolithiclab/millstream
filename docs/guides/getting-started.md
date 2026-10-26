@@ -114,8 +114,8 @@ millstream.Map(func(c millstream.Context, in Input) ([]Output, error) {
 })
 ```
 
-The SDK reads items from stdin and writes answers to stdout; [the action protocol](protocol.md) is the whole
-contract, if you would rather write actions without it.
+The SDK reads items from stdin and writes answers to stdout; [the action protocol](../reference/action-protocol.md) is
+the whole contract, if you would rather write actions without it.
 
 ## 4. Check, test and run
 
@@ -1058,15 +1058,17 @@ Stop the engine with Ctrl-C.
   it, and the `improve` pipeline drafts proposals from insights: new lessons, prompt and config changes, or code that
   replaces an agent step (`distill`), each validated by a backtest before a person accepts it (`millstream
   proposals`, the Improve view). It needs `improve.enabled` in a development environment file and a model for the
-  drafting agent. Spec section 11 describes the loop and [the M5 exit](m5-exit.md) walks through it end to end.
+  drafting agent. Spec section 11 describes the loop and [the M5 exit](../development/m5-exit.md) walks through it end
+  to end.
 - **Serving.** `millstream serve` runs an engine from an environment file or `MILLSTREAM_*` variables, on Postgres, with
   token auth, a hot standby and remote nodes; `millstream apply` uploads packages to it. See [the deployment
-  guide](deploy.md).
+  guide](deployment.md).
 - **Other languages.** `millstream init action <name> --lang raw` scaffolds an action in Python 3 speaking the
   protocol with the standard library only, and `millstream test action . --conformance` checks any action against
-  the protocol. [The action protocol](protocol.md) is the whole contract.
-- **The design.** [The platform design](specs/20261014.platform-design.md) covers every key of the pipeline file
+  the protocol. [The action protocol](../reference/action-protocol.md) is the whole contract.
+- **The design.** [The platform design](../specs/20261014.platform-design.md) covers every key of the pipeline file
   (section 4), the execution model (5), actions (6), agents (7), review (8) and the CLI (13).
 
 Command help: `millstream --help` lists the commands, `millstream <command> --help` shows one; `millstream help` is a
-short guide to the CLI for people and agents alike, the same text as [internal/cli/guide.md](../internal/cli/guide.md).
+short guide to the CLI for people and agents alike, the same text as
+[internal/cli/guide.md](../../internal/cli/guide.md).

@@ -1,4 +1,4 @@
-// Package conformance is the action protocol conformance suite (docs/protocol.md, Conformance): generic checks any
+// Package conformance is the action protocol conformance suite (docs/reference/action-protocol.md, Conformance): generic checks any
 // action must pass, whatever it computes. It drives the action's process itself, over os/exec (or an exec.Starter's
 // pipes, for in-process test actions) and the raw lines of its stdout, rather than through the exec runtime, which
 // hides what it sees as violations behind a retry: the suite reports each one. Every check is answered pass, fail or

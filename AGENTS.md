@@ -1,8 +1,8 @@
 # AGENTS.md
 
 Millstream is a Monolithic Lab pipeline platform (Go engine, React UI) under construction. See [README.md](README.md)
-for what it is, the documents below for the reasoning, [docs/testing.md](docs/testing.md) for how the suites work,
-and `make help` for every command.
+for what it is, the documents below for the reasoning, [docs/development/testing.md](docs/development/testing.md) for
+how the suites work, and `make help` for every command.
 
 ## Hard rules
 
@@ -12,8 +12,8 @@ and `make help` for every command.
 - The pipeline file format, the action protocol and the HTTP API are public contracts: a change to one updates the
   spec in the same commit. For the API that is `internal/api/openapi.yaml` and spec section 12.1 together; the tests
   fail on an undocumented route, a documented operation the server lacks, or a response that does not validate.
-- A change to the `node --join` command or the environment file's keys updates `deploy/` and `docs/deploy.md` in the
-  same commit.
+- A change to the `node --join` command or the environment file's keys updates `deploy/` and `docs/guides/deployment.md`
+  in the same commit.
 
 ## Constraints that look like bugs
 
@@ -77,7 +77,9 @@ and `make help` for every command.
   the `e2e` build tag, in a `*_e2e_test.go` file.
 - Architecture decisions live in `docs/decisions.md`. Until the first public release the log is kept current: edit
   an entry to match the design and remove superseded ones. From the first release on, it is append-only.
-- Specs and plans: `docs/specs/YYYYMMDD.<topic>-design.md` and `docs/plans/YYYYMMDD.<topic>.md`.
+- Specs and plans: `docs/specs/YYYYMMDD.<topic>-design.md` and `docs/plans/YYYYMMDD.<topic>.md`. Other docs go by
+  reader: `docs/guides/` (using Millstream), `docs/reference/` (contracts), `docs/development/` (working on it),
+  `docs/reviews/` (reviews and retrospectives), `docs/research/` (external material).
 - Parked ideas and follow-ups: `ROADMAP.md`.
 
 ## Testing
@@ -85,19 +87,19 @@ and `make help` for every command.
 - `make test` (the default build, no `-race`) has a time budget checked by `make test-times`: medians summing to at
   most 750 ms, no test over 20 ms, no package over 100 ms. The working target is 600 ms. Run `make test-times` at
   milestone close, not for each change or branch (it runs the suite six times); a milestone above the target makes
-  room before it closes. What keeps it there: [docs/testing.md](docs/testing.md).
+  room before it closes. What keeps it there: [docs/development/testing.md](docs/development/testing.md).
 - Tiers: while working, run `make ci` and `make test-e2e PKG=./internal/foo/...` for the packages a change touches.
   Run the full `make test-e2e` (race, every tag, Docker, Postgres, S3, chaos) once when the change is done, before
   closing a milestone, and after touching the exec runtime, the node, the CLI's run path, the store's concurrency or
-  crash recovery. Run `make soak` (docs/soak.md) after touching failover, the node or the Compose files. None of these
-  is in `make ci`; CI runs `test-e2e`, the UI suites and the image checks as separate jobs.
+  crash recovery. Run `make soak` (docs/development/soak.md) after touching failover, the node or the Compose files.
+  None of these is in `make ci`; CI runs `test-e2e`, the UI suites and the image checks as separate jobs.
 - `make test-e2e`, `make test-ui-e2e` and `make soak` queue behind a machine-wide lock (`scripts/e2elock`); `PKG=`
   runs take none. Never run their `*-locked` twins while another run may be going: the failover tests time out.
 - After a schema change, rebuild the committed store images (`internal/store/sqlite/template.db`,
   `internal/insights/testdata/history.db`) with `-update`.
 - Tests never reach a model: agent calls replay from recordings. `make recordings` rewrites them after a change to a
   prompt, a lessons file, an output schema or the fake model. The live smoke test (`MILLSTREAM_LIVE=1`, see
-  docs/testing.md) spends money and is never part of `make ci`; never commit what it records.
+  docs/development/testing.md) spends money and is never part of `make ci`; never commit what it records.
 
 ## Web UI
 
@@ -130,11 +132,15 @@ and `make help` for every command.
 | --- | --- |
 | `docs/specs/20261014.platform-design.md` | The platform design: concepts, file format, execution model, protocol, UI, deployment, milestones |
 | `docs/decisions.md` | Architecture decisions D1 onward |
-| `docs/protocol.md` | The action protocol, for action authors and SDKs |
-| `docs/deploy.md` | Deployment: the image, Compose, systemd, security, backups and upgrades |
-| `docs/tutorial.md` | The getting-started tutorial: every command and output in it is run for real |
-| `docs/testing.md` | The test suites: budget mechanics, fixtures, Postgres, end-to-end and UI suites |
-| `docs/soak.md` | The soak test |
+| `docs/reference/action-protocol.md` | The action protocol, for action authors and SDKs |
+| `docs/guides/deployment.md` | Deployment: the image, Compose, systemd, security, backups and upgrades |
+| `docs/guides/getting-started.md` | The getting-started tutorial: every command and output in it is run for real |
+| `docs/development/testing.md` | The test suites: budget mechanics, fixtures, Postgres, end-to-end and UI suites |
+| `docs/development/soak.md` | The soak test |
+| `docs/development/m5-exit.md` | The M5 exit scenario, `TestM5Exit` |
+| `docs/development/architecture.md` | The package map and the path of an item through the code |
+| `docs/development/contributing.md` | Requirements, everyday commands and how a change lands, for human contributors |
+| `docs/README.md` | The docs index, grouped by reader; a new page under `docs/` gets a row there |
 | `docs/design/` | The web UI's design brief and the Claude Design canvas snapshot |
 
 ## Workflow

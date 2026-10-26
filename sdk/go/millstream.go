@@ -1,5 +1,5 @@
 // Package millstream is the Go SDK for Millstream actions: a thin wrapper over the action protocol (JSON objects,
-// one per line, on stdin and stdout; see docs/protocol.md in the Millstream repository). An action's main calls Map
+// one per line, on stdin and stdout; see docs/reference/action-protocol.md in the Millstream repository). An action's main calls Map
 // or MapKeyed with a function from one input item to its outputs; the SDK answers hello, decodes each item into the
 // function's input type, emits its outputs and reports done or error, one delivery at a time. Files travel as
 // artifacts through MILLSTREAM_WORKDIR: Context.InputArtifact finds the input item's, Context.Artifact attaches
@@ -149,7 +149,7 @@ func MapKeyedHandler[In, Out any](fn func(Context, In) ([]Keyed[Out], error)) Ha
 	}
 }
 
-// keyRule enforces the engine's key rule (docs/protocol.md): several outputs must all be keyed, with distinct
+// keyRule enforces the engine's key rule (docs/reference/action-protocol.md): several outputs must all be keyed, with distinct
 // keys. The engine dead-letters a delivery that breaks it, so the SDK reports it as a non-retryable error first.
 func keyRule[Out any](outs []Keyed[Out]) error {
 	if len(outs) < 2 {

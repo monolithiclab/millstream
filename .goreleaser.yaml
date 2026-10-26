@@ -32,7 +32,7 @@ archives:
     ids: [millstream]
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     formats: [tar.gz]
-    files: [LICENSE, README.md, docs/deploy.md, deploy/**/*]
+    files: [LICENSE, README.md, docs/guides/deployment.md, deploy/**/*]
 
 # One SPDX SBOM per archive, written by syft. The args are spelled out because the default set ends in
 # `--enrich all`, which reaches the network on every run: a release describes what it built.

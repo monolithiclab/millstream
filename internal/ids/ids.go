@@ -59,7 +59,7 @@ func Delivery(step, itemID string, generation int64) string {
 	return deliveryPrefix + digest(step, itemID, strconv.FormatInt(generation, 10))
 }
 
-// Idempotency is the idempotency key an action receives with a delivery (docs/protocol.md): hash(step, item id,
+// Idempotency is the idempotency key an action receives with a delivery (docs/reference/action-protocol.md): hash(step, item id,
 // generation), the same on every attempt and new on a replay run.
 func Idempotency(step, itemID string, generation int64) string {
 	return digest(step, itemID, strconv.FormatInt(generation, 10))

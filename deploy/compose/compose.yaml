@@ -1,10 +1,10 @@
 # The VPS deployment of spec section 14: Postgres, two engines (one active, one hot standby) and two nodes.
 #   cp .env.example .env    # then set every value
 #   docker compose up -d
-# docs/deploy.md is the guide: TLS in front, backups, upgrades. The engines are configured by MILLSTREAM_* variables
+# docs/guides/deployment.md is the guide: TLS in front, backups, upgrades. The engines are configured by MILLSTREAM_* variables
 # (spec section 14): settings below, secrets from .env, never from this file.
 #
-# The engines serve HTTPS with the certificate in ./tls (docs/deploy.md, "Node TLS"), which the nodes check against
+# The engines serve HTTPS with the certificate in ./tls (docs/guides/deployment.md, "Node TLS"), which the nodes check against
 # ./tls/ca.pem: nodes reach an engine on another host over TLS only.
 
 name: millstream
@@ -29,7 +29,7 @@ x-engine: &engine
     PGUSER: millstream
     PGPASSWORD: ${PGPASSWORD:?set PGPASSWORD in .env}
     # A dead engine's lock is free, and a cut-off one steps down, within engine.lockCheck + 2 x engine.keepalive
-    # (5s each by default; MILLSTREAM_ENGINE_LOCK_CHECK and MILLSTREAM_ENGINE_KEEPALIVE tune them, docs/deploy.md).
+    # (5s each by default; MILLSTREAM_ENGINE_LOCK_CHECK and MILLSTREAM_ENGINE_KEEPALIVE tune them, docs/guides/deployment.md).
     # The API listens on every interface of the container so compose can publish it, over HTTPS (HTTP/2) with the
     # certificate in ./tls, for the nodes and the reverse proxy alike. A non-loopback listener needs the token.
     MILLSTREAM_LISTEN: 0.0.0.0:7070
@@ -43,7 +43,7 @@ x-engine: &engine
     MILLSTREAM_RETENTION_EVENTS: 90d
     MILLSTREAM_RETENTION_TRANSCRIPTS: 30d
     MILLSTREAM_RETENTION_ROLLUPS: 400d
-    # The address of the TLS reverse proxy in front (docs/deploy.md).
+    # The address of the TLS reverse proxy in front (docs/guides/deployment.md).
     MILLSTREAM_UI_BASE_URL: ${MILLSTREAM_UI_BASE_URL:?set MILLSTREAM_UI_BASE_URL in .env}
     # Artifacts: without a URL the active engine keeps them in its working directory, the volume both engines share.
     # An S3-compatible bucket shared by both engines survives a failover too, and the nodes reach it through
@@ -64,7 +64,7 @@ x-engine: &engine
 x-node: &node
   <<: *millstream
   # A node joins the engines with the node token over TLS, trusting ./tls/ca.pem, and follows the active one across a
-  # failover. --allow-exec runs exec actions, which must be static Linux binaries in this image (docs/deploy.md).
+  # failover. --allow-exec runs exec actions, which must be static Linux binaries in this image (docs/guides/deployment.md).
   command: ["node", "--join", "https://engine:7070,https://engine-standby:7070", "--allow-exec",
     "--ca", "/etc/millstream/tls/ca.pem"]
   environment:

@@ -8,7 +8,7 @@ guide covers the three targets: a laptop, a VPS with Docker Compose, and a VPS w
 
 > **M4 status.** `millstream serve`, `apply`, `rollback` and `disable`, every key of the environment file, the
 > standby's takeover, remote nodes with the node token over TLS, the S3 artifact store, token auth, `/metrics`,
-> retention and `millstream purge` are in (Tasks 2, 3, 4, 7 and 8 of the [M4 plan](plans/20261016.m4-server.md); see
+> retention and `millstream purge` are in (Tasks 2, 3, 4, 7 and 8 of the [M4 plan](../plans/20261016.m4-server.md); see
 > Standby and failover, and Retention and purge).
 
 ## The artefacts
@@ -17,12 +17,12 @@ guide covers the three targets: a laptop, a VPS with Docker Compose, and a VPS w
 | --- | --- | --- |
 | Container image | `make image` (tag `millstream:dev`); releases at `ghcr.io/monolithiclab/millstream` | Distroless static, uid 65532, `ENTRYPOINT ["/millstream"]` |
 | Release archives | `make release-snapshot` writes `dist/` | `linux`/`darwin` × `amd64`/`arm64`, an SPDX SBOM each, `SHA256SUMS` |
-| Compose file | [`deploy/compose/`](../deploy/compose/) | Postgres 17, an active and a standby engine, two nodes |
-| systemd units | [`deploy/systemd/`](../deploy/systemd/) | `millstream.service` (engine), `millstream-node.service` (node) |
+| Compose file | [`deploy/compose/`](../../deploy/compose/) | Postgres 17, an active and a standby engine, two nodes |
+| systemd units | [`deploy/systemd/`](../../deploy/systemd/) | `millstream.service` (engine), `millstream-node.service` (node) |
 
-The image is built from source by the [`Dockerfile`](../Dockerfile): the UI in the node image `make ui` uses, the
+The image is built from source by the [`Dockerfile`](../../Dockerfile): the UI in the node image `make ui` uses, the
 binary with the UI embedded, then the distroless runtime. Every base image is pinned by digest. Releases are not
-published yet: GoReleaser ([`.goreleaser.yaml`](../.goreleaser.yaml)) builds snapshots only. When releases start,
+published yet: GoReleaser ([`.goreleaser.yaml`](../../.goreleaser.yaml)) builds snapshots only. When releases start,
 `SHA256SUMS` carries a cosign keyless signature (`SHA256SUMS.sigstore.json`) and the image is signed by digest:
 
 ```sh
@@ -247,7 +247,7 @@ A second `millstream serve` on the same Postgres database, with the same configu
 - **Clients.** Point the reverse proxy at both engines and fail over on `503`, or follow the header; the UI reloads
   its reads through whichever engine answers.
 - **Under chaos.** `make soak` runs this Compose deployment for 30 minutes while killing the active engine and the
-  nodes; its results and the command for a week-long run are in [the soak page](soak.md).
+  nodes; its results and the command for a week-long run are in [the soak page](../development/soak.md).
 
 ## Security
 

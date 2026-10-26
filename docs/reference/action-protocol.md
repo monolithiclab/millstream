@@ -2,7 +2,7 @@
 
 How the engine and an action process talk. This is the minimal document of milestone M1: enough to write an
 action in any language without an SDK. The design and its reasoning are in the
-[platform design](specs/20261014.platform-design.md), section 6.3; the Go SDK (`sdk/go`) implements this document.
+[platform design](../specs/20261014.platform-design.md), section 6.3; the Go SDK (`sdk/go`) implements this document.
 
 ## Purpose
 

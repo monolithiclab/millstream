@@ -1,5 +1,5 @@
 # The Millstream engine (spec section 14, VPS target): `millstream serve`, configured by the MILLSTREAM_* variables
-# of /etc/millstream/millstream.env (root-owned, mode 0600). Install: docs/deploy.md, "systemd". The binary goes in
+# of /etc/millstream/millstream.env (root-owned, mode 0600). Install: docs/guides/deployment.md, "systemd". The binary goes in
 # /usr/local/bin.
 # A second host running the same unit against the same Postgres waits as the standby; its takeover is M4 Task 3.
 
