@@ -17,9 +17,11 @@ is slow, failing or expensive, and propose fixes.
 
 You will build `listings`, a small real estate pipeline:
 
-```text
-trigger.adhoc → crawl → dedupe → affordable ─┬→ listings.renovate → score (agent) → keep-good → analyst-review
-                                              └→ listings.ready
+```mermaid
+flowchart LR
+  trigger(["trigger.adhoc"]) --> crawl --> dedupe --> affordable
+  affordable -->|"listings.renovate"| score["score (agent)"] --> keepGood["keep-good"] --> review["analyst-review"]
+  affordable -->|"listings.ready"| ready[("listings.ready")]
 ```
 
 You need Go (the version in the repository's `go.mod`, 1.27 at the time of writing), Git, and macOS or Linux. Docker
