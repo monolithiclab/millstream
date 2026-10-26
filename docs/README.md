@@ -45,7 +45,7 @@ editor; `make docs` checks that every link here resolves.
 | [specs/](specs/) | Design specs, one per piece of work, dated `YYYYMMDD.<topic>-design.md` |
 | [plans/](plans/) | Implementation plans, each paired with its spec and ending with execution notes on what was built |
 | [reviews/](reviews/) | Reviews and retrospectives, such as the [post-mortem of the proof of concept](reviews/20261020.postmortem.md) |
-| [research/](research/) | External reference material: the [naming note](research/20261014.naming.md) and a [competitive analysis](research/20261022.convex-workflow.md) |
+| [research/](research/) | External reference material: the [naming note](research/20261014.naming.md), a [competitive analysis](research/20261022.convex-workflow.md) of Convex Workflow and an [analysis of agentic harnesses](research/20261026.agentic-harnesses.md) |
 | [design/](design/) | The UI design brief and the design canvas snapshot |
 
 Parked ideas and follow-ups are in the [roadmap](../ROADMAP.md).
