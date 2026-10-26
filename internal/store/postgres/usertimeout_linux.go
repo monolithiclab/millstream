@@ -5,6 +5,10 @@ import (
 	"time"
 )
 
+// tcpUserTimeout is TCP_USER_TIMEOUT, the same on every Linux architecture; the frozen syscall package defines it
+// only on some (arm64, not amd64).
+const tcpUserTimeout = 0x12
+
 // userTimeout returns the dialer's control function setting TCP_USER_TIMEOUT on a TCP socket: the kernel drops the
 // connection once data it sent stays unacknowledged that long, rather than retransmitting for many minutes.
 func userTimeout(d time.Duration) func(network, address string, c syscall.RawConn) error {
@@ -15,7 +19,7 @@ func userTimeout(d time.Duration) func(network, address string, c syscall.RawCon
 		}
 		var serr error
 		if err := c.Control(func(fd uintptr) {
-			serr = syscall.SetsockoptInt(int(fd), syscall.IPPROTO_TCP, syscall.TCP_USER_TIMEOUT, ms) // #nosec G115 -- a socket descriptor
+			serr = syscall.SetsockoptInt(int(fd), syscall.IPPROTO_TCP, tcpUserTimeout, ms) // #nosec G115 -- a socket descriptor
 		}); err != nil {
 			return err
 		}
