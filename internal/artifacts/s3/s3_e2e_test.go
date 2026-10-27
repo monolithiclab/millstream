@@ -24,8 +24,9 @@ import (
 // The store against a real S3-compatible server, so that the signatures are checked by someone else than their
 // author. MinIO stopped publishing its server images in 2025 (the Docker Hub repository is gone, quay.io's needs an
 // account), so the server is SeaweedFS's S3 gateway, with an identity whose keys it checks: chrislusf/seaweedfs,
-// pinned by digest (resolved 2026-10-17). Refresh: docker buildx imagetools inspect chrislusf/seaweedfs:latest.
-const s3Image = "chrislusf/seaweedfs@sha256:4e61d15fd35994cb1e43e1e553dff106794841fd9a99ade2fc8c8bfce4d7872d"
+// pinned by digest (resolved 2026-10-17), pulled through mirror.gcr.io. Refresh: docker buildx imagetools inspect
+// mirror.gcr.io/chrislusf/seaweedfs:latest.
+const s3Image = "mirror.gcr.io/chrislusf/seaweedfs@sha256:4e61d15fd35994cb1e43e1e553dff106794841fd9a99ade2fc8c8bfce4d7872d"
 
 const (
 	testAccessKey = "millstream-test"

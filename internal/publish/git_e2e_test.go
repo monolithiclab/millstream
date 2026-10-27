@@ -17,7 +17,7 @@ import (
 )
 
 // gitImage is the publish container of the tests: git, with the fake forge CLIs mounted in. Pinned by digest.
-const gitImage = "alpine/git:v2.49.1@sha256:c0280cf9572316299b08544065d3bf35db65043d5e3963982ec50647d2746e26"
+const gitImage = "mirror.gcr.io/alpine/git:v2.49.1@sha256:c0280cf9572316299b08544065d3bf35db65043d5e3963982ec50647d2746e26"
 
 // forgeRepo is a bare repository on main holding the fixture's package under pipelines/extra, and a directory of
 // fake gh and glab CLIs that record their arguments under rec and print a pull request URL.

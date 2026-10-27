@@ -107,6 +107,10 @@ own job. It covers:
   `sandbox.DefaultImage` and the publish container's run `alpine/git`, both pinned by digest and pulled once when
   missing (the backtest's sandbox test skips without the Go image); the git actions publish to a local bare
   repository with fake `gh` and `glab` scripts, never to a forge.
+- The test images (Postgres, SeaweedFS, `alpine/git`) are Docker Hub images pulled through `mirror.gcr.io`, Google's
+  anonymous Docker Hub cache, under the same digests. GitHub's runners share their addresses, and so their anonymous
+  quotas: Postgres came from ECR Public until its 500 GB a month ran out on 2026-10-26 (`toomanyrequests: Data limit
+  exceeded`). `sandbox.DefaultImage` stays on Docker Hub, since it is the product's default, not a test image.
 
 `make test-e2e PKG=./internal/foo/...` is the iteration tier: `go test -tags e2e -count=1` of those packages alone,
 tagged and untagged, without `-race` or coverage.

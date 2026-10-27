@@ -28,9 +28,9 @@ import (
 )
 
 // Image is the Postgres the tests run: the official image, postgres:17 (17.11), pinned by the digest of its
-// multi-platform index, from the AWS mirror of Docker's official images, which has no anonymous pull limit.
-// Refresh: docker buildx imagetools inspect public.ecr.aws/docker/library/postgres:17, then update the version.
-const Image = "public.ecr.aws/docker/library/postgres@sha256:2d2b8998d31037bf721cfdf764d76ba74171b4fab3431b7f72c27c56ddbdf9e3"
+// multi-platform index, pulled through mirror.gcr.io (docs/development/testing.md says why).
+// Refresh: docker buildx imagetools inspect mirror.gcr.io/library/postgres:17, then update the version.
+const Image = "mirror.gcr.io/library/postgres@sha256:2d2b8998d31037bf721cfdf764d76ba74171b4fab3431b7f72c27c56ddbdf9e3"
 
 // label marks the containers pgtest starts, with the pid of the test binary that started each.
 const label = "millstream.pgtest.pid"
