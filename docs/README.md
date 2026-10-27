@@ -8,6 +8,7 @@ editor; `make docs` checks that every link here resolves.
 | Page | Read it to |
 | --- | --- |
 | [Getting started](guides/getting-started.md) | Go from nothing to a running pipeline with an agent step and a human review, on a laptop, in about 40 minutes |
+| [Agents in production](guides/agents.md) | Run agent steps whose answers are validated, whose cost is bounded and whose behaviour improves: schemas, abstain and fallback, sandbox, budgets, transcripts, evals, proposals |
 | [Deployment](guides/deployment.md) | Run Millstream on a server: the container image, Docker Compose, systemd, remote nodes, failover, security, retention, backups and upgrades |
 | `millstream help` | Read the CLI guide and its topics in the terminal (source: [internal/cli/guide.md](../internal/cli/guide.md)) |
 

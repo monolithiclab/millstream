@@ -10,6 +10,26 @@ earlier designs are in the git history of the spec.
 - Trademark search for Millstream (INPI, EUIPO, UKIPO, USPTO; classes 9 and 42); see
   [the naming note](docs/research/20261014.naming.md).
 
+## Agents
+
+From the [agentic harnesses analysis](docs/research/20261026.agentic-harnesses.md), ranked; each needs a decision
+before it reaches the spec.
+
+- Validation feedback within a delivery: an answer failing the output schema gets the validator's errors back as a
+  follow-up turn, up to a `repairTurns` limit, within `maxTurns` and `maxCostUsd`, recorded in the transcript and
+  keyed in recordings by the whole conversation. Today the retry renders the same prompt (`internal/agent/agent.go`).
+- Output assertions on agent steps: `assert`, CEL over `output`, `input` and `vars` as in eval cases, failing as a
+  schema-class error. Assertions state that an answer is wrong (an invariant); thresholds stay in `filter` steps,
+  and the spec must say so.
+- Live judges on a sample: an eval judge scoring a share of production answers, recorded like audits, raising a
+  `drift`-like insight below a threshold.
+- Personal data masked in transcripts, from the pointers evidence bundles already list per stream (today it is
+  erasable, stored in clear).
+- A webhook trigger that waits a bounded time for the run's output, for light interactive use (next to the durable
+  wait of the [Convex Workflow analysis](docs/research/20261022.convex-workflow.md)).
+- The `api` harness tool loop (below, under follow-ups) with a sandboxed code-execution tool, so a code harness runs
+  on any model: worth bringing forward to M6 or just after.
+
 ## Self-improvement
 
 - Auto-applying low-risk proposal classes behind a policy (D29).
