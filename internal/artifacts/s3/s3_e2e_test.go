@@ -54,8 +54,13 @@ func startS3(t *testing.T) string {
 	// No --rm: a server that exits at once keeps its logs for the failure message below.
 	out, err := exec.Command("docker", "run", "-d", "-p", "127.0.0.1::8333", "--tmpfs", "/data", // #nosec G204 -- the test's own container
 		"-v", dir+":/etc/seaweedfs-test:ro", s3Image, "server", "-dir=/data", "-s3", "-s3.port=8333",
-		"-s3.config=/etc/seaweedfs-test/s3.json").CombinedOutput()
+		"-s3.config=/etc/seaweedfs-test/s3.json").Output()
 	if err != nil {
+		// Stdout alone holds the container id: a first pull writes its progress to stderr.
+		var exit *exec.ExitError
+		if errors.As(err, &exit) {
+			out = exit.Stderr
+		}
 		t.Fatalf("start the S3 server: %v: %s", err, out)
 	}
 	id := strings.TrimSpace(string(out))
