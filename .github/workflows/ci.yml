@@ -27,7 +27,8 @@ jobs:
       # The whole gate, exactly as run locally.
       - run: make ci
 
-  # The e2e-tagged suite: built binaries, real processes, Docker, the crash matrix. Slow, so a job of its own.
+  # The e2e-tagged suite: built binaries, real processes, Docker. Slow, so a job of its own. internal/e2e (the crash
+  # matrix and the chaos suites) is the manual Scenarios workflow.
   e2e:
     runs-on: ubuntu-latest
     timeout-minutes: 30

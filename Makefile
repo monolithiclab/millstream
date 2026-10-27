@@ -49,12 +49,14 @@ lint: lint-sdk
 
 # make test runs the default build: in-process unit tests within the budget scripts/test-times checks. Tests that
 # build binaries, start processes or Docker, drive the CLI or the engine end to end, or run long are behind the e2e
-# build tag. test-e2e runs them all, tagged and untagged, under -race, and prints the coverage of the whole suite.
+# build tag. test-e2e runs them all, tagged and untagged, under -race, and prints the coverage of the whole suite,
+# except internal/e2e: its crash matrix, chaos suites and milestone scenarios take about ten minutes on ten cores, far
+# past a CI runner's budget, so they are test-scenarios, run by hand and from the manual Scenarios workflow.
 # They run the built binaries, so the test cache cannot see changes to the code they exercise: -count=1.
 # PKG=<packages> runs those packages' tests alone, tagged and untagged, without -race or coverage: the iteration tier.
-# The heavy suites (test-e2e, test-ui-e2e, soak) run under a machine-wide lock, a file in $TMPDIR taken by
-# scripts/e2elock (macOS has no flock(1)): several checkouts' runs queue, each saying whom it waits for, instead of
-# overloading the machine together. Each public target takes the lock and runs its *-locked twin.
+# The heavy suites (test-e2e, test-scenarios, test-ui-e2e, soak) run under a machine-wide lock, a file in $TMPDIR
+# taken by scripts/e2elock (macOS has no flock(1)): several checkouts' runs queue, each saying whom it waits for,
+# instead of overloading the machine together. Each public target takes the lock and runs its *-locked twin.
 locked = @go run ./scripts/e2elock -- $(MAKE) --no-print-directory $@-locked
 
 .PHONY: test-e2e test-e2e-locked
@@ -68,7 +70,7 @@ endif
 test-e2e-locked:
 	@mkdir -p build
 	@docker version >/dev/null 2>&1 || echo "Docker is unavailable: the Postgres tests skip (internal/store/postgres/pgtest)"
-	@go test -race -count=1 -tags e2e -coverpkg=./... -coverprofile=build/cover-e2e.out ./...
+	@go test -race -count=1 -tags e2e -coverpkg=./... -coverprofile=build/cover-e2e.out $$(go list -tags e2e ./... | grep -v '/internal/e2e$$')
 	@if [ -f .covignore ]; then \
 		patterns=$$(grep -vE '^[[:space:]]*(#|$$)' .covignore || true); \
 		if [ -n "$$patterns" ]; then \
@@ -78,6 +80,16 @@ test-e2e-locked:
 	fi
 	@go tool cover -func=build/cover-e2e.out | awk '/^total:/ {print "Total coverage, e2e build: " $$NF}'
 	@cd $(SDK_DIR) && go test -race -count=1 -tags e2e ./...
+
+# internal/e2e alone (docs/development/testing.md, End-to-end tests), under -race. No go test timeout: a CI
+# runner takes far longer than Go's default ten minutes, and the workflow's own timeout bounds it.
+.PHONY: test-scenarios test-scenarios-locked
+test-scenarios: ## Run internal/e2e under -race: the crash matrix, the failover and node chaos suites, the milestone scenarios
+	$(locked)
+
+test-scenarios-locked:
+	@docker version >/dev/null 2>&1 || echo "Docker is unavailable: the Postgres halves and the M5 exit scenario skip"
+	@go test -race -count=1 -tags e2e -timeout 0 ./internal/e2e
 
 # The M5 exit scenario alone (internal/e2e/m5_exit_test.go, docs/development/m5-exit.md), verbose so that it prints what it
 # measured: production evidence to accepted lessons and distill proposals in development. It needs Docker (the

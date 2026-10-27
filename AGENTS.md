@@ -88,13 +88,13 @@ how the suites work, and `make help` for every command.
   most 750 ms, no test over 20 ms, no package over 100 ms. The working target is 600 ms. Run `make test-times` at
   milestone close, not for each change or branch (it runs the suite six times); a milestone above the target makes
   room before it closes. What keeps it there: [docs/development/testing.md](docs/development/testing.md).
-- Tiers: while working, run `make ci` and `make test-e2e PKG=./internal/foo/...` for the packages a change touches.
-  Run the full `make test-e2e` (race, every tag, Docker, Postgres, S3, chaos) once when the change is done, before
-  closing a milestone, and after touching the exec runtime, the node, the CLI's run path, the store's concurrency or
-  crash recovery. Run `make soak` (docs/development/soak.md) after touching failover, the node or the Compose files.
-  None of these is in `make ci`; CI runs `test-e2e`, the UI suites and the image checks as separate jobs.
-- `make test-e2e`, `make test-ui-e2e` and `make soak` queue behind a machine-wide lock (`scripts/e2elock`); `PKG=`
-  runs take none. Never run their `*-locked` twins while another run may be going: the failover tests time out.
+- Tiers: while working, `make ci` and `make test-e2e PKG=./internal/foo/...` for the packages a change touches. The
+  full `make test-e2e` (race, every tag, Docker, Postgres, S3) when the change is done and before closing a milestone;
+  `make test-scenarios` (`internal/e2e`: crash matrix, chaos) at milestone close and after touching the exec runtime,
+  the node, the CLI's run path, the store's concurrency or crash recovery; `make soak` (docs/development/soak.md)
+  after touching failover, the node or Compose. CI runs `test-e2e`, UI and image jobs; `test-scenarios` only by hand.
+- These heavy targets queue behind a machine-wide lock (`scripts/e2elock`); `PKG=` runs take none. Never run their
+  `*-locked` twins while another run may be going: the failover tests time out.
 - After a schema change, rebuild the committed store images (`internal/store/sqlite/template.db`,
   `internal/insights/testdata/history.db`) with `-update`.
 - Tests never reach a model: agent calls replay from recordings. `make recordings` rewrites them after a change to a

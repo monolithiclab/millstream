@@ -10,15 +10,17 @@ detail behind them.
 | `make test` | The default build: in-process unit tests, without `-race`, within the time budget | Yes |
 | `make test-times` | The budget check (`scripts/test-times`): six suite runs, so at milestone close only | No |
 | `make test-e2e PKG=./internal/foo/...` | The iteration tier: those packages only, tag `e2e`, no `-race`, no coverage | No |
-| `make test-e2e` | Everything, tagged and untagged, under `-race`, with the whole suite's coverage | No (own CI job) |
-| `make test-exit` | The M5 exit scenario alone, verbose, under the e2e lock, see [m5-exit.md](m5-exit.md) | No (in `test-e2e`) |
+| `make test-e2e` | Everything but `internal/e2e`, tagged and untagged, under `-race`, with the suite's coverage | No (own CI job) |
+| `make test-scenarios` | `internal/e2e` under `-race`: the crash matrix, the chaos suites, the milestone scenarios | No (manual workflow) |
+| `make test-exit` | The M5 exit scenario alone, verbose, under the e2e lock, see [m5-exit.md](m5-exit.md) | No (in `test-scenarios`) |
 | `make soak` | The Compose deployment under chaos for `SOAK_DURATION` (30m), see [soak.md](soak.md) | No |
 | `make test-ui`, `make test-ui-e2e` | The web UI's unit and Playwright suites, in containers | No (own CI jobs) |
 | `make test-image`, `make test-deploy` | The image and the deployment files | No (CI's `image` job) |
 
 While working, run `make ci` and `make test-e2e PKG=...` for the packages a change touches. Run the full
-`make test-e2e` once, when the change is done, before closing a milestone, and after touching the exec runtime, the
-node, the CLI's run path, the store's concurrency or the crash recovery. Run `make soak` after touching failover, the
+`make test-e2e` once, when the change is done, and before closing a milestone. Run `make test-scenarios` before
+closing a milestone and after touching the exec runtime, the node, the CLI's run path, the store's concurrency or the
+crash recovery. Run `make soak` after touching failover, the
 node or the Compose files.
 
 ## The time budget
@@ -91,13 +93,15 @@ statements it runs in any package, which is how the conformance packages count i
 
 ## End-to-end tests
 
-`make test-e2e` runs `go test -race -count=1 -tags e2e ./...` and the SDK module's. It is slow and runs in CI as its
-own job. It covers:
-
-- The `internal/e2e` package: the crash matrix on SQLite and Postgres, run with a second pipeline importing the
-  fixture's stream so that it covers a Done that imports; the failover chaos suite (`failover_test.go`) on the same two
-  pipelines with token auth on, two `serve` processes on Postgres; the node chaos suite (`nodes_test.go`: remote node
-  processes killed, cut off by a proxy past their lease, revoked, refused a rotated token, following a failover) and
+`make test-e2e` runs `go test -race -count=1 -tags e2e` on every package but `internal/e2e`, and the SDK module's. It
+is slow and runs in CI as its own job. `make test-scenarios` runs `internal/e2e`, which takes about ten minutes on ten
+cores and many times that on a CI runner, so CI leaves it out (decided 2026-10-27): the Scenarios workflow runs it
+when started by hand (`gh workflow run scenarios.yml`). Together they cover:
+ - The `internal/e2e` package (`test-scenarios`): the crash matrix on SQLite and Postgres, run with a second pipeline
+  importing the fixture's stream so that it covers a Done that imports; the failover chaos suite (`failover_test.go`) on
+  the same two pipelines with token auth on, two `serve` processes on Postgres; the node chaos suite (`nodes_test.go`:
+  remote node processes killed, cut off by a proxy past their lease, revoked, refused a rotated token, following a
+  failover) and
   `nodes_tls_test.go` (a node over HTTPS and HTTP/2 with `--ca`); the M1 and M2 scenarios.
 - The S3 store against a real S3-compatible server (SeaweedFS pinned by digest: MinIO publishes no server image any
   more).
@@ -117,11 +121,11 @@ tagged and untagged, without `-race` or coverage.
 
 ### The machine-wide lock
 
-`make test-e2e`, `make test-ui-e2e` and `make soak` take a machine-wide lock first: `scripts/e2elock` takes `flock` on
-`$TMPDIR/millstream-e2e.lock` (macOS has no `flock(1)`). Runs from several checkouts or agents queue, the waiting one
-printing "waiting for the e2e lock held by <pid> (<checkout>)", instead of loading the machine together, under which
-the failover and partition tests time out. Each target runs its `*-locked` twin under the lock; call that twin
-directly only when nothing else can be running. `PKG=` runs take no lock.
+`make test-e2e`, `make test-scenarios`, `make test-ui-e2e` and `make soak` take a machine-wide lock first:
+`scripts/e2elock` takes `flock` on `$TMPDIR/millstream-e2e.lock` (macOS has no `flock(1)`). Runs from several checkouts
+or agents queue, the waiting one printing "waiting for the e2e lock held by <pid> (<checkout>)", instead of loading the
+machine together, under which the failover and partition tests time out. Each target runs its `*-locked` twin under
+the lock; call that twin directly only when nothing else can be running. `PKG=` runs take no lock.
 
 ### Postgres
 

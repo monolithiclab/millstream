@@ -25,8 +25,8 @@ How to build Millstream, check a change, and land it. [Architecture](architectur
 | `make test-ui` | The web UI's typecheck, lint and unit tests |
 | `make docs` | Checks every Markdown link and the 120-column wrap |
 
-The slow suites (`make test-e2e` in full, `make test-ui-e2e`, `make soak`, `make test-times`) run once a change is
-done or a milestone closes, not on every edit; [Testing](testing.md) says when each one is due.
+The slow suites (`make test-e2e` in full, `make test-scenarios`, `make test-ui-e2e`, `make soak`, `make test-times`)
+run once a change is done or a milestone closes, not on every edit; [Testing](testing.md) says when each one is due.
 
 ## How a change lands
 
