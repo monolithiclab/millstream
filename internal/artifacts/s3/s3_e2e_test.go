@@ -41,13 +41,18 @@ func startS3(t *testing.T) string {
 	if err := exec.Command("docker", "version").Run(); err != nil {
 		t.Skip("S3 tests skipped: Docker is unavailable")
 	}
+	// The image's entrypoint drops to its seaweed user, which cannot enter TempDir's 0700 on Linux.
 	dir := t.TempDir()
+	if err := os.Chmod(dir, 0o755); err != nil { // #nosec G302 -- read by the container's user
+		t.Fatal(err)
+	}
 	config := `{"identities":[{"name":"test","credentials":[{"accessKey":"` + testAccessKey + `","secretKey":"` +
 		testSecretKey + `"}],"actions":["Admin","Read","Write","List","Tagging"]}]}`
 	if err := os.WriteFile(filepath.Join(dir, "s3.json"), []byte(config), 0o644); err != nil { // #nosec G306 -- read by the container's user
 		t.Fatal(err)
 	}
-	out, err := exec.Command("docker", "run", "-d", "--rm", "-p", "127.0.0.1::8333", "--tmpfs", "/data", // #nosec G204 -- the test's own container
+	// No --rm: a server that exits at once keeps its logs for the failure message below.
+	out, err := exec.Command("docker", "run", "-d", "-p", "127.0.0.1::8333", "--tmpfs", "/data", // #nosec G204 -- the test's own container
 		"-v", dir+":/etc/seaweedfs-test:ro", s3Image, "server", "-dir=/data", "-s3", "-s3.port=8333",
 		"-s3.config=/etc/seaweedfs-test/s3.json").CombinedOutput()
 	if err != nil {
@@ -57,7 +62,8 @@ func startS3(t *testing.T) string {
 	t.Cleanup(func() { _ = exec.Command("docker", "rm", "-f", id).Run() }) // #nosec G204 -- the test's own container
 	port, err := exec.Command("docker", "port", id, "8333/tcp").Output()   // #nosec G204 -- the test's own container
 	if err != nil {
-		t.Fatal(err)
+		logs, _ := exec.Command("docker", "logs", "--tail", "20", id).CombinedOutput() // #nosec G204 -- the test's own container
+		t.Fatalf("the S3 server is not listening: %v: %s", err, logs)
 	}
 	return "http://" + strings.TrimSpace(strings.SplitN(string(port), "\n", 2)[0])
 }
