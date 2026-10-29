@@ -30,7 +30,7 @@ lint-sql:
 		echo "a bare LIMIT ? above: use limitParam"; exit 1; fi
 
 lint: lint-shell lint-sql
-ci: docs
+CI_EXTRA = docs
 
 # The Go SDK is its own module (sdk/go), outside the main module's ./...: test and lint it too.
 SDK_DIR = sdk/go

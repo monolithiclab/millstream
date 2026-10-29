@@ -3,7 +3,8 @@
 # canonical file, then re-copy it into every repo that includes it (they must stay byte-identical).
 # Repo-specific values go in the repo Makefile, as plain `VAR = value` lines after the includes.
 
-BINARY ?= $(notdir $(CURDIR))
+# From the module path, not the directory name, which is the branch name in a worktree.
+BINARY ?= $(notdir $(shell sed -n 's/^module //p' go.mod))
 MAIN ?= ./cmd/$(BINARY)
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS ?= -s -w -X main.version=$(VERSION)
@@ -16,6 +17,9 @@ TOOLS ?= go tool -modfile=tools/go.mod
 TEST_FLAGS ?= -race
 # Extra golangci-lint arguments, e.g. GOLANGCI_ARGS = --build-tags e2e to lint tagged test files too.
 GOLANGCI_ARGS ?=
+# Extra targets the gate runs after lint and test, e.g. CI_EXTRA = test-js for a front-end suite. Set it anywhere
+# (the recipe expands it at run time); `make ci CI_EXTRA=` skips them.
+CI_EXTRA ?=
 
 # A race-built binary sleeps 1 s at exit by default (atexit_sleep_ms): a second per tested package.
 export GORACE ?= atexit_sleep_ms=0
@@ -112,7 +116,8 @@ lint-fix: ## Apply every auto-fix: go fix, then gofmt -s
 	@$(GO_FILES) | xargs -0 gofmt -s -w
 
 .PHONY: ci
-ci: lint test ## The gate: lint and test, never mutating (what CI runs)
+ci: lint test ## The gate: lint, test and any CI_EXTRA targets, never mutating (what CI runs)
+	@$(if $(strip $(CI_EXTRA)),$(MAKE) --no-print-directory $(CI_EXTRA))
 
 .PHONY: update-deps
 update-deps: ## Update every dependency, tidy, then show the go.mod diff (go get rewrites the go directive)
