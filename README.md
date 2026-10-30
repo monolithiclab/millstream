@@ -21,9 +21,9 @@ steps:
     config: { expr: "item.score >= vars.min_score" }
 ```
 
-**Status:** a proof of concept, not yet released. The five milestones are built, each on its branch: M1 the core
+**Status:** a proof of concept, not yet released. The five milestones are built and all live on `main`: M1 the core
 engine, M2 agents, containers, budgets and evals, M3 review and the web UI, M4 server deployment with remote nodes
-and failover, M5 insights and self-improvement (`m5-improve` holds them all).
+and failover, M5 insights and self-improvement.
 [Getting started](docs/guides/getting-started.md) walks through what works today, and
 [the post-mortem](docs/reviews/20261020.postmortem.md) says what building it taught. The name is chosen, pending a
 trademark search ([naming note](docs/research/20261014.naming.md)).
