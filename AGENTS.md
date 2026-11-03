@@ -147,4 +147,4 @@ how the suites work, and `make help` for every command.
 
 1. Minimal change, with tests, plus the owning doc in the same change
 2. `make ci` green
-3. Commit with the session's trailers; push only when asked
+3. Commit with the session's trailers, then push
