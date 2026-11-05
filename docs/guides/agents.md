@@ -94,11 +94,15 @@ so a change never alters work in flight, and `millstream rollback` reactivates t
   - `distill`: code replacing an agent.
 
   Each is backtested against past items. `millstream backtest` validates a hand-written patch the same way.
+
+  `improve.minSeverity` defaults to `warning`, and `distillable` and most `reviewPattern` insights are `info`. Set it to
+  `info`, or run `millstream improve --insight <id>`, or those proposals are not drafted.
 - **Code that replaces an agent.** A `distill` proposal writes a code action from past answers and checks it on a
   holdout the drafting agent never saw. The agent stays as the step's `fallback` for the items the code abstains on.
-  `fallback.auditRate` keeps sending a sample of covered items to the agent, and disagreements raise a `drift`
-  insight. In the platform's own acceptance scenario, on synthetic listings whose answers follow a rule, the code
-  covered 260 of 270 held-out items with full agreement, and the next day cost 3.7% of the agent's
+  `fallback.auditRate` keeps sending a sample of covered items to the agent, and disagreements raise a `drift` insight.
+  The `distill` patch does not set it: add it to the pipeline file once the patch lands, or nothing checks the code
+  against the agent any more. In the platform's own acceptance scenario, on synthetic listings whose answers follow a
+  rule, the code covered 260 of 270 held-out items with full agreement, and the next day cost 3.7% of the agent's
   ([M5 exit](../development/m5-exit.md)).
 
 ## Checklist

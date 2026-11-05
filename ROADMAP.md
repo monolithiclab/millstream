@@ -32,10 +32,36 @@ before it reaches the spec.
 
 ## Self-improvement
 
-- Auto-applying low-risk proposal classes behind a policy (D29).
+From the [self-improving software analysis](docs/research/20261105.self-improving-software.md), ranked; each needs a
+decision before it reaches the spec. The first two make "pipelines that learn" true by default and belong before M6.
+
+- `improve` starts on opportunities: `distillable` is always `info`, and `reviewPattern` is `info` unless sampled
+  agreement falls under 90%, while `improve.minSeverity` defaults to `warning`. So with default settings neither a
+  `lessons` nor a `distill` proposal starts unless someone asks. Treat those insights as actionable whatever their
+  severity.
+- `distill` keeps a sensor: its patch sets an `auditRate` when both actions declare `effects: none`, as `sampleRate`
+  already does for `autoApprove` (see the Distill follow-up below).
+- Evidence carried without a person: a scheduled export in production and a pull in development, instead of export and
+  import files, under the same redaction, expiry and export record (D31 stands). Imported insights fire `insight`
+  triggers once; today they are listed, not recorded, so they fire nothing.
+- Measure after release: for each applied proposal, compare the insight's figures, the cost per approved item and the
+  intervention rate before and after, against the backtest's prediction, recorded on the proposal. A miss raises an
+  insight, a clear regression drafts a rollback, and later drafts read the record. Prerequisite for auto-applying.
+- Every insight leads somewhere: `waste` drafts the `topology` proposal it suggests in words, and `drift` a fix or a
+  rollback (`ideasOf`, `internal/improve/gather.go`, makes no idea from `waste`, `cost`, `drift` or `regression`).
+- Declared objectives: a pipeline key stating targets and hard constraints over metrics Millstream already measures,
+  which insights report against, proposals rank by and validation enforces. Objectives judge a pipeline and never route
+  an item (section 4.7). Changes the pipeline file, so it needs a spec change.
+- A discovery step in the `improve` package: a budgeted agent reads an evidence sample with no insight to start from and
+  states hypotheses as queries; only what the engine confirms becomes an insight. For failures none of the nine kinds
+  describes, with no LLM in the engine (D30). Behind a key: its false-positive cost is unknown.
+- Outcome signals: a late label attached to an item by id or key ("this lead closed"), read as truth by backtests and
+  `distill` beside reviewer edits. Waits for a pilot asking for it.
+- Auto-applying low-risk proposal classes behind a policy (D29), per kind, on the `autoApprove` and `sampleRate` model,
+  only once proposals have a measured record (above).
+- The loop's own figures: proposals drafted, accepted and rejected per kind, cost per accepted proposal, realised
+  against predicted effect. Report them before considering anything recursive; `improve` still never feeds itself.
 - Lessons: selecting examples per item by similarity instead of including them all (D28).
-- Evidence bundles pulled directly from a production deployment by a development one, instead of export and import
-  files.
 - `reviewPattern` filter candidates test one field at a time, on fields every decided item holds; conjunctions of
   fields, fields some items lack (a `has()` guard) and thresholds that allow `improve.filter.maxFalseDrop` false
   drops on numbers are left to the `improve` agent and the backtest.
