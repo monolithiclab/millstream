@@ -33,12 +33,8 @@ before it reaches the spec.
 ## Self-improvement
 
 From the [self-improving software analysis](docs/research/20261105.self-improving-software.md), ranked; each needs a
-decision before it reaches the spec. The first two make "pipelines that learn" true by default and belong before M6.
+decision before it reaches the spec. The first belongs before M6.
 
-- `improve` starts on opportunities: `distillable` is always `info`, and `reviewPattern` is `info` unless sampled
-  agreement falls under 90%, while `improve.minSeverity` defaults to `warning`. So with default settings neither a
-  `lessons` nor a `distill` proposal starts unless someone asks. Treat those insights as actionable whatever their
-  severity.
 - `distill` keeps a sensor: its patch sets an `auditRate` when both actions declare `effects: none`, as `sampleRate`
   already does for `autoApprove` (see the Distill follow-up below).
 - Evidence carried without a person: a scheduled export in production and a pull in development, instead of export and

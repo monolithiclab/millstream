@@ -134,7 +134,7 @@ func (h *improveHost) apply(ctx context.Context, rt *Runtime, env *pipeline.Envi
 
 // ImproveCmd is "millstream improve": the improve pipeline's manual trigger, "Propose a fix".
 type ImproveCmd struct {
-	Insight  string        `help:"Propose a fix for this insight (default: every open insight at or above improve.minSeverity)."`
+	Insight  string        `help:"Propose a fix for this insight (default: every open opportunity, and other open insights at or above improve.minSeverity)."`
 	Pipeline string        `help:"Only this pipeline's insights."`
 	Slots    int           `default:"4" help:"Deliveries the embedded node runs at once."`
 	LeaseTTL time.Duration `name:"lease-ttl" default:"60s" help:"Lease duration."`

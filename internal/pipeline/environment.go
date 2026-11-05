@@ -129,7 +129,7 @@ type UIConfig struct {
 type Improve struct {
 	Enabled     bool             `yaml:"enabled" env:"ENABLED" default:"false" doc:"run the improve pipeline (development only)"`
 	Harness     string           `yaml:"harness" env:"HARNESS" example:"claude-code" doc:"agent harness drafting proposals: claude-code or api"`
-	MinSeverity string           `yaml:"minSeverity" env:"MIN_SEVERITY" default:"warning" doc:"the least severity of the insights considered: info, warning or error"`
+	MinSeverity string           `yaml:"minSeverity" env:"MIN_SEVERITY" default:"warning" doc:"the least severity of the problems considered: info, warning or error; opportunities (reviewPattern, distillable) start whatever theirs"`
 	Publish     string           `yaml:"publish" env:"PUBLISH" example:"patch-file" doc:"publisher of accepted proposals: apply, patch-file, git-pr-gh or git-pr-glab"`
 	PatchFile   PatchFileConfig  `yaml:"patchFile" env:"PATCH_FILE"`
 	Git         GitConfig        `yaml:"git" env:"GIT"`

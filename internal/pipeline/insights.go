@@ -36,6 +36,11 @@ func SeverityRank(s string) int { return slices.Index(Severities, s) }
 var InsightKinds = []string{InsightSlowStep, InsightFailureCluster, InsightCost, InsightReviewPattern, InsightWaste,
 	InsightDrift, InsightDistillable, InsightUnschedulable, InsightRegression}
 
+// InsightOpportunities are the kinds that say what could improve rather than how bad something is: an agent step
+// predictable enough for code, the patterns in what reviewers do. Their severity, usually info, ranks no urgency, so
+// improve.minSeverity does not hold them back (spec section 11.3).
+var InsightOpportunities = []string{InsightReviewPattern, InsightDistillable}
+
 // DefaultInsightsEvery is how often the insights projector runs when insights.every is not set.
 const DefaultInsightsEvery = 15 * time.Minute
 

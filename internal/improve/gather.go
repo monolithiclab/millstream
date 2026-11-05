@@ -53,8 +53,8 @@ const (
 )
 
 // gather answers one trigger item: an insight's run (its payload the insight, or a manual firing naming one) gathers
-// that insight; a weekly run or a manual firing naming none gathers every open insight at or above minSeverity, and
-// the lessons files near lessons.maxTokens. Ideas with an open proposal are left out.
+// that insight; a weekly run or a manual firing naming none gathers every open opportunity, every other open insight
+// at or above minSeverity, and the lessons files near lessons.maxTokens. Ideas with an open proposal are left out.
 func gather(ctx context.Context, a *action, it protocol.Item) ([]output, error) {
 	var in struct {
 		InsightID string `json:"insightId"` // an insight trigger's
@@ -86,8 +86,9 @@ func gather(ctx context.Context, a *action, it protocol.Item) ([]output, error) 
 	return a.evidence(ctx, ideas, files)
 }
 
-// openIdeas are the ideas of every open insight at or above minSeverity, of one pipeline or of all but this one,
-// and the lessons files near their limit.
+// openIdeas are the ideas of every open opportunity and every other open insight at or above minSeverity, of one
+// pipeline or of all but this one, and the lessons files near their limit. A review pattern's hints can appear after
+// it opened, which records no event: this is what finds them.
 func (a *action) openIdeas(ctx context.Context, only string, files map[string]api.RevisionFiles) ([]idea, error) {
 	ins, err := a.api.insights(ctx, only, string(store.InsightOpen))
 	if err != nil {
@@ -97,8 +98,8 @@ func (a *action) openIdeas(ctx context.Context, only string, files map[string]ap
 	var ideas []idea
 	for i := range ins {
 		in := &ins[i]
-		if in.Pipeline != a.cfg.Pipeline &&
-			pipeline.SeverityRank(in.Severity) >= pipeline.SeverityRank(minSeverity) {
+		if in.Pipeline != a.cfg.Pipeline && (slices.Contains(pipeline.InsightOpportunities, in.Kind) ||
+			pipeline.SeverityRank(in.Severity) >= pipeline.SeverityRank(minSeverity)) {
 			ideas = append(ideas, ideasOf(in)...)
 		}
 	}

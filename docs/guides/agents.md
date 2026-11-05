@@ -95,8 +95,8 @@ so a change never alters work in flight, and `millstream rollback` reactivates t
 
   Each is backtested against past items. `millstream backtest` validates a hand-written patch the same way.
 
-  `improve.minSeverity` defaults to `warning`, and `distillable` and most `reviewPattern` insights are `info`. Set it to
-  `info`, or run `millstream improve --insight <id>`, or those proposals are not drafted.
+  `distillable` and `reviewPattern` insights start these drafts whatever their severity, usually `info`, since they say
+  what could improve rather than how bad something is. `improve.minSeverity` governs the others: failures, slow steps.
 - **Code that replaces an agent.** A `distill` proposal writes a code action from past answers and checks it on a
   holdout the drafting agent never saw. The agent stays as the step's `fallback` for the items the code abstains on.
   `fallback.auditRate` keeps sending a sample of covered items to the agent, and disagreements raise a `drift` insight.

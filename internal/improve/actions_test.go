@@ -15,6 +15,7 @@ import (
 	"github.com/monolithiclab/millstream/internal/agent/agenttest"
 	"github.com/monolithiclab/millstream/internal/api"
 	"github.com/monolithiclab/millstream/internal/patch"
+	"github.com/monolithiclab/millstream/internal/pipeline"
 	"github.com/monolithiclab/millstream/internal/protocol"
 )
 
@@ -231,8 +232,8 @@ func TestFence(t *testing.T) {
 	}
 }
 
-// A run naming no insight gathers the open ones at or above minSeverity, not this pipeline's, and the lessons
-// files near lessons.maxTokens; an idea with an open proposal is left out.
+// A run naming no insight gathers the open opportunities and the other open insights at or above minSeverity, not
+// this pipeline's, and the lessons files near lessons.maxTokens; an idea with an open proposal is left out.
 func TestGatherOpen(t *testing.T) {
 	f := newFakeAPI()
 	a := testAction(t, f, config{Pipeline: "improve", MinSeverity: "warning", LessonsMaxTokens: 5,
@@ -245,12 +246,38 @@ func TestGatherOpen(t *testing.T) {
 	for _, ev := range evidenceOf(t, outs) {
 		kinds = append(kinds, ev.Kind+":"+fmt.Sprint(ev.Hint["pattern"]))
 	}
-	if got := strings.Join(kinds, " "); got != "config:<nil> lessons:lessonsNearLimit" {
+	if got := strings.Join(kinds, " "); got != "lessons:recurringEdits topology:predictableRejections config:<nil> lessons:lessonsNearLimit" {
 		t.Errorf("ideas %s", got)
 	}
 	f.proposals = []api.Proposal{{ID: "pr_0", State: "ready", Fingerprint: outs[0].Key}}
-	if outs, err := gather(context.Background(), a, item(`{"pipeline":"listings"}`)); err != nil || len(outs) != 1 {
+	if outs, err := gather(context.Background(), a, item(`{"pipeline":"listings"}`)); err != nil || len(outs) != 3 {
 		t.Errorf("with an open proposal: %d ideas, %v", len(outs), err)
+	}
+}
+
+// An opportunity is gathered whatever its severity and minSeverity, since it says what could improve rather than how
+// bad something is; a problem still answers to minSeverity.
+func TestGatherOpenOpportunities(t *testing.T) {
+	f := newFakeAPI()
+	f.insights = []api.Insight{
+		{ID: "ins_d", Pipeline: "listings", Kind: pipeline.InsightDistillable, Scope: "score", State: "open",
+			Severity: pipeline.SeverityInfo},
+		{ID: "ins_r", Pipeline: "listings", Kind: pipeline.InsightReviewPattern, Scope: "review", State: "open",
+			Severity: pipeline.SeverityInfo, Evidence: json.RawMessage(`{"proposals":[{"kind":"lessons","step":"score"}]}`)},
+		{ID: "ins_s", Pipeline: "listings", Kind: pipeline.InsightSlowStep, Scope: "score", State: "open",
+			Severity: pipeline.SeverityInfo},
+	}
+	a := testAction(t, f, config{Pipeline: "improve", MinSeverity: pipeline.SeverityError, LessonsMaxTokens: 100000})
+	ideas, err := a.openIdeas(context.Background(), "", map[string]api.RevisionFiles{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var kinds []string
+	for _, id := range ideas {
+		kinds = append(kinds, id.kind)
+	}
+	if got := strings.Join(kinds, " "); got != "distill lessons" {
+		t.Errorf("ideas %q, want the distillable step and the review hint, without the slow step", got)
 	}
 }
 

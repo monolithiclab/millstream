@@ -44,7 +44,8 @@ func TestMain(m *testing.M) {
 }
 
 // The package loads and passes check with the environment's settings filled in, and its triggers feed
-// gather-evidence: the insight stream at improve.minSeverity, the weekly cron and the manual "Propose a fix".
+// gather-evidence: problems at improve.minSeverity, opportunities at any severity, the weekly cron and the manual
+// "Propose a fix".
 func TestPackage(t *testing.T) {
 	if checkFailed != nil {
 		t.Fatal(checkFailed)
@@ -59,14 +60,24 @@ func TestPackage(t *testing.T) {
 		t.Fatalf("pipeline %q", p.Name)
 	}
 	tr := p.Triggers
-	if in := tr["insights"].Insight; in == nil || in.MinSeverity != "" || len(in.Kinds) != 0 {
-		t.Errorf("insights trigger %+v: want every kind at improve.minSeverity", tr["insights"])
+	problems, opportunities := tr["insights"].Insight, tr["opportunities"].Insight
+	if problems == nil || problems.MinSeverity != "" {
+		t.Fatalf("insights trigger %+v: want improve.minSeverity", tr["insights"])
+	}
+	if opportunities == nil || opportunities.MinSeverity != pipeline.SeverityInfo ||
+		!slices.Equal(opportunities.Kinds, pipeline.InsightOpportunities) {
+		t.Fatalf("opportunities trigger %+v: want %v at any severity", tr["opportunities"], pipeline.InsightOpportunities)
+	}
+	// Every kind fires exactly one of them, so no insight starts two runs and pays for two drafts.
+	both := slices.Sorted(slices.Values(slices.Concat(problems.Kinds, opportunities.Kinds)))
+	if want := slices.Sorted(slices.Values(pipeline.InsightKinds)); !slices.Equal(both, want) {
+		t.Errorf("the insight triggers read %v, want each of %v once", both, want)
 	}
 	if tr["weekly"].Cron == nil || tr["propose"].Manual == nil {
 		t.Errorf("triggers %+v", tr)
 	}
-	if got := p.Steps["gather-evidence"].In; !slices.Equal(got, []string{"trigger.insights", "trigger.weekly",
-		"trigger.propose"}) {
+	if got := p.Steps["gather-evidence"].In; !slices.Equal(got, []string{"trigger.insights", "trigger.opportunities",
+		"trigger.weekly", "trigger.propose"}) {
 		t.Errorf("gather-evidence reads %v", got)
 	}
 	if p.Budget.DayUSD != 3 {

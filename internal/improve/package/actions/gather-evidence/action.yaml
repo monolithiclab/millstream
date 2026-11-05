@@ -1,7 +1,8 @@
 # Gathers what a draft needs (spec section 11.3): the insight, its evidence and proposal hints, the reviewers' edits,
 # the reasons earlier proposals of the same idea were rejected, and the files the proposal may change, read through
-# the API. An insight's run gathers that insight; the weekly run and a manual run without one, every open insight
-# at or above minSeverity without an open proposal, and the lessons files near lessons.maxTokens. One output per idea.
+# the API. An insight's run gathers that insight; the weekly run and a manual run without one, every open opportunity
+# and every other open insight at or above minSeverity without an open proposal, and the lessons files near
+# lessons.maxTokens. One output per idea.
 name: improve/gather-evidence
 version: 1.0.0
 description: Gathers an insight's evidence and the files a proposal may change, one output per idea

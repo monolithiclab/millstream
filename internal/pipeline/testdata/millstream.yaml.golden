@@ -82,7 +82,8 @@
 ##   agent harness drafting proposals: claude-code or api
 #   harness: claude-code   # MILLSTREAM_IMPROVE_HARNESS, example
 
-##   the least severity of the insights considered: info, warning or error
+##   the least severity of the problems considered: info, warning or error; opportunities (reviewPattern, distillable)
+##   start whatever theirs
 #   minSeverity: warning   # MILLSTREAM_IMPROVE_MIN_SEVERITY
 
 ##   publisher of accepted proposals: apply, patch-file, git-pr-gh or git-pr-glab

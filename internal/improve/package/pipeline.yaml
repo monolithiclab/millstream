@@ -14,12 +14,16 @@ vars:
   publisher: "" # improve.publish: the publisher accepted proposals go to; empty leaves them accepted, unpublished
   lessonsMaxTokens: 2000 # lessons.maxTokens: lessons files near it are merged and pruned
   maxFalseDrop: 0.01 # improve.filter.maxFalseDrop: the most past approvals a proposed filter may drop
-  minSeverity: warning # improve.minSeverity: the insights the weekly run and a manual run without one consider
+  minSeverity: warning # improve.minSeverity: the problems the weekly run and a manual run without one consider
 
 secrets: [improveApi, improveToken]
 
 triggers:
-  insights: { insight: {} } # at or above improve.minSeverity
+  # Problems, at or above improve.minSeverity. Each kind fires one trigger or the other, so no insight pays for two
+  # drafts.
+  insights: { insight: { kinds: [slowStep, failureCluster, cost, waste, drift, unschedulable, regression] } }
+  # Opportunities, whatever their severity (usually info), which ranks no urgency.
+  opportunities: { insight: { minSeverity: info, kinds: [reviewPattern, distillable] } }
   weekly: { cron: "0 6 * * 1" }
   propose: # "Propose a fix" ({pipeline, insight?}), and millstream improve [--pipeline <p>] [--insight <id>]
     manual: {}
@@ -33,7 +37,7 @@ triggers:
 steps:
   gather-evidence:
     action: ./actions/gather-evidence
-    in: [trigger.insights, trigger.weekly, trigger.propose]
+    in: [trigger.insights, trigger.opportunities, trigger.weekly, trigger.propose]
     out: improve.evidence
     config:
       api: "${secrets.improveApi}"
