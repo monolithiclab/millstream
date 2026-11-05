@@ -171,9 +171,71 @@ func TestValidateDistill(t *testing.T) {
 	}
 }
 
+// A distill keeps a sensor on what it replaces: the patch audits the code against the agent at
+// improve.distill.auditRate, when the agent declares no effects as audits require, and 0 turns it off.
+func TestValidateDistillAuditRate(t *testing.T) {
+	for name, c := range map[string]struct {
+		rate    float64
+		effects string
+		want    float64
+	}{
+		"agent without effects":   {0.02, pipeline.EffectsNone, 0.02},
+		"agent with effects":      {0.02, pipeline.EffectsExternal, 0},
+		"agent that says nothing": {0.02, "", 0},
+		"turned off":              {0, pipeline.EffectsNone, 0},
+	} {
+		t.Run(name, func(t *testing.T) {
+			f := distillAPI()
+			manifest := f.files["actions/score/action.yaml"]
+			if c.effects != "" {
+				manifest += "effects: " + c.effects + "\n"
+			}
+			f.files["actions/score/action.yaml"] = manifest
+			raw, _ := json.Marshal(Evidence{Pipeline: "listings", BaseRevision: baseHash, Kind: "distill",
+				Fingerprint: "improve-d", Insights: []string{"in-distill"}, Distill: &DistillEvidence{Step: "score",
+					Agent: "./actions/score", Action: "score-rules", HoldoutFrom: holdoutFrom}})
+			f.items["improve/e1"] = api.Item{ID: "e1", Payload: raw}
+			a := testAction(t, f, config{Pipeline: "improve", DistillAuditRate: c.rate})
+			body, _ := json.Marshal(Draft{Kind: "distill", Rationale: "Tiers follow the price.",
+				Insights: []string{"in-distill"}, Files: []DraftFile{{Path: "actions/score-rules/main.go", Content: rulesMain}}})
+			outs, err := validate(context.Background(), a, item(string(body)))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if o := outs[0].Payload.(Outcome); o.Outcome != OutcomeProposed {
+				t.Fatalf("outcome %+v", o)
+			}
+			p, err := patch.Parse([]byte(f.created[0].Patch))
+			if err != nil {
+				t.Fatal(err)
+			}
+			base := map[string][]byte{}
+			for k, v := range f.files {
+				base[k] = []byte(v)
+			}
+			files, err := p.Apply(base)
+			if err != nil {
+				t.Fatal(err)
+			}
+			pkg, err := pipeline.FromFiles("", files)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := pkg.Pipeline.Steps["score"].Fallback; got == nil || got.AuditRate != c.want {
+				t.Errorf("fallback %+v, want auditRate %v", got, c.want)
+			}
+			// A reviewer reads in the diff that nothing will check the code, rather than miss a key that is absent.
+			flagged := strings.Contains(string(files["pipeline.yaml"]), "# no auditRate: ./actions/score does not declare")
+			if want := c.rate > 0 && c.want == 0; flagged != want {
+				t.Errorf("note in the pipeline file: %v, want %v\n%s", flagged, want, files["pipeline.yaml"])
+			}
+		})
+	}
+}
+
 // withFallback moves a block-style step's agent under fallback, and refuses what it cannot rewrite exactly.
 func TestWithFallback(t *testing.T) {
-	got, err := withFallback(distillPipeline, "score", "./actions/score", "./actions/rules")
+	got, err := withFallback(distillPipeline, "score", "./actions/score", "./actions/rules", 0, "")
 	if err != nil || !strings.Contains(got, "  score:\n    action: ./actions/rules\n"+
 		"    fallback: { action: ./actions/score, when: [abstain] }\n    in: trigger.adhoc\n") {
 		t.Fatalf("%v:\n%s", err, got)
@@ -187,7 +249,7 @@ func TestWithFallback(t *testing.T) {
 		"another agent":  {distillPipeline, "./actions/agent"},
 		"no step":        {strings.Replace(distillPipeline, "  score:", "  scoring:", 1), "./actions/score"},
 	} {
-		if _, err := withFallback(c[0], "score", c[1], "./actions/rules"); err == nil {
+		if _, err := withFallback(c[0], "score", c[1], "./actions/rules", 0, ""); err == nil {
 			t.Errorf("%s: accepted", name)
 		}
 	}

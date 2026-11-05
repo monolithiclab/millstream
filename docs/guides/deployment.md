@@ -349,6 +349,10 @@ The command says when the development package has diverged from the revision pro
 
 ## Publishing accepted proposals
 
+A `distill` proposal's patch keeps auditing the code against the agent it replaces, on the share of items
+`improve.distill.auditRate` sets (`MILLSTREAM_IMPROVE_DISTILL_AUDIT_RATE`, default 0.02, 0 for none), when the agent
+declares `effects: none`. Audits call the agent, so they count against the pipeline's day budget.
+
 On a development deployment, an accepted proposal goes to the publish action `improve.publish` names (spec section
 11.7), set in the development deployment's environment file (each key is also a variable,
 `MILLSTREAM_IMPROVE_PUBLISH` and so on). Each one publishes the validated patch and nothing else: a patch that no

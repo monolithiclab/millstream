@@ -86,7 +86,8 @@ func Files(env *pipeline.Environment) (map[string][]byte, error) {
 	}
 	im := env.Improve
 	p := string(files[pipeline.FileName])
-	vars := map[string]string{"publisher": strconv.Quote(im.Publish)}
+	vars := map[string]string{"publisher": strconv.Quote(im.Publish),
+		"distillAuditRate": strconv.FormatFloat(im.Distill.AuditRate, 'f', -1, 64)}
 	if env.Lessons.MaxTokens > 0 {
 		vars["lessonsMaxTokens"] = strconv.Itoa(env.Lessons.MaxTokens)
 	}

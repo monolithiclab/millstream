@@ -193,7 +193,8 @@ func TestM5Exit(t *testing.T) {
 	if prodDay.items != distillPerDay || prodDay.fallback != 0 || prodDay.wrong != 0 ||
 		devDay.items != distillPerDay || devDay.fallback != abstained || devDay.wrong != 0 ||
 		devDay.agentCalls != abstained || prodDay.agentCalls != distillPerDay ||
-		devDay.costUSD <= 0 || devDay.costUSD >= prodDay.costUSD/10 {
+		prodDay.audits != 0 || devDay.audits == 0 || devDay.agreeing != devDay.audits ||
+		devDay.costUSD <= 0 || devDay.costUSD+devDay.auditUSD >= prodDay.costUSD/10 {
 		t.Fatalf("day %d: production %+v, development %+v (%d listings without a surface)", exitDay, prodDay,
 			devDay, abstained)
 	}
@@ -202,9 +203,10 @@ func TestM5Exit(t *testing.T) {
 	t.Logf("distill: holdout %d, covered %d (coverage %.3f), agreed %d (agreement %.3f), agent cost over the holdout "+
 		"%.6f USD, saved %.6f USD", d.Holdout, d.Covered, d.Coverage, d.Agreed, d.Agreement, d.AgentCostUSD,
 		d.AgentCostSavedUSD)
-	t.Logf("day %d: production %d agent calls, %.6f USD; development %d by the code, %d by the agent, %.6f USD "+
-		"(%.1f%% of production's)", exitDay, prodDay.agentCalls, prodDay.costUSD, devDay.items-devDay.fallback,
-		devDay.fallback, devDay.costUSD, 100*devDay.costUSD/prodDay.costUSD)
+	t.Logf("day %d: production %d agent calls, %.6f USD; development %d by the code, %d by the agent, %.6f USD (%.1f%% of "+
+		"production's), and %d audits, all agreeing, %.6f USD (%.1f%% with them)", exitDay, prodDay.agentCalls, prodDay.costUSD,
+		devDay.items-devDay.fallback, devDay.fallback, devDay.costUSD, 100*devDay.costUSD/prodDay.costUSD, devDay.audits,
+		devDay.auditUSD, 100*(devDay.costUSD+devDay.auditUSD)/prodDay.costUSD)
 }
 
 // improveOne runs millstream improve on one insight and returns the one proposal of pipelineName it leaves ready.
@@ -232,6 +234,9 @@ type tierRun struct {
 	// items are the tiered listings, fallback those the agent tiered under the step's fallback, wrong those whose
 	// tier is not tiers.Tier's.
 	items, fallback, wrong int
+	// audits are the audits of those items that ended, agreeing how many agreed, auditUSD what they cost together.
+	audits, agreeing int
+	auditUSD         float64
 	// agentCalls are the tier deliveries that cost anything, costUSD what they cost together.
 	agentCalls int
 	costUSD    float64
@@ -286,6 +291,19 @@ func tierDay(t *testing.T, db string, day int) tierRun {
 		if d.Step == "tier" && inputs[d.ItemID] && d.CostUSD > 0 {
 			out.agentCalls++
 			out.costUSD += d.CostUSD
+		}
+	}
+	audits, err := st.Audits(ctx, store.AuditFilter{Pipeline: distillPipeline})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, a := range audits {
+		if inputs[a.ItemID] && a.Agreement != nil {
+			out.audits++
+			out.auditUSD += a.CostUSD
+			if *a.Agreement == 1 {
+				out.agreeing++
+			}
 		}
 	}
 	return out

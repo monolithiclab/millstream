@@ -84,7 +84,7 @@ func TestPackage(t *testing.T) {
 		t.Errorf("budget %+v, want improve.budget.dayUsd", p.Budget)
 	}
 	for name, want := range map[string]any{"publisher": "patch-file", "lessonsMaxTokens": 1500, "maxFalseDrop": 0.05,
-		"minSeverity": "info"} {
+		"minSeverity": "info", "distillAuditRate": 0.02} {
 		if got := p.Vars[name]; got != want && !(isNumber(got) && toFloat(got) == toFloat(want)) {
 			t.Errorf("var %s = %v (%T), want %v", name, got, got, want)
 		}

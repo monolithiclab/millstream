@@ -33,6 +33,7 @@ func TestDefaultsMatchConstants(t *testing.T) {
 		"improve.distill.minDeliveries": im.Distill.MinDeliveries == insights.DefaultDistillMinDeliveries,
 		"improve.distill.minAgreement":  im.Distill.MinAgreement == distill.DefaultMinAgreement,
 		"improve.distill.minCoverage":   im.Distill.MinCoverage == distill.DefaultMinCoverage,
+		"improve.distill.auditRate":     im.Distill.AuditRate == distill.DefaultAuditRate,
 		"improve.filter.maxFalseDrop":   im.Filter.MaxFalseDrop == insights.DefaultFilterMaxFalseDrop,
 	} {
 		if !eq {

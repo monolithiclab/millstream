@@ -2,6 +2,7 @@ name: m5-distill/tier
 version: 1.0.0
 description: Sorts a listing into a price tier, with an LLM
 kind: agent
+effects: none
 input:
   type: object
   properties:

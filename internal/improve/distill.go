@@ -10,6 +10,7 @@ import (
 	"path"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -24,7 +25,7 @@ import (
 // code with the SDK that may abstain, its unit tests and its evals, and validate adds what is not the agent's to
 // write: the action's manifest (the agent's schemas, effects none), its go.mod, the distill.Spec the engine
 // recomputes the holdout from, and the pipeline change making the code the step's action with the agent under
-// fallback on abstain.
+// fallback on abstain, audited at improve.distill.auditRate so that something keeps checking the code against it.
 
 // DistillEvidence is what validate needs back to assemble a distill draft.
 type DistillEvidence struct {
@@ -170,7 +171,7 @@ var written = []string{pipeline.ManifestFile, "go.mod", distill.SpecFile}
 // distillFiles assembles a distill draft on the base revision's files: the draft's files under the new action's
 // directory, and the manifest, go.mod, spec and pipeline change. The result is every file the patch changes, with
 // its whole new content.
-func distillFiles(ev Evidence, d Draft, files api.RevisionFiles) (map[string]string, error) {
+func distillFiles(ev Evidence, d Draft, files api.RevisionFiles, auditRate float64) (map[string]string, error) {
 	de := ev.Distill
 	if de == nil {
 		return nil, errors.New("the evidence names no step to distill")
@@ -213,7 +214,11 @@ func distillFiles(ev Evidence, d Draft, files api.RevisionFiles) (map[string]str
 	if err != nil {
 		return nil, err
 	}
-	p, err := withFallback(files.Files[pipeline.FileName], de.Step, de.Agent, "./actions/"+de.Action)
+	rate, note := auditRate, ""
+	if rate > 0 && agent.Effects != pipeline.EffectsNone { // audits need both actions' effects to be none
+		rate, note = 0, " # no auditRate: "+de.Agent+" does not declare effects: none"
+	}
+	p, err := withFallback(files.Files[pipeline.FileName], de.Step, de.Agent, "./actions/"+de.Action, rate, note)
 	if err != nil {
 		return nil, err
 	}
@@ -253,10 +258,10 @@ func distillManifest(pipelineName string, de *DistillEvidence, agent *pipeline.A
 // actionLine matches a step's action key on its own line: its indentation and value.
 var actionLine = regexp.MustCompile(`^(\s+)action:\s*(\S+)\s*(#.*)?$`)
 
-// withFallback rewrites a pipeline file so that step runs action, with agent as its fallback on abstain: the step's
-// block-style action line is replaced and the fallback key added after it, the rest of the file unchanged. The
-// result must parse to exactly that.
-func withFallback(src, step, agent, action string) (string, error) {
+// withFallback rewrites a pipeline file so that step runs action, with agent as its fallback on abstain, audited at
+// auditRate unless that is 0, and note closing the line: the step's block-style action line is replaced and the
+// fallback key added after it, the rest of the file unchanged. The result must parse to exactly that.
+func withFallback(src, step, agent, action string, auditRate float64, note string) (string, error) {
 	lines := strings.SplitAfter(src, "\n")
 	head := slices.Index(lines, "steps:\n")
 	start := -1
@@ -288,7 +293,11 @@ func withFallback(src, step, agent, action string) (string, error) {
 	if at < 0 {
 		return "", fmt.Errorf("step %s has no action line", step)
 	}
-	lines[at] = "    action: " + action + "\n    fallback: { action: " + agent + ", when: [abstain] }\n"
+	audit := ""
+	if auditRate > 0 {
+		audit = ", auditRate: " + strconv.FormatFloat(auditRate, 'f', -1, 64)
+	}
+	lines[at] = "    action: " + action + "\n    fallback: { action: " + agent + ", when: [abstain]" + audit + " }" + note + "\n"
 	out := strings.Join(lines, "")
 	p, err := pipeline.Parse([]byte(out))
 	if err != nil {

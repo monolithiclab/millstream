@@ -153,7 +153,7 @@ func (a *action) patchOf(ctx context.Context, ev Evidence, d Draft) (string, err
 	}
 	changed := map[string]string{}
 	if distilled {
-		if changed, err = distillFiles(ev, d, files); err != nil {
+		if changed, err = distillFiles(ev, d, files, a.cfg.DistillAuditRate); err != nil {
 			return "", err
 		}
 	} else {

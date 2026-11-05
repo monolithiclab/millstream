@@ -51,11 +51,13 @@ packages and imports both bundles. It has no history of its own: everything belo
 | Agent cost over the holdout | 0.227238 USD, of which the code saves 0.218868 USD |
 | Day 3 in production | 270 agent calls, 0.227307 USD |
 | Day 3 in development | 260 tiered by the code, 10 by the agent (the listings without a surface), 0.008385 USD |
+| Audits on day 3 | 4 of the code's answers checked by the agent at the default `auditRate`, all agreeing, 0.003378 USD |
 
-Development's day costs 3.7% of production's, every tier is the rule's, and the run is on the published revision.
+Development's day costs 3.7% of production's on the step's deliveries and 5.2% with its audits, every tier is the
+rule's, and the run is on the published revision. The audits are the price of knowing the code stays right.
 The test asserts each of these: thresholds where the spec sets one (agreement at least 0.98, coverage at least 0.6, at
-least 200 covered of at least 250 holdout items), exact counts elsewhere, and a development cost under a tenth of
-production's.
+least 200 covered of at least 250 holdout items), exact counts elsewhere, at least one audit with none disagreeing, and
+a development cost, audits included, under a tenth of production's.
 
 ## What the exit found
 

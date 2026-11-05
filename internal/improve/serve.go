@@ -35,6 +35,7 @@ type config struct {
 	LessonsMaxTokens int     `json:"lessonsMaxTokens"`
 	MaxFalseDrop     float64 `json:"maxFalseDrop"`
 	MinSeverity      string  `json:"minSeverity"`
+	DistillAuditRate float64 `json:"distillAuditRate"`
 	Publisher        string  `json:"publisher"`
 }
 

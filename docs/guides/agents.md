@@ -100,10 +100,11 @@ so a change never alters work in flight, and `millstream rollback` reactivates t
 - **Code that replaces an agent.** A `distill` proposal writes a code action from past answers and checks it on a
   holdout the drafting agent never saw. The agent stays as the step's `fallback` for the items the code abstains on.
   `fallback.auditRate` keeps sending a sample of covered items to the agent, and disagreements raise a `drift` insight.
-  The `distill` patch does not set it: add it to the pipeline file once the patch lands, or nothing checks the code
-  against the agent any more. In the platform's own acceptance scenario, on synthetic listings whose answers follow a
-  rule, the code covered 260 of 270 held-out items with full agreement, and the next day cost 3.7% of the agent's
-  ([M5 exit](../development/m5-exit.md)).
+  The `distill` patch sets it from `improve.distill.auditRate` (default 2%) when the agent declares `effects: none`, as
+  audits require; declare it on your agent steps, or the patch says in a comment that nothing will check the code. In
+  the platform's own acceptance scenario, on synthetic listings whose answers follow a rule, the code covered 260 of 270
+  held-out items with full agreement, and the next day cost 5.2% of the agent's, audits included ([M5
+  exit](../development/m5-exit.md)).
 
 ## Checklist
 

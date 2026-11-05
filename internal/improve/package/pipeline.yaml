@@ -14,6 +14,7 @@ vars:
   publisher: "" # improve.publish: the publisher accepted proposals go to; empty leaves them accepted, unpublished
   lessonsMaxTokens: 2000 # lessons.maxTokens: lessons files near it are merged and pruned
   maxFalseDrop: 0.01 # improve.filter.maxFalseDrop: the most past approvals a proposed filter may drop
+  distillAuditRate: 0.02 # improve.distill.auditRate: the share of a distilled step's items also checked by the agent
   minSeverity: warning # improve.minSeverity: the problems the weekly run and a manual run without one consider
 
 secrets: [improveApi, improveToken]
@@ -60,6 +61,7 @@ steps:
       api: "${secrets.improveApi}"
       token: "${secrets.improveToken}"
       pipeline: improve # this pipeline's name, where the draft's evidence is read back
+      distillAuditRate: "${vars.distillAuditRate}"
 
   propose:
     action: ./actions/propose

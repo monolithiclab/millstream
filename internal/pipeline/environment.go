@@ -190,6 +190,7 @@ type DistillConfig struct {
 	Language      string  `yaml:"language" env:"LANGUAGE" default:"go" doc:"language of distilled actions: go, the only one for now"`
 	MinAgreement  float64 `yaml:"minAgreement" env:"MIN_AGREEMENT" default:"0.98" doc:"agreement with the agent a distilled action needs, from 0 to 1"`
 	MinCoverage   float64 `yaml:"minCoverage" env:"MIN_COVERAGE" default:"0.6" doc:"share of the holdout a distilled action must answer, from 0 to 1"`
+	AuditRate     float64 `yaml:"auditRate" env:"AUDIT_RATE" default:"0.02" doc:"share of a distilled step's items also checked by the agent, from 0 (none) to 1; needs the agent's effects to be none"`
 }
 
 // FilterConfig is improve.filter.
@@ -376,6 +377,7 @@ func (e *Environment) Validate() error {
 		"written in go, the only language the candidate-code sandbox builds and runs", im.Distill.Language)
 	fraction("improve.distill.minAgreement", im.Distill.MinAgreement)
 	fraction("improve.distill.minCoverage", im.Distill.MinCoverage)
+	fraction("improve.distill.auditRate", im.Distill.AuditRate)
 	fraction("improve.filter.maxFalseDrop", im.Filter.MaxFalseDrop)
 	for model, price := range e.Prices {
 		check(price.InPerMtok >= 0 && price.OutPerMtok >= 0, "prices."+model, "must be non-negative numbers")

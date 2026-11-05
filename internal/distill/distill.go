@@ -33,6 +33,9 @@ const HoldoutShare = 0.5
 const (
 	DefaultMinAgreement = 0.98
 	DefaultMinCoverage  = 0.6
+	// DefaultAuditRate is improve.distill.auditRate's default: the share of a distilled step's items its agent also
+	// answers, so that disagreements raise a drift insight (spec section 11.5).
+	DefaultAuditRate = 0.02
 	// MinCovered is the fewest holdout items the code must cover for its agreement to count.
 	MinCovered = 200
 )

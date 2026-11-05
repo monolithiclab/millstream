@@ -33,10 +33,8 @@ before it reaches the spec.
 ## Self-improvement
 
 From the [self-improving software analysis](docs/research/20261105.self-improving-software.md), ranked; each needs a
-decision before it reaches the spec. The first belongs before M6.
+decision before it reaches the spec.
 
-- `distill` keeps a sensor: its patch sets an `auditRate` when both actions declare `effects: none`, as `sampleRate`
-  already does for `autoApprove` (see the Distill follow-up below).
 - Evidence carried without a person: a scheduled export in production and a pull in development, instead of export and
   import files, under the same redaction, expiry and export record (D31 stands). Imported insights fire `insight`
   triggers once; today they are listed, not recorded, so they fire nothing.
@@ -78,8 +76,7 @@ decision before it reaches the spec. The first belongs before M6.
 - Distill (spec section 11.5): validation builds the candidate and runs its evals and the holdout, not its unit
   tests (`go test` in the sandbox would); the holdout run gives the code an empty config and no variables, so a step
   whose agent reads its config is measured without it; an accepted Go action reaches production as any exec action
-  does, built into its `bin/<os>-<arch>/` (nothing builds it on `apply` yet); the patch sets no `auditRate`, though
-  `effects: none` on the code allows one when the agent declares it too. A retention or erasure pass between the
+  does, built into its `bin/<os>-<arch>/` (nothing builds it on `apply` yet). A retention or erasure pass between the
   gathering and the validation that removes an entity's oldest pair can move it to the holdout: record the training
   entities if that ever matters. Python and other `improve.distill.language` values wait for a sandbox image each.
 - Proposals: the evals of a `prompt` proposal replay the action's recordings, which a changed prompt misses: the

@@ -68,7 +68,7 @@ improve:
   evidence: { sample: 50, ttl: 3d }
   backtest: { sample: 20 }
   validation: { timeout: 45m }
-  distill: { minDeliveries: 50, language: go, minAgreement: 0.9, minCoverage: 0.5 }
+  distill: { minDeliveries: 50, language: go, minAgreement: 0.9, minCoverage: 0.5, auditRate: 0.1 }
   filter: { maxFalseDrop: 0.02 }
 prices: { claude-sonnet-5-5: { inPerMtok: 3, outPerMtok: 15.5 } }
 runtime: { container: podman }
@@ -101,7 +101,7 @@ engine: { lockCheck: 2s, keepalive: 3s }
 				Image:  "ghcr.io/x/publish@sha256:0000000000000000000000000000000000000000000000000000000000000000"},
 			Budget: BudgetConfig{DayUSD: 5}, Evidence: EvidenceConfig{Sample: 50, TTL: 3 * day},
 			Backtest: BacktestConfig{Sample: 20}, Validation: ValidationConfig{Timeout: Duration(45 * time.Minute)},
-			Distill: DistillConfig{MinDeliveries: 50, Language: "go", MinAgreement: 0.9, MinCoverage: 0.5},
+			Distill: DistillConfig{MinDeliveries: 50, Language: "go", MinAgreement: 0.9, MinCoverage: 0.5, AuditRate: 0.1},
 			Filter:  FilterConfig{MaxFalseDrop: 0.02}},
 		Prices:  map[string]Price{"claude-sonnet-5-5": {InPerMtok: 3, OutPerMtok: 15.5}},
 		Runtime: RuntimeConfig{Container: RuntimePodman},
