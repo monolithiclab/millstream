@@ -35,7 +35,7 @@ import (
 
 // DefaultImage is the image proposed Go actions are built and run in: the build stage of the release Dockerfile,
 // pinned by digest. It is never pulled at run time.
-const DefaultImage = "golang:1.27.3-trixie@sha256:fbb7ae40b62ff8afe31662df570d39b4f5052ac32b90dae8e60d7657a20a74f4"
+const DefaultImage = "golang:1.27.4-trixie@sha256:b54b2639de8c1bfe538ec5ffc45f29b1932235ac5f6d63c059853646677112d9"
 
 // Where a sandboxed action's pieces are in its container.
 const (

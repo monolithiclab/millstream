@@ -15,8 +15,8 @@ RUN --mount=type=cache,target=/root/.npm npm ci --no-audit --no-fund
 COPY ui/ ./
 RUN npm run build
 
-# golang:1.27.3-trixie, go.mod's toolchain line exactly: GOTOOLCHAIN=local refuses to download another.
-FROM --platform=$BUILDPLATFORM golang:1.27.3-trixie@sha256:fbb7ae40b62ff8afe31662df570d39b4f5052ac32b90dae8e60d7657a20a74f4 AS build
+# golang:1.27.4-trixie, go.mod's toolchain line exactly: GOTOOLCHAIN=local refuses to download another.
+FROM --platform=$BUILDPLATFORM golang:1.27.4-trixie@sha256:b54b2639de8c1bfe538ec5ffc45f29b1932235ac5f6d63c059853646677112d9 AS build
 ARG TARGETOS TARGETARCH
 ARG VERSION=dev
 ENV GOTOOLCHAIN=local CGO_ENABLED=0
