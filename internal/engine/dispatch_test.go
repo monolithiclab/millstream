@@ -225,6 +225,7 @@ func TestUndispatchableDeliveriesFail(t *testing.T) {
 		}
 	}
 	id := v.fire("p", "adhoc", "k")
+	v.builtins()
 	if got := v.pull(20); len(got) != 0 {
 		t.Fatalf("assignments = %v", got)
 	}
@@ -276,6 +277,7 @@ func TestStubs(t *testing.T) {
 	}})
 	v.apply(newPackage(t, src, "a"))
 	id := v.fire("p", "adhoc", "k")
+	v.builtins() // crawl, a builtin, is stubbed in the engine's loop
 	if got := v.pull(1); len(got) != 0 {
 		t.Fatalf("stubbed pull returned %v", got)
 	}
@@ -311,6 +313,7 @@ func TestStubber(t *testing.T) {
 	})
 	v.apply(newPackage(t, src, "a"))
 	id := v.fire("p", "adhoc", "k")
+	v.builtins() // crawl, a builtin, is stubbed in the engine's loop
 	if got := v.pull(1); len(got) != 0 {
 		t.Fatalf("stubbed pull returned %v", got)
 	}

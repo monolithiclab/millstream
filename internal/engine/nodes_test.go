@@ -214,3 +214,27 @@ func TestUnschedulableInsight(t *testing.T) {
 		t.Fatalf("insights = %+v", ins)
 	}
 }
+
+// TestBuiltinsIgnorePlacement: a builtin step runs in the engine whatever its pipeline's labels, so no node matching
+// them makes it unschedulable.
+func TestBuiltinsIgnorePlacement(t *testing.T) {
+	v := newEnv(t, Options{})
+	v.apply(newPackage(t, `pipeline: placed
+triggers: { go: { manual: {} } }
+placement: { labels: { zone: eu } }
+steps:
+  gate: { action: filter, in: trigger.go, config: { expr: "true" } }
+`))
+	id := v.fire("placed", "go", "k1")
+	if err := v.e.RegisterNode(v.ctx, NodeInfo{ID: "cpu", Labels: map[string]string{"zone": "us"},
+		Runtimes: []string{"exec"}}); err != nil {
+		t.Fatal(err)
+	}
+	if un, err := v.e.Unschedulable(v.ctx); err != nil || len(un) != 0 {
+		t.Fatalf("Unschedulable = %+v, %v; a builtin is the engine's", un, err)
+	}
+	v.builtins()
+	if d := v.deliveries(id)[0]; d.State != store.DeliveryDone {
+		t.Fatalf("gate delivery = %+v", d)
+	}
+}

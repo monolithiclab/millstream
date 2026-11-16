@@ -168,10 +168,12 @@ func (c TestPipelineCmd) runTest(rt *Runtime, pkg *pipeline.Package, tc pipeline
 		return nil, err
 	}
 	runCtx, stop := context.WithCancel(ctx)
-	nodeDone := make(chan error, 1)
+	nodeDone, builtinsDone := make(chan error, 1), make(chan struct{})
 	go func() { nodeDone <- n.Run(runCtx) }()
+	go func() { e.RunBuiltins(runCtx); close(builtinsDone) }()
 	waitErr := e.WaitSettled(ctx, []engine.RunRef{{Pipeline: p.Name, ID: runID}})
 	stop()
+	<-builtinsDone
 	if err := <-nodeDone; err != nil {
 		return nil, err
 	}

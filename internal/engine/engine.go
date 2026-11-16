@@ -338,9 +338,10 @@ func (e *Engine) apply(ctx context.Context, pkg *pipeline.Package, opts ApplyOpt
 }
 
 // Run rebuilds the leases in flight from the store and times out the overdue reviews, closes Ready, then expires
-// leases, times out reviews and runs the cron scheduler every tick, the projectors every ProjectInterval and the
-// retention job every retention.every (resuming the purges not done first), until ctx is cancelled. It returns nil
-// then, once the projectors and the retention job stopped. Nodes start pulling once Ready is closed, so the rebuild never races their leases.
+// leases, times out reviews and runs the cron scheduler every tick, the builtin steps (RunBuiltins), the projectors
+// every ProjectInterval and the retention job every retention.every (resuming the purges not done first), until ctx
+// is cancelled. It returns nil then, once the builtins, the projectors and the retention job stopped. Nodes start
+// pulling once Ready is closed, so the rebuild never races their leases.
 func (e *Engine) Run(ctx context.Context) error {
 	// The review notifications outlive ctx: queued and in-flight ones get a grace period once the engine stops.
 	if e.opts.Notifier != nil {
@@ -362,6 +363,7 @@ func (e *Engine) Run(ctx context.Context) error {
 	defer wg.Wait()
 	wg.Go(func() { e.projectLoop(ctx) })
 	wg.Go(func() { e.retentionLoop(ctx) })
+	wg.Go(func() { e.RunBuiltins(ctx) })
 	tick := time.NewTicker(e.opts.TickInterval)
 	defer tick.Stop()
 	for first := true; ; first = false {

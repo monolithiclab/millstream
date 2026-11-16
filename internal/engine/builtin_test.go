@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"slices"
@@ -62,6 +63,10 @@ func TestBuiltinsRunInTheEngine(t *testing.T) {
 	id := v.fire("p", "adhoc", "r1")
 	v.emit(output("low", `{"n":1}`), output("a", `{"n":7}`), output("b", `{"n":7}`), output("bad", `{"n":"x"}`),
 		output("c", `{"n":9}`))
+	if got := v.pull(10); len(got) != 0 {
+		t.Fatalf("pull = %v: a node never receives a builtin", got)
+	}
+	v.builtins()
 	got := v.pull(10)
 	if !slices.Equal(got, []string{"p/sink", "p/sink"}) {
 		t.Fatalf("pull = %v: a node must receive only the sink deliveries", got)
@@ -98,24 +103,62 @@ func TestBuiltinsRunInTheEngine(t *testing.T) {
 	}
 }
 
-// A backlog of builtins runs inside Pull, a lease at a time, while the leases already resolved for the node wait
-// unrenewed for Pull to return. Pull returns
-// what it has once a third of the lease has passed, so no lease it hands out has expired meanwhile: with a 1 s lease
-// under load, a backlog left a lease to expire before its delivery started, each such expiry consuming an attempt
-// (the failover suite saw one delivery lose all three, spec section 5.3).
+// Builtins run in the engine's own loop, under the engine's owner: with no node pulling (remote nodes full or
+// absent), the run's filter and dedupe deliveries still finish.
+func TestBuiltinsRunWithoutAPull(t *testing.T) {
+	v := newEnv(t, Options{TickInterval: time.Hour}) // only the loop's wake-ups, never a tick, move the builtins
+	v.apply(newPackage(t, `pipeline: p
+triggers:
+  adhoc: { manual: {} }
+steps:
+  src: { action: ./actions/a, in: trigger.adhoc, out: raw }
+  gate: { action: filter, in: raw, out: kept, config: { expr: "item.n >= 5" } }
+  unique: { action: dedupe, in: kept, config: { key: "string(item.n)" } }
+`, "a"))
+	id := v.fire("p", "adhoc", "r1")
+	v.emit(output("low", `{"n":1}`), output("a", `{"n":7}`), output("b", `{"n":7}`))
+	ctx, cancel := context.WithCancel(v.ctx)
+	done := make(chan error, 1)
+	go func() { done <- v.e.Run(ctx) }()
+	wait, stop := context.WithTimeout(v.ctx, 5*time.Second)
+	defer stop()
+	err := v.e.WaitSettled(wait, []RunRef{{Pipeline: "p", ID: id}})
+	cancel()
+	if rerr := <-done; rerr != nil {
+		t.Fatal(rerr)
+	}
+	if err != nil {
+		t.Fatalf("the run did not settle without a pull: %v; deliveries %+v", err, v.deliveries(id))
+	}
+	if got := v.byStep(id, "unique"); len(got) != 2 || got[1].FilterReason != store.FilterReasonDuplicate {
+		t.Fatalf("unique deliveries = %+v", got)
+	}
+}
+
+// A backlog of stubbed deliveries completes inside Pull, a lease at a time, while the leases already resolved for the
+// node wait unrenewed for Pull to return. Pull returns what it has once a third of the lease has passed, so no lease
+// it hands out has expired meanwhile: with a 1 s lease under load, a backlog left a lease to expire before its
+// delivery started, each such expiry consuming an attempt (the failover suite saw one delivery lose all three, spec
+// section 5.3).
 func TestPullReturnsBeforeItsLeasesExpire(t *testing.T) {
-	v := newEnv(t, Options{LeaseTTL: time.Second})
-	v.apply(newPackage(t, builtinPipeline, "a"))
+	v := newEnv(t, Options{LeaseTTL: time.Second, Stubs: map[store.StepRef]Stub{
+		{Pipeline: "p", Step: "first"}:  {Outputs: []store.Output{output("x", `{}`)}},
+		{Pipeline: "p", Step: "second"}: {Outputs: []store.Output{}},
+	}})
+	v.apply(newPackage(t, manualPipeline("p", `  src: { action: ./actions/a, in: trigger.adhoc, out: raw }
+  first: { action: ./actions/a, in: raw, out: mid }
+  second: { action: ./actions/a, in: mid }
+`), "a"))
 	v.fire("p", "adhoc", "r1")
 	var outs []store.Output
 	for n := range 6 {
-		outs = append(outs, output(fmt.Sprint("k", n), fmt.Sprintf(`{"n":%d}`, 5+n)))
+		outs = append(outs, output(fmt.Sprint("k", n), fmt.Sprintf(`{"n":%d}`, n)))
 	}
-	v.emit(outs...) // p's backlog: 6 filters, then 6 dedupes
+	v.emit(outs...) // p's backlog: 6 firsts, then 6 seconds, all stubbed
 	v.apply(newPackage(t, "pipeline: s\ntriggers: { adhoc: { manual: {} } }\nsteps:\n  job: { action: ./actions/a, in: trigger.adhoc }\n", "a"))
 	v.fire("s", "adhoc", "r1")
-	// Each look at the engine's clock takes 100 ms, the store's included: time passes as builtins run. The round-robin
-	// leases s's job with p's first filter, then only p's builtins.
+	// Each look at the engine's clock takes 100 ms, the store's included: time passes as stubs complete. The
+	// round-robin leases s's job with p's first stub, then only p's stubs.
 	now := v.e.opts.Now
 	v.e.opts.Now = func() time.Time { v.clock.Advance(100 * time.Millisecond); return now() }
 	as, err := v.e.Pull(v.ctx, "node-a", 2)
@@ -140,7 +183,7 @@ func TestPullReturnsBeforeItsLeasesExpire(t *testing.T) {
 	}
 	after, _ := v.st.Deliveries(v.ctx, store.DeliveryFilter{Pipeline: "p", State: store.DeliveryPending})
 	if len(before)-len(after) > 2 {
-		t.Fatalf("PullWithin with no time left ran %d builtins, want one pass of at most 2",
+		t.Fatalf("PullWithin with no time left completed %d stubs, want one pass of at most 2",
 			len(before)-len(after))
 	}
 }
@@ -166,9 +209,7 @@ func TestBuiltinConfigErrors(t *testing.T) {
 	v := newEnv(t, Options{})
 	v.apply(newPackage(t, manualPipeline("p", steps)))
 	id := v.fire("p", "adhoc", "r1")
-	if got := v.pull(5); len(got) != 0 {
-		t.Fatalf("pull = %v", got)
-	}
+	v.builtins()
 	for _, tt := range tests {
 		d := v.byStep(id, tt.step)[0]
 		if d.State != store.DeliveryDead || d.ErrorClass != tt.class || !strings.Contains(d.ErrorMessage, tt.message) {

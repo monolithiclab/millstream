@@ -168,7 +168,8 @@ func TestReplayThroughDedupe(t *testing.T) {
 	v.apply(newPackage(t, builtinPipeline, "a"))
 	id := v.fire("p", "adhoc", "r1")
 	v.emit(output("a", `{"n":7}`), output("b", `{"n":7}`))
-	v.pull(10)
+	v.builtins()
+	v.pull(10) // the original run's sink
 	states := func(runID string) []store.DeliveryState {
 		var out []store.DeliveryState
 		for _, d := range v.byStep(runID, "unique") {
@@ -182,6 +183,7 @@ func TestReplayThroughDedupe(t *testing.T) {
 	}
 	for _, key := range []string{"rp1", "rp2"} {
 		rp := v.replay(ReplayRequest{Step: "gate", RunID: id, RequestID: key})
+		v.builtins()
 		got := v.pull(10)
 		if got := states(rp); !slices.Equal(got, want) {
 			t.Fatalf("replay %s unique = %v, want %v", key, got, want)
@@ -246,7 +248,7 @@ func TestBuiltinDedupeWindowWithTheEngineClock(t *testing.T) {
 	states := func(runID string) store.DeliveryState {
 		v.t.Helper()
 		v.emit(output("", `{"n":7}`))
-		v.pull(10)
+		v.builtins()
 		return v.byStep(runID, "unique")[0].State
 	}
 	wantState := func(what string, got, want store.DeliveryState) {

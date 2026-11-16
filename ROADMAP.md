@@ -202,9 +202,6 @@ first is missing: identity, an accountable owner per agent, and records their ow
 - Live events: the broker wakes on this process's commits and polls every 15 seconds for other processes' writes on
   the same SQLite file; Postgres (M4) can wake it with `LISTEN`/`NOTIFY` instead. The live log tail relays the
   embedded node's lines and those remote nodes relay every second.
-- Lease renewal: a pull returns once a third of the lease has passed (engine.Pull), because the node heartbeats
-  between pulls and builtins run inside them. Heartbeats on a goroutine of their own in the node, or builtins on an
-  engine worker rather than in Pull, would remove the bound and its tie to the heartbeat interval.
 - Test budget: `make test-times` was 562 ms after M5 Tasks 4–5, under the 750 ms budget and above the 600 ms target
   (raised from 500/400 ms during M5). Unit execution in the store
   (about 100 µs a unit through the writer goroutine) dominates; running a unit inline when the connection is free

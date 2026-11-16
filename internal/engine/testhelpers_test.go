@@ -171,6 +171,13 @@ func (v *env) fire(pipelineName, trigger, key string) string {
 	return id
 }
 
+// builtins runs the engine's builtin passes until one leases nothing: what RunBuiltins does as leases end.
+func (v *env) builtins() {
+	v.t.Helper()
+	for v.e.builtinPass(v.ctx) > 0 {
+	}
+}
+
 func (v *env) pull(n int) []string {
 	v.t.Helper()
 	as, err := v.e.Pull(v.ctx, "node-a", n)

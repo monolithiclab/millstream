@@ -65,6 +65,7 @@ func TestReviewStepInTheEngine(t *testing.T) {
 	v.apply(pkg)
 	id := v.fire("p", "adhoc", "r1")
 	v.emit(output("a", `{"n":1}`), output("b", `{"n":9}`), output("c", `{"n":"x"}`))
+	v.builtins()
 	as, err := v.e.Pull(v.ctx, "node-a", 10)
 	if err != nil || len(as) != 1 || as[0].Lease.Step != "sink" || as[0].Lease.Item.Key != "b" {
 		t.Fatalf("pull = %v, %v: only the auto-approved item reaches the sink", as, err)
@@ -137,9 +138,8 @@ func TestNotificationOutlivesTheEngine(t *testing.T) {
 	ctx, cancel := context.WithCancel(v.ctx)
 	done := make(chan error, 1)
 	go func() { done <- v.e.Run(ctx) }()
-	<-v.e.Ready()
-	if got := v.pull(1); len(got) != 0 {
-		t.Fatalf("pull = %v", got)
+	if err := v.e.WaitSettled(v.ctx, []RunRef{{Pipeline: "p", ID: id}}); err != nil { // the engine parks it
+		t.Fatal(err)
 	}
 	if r := v.run("p", id); r.State != store.RunWaitingReview {
 		t.Fatalf("run = %s", r.State)

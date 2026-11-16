@@ -27,8 +27,8 @@ A run follows the same path whether it is started by `millstream run` on a lapto
    producer's output schema fits its consumers, and `internal/expr` compiles the CEL expressions.
 2. **Fire.** `internal/engine` fires a trigger (cron, manual, webhook, insight, or an imported stream): it opens a
    run, resolves its variables, and publishes the trigger's item to the stream `trigger.<name>`.
-3. **Deliver.** Publishing an item creates one delivery per step that reads its stream. The engine runs the `filter`
-   and `dedupe` builtins itself; every other delivery waits for a node.
+3. **Deliver.** Publishing an item creates one delivery per step that reads its stream. The engine runs the `filter`,
+   `dedupe` and `review` builtins itself, in a loop of its own; every other delivery waits for a node.
 4. **Run the action.** `internal/node` leases a delivery, and `internal/runtime/exec` starts the action process and
    speaks the [action protocol](../reference/action-protocol.md) (`internal/protocol`) on its stdin and stdout.
    `internal/runtime/container` runs the same process under Docker or Podman. An agent step runs

@@ -20,10 +20,10 @@ var _ node.Transport = (*Engine)(nil)
 const resolveTimeout = 30 * time.Second
 
 // Pull implements node.Transport: it leases up to maxN deliveries within the steps' concurrency, the pipelines'
-// limits and the steps' rates, and resolves each into an assignment. Stubbed deliveries and builtin deliveries
-// (filter, dedupe) are completed on the spot by the engine and leasing continues, so a node never receives a builtin
-// and a fully stubbed pipeline runs to the end in one call; deliveries that cannot be dispatched (an unsupported
-// action kind, a config that fails to interpolate) are failed instead of returned.
+// limits and the steps' rates, and resolves each into an assignment. Builtin steps are the engine's own loop's
+// (RunBuiltins), never a node's. Stubbed deliveries are completed on the spot by the engine and leasing continues, so
+// a fully stubbed pipeline runs to the end in one call; deliveries that cannot be dispatched (an unsupported action
+// kind, a config that fails to interpolate) are failed instead of returned.
 func (e *Engine) Pull(ctx context.Context, owner string, maxN int) ([]node.Assignment, error) {
 	return e.PullWithin(ctx, owner, maxN, e.opts.LeaseTTL/3)
 }
@@ -35,24 +35,15 @@ func (e *Engine) PullWithin(ctx context.Context, owner string, maxN int, within 
 	error,
 ) {
 	maxN = e.capSlots(owner, maxN)
-	// A lease taken is resolved into an assignment, or failed, even when the caller goes away meanwhile (a node's
-	// request cancelled, a drain): never left to expire, consuming an attempt, for a pull cancelled half-way. Leasing
-	// itself still ends with ctx, and resolving is bounded, so a store that stops answering cannot hold the caller.
-	resolve, cancel := context.WithTimeout(context.WithoutCancel(ctx), resolveTimeout)
+	resolve, cancel := resolving(ctx)
 	defer cancel()
-	// A node abandoning its deliveries (its engine stepped down) reports nothing anyway: stop at once.
-	defer context.AfterFunc(ctx, func() {
-		if errors.Is(context.Cause(ctx), node.ErrAbandon) {
-			cancel()
-		}
-	})()
-	// Builtins run here, a lease at a time, and a backlog of them keeps the loop going while the leases already in
-	// out wait unrenewed for Pull to return. Past a third of the lease, or within, Pull returns what it has; the next
-	// pull takes the rest. The first pass always runs.
+	// Stubs and undispatchable deliveries complete here, a lease at a time, and keep the loop going while the leases
+	// already in out wait unrenewed for Pull to return. Past a third of the lease, or within, Pull returns what it
+	// has; the next pull takes the rest. The first pass always runs.
 	var out []node.Assignment
 	start, bound := e.opts.Now(), min(within, e.opts.LeaseTTL/3)
 	for first := true; len(out) < maxN && ctx.Err() == nil && (first || e.opts.Now().Sub(start) < bound); first = false {
-		leases, err := e.lease(ctx, owner, maxN-len(out))
+		leases, err := e.lease(ctx, owner, maxN-len(out), false)
 		if err != nil {
 			if len(out) > 0 {
 				break // the assignments already leased are returned; the error recurs at the next pull
@@ -61,18 +52,7 @@ func (e *Engine) PullWithin(ctx context.Context, owner string, maxN int, within 
 		}
 		completed := false
 		for _, l := range leases {
-			stub, ok := e.opts.Stubs[store.StepRef{Pipeline: l.Pipeline, Step: l.Step}]
-			if e.opts.Stubber != nil {
-				if s, stubbed := e.opts.Stubber(resolve, l); stubbed {
-					stub, ok = s, true
-				}
-			}
-			if ok {
-				e.completeStub(resolve, l, stub)
-				completed = true
-				continue
-			}
-			if !l.Audit && e.runBuiltin(resolve, l) {
+			if e.settle(resolve, l) {
 				completed = true
 				continue
 			}
@@ -91,8 +71,92 @@ func (e *Engine) PullWithin(ctx context.Context, owner string, maxN int, within 
 	return out, nil
 }
 
-// lease leases up to maxN deliveries under the in-memory limits and records them in flight.
-func (e *Engine) lease(ctx context.Context, owner string, maxN int) ([]store.Lease, error) {
+// resolving returns the context a lease taken under ctx is completed or resolved in: a lease taken is resolved into
+// an assignment, or completed, or failed, even when the caller goes away meanwhile (a node's request cancelled, a
+// drain), never left to expire, consuming an attempt, for work cancelled half-way. Leasing itself still ends with
+// ctx, and resolving is bounded, so a store that stops answering cannot hold the caller. A caller abandoning its
+// deliveries (its engine stepped down) reports nothing anyway: the context ends at once then.
+func resolving(ctx context.Context) (context.Context, context.CancelFunc) {
+	resolve, cancel := context.WithTimeout(context.WithoutCancel(ctx), resolveTimeout)
+	stop := context.AfterFunc(ctx, func() {
+		if errors.Is(context.Cause(ctx), node.ErrAbandon) {
+			cancel()
+		}
+	})
+	return resolve, func() { stop(); cancel() }
+}
+
+// settle completes a leased delivery in the engine and reports whether it did: with its stub (Stubber, then Stubs),
+// else as a builtin (runBuiltin). A builtin a node leased (its step is an action in another open revision) runs here
+// too.
+func (e *Engine) settle(ctx context.Context, l store.Lease) bool {
+	stub, ok := e.opts.Stubs[store.StepRef{Pipeline: l.Pipeline, Step: l.Step}]
+	if e.opts.Stubber != nil {
+		if s, stubbed := e.opts.Stubber(ctx, l); stubbed {
+			stub, ok = s, true
+		}
+	}
+	if ok {
+		e.completeStub(ctx, l, stub)
+		return true
+	}
+	return !l.Audit && e.runBuiltin(ctx, l)
+}
+
+// builtinBatch bounds the builtin deliveries one pass of RunBuiltins leases: each is completed before the next
+// pass, so none waits long unrenewed.
+const builtinBatch = 32
+
+// builtinOwner is the owner the engine leases builtin deliveries under: the engine's, apart from every node's (a
+// remote node may not register an id starting embedded-).
+func (e *Engine) builtinOwner() string {
+	if id := e.opts.Leadership.ID; id != "" {
+		return "embedded-engine-" + id
+	}
+	return "embedded-engine"
+}
+
+// RunBuiltins runs the builtin steps (spec section 4.7) until ctx ends: it leases their deliveries under the
+// engine's owner, within the same limits as a node's pull, and completes each in the engine, whatever the nodes'
+// free slots. It passes again when a lease in flight ends (a completion makes the next step's deliveries due) and
+// every TickInterval (runs fired, retries past their backoff, reviews decided). Run runs it; an engine driven
+// without Run (millstream test pipeline, a backtest's replay) runs it beside its node.
+func (e *Engine) RunBuiltins(ctx context.Context) {
+	tick := time.NewTicker(e.opts.TickInterval)
+	defer tick.Stop()
+	for ctx.Err() == nil {
+		changed := e.changes()
+		e.builtinPass(ctx)
+		select {
+		case <-ctx.Done():
+		case <-changed:
+		case <-tick.C:
+		}
+	}
+}
+
+// builtinPass leases up to builtinBatch builtin deliveries and completes them, and returns how many it leased.
+func (e *Engine) builtinPass(ctx context.Context) int {
+	resolve, cancel := resolving(ctx)
+	defer cancel()
+	leases, err := e.lease(ctx, e.builtinOwner(), builtinBatch, true)
+	if err != nil {
+		if ctx.Err() == nil {
+			e.log.Error("lease builtin deliveries", "error", err.Error())
+		}
+		return 0
+	}
+	for _, l := range leases {
+		if !e.settle(resolve, l) { // its revision unreadable: retried
+			e.failDispatch(resolve, l, dispatchErr(ClassEngine, true, "builtin step %s did not run", l.Step))
+		}
+	}
+	return len(leases)
+}
+
+// lease leases up to maxN deliveries under the in-memory limits and records them in flight: those of builtin steps
+// for the engine's own loop when builtins is set, a node's (owner's) otherwise.
+func (e *Engine) lease(ctx context.Context, owner string, maxN int, builtins bool) ([]store.Lease, error) {
 	src, err := e.limitSources(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("pull: %w", err)
@@ -100,7 +164,10 @@ func (e *Engine) lease(ctx context.Context, owner string, maxN int) ([]store.Lea
 
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	ok, placed := e.leasable(owner)
+	ok, placed := true, (*nodeEntry)(nil)
+	if !builtins {
+		ok, placed = e.leasable(owner)
+	}
 	if !ok {
 		return nil, nil // a draining or revoked node: nothing more
 	}
@@ -117,6 +184,10 @@ func (e *Engine) lease(ctx context.Context, owner string, maxN int) ([]store.Lea
 		}
 	}
 	for ref, step := range src.steps {
+		if src.builtin[ref] != builtins {
+			req.Exclude = append(req.Exclude, ref) // builtins are the engine's loop's, every other step a node's
+			continue
+		}
 		if placed != nil && !src.placement[ref].Matches(placed.info.Runtimes, placed.info.Labels) {
 			req.Exclude = append(req.Exclude, ref) // the node cannot run it (spec section 5.10)
 			continue
@@ -153,13 +224,15 @@ func (e *Engine) lease(ctx context.Context, owner string, maxN int) ([]store.Lea
 }
 
 // sources are what the in-memory limits and placement read: each pipeline's active revision, whose limits apply;
-// the definition each step's concurrency and rate come from, and its placement; and the agent steps of each revision
+// the definition each step's concurrency and rate come from, and its placement; the steps that are builtins in every
+// open revision that has them, which the engine runs; and the agent steps of each revision
 // with the budget reservation of each delivery (the maxCostUsd of its action in its run's revision, as budget.runUsd
 // is that revision's).
 type sources struct {
 	active    []*revision
 	steps     map[store.StepRef]pipeline.Step
 	placement map[store.StepRef]node.Placement
+	builtin   map[store.StepRef]bool
 	reserve   map[store.AgentStep]float64
 }
 
@@ -177,7 +250,8 @@ func (e *Engine) limitSources(ctx context.Context) (sources, error) {
 	}
 	src := sources{
 		active: make([]*revision, 0, len(pipelines)), steps: map[store.StepRef]pipeline.Step{},
-		placement: map[store.StepRef]node.Placement{}, reserve: map[store.AgentStep]float64{},
+		placement: map[store.StepRef]node.Placement{}, builtin: map[store.StepRef]bool{},
+		reserve: map[store.AgentStep]float64{},
 	}
 	add := func(rev *revision) {
 		for name, step := range rev.p.Steps {
@@ -191,9 +265,13 @@ func (e *Engine) limitSources(ctx context.Context) (sources, error) {
 					src.reserve[store.AgentStep{StepRef: ref, Revision: rev.id, Fallback: true}] = fa.a.Agent.MaxCostUSD
 				}
 			}
+			isBuiltin := pipeline.IsBuiltin(step.Action)
 			if _, ok := src.steps[ref]; !ok {
+				src.builtin[ref] = isBuiltin
 				src.steps[ref] = step
 				src.placement[ref] = stepPlacement(rev.p, step, ra)
+			} else {
+				src.builtin[ref] = src.builtin[ref] && isBuiltin
 			}
 		}
 	}

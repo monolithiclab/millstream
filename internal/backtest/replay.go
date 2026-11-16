@@ -164,10 +164,12 @@ func (b *Backtester) replay(ctx context.Context, work string, o replayOptions) (
 		return nil, err
 	}
 	runCtx, stop := context.WithCancel(ctx)
-	nodeDone := make(chan error, 1)
+	nodeDone, builtinsDone := make(chan error, 1), make(chan struct{})
 	go func() { nodeDone <- n.Run(runCtx) }()
+	go func() { e.RunBuiltins(runCtx); close(builtinsDone) }()
 	waitErr := wait(ctx, e, st, refs, o.limit, o.limited)
 	stop()
+	<-builtinsDone
 	if err := <-nodeDone; err != nil && waitErr == nil {
 		waitErr = err
 	}

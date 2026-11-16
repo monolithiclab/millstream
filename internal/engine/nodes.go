@@ -194,8 +194,9 @@ func (e *Engine) leasable(owner string) (ok bool, n *nodeEntry) {
 	return true, n
 }
 
-// stepPlacement is where a step's deliveries may go: the runtime its action needs (none for a builtin, and none for
-// an action that does not resolve, which fails at dispatch), and the step's labels, else its pipeline's.
+// stepPlacement is where a step's deliveries may go: the runtime its action needs (none for an action that does not
+// resolve, which fails at dispatch), and the step's labels, else its pipeline's. A builtin step goes to no node: the
+// engine runs it whatever its labels (RunBuiltins), and Unschedulable never counts it.
 func stepPlacement(p *pipeline.Pipeline, step pipeline.Step, ra *resolvedAction) node.Placement {
 	pl := node.Placement{Labels: p.Placement.Labels}
 	if step.Placement != nil {
@@ -231,7 +232,7 @@ func (e *Engine) Unschedulable(ctx context.Context) ([]UnschedulableStep, error)
 		for _, s := range stats {
 			ref := store.StepRef{Pipeline: rev.p.Name, Step: s.Step}
 			pl, ok := src.placement[ref]
-			if !ok || s.Pending == 0 || e.schedulable(pl) {
+			if !ok || s.Pending == 0 || src.builtin[ref] || e.schedulable(pl) { // the engine runs builtins
 				continue
 			}
 			out = append(out, UnschedulableStep{Pipeline: ref.Pipeline, Step: ref.Step, Pending: s.Pending,

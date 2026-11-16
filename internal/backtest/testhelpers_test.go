@@ -170,10 +170,12 @@ func seedHistory() (store.Store, string, error) {
 		return fail(err)
 	}
 	runCtx, stop := context.WithCancel(ctx)
-	done := make(chan error, 1)
+	done, builtinsDone := make(chan error, 1), make(chan struct{})
 	go func() { done <- n.Run(runCtx) }()
+	go func() { e.RunBuiltins(runCtx); close(builtinsDone) }()
 	werr := e.WaitSettled(ctx, refs)
 	stop()
+	<-builtinsDone
 	if err := errors.Join(<-done, werr); err != nil {
 		return fail(err)
 	}
