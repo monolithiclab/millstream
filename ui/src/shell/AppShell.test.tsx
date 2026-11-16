@@ -30,6 +30,11 @@ describe('app shell', () => {
     await screen.findByRole('button', { name: 'Switch pipeline, showing All pipelines' });
   });
 
+  it('shows Improve in the demo, whose fixtures turn it on', async () => {
+    renderApp({ route: '/p/listings-daily/runs', demo: true });
+    expect(await nav().findByRole('link', { name: 'Improve' })).toBeInTheDocument();
+  });
+
   it('shows Nodes only once the deployment lists a node', async () => {
     const empty = { ...demoFixtures.nodes, nodes: [] };
     renderApp({ api: new FakeApi({ ...demoFixtures, nodes: empty }) });
@@ -42,7 +47,10 @@ describe('app shell', () => {
   });
 
   it('shows Improve in a pipeline only when the session says improve is on', async () => {
-    const off = renderApp({ route: '/p/listings-daily/runs' });
+    const off = renderApp({
+      route: '/p/listings-daily/runs',
+      api: new FakeApi({ ...demoFixtures, improve: false }),
+    });
     await nav().findByRole('link', { name: 'Nodes' });
     expect(nav().getByRole('link', { name: 'Insights' })).toBeInTheDocument();
     expect(nav().queryByRole('link', { name: 'Improve' })).not.toBeInTheDocument();

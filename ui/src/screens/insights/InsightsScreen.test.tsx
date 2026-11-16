@@ -200,7 +200,7 @@ describe('InsightsScreen', () => {
   });
 
   it('offers Propose a fix on a card only when improve is on', async () => {
-    await open();
+    await open(ROUTE, new FakeApi({ ...demoFixtures, improve: false }));
     expect(screen.queryByRole('button', { name: 'Propose a fix' })).not.toBeInTheDocument();
     cleanup();
 

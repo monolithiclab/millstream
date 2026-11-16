@@ -1869,6 +1869,7 @@ const demoArtifacts: FakeArtifact[] = [
 ];
 
 export const demoFixtures: Fixtures = {
+  improve: true,
   pipelines: demoPipelines,
   runs: demoRuns,
   inbox: demoReviews,

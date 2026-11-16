@@ -64,6 +64,8 @@ export interface Fixtures {
   revisions: Revision[];
   insights: Insight[];
   proposals: Proposal[];
+  // Whether the session reports improve on (improve.enabled, spec section 11.3); off when absent.
+  improve?: boolean;
   // By pipeline.
   lessons: Record<string, StepLessons[]>;
   metricNames: string[];
@@ -584,9 +586,8 @@ export class FakeApi implements Api {
     return this.record(method, args, undefined);
   }
 
-  // Improve is on where the improve pipeline is loaded (spec section 11.3).
   private improve(): boolean {
-    return this.fixtures.pipelines.some((p) => p.name === 'improve');
+    return this.fixtures.improve === true;
   }
 
   private environment(): 'production' | 'development' {
