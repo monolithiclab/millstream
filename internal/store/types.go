@@ -229,7 +229,7 @@ type PackageRecord struct {
 	Base string
 	// Proposals are the accepted proposals the revision applies (their patch over the active revision, their base),
 	// each recorded proposalApplied when it becomes the active revision; ids that are not accepted proposals of the
-	// pipeline are left out.
+	// pipeline based on the revision active in the apply unit are left out.
 	Proposals []string
 }
 

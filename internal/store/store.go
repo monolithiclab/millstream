@@ -66,7 +66,7 @@ type Store interface {
 
 	// ApplyRevision stores a package and makes its revision the pipeline's active one, on condition that the active
 	// revision's package is still pkg.Base when it is set (ErrConflict otherwise), recording proposalApplied for the
-	// accepted proposals it carries. Applying the package that is already active is a no-op returning its revision.
+	// accepted proposals it carries over their base. Applying the package that is already active is a no-op returning its revision.
 	ApplyRevision(ctx context.Context, pkg PackageRecord) (RevisionID, error)
 	// Fire is the Trigger unit: the run, its trigger item and the deliveries of the steps reading the trigger
 	// stream. created is false when the run already existed: the firing already happened.
