@@ -14,9 +14,11 @@ import (
 	"github.com/monolithiclab/millstream/internal/store"
 )
 
-// NodesCmd is "millstream nodes": the remote nodes, and their revocation (spec sections 5.10 and 15.7).
+// NodesCmd is "millstream nodes": the remote nodes, their draining and their revocation (spec sections 5.10 and
+// 15.7).
 type NodesCmd struct {
 	List   NodesListCmd   `cmd:"" default:"withargs" help:"List the remote nodes: state, health, version, slots, leases held, labels and runtimes."`
+	Drain  NodesDrainCmd  `cmd:"" help:"Drain the node running from the state directory: it stops pulling, finishes or releases its deliveries within its drain timeout, and exits."`
 	Revoke NodesRevokeCmd `cmd:"" help:"Revoke a node id: refused from then on, its leases ended at once."`
 }
 

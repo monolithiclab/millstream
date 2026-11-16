@@ -166,101 +166,38 @@ func (c CancelCmd) Run(rt *Runtime) error {
 
 // Help is the command's detail, printed by its --help.
 func (ReplayCmd) Help() string {
-	return `Three forms, exclusive: --from dlq, --step or --stream.
+	return `Two forms, exclusive: --step or --stream. Dead letters replay with "millstream dead-letters replay".
 
 Examples:
-  # Retry a run's open dead letters in that run
-  millstream replay --pipeline listings --from dlq --run <run>
   # Rerun a step over the items published in the last day, in a new replay run
   millstream replay --pipeline listings --step score --since 1d
   # Back-fill an imported stream from the producer's retained items
   millstream replay --pipeline scoring --stream listings.ready`
 }
 
-// ReplayCmd is "millstream replay": dead-letter replay into the origin run (--from dlq, spec section 5.6), a replay
-// run of a step over past items (--step, spec section 5.7), or a back-fill of an imported stream over the producer's
-// retained items (--stream, spec section 4.12).
+// ReplayCmd is "millstream replay": a replay run of a step over past items (--step, spec section 5.7), or a
+// back-fill of an imported stream over the producer's retained items (--stream, spec section 4.12).
 type ReplayCmd struct {
-	From      string            `placeholder:"SOURCE" help:"Replay dead letters into their run: --from dlq, the one source. Exclusive with --step and --stream; one of the three is required."`
-	Step      string            `help:"Start a replay run of this step over past items on its input streams."`
+	Step      string            `help:"Start a replay run of this step over past items on its input streams. Exclusive with --stream; one of the two is required."`
 	Stream    string            `help:"Start a replay run back-filling this imported stream from the producer's retained items on it."`
 	Pipeline  string            `required:"" help:"Pipeline name."`
-	RunID     string            `name:"run" help:"With --from dlq, the run whose dead letters to replay; with --step, replay only this run's items."`
-	Migrate   bool              `help:"With --from dlq, move the run to the pipeline's active revision first."`
-	Since     string            `help:"With --step or --stream, replay only the items published within this duration (7d, 12h)."`
-	Where     string            `help:"With --step or --stream, replay only the items for which this CEL expression holds."`
-	Revision  int64             `help:"With --step or --stream, the revision to run on (default: the active one)."`
-	RequestID string            `name:"request-id" help:"With --step or --stream, the request id naming the replay run; repeating it starts nothing new."`
-	Var       map[string]string `help:"With --step or --stream, set a variable (name=value)."`
-	IDs       []string          `arg:"" optional:"" name:"id" help:"With --from dlq, the dead letters to replay; all of the run's open ones when none."`
+	RunID     string            `name:"run" help:"With --step, replay only this run's items."`
+	Since     string            `help:"Replay only the items published within this duration (7d, 12h)."`
+	Where     string            `help:"Replay only the items for which this CEL expression holds."`
+	Revision  int64             `help:"The revision to run on (default: the active one)."`
+	RequestID string            `name:"request-id" help:"The request id naming the replay run; repeating it starts nothing new."`
+	Var       map[string]string `help:"Set a variable (name=value)."`
 }
 
-// Run replays the run's open dead letters, reopening it, or starts a replay run and prints its id; a running engine
-// dispatches the deliveries either creates.
+// Run starts a replay run and prints its id; a running engine dispatches its deliveries.
 func (c ReplayCmd) Run(rt *Runtime) error {
 	switch {
-	case len(slices.DeleteFunc([]string{c.From, c.Step, c.Stream}, func(s string) bool { return s == "" })) > 1:
-		return usageError("--from, --step and --stream are mutually exclusive")
-	case c.From == "dlq":
-		return c.deadLetters(rt)
-	case c.From != "":
-		return usageError(fmt.Sprintf("--from %s: only dlq is supported", c.From))
-	case c.Step != "", c.Stream != "":
-		return c.replayRun(rt)
-	default:
-		return usageError("replay needs --from dlq, --step or --stream")
-	}
-}
-
-func (c ReplayCmd) deadLetters(rt *Runtime) error {
-	switch {
-	case c.RunID == "":
-		return usageError("--from dlq needs --run")
-	case c.Since != "" || c.Where != "" || c.Revision != 0 || c.RequestID != "" || len(c.Var) > 0:
-		return usageError("--since, --where, --revision, --request-id and --var go with --step or --stream, not --from dlq")
-	}
-	var n int
-	err := changeState(rt, func(cl *apiClient) error {
-		ids := c.IDs
-		if len(ids) == 0 { // the run's open dead letters, as the store's unit takes them
-			var groups []api.DeadLetterGroup
-			if _, err := cl.do(rt.Ctx, http.MethodGet, pipelinePath(c.Pipeline, "dead-letters"), nil, &groups); err != nil {
-				return err
-			}
-			for _, g := range groups {
-				for _, dl := range g.DeadLetters {
-					if dl.RunID == c.RunID {
-						ids = append(ids, dl.ID)
-					}
-				}
-			}
-			if len(ids) == 0 {
-				return nil
-			}
-		}
-		var count api.Count
-		_, err := cl.post(rt.Ctx, pipelinePath(c.Pipeline, "dead-letters", "replay"),
-			api.DeadLetterSelection{IDs: ids, Migrate: c.Migrate}, &count)
-		n = count.Count
-		return err
-	}, func(st store.Store) error {
-		var err error
-		n, err = st.ReplayDeadLetters(rt.Ctx, c.Pipeline, c.RunID, c.IDs, c.Migrate)
-		return err
-	})
-	if err != nil {
-		return err
-	}
-	_, err = fmt.Fprintf(rt.IO.Out, "%s replayed\n", plural(n, "dead letter"))
-	return err
-}
-
-func (c ReplayCmd) replayRun(rt *Runtime) error {
-	switch {
-	case c.Migrate || len(c.IDs) > 0:
-		return usageError("--migrate and dead-letter ids go with --from dlq, not --step or --stream")
+	case c.Step != "" && c.Stream != "":
+		return usageError("--step and --stream are mutually exclusive")
+	case c.Step == "" && c.Stream == "":
+		return usageError("replay needs --step or --stream")
 	case c.Stream != "" && c.RunID != "":
-		return usageError("--run goes with --step or --from dlq: a back-fill selects by --since and --where")
+		return usageError("--run goes with --step: a back-fill selects by --since and --where")
 	}
 	var since time.Duration
 	if c.Since != "" {
@@ -310,21 +247,22 @@ func (c ReplayCmd) replayRun(rt *Runtime) error {
 	return err
 }
 
-// DLQCmd is "millstream dlq".
-type DLQCmd struct {
-	List    DLQListCmd    `cmd:"" help:"List dead letters."`
-	Discard DLQDiscardCmd `cmd:"" help:"Discard dead letters, accepting the loss."`
+// DeadLettersCmd is "millstream dead-letters" (alias dlq): the dead letters of spec section 5.6.
+type DeadLettersCmd struct {
+	List    DeadLettersListCmd    `cmd:"" help:"List dead letters."`
+	Replay  DeadLettersReplayCmd  `cmd:"" help:"Replay a run's dead letters into that run, reopening it."`
+	Discard DeadLettersDiscardCmd `cmd:"" help:"Discard dead letters, accepting the loss."`
 }
 
-// DLQListCmd is "millstream dlq list".
-type DLQListCmd struct {
+// DeadLettersListCmd is "millstream dead-letters list".
+type DeadLettersListCmd struct {
 	Pipeline string `help:"Only this pipeline's dead letters."`
 	RunID    string `name:"run" help:"Only this run's dead letters."`
 	State    string `enum:"open,replayed,discarded,all" default:"open" help:"State to list: open, replayed, discarded or all."`
 }
 
 // Run prints the dead letters as a table.
-func (c DLQListCmd) Run(rt *Runtime) error {
+func (c DeadLettersListCmd) Run(rt *Runtime) error {
 	return withStore(rt, func(st store.Store) error {
 		f := store.DeadLetterFilter{Pipeline: c.Pipeline, RunID: c.RunID}
 		if c.State != "all" {
@@ -344,6 +282,62 @@ func (c DLQListCmd) Run(rt *Runtime) error {
 	})
 }
 
+// Help is the command's detail, printed by its --help.
+func (DeadLettersReplayCmd) Help() string {
+	return `Examples:
+  # Retry a run's open dead letters in that run
+  millstream dead-letters replay --pipeline listings --run <run>
+  # Retry one, on the pipeline's active revision
+  millstream dead-letters replay --pipeline listings --run <run> --migrate <id>`
+}
+
+// DeadLettersReplayCmd is "millstream dead-letters replay": dead-letter replay into the origin run (spec section
+// 5.6).
+type DeadLettersReplayCmd struct {
+	Pipeline string   `required:"" help:"Pipeline name."`
+	RunID    string   `name:"run" required:"" help:"The run whose dead letters to replay."`
+	Migrate  bool     `help:"Move the run to the pipeline's active revision first."`
+	IDs      []string `arg:"" optional:"" name:"id" help:"The dead letters to replay; all of the run's open ones when none."`
+}
+
+// Run replays the run's open dead letters, reopening it; a running engine dispatches the deliveries it creates.
+func (c DeadLettersReplayCmd) Run(rt *Runtime) error {
+	var n int
+	err := changeState(rt, func(cl *apiClient) error {
+		ids := c.IDs
+		if len(ids) == 0 { // the run's open dead letters, as the store's unit takes them
+			var groups []api.DeadLetterGroup
+			if _, err := cl.do(rt.Ctx, http.MethodGet, pipelinePath(c.Pipeline, "dead-letters"), nil, &groups); err != nil {
+				return err
+			}
+			for _, g := range groups {
+				for _, dl := range g.DeadLetters {
+					if dl.RunID == c.RunID {
+						ids = append(ids, dl.ID)
+					}
+				}
+			}
+			if len(ids) == 0 {
+				return nil
+			}
+		}
+		var count api.Count
+		_, err := cl.post(rt.Ctx, pipelinePath(c.Pipeline, "dead-letters", "replay"),
+			api.DeadLetterSelection{IDs: ids, Migrate: c.Migrate}, &count)
+		n = count.Count
+		return err
+	}, func(st store.Store) error {
+		var err error
+		n, err = st.ReplayDeadLetters(rt.Ctx, c.Pipeline, c.RunID, c.IDs, c.Migrate)
+		return err
+	})
+	if err != nil {
+		return err
+	}
+	_, err = fmt.Fprintf(rt.IO.Out, "%s replayed\n", plural(n, "dead letter"))
+	return err
+}
+
 // oneLine returns s on one line, cut to at most n runes.
 func oneLine(s string, n int) string {
 	s = strings.Join(strings.Fields(s), " ")
@@ -353,14 +347,14 @@ func oneLine(s string, n int) string {
 	return s
 }
 
-// DLQDiscardCmd is "millstream dlq discard".
-type DLQDiscardCmd struct {
+// DeadLettersDiscardCmd is "millstream dead-letters discard".
+type DeadLettersDiscardCmd struct {
 	Pipeline string   `required:"" help:"Pipeline name."`
 	IDs      []string `arg:"" name:"id" help:"Dead letters to discard."`
 }
 
 // Run discards the dead letters.
-func (c DLQDiscardCmd) Run(rt *Runtime) error {
+func (c DeadLettersDiscardCmd) Run(rt *Runtime) error {
 	var n int
 	err := changeState(rt, func(cl *apiClient) error {
 		var count api.Count

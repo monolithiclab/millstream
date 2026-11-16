@@ -114,7 +114,7 @@ runtime their action needs; a step no node can take is listed as unschedulable o
   directory. Secrets reach the node inside its deliveries and stay in memory and in each delivery's working directory,
   created on a tmpfs when the host has one (`$XDG_RUNTIME_DIR`, `/dev/shm`; the Compose nodes' `/tmp`), else 0700 in the
   temporary directory, and removed when the process ends.
-- **Operations.** `millstream nodes` lists the nodes the store records with their health; `millstream node drain`
+- **Operations.** `millstream nodes` lists the nodes the store records with their health; `millstream nodes drain`
   (or SIGTERM) on the node's host drains it before an upgrade; the Nodes screen drains or revokes a node, as
   `POST /api/v1/nodes/{id}/drain` and `/revoke` do. `millstream nodes revoke <id>` refuses an id for good and ends
   its leases at once. To rotate the node token, restart the engines with the new one: every node is refused and

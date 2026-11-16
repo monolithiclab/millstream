@@ -40,21 +40,21 @@ func Test_nodesCommands(t *testing.T) {
 		"set MILLSTREAM_NODE_TOKEN") {
 		t.Fatalf("node without a token: %q", errOut)
 	}
-	if _, errOut := s.must(1, "node", "drain", "--state-dir", dir); !strings.Contains(errOut, "no node runs from") {
+	if _, errOut := s.must(1, "nodes", "drain", "--state-dir", dir); !strings.Contains(errOut, "no node runs from") {
 		t.Fatalf("drain without a node: %q", errOut)
 	}
 	s.checkRefusals(t, map[string]string{NodeTokenEnv: "short"}, []refusal{
-		{NodeRunCmd{Join: []string{"https://e:7070"}, Slots: 1, DrainTimeout: 1, StateDir: dir}, true,
+		{NodeCmd{Join: []string{"https://e:7070"}, Slots: 1, DrainTimeout: 1, StateDir: dir}, true,
 			NodeTokenEnv + ": must be at least 32 characters long, not 5"},
 	})
 	s.checkRefusals(t, map[string]string{NodeTokenEnv: testToken}, []refusal{
-		{NodeRunCmd{Join: []string{"http://engine:7070"}, Slots: 1, DrainTimeout: 1, StateDir: dir}, true,
+		{NodeCmd{Join: []string{"http://engine:7070"}, Slots: 1, DrainTimeout: 1, StateDir: dir}, true,
 			"over TLS only"},
-		{NodeRunCmd{Join: []string{"https://e:7070"}, Slots: 0, DrainTimeout: 1, StateDir: dir}, true,
+		{NodeCmd{Join: []string{"https://e:7070"}, Slots: 0, DrainTimeout: 1, StateDir: dir}, true,
 			"--slots and --drain-timeout must be positive"},
-		{NodeRunCmd{Join: []string{"https://e:7070"}, Slots: 1, DrainTimeout: 1, StateDir: dir,
+		{NodeCmd{Join: []string{"https://e:7070"}, Slots: 1, DrainTimeout: 1, StateDir: dir,
 			CA: filepath.Join(dir, "missing.pem")}, false, "--ca"},
-		{NodeRunCmd{Join: []string{"https://e:7070"}, Slots: 1, DrainTimeout: 1, StateDir: dir,
+		{NodeCmd{Join: []string{"https://e:7070"}, Slots: 1, DrainTimeout: 1, StateDir: dir,
 			Labels: map[string]string{"": "x"}}, true, "--labels"},
 	})
 }
@@ -176,9 +176,9 @@ func Test_lockStateDirOwnPid(t *testing.T) {
 	release()
 }
 
-// node drain signals the node running from the state directory and waits until it is gone; a second one refuses
+// nodes drain signals the node running from the state directory and waits until it is gone; a second one refuses
 // to start meanwhile.
-func Test_nodeDrain(t *testing.T) {
+func Test_nodesDrain(t *testing.T) {
 	dir := testdir.New(t)
 	release, err := lockStateDir(dir) // this test process stands for the node
 	if err != nil {
@@ -199,7 +199,7 @@ func Test_nodeDrain(t *testing.T) {
 		return saved(pid, sig)
 	}
 	s := newEmptyState(t)
-	if out, _ := s.must(0, "node", "drain", "--state-dir", dir); !strings.Contains(out, "drained") || len(sent) != 1 {
+	if out, _ := s.must(0, "nodes", "drain", "--state-dir", dir); !strings.Contains(out, "drained") || len(sent) != 1 {
 		t.Fatalf("drain: %q, signals %v", out, sent)
 	}
 }

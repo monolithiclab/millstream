@@ -129,10 +129,10 @@ func TestRunAndReplay(t *testing.T) {
 	checkPayloads(t, snap, true)
 	checkReportArtifacts(t, db, snap)
 
-	dls := mustExit(t, 0, db, nil, "dlq", "list", "--pipeline", pipelineName)
+	dls := mustExit(t, 0, db, nil, "dead-letters", "list", "--pipeline", pipelineName)
 	if !regexp.MustCompile(`(?m)^it_\w+\s+m1-fixture\s+run_e2e_adhoc\s+rentability\s+dead\s+open\s+action: listing L013: no monthlyRentEur$`).
 		MatchString(dls.stdout) || strings.Count(dls.stdout, "\n") != 2 {
-		t.Fatalf("dlq list:\n%s", dls.stdout)
+		t.Fatalf("dead-letters list:\n%s", dls.stdout)
 	}
 	status := mustExit(t, 0, db, nil, "status")
 	if !regexp.MustCompile(`(?m)^m1-fixture\s+active\s+1\s+-$`).MatchString(status.stdout) ||
@@ -146,7 +146,7 @@ func TestRunAndReplay(t *testing.T) {
 	if s := readSnapshot(t, db); len(s.Runs) != 1 || s.Revisions[runID] != 1 {
 		t.Fatalf("after applying v2: runs %v on revisions %v", s.Runs, s.Revisions)
 	}
-	r = mustExit(t, 0, db, nil, "replay", "--from", "dlq", "--pipeline", pipelineName, "--run", runID, "--migrate")
+	r = mustExit(t, 0, db, nil, "dead-letters", "replay", "--pipeline", pipelineName, "--run", runID, "--migrate")
 	if r.stdout != "1 dead letter replayed\n" {
 		t.Fatalf("replay: %s", r.stdout)
 	}

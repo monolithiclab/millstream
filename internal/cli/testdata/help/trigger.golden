@@ -1,0 +1,14 @@
+Usage: millstream trigger <pipeline> <trigger> [flags]
+       millstream trigger <command> [<args>] [flags]
+
+Fire a trigger by hand, or replace a webhook trigger's token.
+
+Default command:
+  trigger <pipeline> <trigger>   Fire a trigger by hand.
+                                 Its arguments and flags: "millstream trigger fire --help"
+
+Commands:
+  token <pipeline> <trigger>     Replace a webhook trigger's token (--rotate) and print the new one,
+                                 once.
+
+Run "millstream trigger <command> --help" for a command's arguments and flags.

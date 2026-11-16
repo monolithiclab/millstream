@@ -17,9 +17,9 @@ import (
 const helpWidth = 100
 
 // printHelp is the CLI's help, in three levels: the top level lists the commands by group with one line each, a
-// group lists its commands, and a command (a leaf) shows its usage, arguments, flags and examples. The default
-// commands tagged implicit:"" (run [dir…], trigger <pipeline> <trigger>, node --join) print under their parent's
-// name, since naming them is optional; their parent's help shows them as its default form. Summary (the help after a
+// group lists its commands, and a command (a leaf) shows its usage, arguments, flags and examples. A default command
+// tagged implicit:"" (trigger <pipeline> <trigger>) prints under its parent's name, since naming it is optional; its
+// parent's help shows it as its default form. Summary (the help after a
 // usage error) shortens a command's help to its usage line.
 func printHelp(rt *Runtime, opts kong.HelpOptions, ctx *kong.Context) error {
 	implicit := unnameImplicit(ctx.Model.Node)

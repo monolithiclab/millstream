@@ -72,9 +72,9 @@ func num(v float64) string { return strconv.FormatFloat(v, 'g', 6, 64) }
 
 // InsightsCmd is "millstream insights".
 type InsightsCmd struct {
-	List InsightsListCmd `cmd:"" default:"withargs" help:"List insights (the default)."`
-	Ack  InsightsAckCmd  `cmd:"" help:"Acknowledge an insight: the projector keeps updating it and resolves it when it clears."`
-	Mute InsightsMuteCmd `cmd:"" help:"Mute an insight: it stays muted whatever the projector finds."`
+	List        InsightsListCmd        `cmd:"" default:"withargs" help:"List insights (the default)."`
+	Acknowledge InsightsAcknowledgeCmd `cmd:"" aliases:"ack" help:"Acknowledge an insight: the projector keeps updating it and resolves it when it clears."`
+	Mute        InsightsMuteCmd        `cmd:"" help:"Mute an insight: it stays muted whatever the projector finds."`
 }
 
 // InsightsListCmd is "millstream insights [list]".
@@ -124,20 +124,20 @@ func (c InsightsListCmd) Run(rt *Runtime) error {
 	})
 }
 
-// insightRef names an insight for ack and mute.
+// insightRef names an insight for acknowledge and mute.
 type insightRef struct {
 	ID       string `arg:"" help:"Insight id."`
 	Pipeline string `help:"The insight's pipeline, when several pipelines have an insight with this id."`
 }
 
-// InsightsAckCmd is "millstream insights ack <id>".
-type InsightsAckCmd struct{ insightRef }
+// InsightsAcknowledgeCmd is "millstream insights acknowledge <id>" (alias ack).
+type InsightsAcknowledgeCmd struct{ insightRef }
 
 // InsightsMuteCmd is "millstream insights mute <id>".
 type InsightsMuteCmd struct{ insightRef }
 
 // Run acknowledges the insight.
-func (c InsightsAckCmd) Run(rt *Runtime) error { return c.set(rt, store.InsightAcknowledged) }
+func (c InsightsAcknowledgeCmd) Run(rt *Runtime) error { return c.set(rt, store.InsightAcknowledged) }
 
 // Run mutes the insight.
 func (c InsightsMuteCmd) Run(rt *Runtime) error { return c.set(rt, store.InsightMuted) }
@@ -179,15 +179,15 @@ func (c insightRef) set(rt *Runtime, state store.InsightState) error {
 	return err
 }
 
-// RunReportCmd is "millstream run report".
-type RunReportCmd struct {
+// ReportCmd is "millstream report <pipeline> <run>".
+type ReportCmd struct {
 	Pipeline string `arg:"" help:"Pipeline name."`
 	RunID    string `arg:"" name:"run" help:"Run id."`
 	JSON     bool   `name:"json" help:"Print the report as JSON."`
 }
 
 // Run prints the run's report (spec section 11.1).
-func (c RunReportCmd) Run(rt *Runtime) error {
+func (c ReportCmd) Run(rt *Runtime) error {
 	return withStore(rt, func(st store.Store) error {
 		now := time.Now()
 		r, err := insights.BuildReport(rt.Ctx, st, c.Pipeline, c.RunID, now)

@@ -167,11 +167,11 @@ func Test_inboxCommands(t *testing.T) {
 		t.Fatalf("deciding twice: %s", out)
 	}
 
-	out = call(nil, InboxSamplesListCmd{Inbox: "analysts"})
+	out = call(nil, InboxSamplesCmd{Inbox: "analysts"})
 	if !strings.Contains(out, ids["d"]) {
 		t.Fatalf("samples:\n%s", out)
 	}
-	out = run(0, nil, "inbox", "samples", "list", "--json")
+	out = run(0, nil, "inbox", "samples", "--json")
 	if !strings.Contains(out, `"deliveryId":"`+ids["d"]+`"`) || !strings.Contains(out, `"deadline"`) {
 		t.Fatalf("samples --json:\n%s", out)
 	}

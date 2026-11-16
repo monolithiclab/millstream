@@ -314,13 +314,8 @@ func decide(rt *Runtime, ref deliveryRef, who reviewerFlag, req store.ReviewDeci
 	return err
 }
 
-// InboxSamplesCmd is "millstream inbox samples".
+// InboxSamplesCmd is "millstream inbox samples": the open review samples.
 type InboxSamplesCmd struct {
-	List InboxSamplesListCmd `cmd:"" default:"withargs" help:"List the open review samples (the default)."`
-}
-
-// InboxSamplesListCmd is "millstream inbox samples [list]".
-type InboxSamplesListCmd struct {
 	Inbox    string `help:"Only this inbox's samples."`
 	Pipeline string `help:"Only this pipeline's samples."`
 	JSON     bool   `name:"json" help:"Print each sample with its item as a JSON line."`
@@ -340,7 +335,7 @@ type sampleJSON struct {
 }
 
 // Run lists the open review samples, oldest first.
-func (c InboxSamplesListCmd) Run(rt *Runtime) error {
+func (c InboxSamplesCmd) Run(rt *Runtime) error {
 	return withStore(rt, func(st store.Store) error {
 		ss, err := st.ReviewSamples(rt.Ctx, store.SampleFilter{Pipeline: c.Pipeline, Inbox: c.Inbox})
 		if err != nil {

@@ -199,7 +199,7 @@ func crashInCommands(t *testing.T, b backend) {
 			db := b.newDB(t)
 			mustExit(t, 1, db, nil, runOnce(fixtureV1)...)
 			letters := slices.Collect(maps.Keys(want.DeadLetters))
-			discard := append([]string{"dlq", "discard", "--pipeline", pipelineName}, letters...)
+			discard := append([]string{"dead-letters", "discard", "--pipeline", pipelineName}, letters...)
 			mustExit(t, failpoint.ExitCode, db, failpointEnv("discard."+phase), discard...)
 			if r := millstream(t, db, nil, discard...); phase == "beforeCommit" && r.code != 0 ||
 				phase == "afterCommit" && (r.code != 1 || !strings.Contains(r.stderr, "not found")) {

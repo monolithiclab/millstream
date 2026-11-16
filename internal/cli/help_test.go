@@ -41,7 +41,7 @@ func Test_helpLevels(t *testing.T) {
 		{"root", []string{"--help"}, false},
 		{"root", nil, false},
 		{"inbox", []string{"inbox", "--help"}, false},
-		{"run", []string{"run", "--help"}, false},
+		{"trigger", []string{"trigger", "--help"}, false},
 		{"replay", []string{"replay", "--help"}, true},
 	} {
 		t.Run(strings.Join(tt.argv, " "), func(t *testing.T) {
@@ -75,7 +75,7 @@ func Test_helpListsEveryCommand(t *testing.T) {
 	t.Parallel()
 	_, root, _ := runHelp(t, nil, false, "--help")
 	for _, w := range []string{"Develop:", "Run:", "Observe:", "Operate:", "Improve:", "Help:", "  init ", "  inbox ",
-		"  backtest ", "  help ", "Global flags, listed in every command's help: --db, --env-file"} {
+		"  dead-letters ", "  report ", "  backtest ", "  help ", "Global flags, listed in every command's help: --db, --env-file"} {
 		if !strings.Contains(root, w) {
 			t.Errorf("top-level help has no %q", w)
 		}
@@ -85,33 +85,25 @@ func Test_helpListsEveryCommand(t *testing.T) {
 	}
 	_, inbox, _ := runHelp(t, nil, false, "inbox", "--help")
 	for _, w := range []string{"  list ", "  show <delivery>", "  approve <delivery>", "  reject <delivery>",
-		"  samples <command>", "  sample <delivery> <decision>"} {
+		"  samples ", "  sample <delivery> <decision>"} {
 		if !strings.Contains(inbox, w) {
 			t.Errorf("inbox help has no %q:\n%s", w, inbox)
 		}
 	}
 }
 
-// The default commands whose name is optional show as their parent's default form, with a pointer to their help,
-// which prints their usage under the parent's name, with their flags.
+// A default command whose name is optional shows as its parent's default form, with a pointer to its help, which
+// prints its usage under the parent's name, with its flags.
 func Test_helpShowsImplicitCommands(t *testing.T) {
 	t.Parallel()
 	for _, tt := range []struct {
 		argv []string
 		want []string
 	}{
-		{[]string{"run", "--help"}, []string{"Usage: millstream run [<dirs> ...] [flags]", "Default command:",
-			`"millstream run packages --help"`, "report <pipeline> <run>"}},
 		{[]string{"trigger", "--help"}, []string{"Usage: millstream trigger <pipeline> <trigger> [flags]",
-			`"millstream trigger fire --help"`, "token <pipeline> <trigger>"}},
-		{[]string{"node", "--help"}, []string{"Usage: millstream node --join=", `"millstream node run --help"`,
-			"  drain "}},
-		{[]string{"run", "packages", "--help"}, []string{"Usage: millstream run [<dirs> ...] [flags]", "--once",
-			"--listen=HOST:PORT", "millstream run --once"}},
+			"Default command:", `"millstream trigger fire --help"`, "token <pipeline> <trigger>"}},
 		{[]string{"trigger", "fire", "--help"}, []string{"Usage: millstream trigger <pipeline> <trigger> [flags]",
 			"--payload=PAYLOAD"}},
-		{[]string{"node", "run", "--help"}, []string{"Usage: millstream node --join=", "--allow-exec",
-			"--drain-timeout=DURATION"}},
 	} {
 		code, out, _ := runHelp(t, nil, false, tt.argv...)
 		for _, w := range tt.want {
@@ -136,7 +128,7 @@ func Test_helpCommand(t *testing.T) {
 		t.Errorf("help prints Markdown marks or a topic:\n%s", out)
 	}
 	_, topics, _ := runHelp(t, nil, false, "help", "topics")
-	for _, w := range []string{"agents", "environment", "exit-codes"} {
+	for _, w := range []string{"scripting", "environment", "exit-codes"} {
 		if !strings.Contains(topics, "  "+w+" ") {
 			t.Errorf("help topics has no %s:\n%s", w, topics)
 		}
@@ -144,7 +136,7 @@ func Test_helpCommand(t *testing.T) {
 			t.Errorf("help %s: code %d:\n%s", w, code, out)
 		}
 	}
-	for _, argv := range [][]string{{"run"}, {"run", "report"}, {"inbox"}, {"inbox", "samples"}, {"replay"},
+	for _, argv := range [][]string{{"run"}, {"report"}, {"inbox"}, {"inbox", "samples"}, {"dead-letters", "replay"},
 		{"help"}} {
 		_, viaHelp, _ := runHelp(t, nil, false, append([]string{"help"}, argv...)...)
 		_, viaFlag, _ := runHelp(t, nil, false, append(argv, "--help")...)
@@ -155,6 +147,26 @@ func Test_helpCommand(t *testing.T) {
 	if code, out, errOut := runHelp(t, nil, false, "help", "frobnicate"); code != 2 || out != "" ||
 		!strings.Contains(errOut, `no command or topic "frobnicate"`) {
 		t.Errorf("help frobnicate: code %d, stdout %q, stderr %q", code, out, errOut)
+	}
+}
+
+// The aliases kept for the names of older notes, dlq and insights ack, select the command they name: its help is the
+// same, under its own name.
+func Test_aliases(t *testing.T) {
+	t.Parallel()
+	for alias, name := range map[string]string{
+		"dlq list --help":     "dead-letters list --help",
+		"dlq replay --help":   "dead-letters replay --help",
+		"dlq discard --help":  "dead-letters discard --help",
+		"insights ack --help": "insights acknowledge --help",
+		"help dlq replay":     "help dead-letters replay",
+		"help insights ack":   "help insights acknowledge",
+	} {
+		code, viaAlias, errOut := runHelp(t, nil, false, strings.Fields(alias)...)
+		_, viaName, _ := runHelp(t, nil, false, strings.Fields(name)...)
+		if code != 0 || viaAlias != viaName || viaName == "" {
+			t.Errorf("%s: code %d, stderr %q, help:\n%s\nwant:\n%s", alias, code, errOut, viaAlias, viaName)
+		}
 	}
 }
 
@@ -190,7 +202,7 @@ func Test_helpColors(t *testing.T) {
 		}
 	}
 	// Usage after an error goes to stderr, colored by the same rules, and never to stdout.
-	code, out, errOut := runHelp(t, nil, false, "--color=always", "dlq")
+	code, out, errOut := runHelp(t, nil, false, "--color=always", "dead-letters")
 	if code != 2 || out != "" || !strings.Contains(errOut, "\x1b[") {
 		t.Errorf("usage error: code %d, stdout %q, stderr %q", code, out, errOut)
 	}

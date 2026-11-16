@@ -134,16 +134,17 @@ type CLI struct {
 	Test          TestCmd          `cmd:"" group:"Develop" help:"Test a package against stubbed actions, or an action against golden outputs."`
 	Eval          EvalCmd          `cmd:"" group:"Develop" help:"Run an action's evals and score them."`
 	Lock          LockCmd          `cmd:"" group:"Develop" help:"Pin a package's container and registry actions by image digest."`
-	Run           RunCmd           `cmd:"" group:"Run" help:"Run packages locally with an embedded engine, or print a run's report."`
+	Run           RunCmd           `cmd:"" group:"Run" help:"Run packages locally with an embedded engine and node."`
 	Trigger       TriggerCmd       `cmd:"" group:"Run" help:"Fire a trigger by hand, or replace a webhook trigger's token."`
 	Cancel        CancelCmd        `cmd:"" group:"Run" help:"Cancel a run."`
-	Replay        ReplayCmd        `cmd:"" group:"Run" help:"Replay dead letters into their run, or a step over past items."`
-	DLQ           DLQCmd           `cmd:"" name:"dlq" group:"Run" help:"List and discard dead letters."`
+	Replay        ReplayCmd        `cmd:"" group:"Run" help:"Replay a step over past items, or back-fill an imported stream."`
+	DeadLetters   DeadLettersCmd   `cmd:"" name:"dead-letters" aliases:"dlq" group:"Run" help:"List, replay and discard dead letters."`
 	Inbox         InboxCmd         `cmd:"" group:"Run" help:"List and decide reviews and review samples."`
 	Status        StatusCmd        `cmd:"" group:"Observe" help:"Show pipelines and recent runs."`
 	Tail          TailCmd          `cmd:"" group:"Observe" help:"Print events as JSON lines."`
 	Metrics       MetricsCmd       `cmd:"" group:"Observe" help:"Print metric rollups, or their Prometheus exposition."`
 	Insights      InsightsCmd      `cmd:"" group:"Observe" help:"List, acknowledge and mute insights."`
+	Report        ReportCmd        `cmd:"" group:"Observe" help:"Print a run's report: critical path, slowest steps, failures, cost, comparison."`
 	Serve         ServeCmd         `cmd:"" group:"Operate" help:"Run an engine from the environment file, or its standby."`
 	Apply         ApplyCmd         `cmd:"" group:"Operate" help:"Check packages against the deployment and upload them as new revisions."`
 	Rollback      RollbackCmd      `cmd:"" group:"Operate" help:"Reactivate an earlier revision of a pipeline."`
@@ -151,8 +152,8 @@ type CLI struct {
 	Resume        ResumeCmd        `cmd:"" group:"Operate" help:"Resume a pipeline or one of its steps."`
 	Disable       DisableCmd       `cmd:"" group:"Operate" help:"Disable a pipeline: its triggers stop firing until resume."`
 	Purge         PurgeCmd         `cmd:"" group:"Operate" help:"Erase items by key or id, with their descendants and copies."`
-	Node          NodeCmd          `cmd:"" group:"Operate" help:"Run a remote node that joins an engine, or drain it."`
-	Nodes         NodesCmd         `cmd:"" group:"Operate" help:"List the remote nodes, or revoke one."`
+	Node          NodeCmd          `cmd:"" group:"Operate" help:"Run a remote node that joins an engine."`
+	Nodes         NodesCmd         `cmd:"" group:"Operate" help:"List the remote nodes, drain the one running here, or revoke one."`
 	Evidence      EvidenceCmd      `cmd:"" group:"Improve" help:"Export an evidence bundle in production; import it in development."`
 	Improve       ImproveCmd       `cmd:"" group:"Improve" help:"Run the improve pipeline on one insight or every open one; development only."`
 	Proposals     ProposalsCmd     `cmd:"" group:"Improve" help:"List, create and decide proposals."`

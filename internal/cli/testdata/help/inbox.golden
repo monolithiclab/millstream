@@ -7,7 +7,7 @@ Commands:
   show <delivery>                Show a review: its item, its display and what may be edited.
   approve <delivery>             Approve a review, optionally editing the item first.
   reject <delivery>              Reject a review, with a reason code when the step lists some.
-  samples <command>              List the open review samples.
+  samples                        List the open review samples.
   sample <delivery> <decision>   Decide a review sample: agree or disagree with the rule that
                                  approved it.
 

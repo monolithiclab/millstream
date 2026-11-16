@@ -424,5 +424,5 @@ func replayStepArgs() []string {
 var crashRun = ids.ManualRun(crashRequest, "adhoc")
 
 func replayArgs() []string {
-	return []string{"replay", "--from", "dlq", "--pipeline", pipelineName, "--run", crashRun, "--migrate"}
+	return []string{"dead-letters", "replay", "--pipeline", pipelineName, "--run", crashRun, "--migrate"}
 }

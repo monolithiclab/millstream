@@ -28,22 +28,17 @@ import (
 // NodeTokenEnv holds the deployment's node token a remote node joins with (node.token on the engines).
 const NodeTokenEnv = "MILLSTREAM_NODE_TOKEN" // #nosec G101 -- the variable's name, not a credential
 
-// NodeCmd is "millstream node": "node --join <url>" runs a remote node, "node drain" drains the one running here.
-type NodeCmd struct {
-	Run   NodeRunCmd   `cmd:"" default:"withargs" implicit:"" help:"Join the engine with the node token and run deliveries."`
-	Drain NodeDrainCmd `cmd:"" help:"Drain the node running from the state directory: it stops pulling, finishes or releases its deliveries within its drain timeout, and exits."`
-}
-
 // Help is the command's detail, printed by its --help.
-func (NodeRunCmd) Help() string {
-	return `The node authenticates with $MILLSTREAM_NODE_TOKEN.
+func (NodeCmd) Help() string {
+	return `The node authenticates with $MILLSTREAM_NODE_TOKEN; SIGTERM or "millstream nodes drain" drains it.
 
 Examples:
   millstream node --join https://engine-a:7070,https://engine-b:7070 --labels zone=par --slots 8`
 }
 
-// NodeRunCmd is "millstream node --join <url>[,<url>…]" (spec section 5.10).
-type NodeRunCmd struct {
+// NodeCmd is "millstream node --join <url>[,<url>…]": a remote node that joins the engine with the node token and
+// runs deliveries (spec section 5.10); "nodes drain" drains it.
+type NodeCmd struct {
 	Join         []string          `required:"" placeholder:"URL[,URL…]" help:"The engines' URLs, the active one and its standbys: https, or http to a loopback engine. The node follows the active one across a failover."`
 	Labels       map[string]string `mapsep:"," placeholder:"K=V[,K=V…]" help:"Labels steps place their deliveries by (placement.labels)."`
 	AllowExec    bool              `name:"allow-exec" help:"Run exec actions, and unsandboxed agents, as children with this node's privileges: trusted code only (spec section 15.3)."`
@@ -59,11 +54,11 @@ const (
 	nodePIDFile = "node.pid"
 )
 
-// Run joins the engine and runs deliveries until drained (node drain, SIGTERM, SIGINT), revoked, or refused its
+// Run joins the engine and runs deliveries until drained (nodes drain, SIGTERM, SIGINT), revoked, or refused its
 // token. It registers its id, version, labels and capacity: exec with --allow-exec, container when the runtime the
 // environment file selects is installed, and the agent harnesses it can run (agents key). Logs are JSON lines on
 // stderr, relayed to the engine's log and live tail.
-func (c NodeRunCmd) Run(rt *Runtime) error {
+func (c NodeCmd) Run(rt *Runtime) error {
 	ctx, stop := signalContext(rt.Ctx)
 	defer stop()
 	env, err := environment(rt)
@@ -187,7 +182,7 @@ func (c NodeRunCmd) Run(rt *Runtime) error {
 
 // httpClient is the node's client: HTTP/2 over TLS, checking the engine's certificate against the system's
 // authorities and --ca's, with pings that detect a dead connection.
-func (c NodeRunCmd) httpClient() (*http.Client, error) {
+func (c NodeCmd) httpClient() (*http.Client, error) {
 	roots, err := x509.SystemCertPool()
 	if err != nil || roots == nil {
 		roots = x509.NewCertPool()
@@ -227,7 +222,7 @@ func nodeID(dir string) (string, error) {
 }
 
 // lockStateDir holds an exclusive lock on the state directory's pid file for the life of the process, refusing to
-// start while another node holds it, records its pid there for node drain, and returns what removes the file. The
+// start while another node holds it, records its pid there for nodes drain, and returns what removes the file. The
 // kernel drops the lock when the process ends, however it ends: the file a killed node leaves is stale whatever pid
 // it names (a container started again runs its new node under the same one).
 func lockStateDir(dir string) (func(), error) {
@@ -294,21 +289,21 @@ func runningNode(dir string) (int, bool) {
 	return pid, pid > 0
 }
 
-// NodeDrainCmd is "millstream node drain".
-type NodeDrainCmd struct {
+// NodesDrainCmd is "millstream nodes drain".
+type NodesDrainCmd struct {
 	StateDir string        `name:"state-dir" type:"path" default:".millstream/node" help:"The state directory of the node to drain."`
 	Wait     time.Duration `default:"2m" help:"How long to wait for the node to exit."`
 }
 
 // Run sends SIGTERM to the node running from the state directory and waits for it to exit: it stops pulling,
 // finishes its deliveries within its drain timeout, releases what remains and exits, for a rolling upgrade.
-func (c NodeDrainCmd) Run(rt *Runtime) error {
+func (c NodesDrainCmd) Run(rt *Runtime) error {
 	pid, ok := runningNode(c.StateDir)
 	if !ok {
-		return fmt.Errorf("node drain: no node runs from %s", c.StateDir)
+		return fmt.Errorf("nodes drain: no node runs from %s", c.StateDir)
 	}
 	if err := signalProcess(pid, syscall.SIGTERM); err != nil {
-		return fmt.Errorf("node drain: signal pid %d: %w", pid, err)
+		return fmt.Errorf("nodes drain: signal pid %d: %w", pid, err)
 	}
 	fmt.Fprintf(rt.IO.Out, "draining node %d\n", pid)
 	deadline := time.Now().Add(c.Wait)
@@ -323,5 +318,5 @@ func (c NodeDrainCmd) Run(rt *Runtime) error {
 		case <-time.After(100 * time.Millisecond):
 		}
 	}
-	return fmt.Errorf("node drain: node %d still runs after %s", pid, c.Wait)
+	return fmt.Errorf("nodes drain: node %d still runs after %s", pid, c.Wait)
 }

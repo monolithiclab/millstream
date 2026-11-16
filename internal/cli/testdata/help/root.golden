@@ -3,48 +3,49 @@ Usage: millstream <command> [<args>] [flags]
 Pipelines of actions connected by persisted streams.
 
 Develop:
-  init        Scaffold a pipeline package or an action.
-  check       Validate pipeline packages, alone and against each other.
-  vars        Print a package's variables, their values and sources.
-  graph       Print a package's graph as Mermaid or DOT.
-  test        Test a package against stubbed actions, or an action against golden outputs.
-  eval        Run an action's evals and score them.
-  lock        Pin a package's container and registry actions by image digest.
+  init           Scaffold a pipeline package or an action.
+  check          Validate pipeline packages, alone and against each other.
+  vars           Print a package's variables, their values and sources.
+  graph          Print a package's graph as Mermaid or DOT.
+  test           Test a package against stubbed actions, or an action against golden outputs.
+  eval           Run an action's evals and score them.
+  lock           Pin a package's container and registry actions by image digest.
 
 Run:
-  run         Run packages locally with an embedded engine, or print a run's report.
-  trigger     Fire a trigger by hand, or replace a webhook trigger's token.
-  cancel      Cancel a run.
-  replay      Replay dead letters into their run, or a step over past items.
-  dlq         List and discard dead letters.
-  inbox       List and decide reviews and review samples.
+  run            Run packages locally with an embedded engine and node.
+  trigger        Fire a trigger by hand, or replace a webhook trigger's token.
+  cancel         Cancel a run.
+  replay         Replay a step over past items, or back-fill an imported stream.
+  dead-letters   List, replay and discard dead letters.
+  inbox          List and decide reviews and review samples.
 
 Observe:
-  status      Show pipelines and recent runs.
-  tail        Print events as JSON lines.
-  metrics     Print metric rollups, or their Prometheus exposition.
-  insights    List, acknowledge and mute insights.
+  status         Show pipelines and recent runs.
+  tail           Print events as JSON lines.
+  metrics        Print metric rollups, or their Prometheus exposition.
+  insights       List, acknowledge and mute insights.
+  report         Print a run's report: critical path, slowest steps, failures, cost, comparison.
 
 Operate:
-  serve       Run an engine from the environment file, or its standby.
-  apply       Check packages against the deployment and upload them as new revisions.
-  rollback    Reactivate an earlier revision of a pipeline.
-  pause       Pause a pipeline or one of its steps.
-  resume      Resume a pipeline or one of its steps.
-  disable     Disable a pipeline: its triggers stop firing until resume.
-  purge       Erase items by key or id, with their descendants and copies.
-  node        Run a remote node that joins an engine, or drain it.
-  nodes       List the remote nodes, or revoke one.
+  serve          Run an engine from the environment file, or its standby.
+  apply          Check packages against the deployment and upload them as new revisions.
+  rollback       Reactivate an earlier revision of a pipeline.
+  pause          Pause a pipeline or one of its steps.
+  resume         Resume a pipeline or one of its steps.
+  disable        Disable a pipeline: its triggers stop firing until resume.
+  purge          Erase items by key or id, with their descendants and copies.
+  node           Run a remote node that joins an engine.
+  nodes          List the remote nodes, drain the one running here, or revoke one.
 
 Improve:
-  evidence    Export an evidence bundle in production; import it in development.
-  improve     Run the improve pipeline on one insight or every open one; development only.
-  proposals   List, create and decide proposals.
-  backtest    Validate a patch against past items, before and after.
+  evidence       Export an evidence bundle in production; import it in development.
+  improve        Run the improve pipeline on one insight or every open one; development only.
+  proposals      List, create and decide proposals.
+  backtest       Validate a patch against past items, before and after.
 
 Help:
-  help        Print the guide, a topic, or a command's help.
-  version     Print the version.
+  help           Print the guide, a topic, or a command's help.
+  version        Print the version.
 
 Run "millstream help" for a guide to Millstream, "millstream <command> --help" for a command's help.
 Global flags, listed in every command's help: --db, --env-file, --server, --direct, --color.

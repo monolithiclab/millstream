@@ -18,7 +18,7 @@ var guide string
 
 // HelpCmd is "millstream help [topic | command…]".
 type HelpCmd struct {
-	Subject []string `arg:"" optional:"" name:"topic-or-command" help:"A topic (help topics lists them), or a command: help run report prints run report --help."`
+	Subject []string `arg:"" optional:"" name:"topic-or-command" help:"A topic (help topics lists them), or a command: help dead-letters replay prints dead-letters replay --help."`
 }
 
 // Run prints the guide, the list of topics, a topic, or a command's help as its --help does.

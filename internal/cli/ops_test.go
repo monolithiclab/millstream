@@ -114,29 +114,29 @@ func Test_pauseAndResumeCommands(t *testing.T) {
 	}
 }
 
-func Test_dlqAndReplayCommands(t *testing.T) {
+func Test_deadLettersCommands(t *testing.T) {
 	t.Parallel()
 	s := newState(t, true)
-	out, _ := s.must(0, "dlq", "list", "--pipeline", "listings", "--run", "run_r1_adhoc")
+	out, _ := s.must(0, "dead-letters", "list", "--pipeline", "listings", "--run", "run_r1_adhoc")
 	lines := splitLines(out)
 	if len(lines) != 4 || !strings.HasPrefix(lines[0], "ID") || !strings.Contains(lines[1], "score") ||
 		!strings.Contains(lines[1], "portal answered 503") {
-		t.Fatalf("dlq list:\n%s", out)
+		t.Fatalf("dead-letters list:\n%s", out)
 	}
 	ids := make([]string, 0, 3)
 	for _, l := range lines[1:] {
 		ids = append(ids, strings.Fields(l)[0])
 	}
-	out, _ = s.must(0, "dlq", "discard", "--pipeline", "listings", ids[0])
+	out, _ = s.must(0, "dead-letters", "discard", "--pipeline", "listings", ids[0])
 	if out != "1 dead letter discarded\n" {
 		t.Fatalf("discard stdout = %q", out)
 	}
-	s.checkRefusals(t, nil, []refusal{{DLQDiscardCmd{Pipeline: "listings", IDs: ids[:1]}, false, "not found"}})
-	out, _ = s.must(0, "dlq", "list", "--state", "all")
+	s.checkRefusals(t, nil, []refusal{{DeadLettersDiscardCmd{Pipeline: "listings", IDs: ids[:1]}, false, "not found"}})
+	out, _ = s.must(0, "dead-letters", "list", "--state", "all")
 	if len(splitLines(out)) != 4 || !strings.Contains(out, "discarded") {
-		t.Fatalf("dlq list --state all:\n%s", out)
+		t.Fatalf("dead-letters list --state all:\n%s", out)
 	}
-	out, _ = s.must(0, "replay", "--from", "dlq", "--pipeline", "listings", "--run", "run_r1_adhoc", "--migrate", ids[1])
+	out, _ = s.must(0, "dead-letters", "replay", "--pipeline", "listings", "--run", "run_r1_adhoc", "--migrate", ids[1])
 	if out != "1 dead letter replayed\n" {
 		t.Fatalf("replay stdout = %q", out)
 	}
@@ -153,12 +153,12 @@ func Test_dlqAndReplayCommands(t *testing.T) {
 		}
 		replayed = "2 dead letters replayed\n"
 	}
-	out, _ = s.must(0, "replay", "--from", "dlq", "--pipeline", "listings", "--run", "run_r1_adhoc")
+	out, _ = s.must(0, "dead-letters", "replay", "--pipeline", "listings", "--run", "run_r1_adhoc")
 	if out != replayed {
 		t.Fatalf("replay all stdout = %q, want %q", out, replayed)
 	}
 	s.checkRefusals(t, nil, []refusal{
-		{ReplayCmd{From: "dlq", Pipeline: "listings", RunID: "nope"}, false, "run nope: not found"},
+		{DeadLettersReplayCmd{Pipeline: "listings", RunID: "nope"}, false, "run nope: not found"},
 	})
 
 	// Purge a listing, its lineage with it (the same state: a store clone costs more than the purge).
@@ -209,33 +209,25 @@ func Test_replayStepCommand(t *testing.T) {
 		}
 	}
 	// Through the parser: a usage error exits 2, a refusal of the engine 1.
-	if code, _, errOut := s.run("replay", "--pipeline", "listings", "--from", "dlq", "--step", "score"); code != 2 ||
-		!strings.Contains(errOut, "--from, --step and --stream are mutually exclusive") {
-		t.Errorf("--from and --step: code %d, stderr %q", code, errOut)
+	if code, _, errOut := s.run("replay", "--pipeline", "listings", "--stream", "raw", "--step", "score"); code != 2 ||
+		!strings.Contains(errOut, "--step and --stream are mutually exclusive") {
+		t.Errorf("--stream and --step: code %d, stderr %q", code, errOut)
 	}
 	if code, _, errOut := s.run("replay", "--pipeline", "listings", "--step", "nope"); code != 1 ||
 		!strings.Contains(errOut, `has no step "nope"`) {
 		t.Errorf("--step nope: code %d, stderr %q", code, errOut)
 	}
-	// No form is the default: the help shows none as one, and replay without one says which to pick.
-	if out, _ := s.must(0, "replay", "--help"); strings.Contains(out, "--from=dlq") || !strings.Contains(out, "--from=SOURCE") {
-		t.Errorf("replay --help shows a default --from:\n%s", out)
-	}
+	// No form is the default: replay without one says which to pick.
 	if code, _, errOut := s.run("replay", "--pipeline", "listings", "--run", "run_r1_adhoc"); code != 2 ||
-		!strings.Contains(errOut, "replay needs --from dlq, --step or --stream") {
+		!strings.Contains(errOut, "replay needs --step or --stream") {
 		t.Errorf("no form: code %d, stderr %q", code, errOut)
 	}
 	replayCmd := func(c ReplayCmd) ReplayCmd { c.Pipeline = "listings"; return c }
 	s.checkRefusals(t, nil, []refusal{
-		{replayCmd(ReplayCmd{}), true, "replay needs --from dlq, --step or --stream"},
+		{replayCmd(ReplayCmd{}), true, "replay needs --step or --stream"},
 		{replayCmd(ReplayCmd{Step: "score", Stream: "raw"}), true, "mutually exclusive"},
 		{replayCmd(ReplayCmd{Stream: "raw", RunID: "run_r1_adhoc"}), true, "a back-fill selects by --since and --where"},
 		{replayCmd(ReplayCmd{Stream: "raw"}), false, `does not import a stream "raw"`},
-		{replayCmd(ReplayCmd{From: "later"}), true, "--from later: only dlq is supported"},
-		{replayCmd(ReplayCmd{From: "dlq"}), true, "--from dlq needs --run"},
-		{replayCmd(ReplayCmd{From: "dlq", RunID: "run_r1_adhoc", Since: "7d"}), true, "go with --step"},
-		{replayCmd(ReplayCmd{Step: "score", Migrate: true}), true, "go with --from dlq"},
-		{replayCmd(ReplayCmd{Step: "score", IDs: []string{"it_x"}}), true, "go with --from dlq"},
 		{replayCmd(ReplayCmd{Step: "score", Since: "soon"}), true, "--since: invalid duration"},
 		{replayCmd(ReplayCmd{Step: "score", Var: map[string]string{"nope": "1"}}), true, "declares no such variable"},
 		{replayCmd(ReplayCmd{Step: "score", Where: "item.n >"}), false, "--where"},

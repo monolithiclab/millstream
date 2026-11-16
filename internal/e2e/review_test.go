@@ -105,7 +105,7 @@ func TestReviewFixture(t *testing.T) {
 	if len(open) != parked || !strings.Contains(open[0].Display, "EUR, score") {
 		t.Fatalf("%d reviews open (%+v), want %d", len(open), open, parked)
 	}
-	samples := inbox(t, db, "samples", "list", "--json")
+	samples := inbox(t, db, "samples", "--json")
 	if len(samples) == 0 || len(samples) > auto {
 		t.Fatalf("%d samples of %d auto-approved listings", len(samples), auto)
 	}
@@ -213,7 +213,7 @@ func TestReviewCrash(t *testing.T) {
 				db := dbPath(t)
 				name := "sampleDecision." + phase
 				mustExit(t, 1, db, nil, runOnce(fixtureReview)...)
-				samples := inbox(t, db, "samples", "list", "--json")
+				samples := inbox(t, db, "samples", "--json")
 				if len(samples) == 0 {
 					t.Fatal("no review sample to decide")
 				}
@@ -224,7 +224,7 @@ func TestReviewCrash(t *testing.T) {
 				if res := millstream(t, db, nil, args...); res.code != 0 {
 					t.Fatalf("deciding the sample again after a crash %s: %s", phase, res)
 				}
-				if left := inbox(t, db, "samples", "list", "--json"); len(left) != len(samples)-1 {
+				if left := inbox(t, db, "samples", "--json"); len(left) != len(samples)-1 {
 					t.Fatalf("%d samples open after deciding one of %d", len(left), len(samples))
 				}
 			})

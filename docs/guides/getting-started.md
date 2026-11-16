@@ -547,8 +547,8 @@ same way.
 
 ```sh
 millstream apply .
-millstream replay --pipeline listings --from dlq --run run_20261020T162558Z-7559f3e7_adhoc --migrate
-millstream dlq list --state all
+millstream dead-letters replay --pipeline listings --run run_20261020T162558Z-7559f3e7_adhoc --migrate
+millstream dead-letters list --state all
 ```
 
 ```text
@@ -558,9 +558,9 @@ ID                                   PIPELINE  RUN                              
 it_88a91b75434734f59cc9057087b7f59d  listings  run_20261020T162558Z-7559f3e7_adhoc  affordable  dead  replayed  expr: filter of step affordable: evaluate "item.priceEur <= vars.maxPrice": no …
 ```
 
-`replay` has two forms, `--from dlq` for dead letters and `--step` (next section), and takes one of them. The day 1
-run is now `succeeded`, L4 filtered. `millstream rollback listings` reactivates the previous revision if a change
-goes wrong.
+`dead-letters replay` retries a run's dead letters in that run; `replay` starts new runs over past items (next
+section). The day 1 run is now `succeeded`, L4 filtered. `millstream rollback listings` reactivates the previous
+revision if a change goes wrong.
 
 ### Replay a step over past items
 
@@ -569,7 +569,7 @@ hour, with a variable changed for this run only:
 
 ```sh
 millstream replay --pipeline listings --step affordable --since 1h --var maxPrice=200000
-millstream run report listings run_replay_20261020T162620Z-b9df9171
+millstream report listings run_replay_20261020T162620Z-b9df9171
 ```
 
 ```text
@@ -829,7 +829,7 @@ agent nothing. Replay the new step over the past instead, from the first termina
 
 ```sh
 millstream replay --pipeline listings --step score --since 1d
-millstream run report listings run_replay_20261020T162704Z-cfc54e94
+millstream report listings run_replay_20261020T162704Z-cfc54e94
 ls recordings
 ```
 
@@ -1022,7 +1022,7 @@ Its report shows three listings approved, and the time the run spent waiting on 
 critical path:
 
 ```sh
-millstream run report listings run_replay_20261020T162814Z-cc272e1e
+millstream report listings run_replay_20261020T162814Z-cc272e1e
 ```
 
 ```text
@@ -1043,7 +1043,7 @@ Stop the engine with Ctrl-C.
 ## 9. Where to go next
 
 - **Insights and run reports.** The engine analyses every pipeline on its own, with no LLM: slow steps, failure
-  clusters, cost per approved item, review patterns. `millstream insights list`, `millstream run report`, and the
+  clusters, cost per approved item, review patterns. `millstream insights list`, `millstream report`, and the
   Insights view show them; yours already lists the failed filter expression, the agent's cost and the review wait:
 
   ```text

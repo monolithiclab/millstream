@@ -361,8 +361,8 @@ func (s *Server) selectDeadLetters(w http.ResponseWriter, r *http.Request) ([]st
 	return out, sel, nil
 }
 
-// replayDeadLetters replays the selected dead letters, one Dead-letter replay unit per run, as millstream replay
-// --from dlq does for one run.
+// replayDeadLetters replays the selected dead letters, one Dead-letter replay unit per run, as millstream
+// dead-letters replay does for one run.
 func (s *Server) replayDeadLetters(w http.ResponseWriter, r *http.Request) error {
 	dls, sel, err := s.selectDeadLetters(w, r)
 	if err != nil {

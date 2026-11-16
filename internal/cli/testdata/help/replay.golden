@@ -1,39 +1,27 @@
-Usage: millstream replay --pipeline=PIPELINE [<id> ...] [flags]
+Usage: millstream replay --pipeline=PIPELINE [flags]
 
-Replay dead letters into their run, or a step over past items.
+Replay a step over past items, or back-fill an imported stream.
 
-Three forms, exclusive: --from dlq, --step or --stream.
+Two forms, exclusive: --step or --stream. Dead letters replay with "millstream dead-letters replay".
 
 Examples:
-  # Retry a run's open dead letters in that run
-  millstream replay --pipeline listings --from dlq --run <run>
   # Rerun a step over the items published in the last day, in a new replay run
   millstream replay --pipeline listings --step score --since 1d
   # Back-fill an imported stream from the producer's retained items
   millstream replay --pipeline scoring --stream listings.ready
 
-Arguments:
-  [<id> ...]   With --from dlq, the dead letters to replay; all of the run's open ones when none.
-
 Flags:
-  --from=SOURCE               Replay dead letters into their run: --from dlq, the one source.
-                              Exclusive with --step and --stream; one of the three is required.
   --step=STEP                 Start a replay run of this step over past items on its input streams.
+                              Exclusive with --stream; one of the two is required.
   --stream=STREAM             Start a replay run back-filling this imported stream from the
                               producer's retained items on it.
   --pipeline=PIPELINE         Pipeline name.
-  --run=RUN                   With --from dlq, the run whose dead letters to replay; with --step,
-                              replay only this run's items.
-  --migrate                   With --from dlq, move the run to the pipeline's active revision first.
-  --since=SINCE               With --step or --stream, replay only the items published within this
-                              duration (7d, 12h).
-  --where=WHERE               With --step or --stream, replay only the items for which this CEL
-                              expression holds.
-  --revision=N                With --step or --stream, the revision to run on (default: the active
-                              one).
-  --request-id=REQUEST_ID     With --step or --stream, the request id naming the replay run;
-                              repeating it starts nothing new.
-  --var=KEY=VALUE;...         With --step or --stream, set a variable (name=value).
+  --run=RUN                   With --step, replay only this run's items.
+  --since=SINCE               Replay only the items published within this duration (7d, 12h).
+  --where=WHERE               Replay only the items for which this CEL expression holds.
+  --revision=N                The revision to run on (default: the active one).
+  --request-id=REQUEST_ID     The request id naming the replay run; repeating it starts nothing new.
+  --var=KEY=VALUE;...         Set a variable (name=value).
 
 Global flags:
   --db=DSN                    Store DSN, overriding store.dsn: sqlite://<path> (created with its

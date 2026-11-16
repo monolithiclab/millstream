@@ -180,7 +180,7 @@ func Test_commandsThroughTheServer(t *testing.T) {
 		{trigger, "run_r1_adhoc\n", false},
 		{trigger, "run_r1_adhoc (already fired)\n", false},
 		{CancelCmd{Pipeline: "extra", RunID: "run_r1_adhoc"}, "run_r1_adhoc cancelled\n", false},
-		{ReplayCmd{Pipeline: "extra", From: "dlq", RunID: "run_r1_adhoc"}, "0 dead letters replayed\n", false},
+		{DeadLettersReplayCmd{Pipeline: "extra", RunID: "run_r1_adhoc"}, "0 dead letters replayed\n", false},
 		{replay, "run_replay_rp\n", false},
 		{replay, "run_replay_rp (already started)\n", false},
 		{NodesRevokeCmd{Node: "gpu-1"}, "gpu-1 revoked\n", false},
@@ -192,7 +192,7 @@ func Test_commandsThroughTheServer(t *testing.T) {
 		{InboxApproveCmd{deliveryRef: deliveryRef{Delivery: "d1"}, reviewerFlag: reviewerFlag{As: "ana"}}, "--pipeline", true},
 		{InboxSampleCmd{deliveryRef: deliveryRef{Delivery: "d1"}, Decision: "agree", reviewerFlag: reviewerFlag{As: "ana"}},
 			"--pipeline", true},
-		{InsightsAckCmd{insightRef{ID: "i1"}}, "--pipeline", true},
+		{InsightsAcknowledgeCmd{insightRef{ID: "i1"}}, "--pipeline", true},
 		{InboxSampleCmd{deliveryRef: deliveryRef{Delivery: "d1", Pipeline: "extra"}, Decision: "agree",
 			reviewerFlag: reviewerFlag{As: "ana"}}, "d1", true},
 		{InboxApproveCmd{deliveryRef: deliveryRef{Delivery: "d1", Pipeline: "extra"}, reviewerFlag: reviewerFlag{As: "ana"}},
@@ -200,7 +200,7 @@ func Test_commandsThroughTheServer(t *testing.T) {
 		{InboxRejectCmd{deliveryRef: deliveryRef{Delivery: "d1", Pipeline: "extra"}, reviewerFlag: reviewerFlag{As: "ana"}},
 			"delivery d1", true},
 		{InsightsMuteCmd{insightRef{ID: "i1", Pipeline: "extra"}}, "insight", true},
-		{DLQDiscardCmd{Pipeline: "extra", IDs: []string{"dl1"}}, "open dead letter dl1", true},
+		{DeadLettersDiscardCmd{Pipeline: "extra", IDs: []string{"dl1"}}, "open dead letter dl1", true},
 	} {
 		out, err := call(step.cmd)
 		got := out

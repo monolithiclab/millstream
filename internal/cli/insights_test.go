@@ -46,9 +46,9 @@ func TestMetricsInsightsAndReport(t *testing.T) {
 	if in.Kind != "failureCluster" || in.Evidence["count"] != float64(3) {
 		t.Fatalf("insight = %+v", in)
 	}
-	out, _ = s.must(0, "insights", "ack", in.ID)
+	out, _ = s.must(0, "insights", "acknowledge", in.ID)
 	if out != in.ID+" acknowledged\n" {
-		t.Fatalf("ack: %q", out)
+		t.Fatalf("acknowledge: %q", out)
 	}
 	s.must(0, "insights", "mute", in.ID, "--pipeline", "listings")
 	out, _ = s.must(0, "insights", "list", "--state", "muted")
@@ -56,14 +56,14 @@ func TestMetricsInsightsAndReport(t *testing.T) {
 		t.Fatalf("muted insights:\n%s", out)
 	}
 
-	out, _ = s.must(0, "run", "report", "listings", runID)
+	out, _ = s.must(0, "report", "listings", runID)
 	for _, want := range []string{"Run run_r1_adhoc of listings (trigger): completedWithErrors", "Critical path",
 		"Slowest steps:", "Failures by cluster:", "portal answered <n>", "No earlier run to compare with."} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("report lacks %q:\n%s", want, out)
 		}
 	}
-	out, _ = s.must(0, "run", "report", "listings", runID, "--json")
+	out, _ = s.must(0, "report", "listings", runID, "--json")
 	var r struct {
 		Run      string
 		Failures []struct{ Count int }
@@ -88,8 +88,8 @@ func TestMetricsInsightsAndReport(t *testing.T) {
 	}
 	s.checkRefusals(t, nil, []refusal{
 		{MetricsCmd{Since: "soon"}, true, "--since: invalid duration"},
-		{InsightsAckCmd{insightRef{ID: "in_missing"}}, false, "insight in_missing: not found"},
-		{RunReportCmd{Pipeline: "listings", RunID: "run_missing"}, false, "run run_missing: not found"},
+		{InsightsAcknowledgeCmd{insightRef{ID: "in_missing"}}, false, "insight in_missing: not found"},
+		{ReportCmd{Pipeline: "listings", RunID: "run_missing"}, false, "run run_missing: not found"},
 		{EvidenceExportCmd{Pipeline: "listings", Since: "soon"}, true, "--since: invalid duration"},
 		{EvidenceExportCmd{Pipeline: "listings", Since: "1d", Insight: "in_missing"}, false, "in_missing of listings: not found"},
 		{EvidenceImportCmd{Bundle: filepath.Join(testdata, "inbox-patch.json")}, false, "not an evidence bundle"},

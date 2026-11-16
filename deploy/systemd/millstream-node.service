@@ -22,7 +22,7 @@ After=network-online.target
 Type=exec
 ExecStart=/usr/local/bin/millstream node --join ${MILLSTREAM_JOIN} --allow-exec
 EnvironmentFile=/etc/millstream/node.env
-# SIGTERM drains, as `millstream node drain --state-dir /var/lib/millstream-node/.millstream/node` does: the node
+# SIGTERM drains, as `millstream nodes drain --state-dir /var/lib/millstream-node/.millstream/node` does: the node
 # finishes its deliveries within its drain timeout (30 s), releases the rest, then exits.
 TimeoutStopSec=90s
 Restart=on-failure

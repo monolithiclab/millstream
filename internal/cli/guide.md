@@ -26,7 +26,7 @@ millstream run                        # or serve the engine, the API and the UI 
 millstream trigger listings adhoc     # fire a run, from another shell
 millstream status                     # pipelines and recent runs
 millstream tail -f                    # events as JSON lines
-millstream replay --pipeline listings --from dlq --run <run>   # retry a run's dead letters
+millstream dead-letters replay --pipeline listings --run <run>   # retry a run's dead letters
 ```
 
 ## Where state lives
@@ -40,19 +40,20 @@ millstream replay --pipeline listings --from dlq --run <run>   # retry a run's d
 ## Scripting
 
 - Exit codes: 0 success, 1 failure (the command says why on stderr), 2 usage error.
-- `--json` on `inbox`, `insights`, `proposals`, `run report` and `backtest` prints JSON, one object per line
+- `--json` on `inbox`, `insights`, `proposals`, `report` and `backtest` prints JSON, one object per line
   for lists; `tail` always prints JSON lines.
 - Millstream never prompts: every input is an argument, a flag, a file or an environment variable.
 - Output and help go to stdout; errors, usage after an error and logs (JSON lines) go to stderr.
 - `--server <url>` (or `MILLSTREAM_SERVER`) sends the commands that change state through a running
   engine's API, with `MILLSTREAM_TOKEN` as its token.
 - Help is colored on a terminal only: `--color=never`, `MILLSTREAM_COLOR=never` or `NO_COLOR` turn it off.
+- `millstream help scripting` says how an agent or a script should drive Millstream.
 
 ## Topics
 
 `millstream help <topic>` prints one of the sections below; `millstream help topics` lists them.
 
-### agents
+### scripting
 
 How an agent, or a script, should drive Millstream.
 

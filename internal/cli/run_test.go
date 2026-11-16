@@ -92,17 +92,17 @@ func Test_runRejects(t *testing.T) {
 			}
 		}
 	}
-	run := func(c RunPackagesCmd) RunPackagesCmd {
+	run := func(c RunCmd) RunCmd {
 		c.Once, c.Slots, c.LeaseTTL = true, 4, time.Minute
 		return c
 	}
 	s.checkRefusals(t, nil, []refusal{
-		{run(RunPackagesCmd{Dirs: []string{fixture("unknown-stream")}}), false,
+		{run(RunCmd{Dirs: []string{fixture("unknown-stream")}}), false,
 			`"path":"steps.b.in[0]","message":"stream listing is read but no step writes it"`},
-		{run(RunPackagesCmd{Dirs: []string{fixture("nope")}}), false, "load package"},
-		{run(RunPackagesCmd{Dirs: []string{pkg}, Var: map[string]string{"nope": "1"}}), true,
+		{run(RunCmd{Dirs: []string{fixture("nope")}}), false, "load package"},
+		{run(RunCmd{Dirs: []string{pkg}, Var: map[string]string{"nope": "1"}}), true,
 			"--var nope: no pipeline declares this variable"},
-		{run(RunPackagesCmd{Dirs: []string{pkg}, Var: map[string]string{"count": "many"}}), false,
+		{run(RunCmd{Dirs: []string{pkg}, Var: map[string]string{"count": "many"}}), false,
 			"variable count from flag"},
 	})
 }
