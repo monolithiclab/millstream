@@ -17,9 +17,6 @@ const (
 	InsightDrift          = "drift"
 	InsightDistillable    = "distillable"
 	InsightUnschedulable  = "unschedulable"
-	// InsightRegression: a revision carrying proposals in a combination nobody validated regressed against the
-	// revision before it (spec section 11.3); the engine raises it after the apply, not the projector.
-	InsightRegression = "regression"
 )
 
 // SeverityInfo is the lowest insight severity; insights share warning and error with check's diagnostics.
@@ -34,7 +31,7 @@ func SeverityRank(s string) int { return slices.Index(Severities, s) }
 // InsightKinds are every kind of the spec, which insights.disable may name, including those a later milestone
 // computes.
 var InsightKinds = []string{InsightSlowStep, InsightFailureCluster, InsightCost, InsightReviewPattern, InsightWaste,
-	InsightDrift, InsightDistillable, InsightUnschedulable, InsightRegression}
+	InsightDrift, InsightDistillable, InsightUnschedulable}
 
 // InsightOpportunities are the kinds that say what could improve rather than how bad something is: an agent step
 // predictable enough for code, the patterns in what reviewers do. Their severity, usually info, ranks no urgency, so

@@ -44,7 +44,7 @@ decision before it reaches the spec.
   intervention rate before and after, against the backtest's prediction, recorded on the proposal. A miss raises an
   insight, a clear regression drafts a rollback, and later drafts read the record. Prerequisite for auto-applying.
 - Every insight leads somewhere: `waste` drafts the `topology` proposal it suggests in words, and `drift` a fix or a
-  rollback (`ideasOf`, `internal/improve/gather.go`, makes no idea from `waste`, `cost`, `drift` or `regression`).
+  rollback (`ideasOf`, `internal/improve/gather.go`, makes no idea from `waste`, `cost` or `drift`).
 - Declared objectives: a pipeline key stating targets and hard constraints over metrics Millstream already measures,
   which insights report against, proposals rank by and validation enforces. Objectives judge a pipeline and never route
   an item (section 4.7). Changes the pipeline file, so it needs a spec change.

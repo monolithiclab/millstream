@@ -22,7 +22,7 @@ secrets: [improveApi, improveToken]
 triggers:
   # Problems, at or above improve.minSeverity. Each kind fires one trigger or the other, so no insight pays for two
   # drafts.
-  insights: { insight: { kinds: [slowStep, failureCluster, cost, waste, drift, unschedulable, regression] } }
+  insights: { insight: { kinds: [slowStep, failureCluster, cost, waste, drift, unschedulable] } }
   # Opportunities, whatever their severity (usually info), which ranks no urgency.
   opportunities: { insight: { minSeverity: info, kinds: [reviewPattern, distillable] } }
   weekly: { cron: "0 6 * * 1" }
