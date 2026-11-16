@@ -45,36 +45,44 @@ func (s *insightStore) Fire(_ context.Context, f store.Firing) (bool, error) {
 }
 
 // A pass fires each matching trigger once per event of another pipeline's insight, skipping muted insights, its
-// own pipeline's, and the events an earlier pass read.
+// own pipeline's, and the events an earlier pass read; an engine that fires only on request (NoCron) fires none.
 func TestFireInsightTriggers(t *testing.T) {
 	ev := func(seq int64, pipelineName, id, severity string) store.Event {
 		data, _ := json.Marshal(map[string]string{"insightId": id, "kind": "failureCluster", "severity": severity})
 		return store.Event{Seq: seq, TS: t0, Pipeline: pipelineName, Kind: store.EventInsightOpened, Data: data}
 	}
-	st := &insightStore{
-		evs: []store.Event{ev(1, "p", "in_a", "error"), ev(2, "p", "in_m", "error"), ev(3, "fix", "in_a", "error"),
-			ev(4, "p", "in_a", "info")},
-		ins: []store.Insight{{Pipeline: "p", ID: "in_a", Kind: "failureCluster", State: store.InsightOpen},
-			{Pipeline: "p", ID: "in_m", Kind: "failureCluster", State: store.InsightMuted}},
-	}
-	e, err := New(Options{Store: st, Now: func() time.Time { return t0 }})
-	if err != nil {
-		t.Fatal(err)
-	}
-	p, err := parsed(fixPipeline)
-	if err != nil {
-		t.Fatal(err)
-	}
-	e.revs[1] = &revision{id: 1, p: p}
-	pipelines := []store.PipelineState{{Name: "fix", ActiveRevision: 1}, {Name: "off", Disabled: true}}
-	for range 2 {
-		if err := e.fireInsightTriggers(t.Context(), pipelines); err != nil {
+	for _, noCron := range []bool{false, true} {
+		st := &insightStore{
+			evs: []store.Event{ev(1, "p", "in_a", "error"), ev(2, "p", "in_m", "error"), ev(3, "fix", "in_a", "error"),
+				ev(4, "p", "in_a", "info")},
+			ins: []store.Insight{{Pipeline: "p", ID: "in_a", Kind: "failureCluster", State: store.InsightOpen},
+				{Pipeline: "p", ID: "in_m", Kind: "failureCluster", State: store.InsightMuted}},
+		}
+		e, err := New(Options{Store: st, Now: func() time.Time { return t0 }, NoCron: noCron})
+		if err != nil {
 			t.Fatal(err)
 		}
-	}
-	if len(st.firings) != 1 || st.firings[0].Key != "in_a.1" || st.firings[0].Source != store.SourceInsight ||
-		e.insightSeq != 4 {
-		t.Fatalf("firings = %+v, seq %d", st.firings, e.insightSeq)
+		p, err := parsed(fixPipeline)
+		if err != nil {
+			t.Fatal(err)
+		}
+		e.revs[1] = &revision{id: 1, p: p}
+		pipelines := []store.PipelineState{{Name: "fix", ActiveRevision: 1}, {Name: "off", Disabled: true}}
+		for range 2 {
+			if err := e.fireInsightTriggers(t.Context(), pipelines); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if noCron {
+			if len(st.firings) != 0 {
+				t.Fatalf("NoCron: firings = %+v, want none", st.firings)
+			}
+			continue
+		}
+		if len(st.firings) != 1 || st.firings[0].Key != "in_a.1" || st.firings[0].Source != store.SourceInsight ||
+			e.insightSeq != 4 {
+			t.Fatalf("firings = %+v, seq %d", st.firings, e.insightSeq)
+		}
 	}
 }
 

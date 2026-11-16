@@ -27,8 +27,12 @@ type insightTrigger struct {
 }
 
 // fireInsightTriggers fires the insight triggers of the pipelines for the insight events recorded since the last
-// pass, or in the last insights window on the engine's first pass. The caller holds projMu.
+// pass, or in the last insights window on the engine's first pass; none on an engine that fires only on request
+// (NoCron). The caller holds projMu.
 func (e *Engine) fireInsightTriggers(ctx context.Context, pipelines []store.PipelineState) error {
+	if e.opts.NoCron {
+		return nil
+	}
 	var triggers []insightTrigger
 	for _, ps := range pipelines {
 		if ps.Disabled {

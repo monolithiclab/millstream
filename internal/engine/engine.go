@@ -68,7 +68,8 @@ type Options struct {
 	// Flags are --var values. A flag naming a variable a pipeline does not declare is ignored for that pipeline:
 	// with several packages, callers check each flag against all of them.
 	Flags map[string]string
-	// NoCron disables the cron scheduler: the engine fires only what Fire is asked to (run --once).
+	// NoCron disables the cron scheduler and the insight triggers: the engine fires only what Fire is asked to
+	// (run --once, the direct millstream improve).
 	NoCron bool
 	// Stubs complete the deliveries of the steps they name with fixed outcomes instead of running the action
 	// (millstream test pipeline).
