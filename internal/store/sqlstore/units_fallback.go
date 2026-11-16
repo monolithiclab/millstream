@@ -171,7 +171,7 @@ func (w *wtx) leaseAudits(p *leasePass, expires time.Time) ([]store.Lease, error
 		if slots, ok := p.req.PipelineSlots[ref.Pipeline]; ok {
 			n = min(n, slots)
 		}
-		if n <= 0 || excluded(p.req.Exclude, ref) {
+		if n <= 0 || !leasable(p.req, ref) {
 			continue
 		}
 		cs, err := w.dueAudits(ref, n)

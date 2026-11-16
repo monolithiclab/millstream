@@ -155,7 +155,8 @@ func (e *Engine) builtinPass(ctx context.Context) int {
 }
 
 // lease leases up to maxN deliveries under the in-memory limits and records them in flight: those of builtin steps
-// for the engine's own loop when builtins is set, a node's (owner's) otherwise.
+// for the engine's own loop when builtins is set, by inclusion (LeaseRequest.Only), so a step applied since
+// limitSources read the revisions is never the loop's; a node's (owner's) otherwise.
 func (e *Engine) lease(ctx context.Context, owner string, maxN int, builtins bool) ([]store.Lease, error) {
 	src, err := e.limitSources(ctx)
 	if err != nil {
@@ -184,8 +185,13 @@ func (e *Engine) lease(ctx context.Context, owner string, maxN int, builtins boo
 		}
 	}
 	for ref, step := range src.steps {
-		if src.builtin[ref] != builtins {
-			req.Exclude = append(req.Exclude, ref) // builtins are the engine's loop's, every other step a node's
+		switch {
+		case builtins && src.builtin[ref]:
+			req.Only = append(req.Only, ref)
+		case builtins: // a node's
+			continue
+		case src.builtin[ref]: // the engine loop's
+			req.Exclude = append(req.Exclude, ref)
 			continue
 		}
 		if placed != nil && !src.placement[ref].Matches(placed.info.Runtimes, placed.info.Labels) {
@@ -202,6 +208,9 @@ func (e *Engine) lease(ctx context.Context, owner string, maxN int, builtins boo
 			free = min(free, tokens)
 		}
 		req.Slots[ref] = free
+	}
+	if builtins && len(req.Only) == 0 {
+		return nil, nil // no builtin step
 	}
 	leases, err := e.st.Lease(ctx, req)
 	if err != nil {

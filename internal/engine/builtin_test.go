@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/monolithiclab/millstream/internal/node"
+	"github.com/monolithiclab/millstream/internal/pipeline"
 	"github.com/monolithiclab/millstream/internal/store"
 )
 
@@ -226,4 +227,39 @@ func (e *Engine) inflightCount() int {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	return len(e.inflight)
+}
+
+// The engine's loop leases builtin steps by inclusion: a pipeline applied and fired by another process between the
+// loop's read of the revisions and its lease is not one the loop knows, and its action deliveries stay pending for
+// a node, never failed as builtins that did not run.
+func TestBuiltinLoopLeasesOnlyBuiltins(t *testing.T) {
+	v := newEnv(t, Options{})
+	v.apply(newPackage(t, manualPipeline("p", "  gate: { action: filter, in: trigger.adhoc, config: { expr: \"true\" } }\n")))
+	v.fire("p", "adhoc", "r1")
+	late := newPackage(t, manualPipeline("q", "  job: { action: ./actions/a, in: trigger.adhoc }\n"), "a")
+	bundle, err := pipeline.EncodeBundle(late.Files)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now, applied := v.e.opts.Now, false
+	v.e.opts.Now = func() time.Time { // read by lease after the revisions, before the store's Lease
+		if !applied {
+			applied = true
+			if _, err := v.st.ApplyRevision(v.ctx, store.PackageRecord{Hash: late.Hash, Bundle: bundle,
+				Pipeline: late.Pipeline}); err != nil {
+				t.Error(err)
+			}
+			if _, err := v.st.Fire(v.ctx, store.Firing{Pipeline: "q", Trigger: "adhoc", Key: "r1",
+				RunID: "run_r1_adhoc"}); err != nil {
+				t.Error(err)
+			}
+		}
+		return now()
+	}
+	v.builtins()
+	ds, err := v.st.Deliveries(v.ctx, store.DeliveryFilter{Pipeline: "q"})
+	if err != nil || len(ds) != 1 || ds[0].State != store.DeliveryPending || ds[0].Attempt != 1 ||
+		ds[0].ErrorClass != "" {
+		t.Fatalf("q's deliveries = %+v, %v; want its job pending, untouched by the builtin loop", ds, err)
+	}
 }

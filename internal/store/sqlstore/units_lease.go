@@ -23,7 +23,7 @@ type candidate struct {
 }
 
 // Lease is the Lease unit (spec section 5.11). The engine's in-memory checks (concurrency, rate, limits) arrive as
-// req.Slots and req.Exclude; paused pipelines and steps are skipped from the store's state. An agent delivery (its step
+// req.Slots, req.Exclude and req.Only; paused pipelines and steps are skipped from the store's state. An agent delivery (its step
 // and revision in req.Reserve) is leased with its budget reservation, only while the budgets allow it (budgetAllows).
 func (s *Store) Lease(ctx context.Context, req store.LeaseRequest) ([]store.Lease, error) {
 	if req.Owner == "" || req.TTL <= 0 {
@@ -185,7 +185,7 @@ func (w *wtx) dueQueues(p *leasePass) (map[string][]candidate, error) {
 	}
 	queues := map[string][]candidate{}
 	for _, ref := range steps {
-		if excluded(req.Exclude, ref) {
+		if !leasable(req, ref) {
 			continue
 		}
 		n := req.Max
@@ -210,13 +210,17 @@ func (w *wtx) dueQueues(p *leasePass) (map[string][]candidate, error) {
 	return queues, nil
 }
 
-func excluded(exclude []store.StepRef, ref store.StepRef) bool {
-	for _, e := range exclude {
+// leasable reports whether the request lets ref be leased: listed in Only, when set, and not excluded.
+func leasable(req store.LeaseRequest, ref store.StepRef) bool {
+	if req.Only != nil && !slices.Contains(req.Only, ref) {
+		return false
+	}
+	for _, e := range req.Exclude {
 		if e.Pipeline == ref.Pipeline && (e.Step == "" || e.Step == ref.Step) {
-			return true
+			return false
 		}
 	}
-	return false
+	return true
 }
 
 // dueDeliveries returns the step's n oldest due deliveries, but those of the runs and revisions given.

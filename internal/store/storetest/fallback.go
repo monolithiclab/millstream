@@ -290,7 +290,7 @@ func TestFallbackEdges(t *testing.T, open Opener) {
 	score := store.StepRef{Pipeline: "fb", Step: "score"}
 	for _, req := range []store.LeaseRequest{
 		{Exclude: []store.StepRef{score}}, {Slots: map[store.StepRef]int{score: 0}},
-		{PipelineSlots: map[string]int{"fb": 0}},
+		{PipelineSlots: map[string]int{"fb": 0}}, {Only: []store.StepRef{{Pipeline: "fb", Step: "plain"}}},
 	} {
 		req.Owner, req.Max, req.TTL = "node1", 10, time.Minute
 		ls, err := e.s.Lease(e.ctx, req)

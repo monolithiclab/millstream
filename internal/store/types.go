@@ -311,6 +311,9 @@ type LeaseRequest struct {
 	// Exclude lists steps the engine holds back (rate limits); a StepRef with an empty Step excludes the whole
 	// pipeline. Paused pipelines and steps are skipped from the store's own pause state.
 	Exclude []StepRef
+	// Only, when non-nil, limits the lease to these steps, their audits included: the engine's builtin loop leases
+	// its steps by inclusion, so a step it does not know yet (applied meanwhile) is never its to lease.
+	Only []StepRef
 	// Slots caps the deliveries leased per step in this call (free concurrency). A nil map means no cap; with a
 	// non-nil map, a step that is absent is not capped.
 	Slots map[StepRef]int

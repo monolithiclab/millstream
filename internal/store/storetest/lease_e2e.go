@@ -139,6 +139,7 @@ func TestLeaseSlotsAndExclusions(t *testing.T, open Opener) {
 		{"step excluded", store.LeaseRequest{Exclude: []store.StepRef{crawl}}, 0},
 		{"pipeline excluded", store.LeaseRequest{Exclude: []store.StepRef{{Pipeline: "listings"}}}, 0},
 		{"other pipeline excluded", store.LeaseRequest{Exclude: []store.StepRef{{Pipeline: "other"}}}, 3},
+		{"only another step", store.LeaseRequest{Only: []store.StepRef{{Pipeline: "listings", Step: "x"}}}, 0},
 	}
 	for _, tt := range tests {
 		// Not parallel: each case leases and then expires what it leased.
@@ -152,5 +153,12 @@ func TestLeaseSlotsAndExclusions(t *testing.T, open Opener) {
 		if _, err := e.s.ExpireLeases(e.ctx); err != nil {
 			t.Fatal(err)
 		}
+	}
+	// Every case above but the zeros spent an attempt: Only's positive case leases from a store of its own.
+	e = newEnv(t, open, fixture)
+	e.fire("r1")
+	if ls, err := e.s.Lease(e.ctx, store.LeaseRequest{Owner: "n", Max: 10, TTL: time.Minute,
+		Only: []store.StepRef{crawl}}); err != nil || len(ls) != 1 {
+		t.Fatalf("only the step: leased %d (%v), want 1", len(ls), err)
 	}
 }
