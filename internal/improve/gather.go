@@ -204,8 +204,7 @@ func (a *action) evidence(ctx context.Context, ideas []idea, files map[string]ap
 			case p.Fingerprint != fp:
 			case p.State == string(store.ProposalRejected):
 				rejected = append(rejected, p)
-			case p.State == string(store.ProposalDrafting) || p.State == string(store.ProposalValidating) ||
-				p.State == string(store.ProposalReady):
+			case store.ProposalState(p.State).Open():
 				open = true
 			}
 		}

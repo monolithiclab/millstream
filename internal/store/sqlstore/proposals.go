@@ -111,6 +111,9 @@ func (s *Store) CreateProposal(ctx context.Context, np store.NewProposal) (store
 			return fmt.Errorf("proposal base %.12s is not the active revision of %s (%.12s): rebase it: %w",
 				np.BaseRevision, np.Pipeline, hash, store.ErrConflict)
 		}
+		if err := w.openFingerprint(np); err != nil {
+			return err
+		}
 		if err := w.suppressed(np); err != nil {
 			return err
 		}
@@ -135,6 +138,27 @@ func (s *Store) CreateProposal(ctx context.Context, np store.NewProposal) (store
 		return store.Proposal{}, fmt.Errorf("create proposal: %w", err)
 	}
 	return out, nil
+}
+
+// openFingerprint refuses a proposal answering insights whose fingerprint an open proposal of the pipeline
+// (drafting, validating or ready) answering insights has already: one idea, one open proposal, however many runs
+// drafted it at once. A proposal answering no insight, an alternative a person drafts, neither is refused nor holds
+// another back (spec section 11.3).
+func (w *wtx) openFingerprint(np store.NewProposal) error {
+	if len(np.Insights) == 0 {
+		return nil
+	}
+	var id string
+	err := w.queryRow(`SELECT id FROM proposals WHERE pipeline = ? AND fingerprint = ? AND state IN (?, ?, ?)
+		AND insights <> '[]' ORDER BY id LIMIT 1`, np.Pipeline, np.Fingerprint, store.ProposalDrafting,
+		store.ProposalValidating, store.ProposalReady).Scan(&id)
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		return nil
+	case err != nil:
+		return err
+	}
+	return fmt.Errorf("the open proposal %s has this fingerprint already: %w", id, store.ErrConflict)
 }
 
 // suppressed refuses a proposal whose fingerprint a rejection suppresses: until an insight it answers weighs twice

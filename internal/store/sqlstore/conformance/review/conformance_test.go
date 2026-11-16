@@ -106,6 +106,10 @@ func TestProposalSuppression(t *testing.T) {
 	storetest.TestProposalSuppression(t, memoryStore)
 }
 
+func TestProposalOpenFingerprint(t *testing.T) {
+	storetest.TestProposalOpenFingerprint(t, memoryStore)
+}
+
 func TestProposalPublishing(t *testing.T) {
 	storetest.TestProposalPublishing(t, memoryStore)
 }

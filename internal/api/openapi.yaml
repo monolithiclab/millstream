@@ -953,7 +953,8 @@ paths:
         then validates it before answering: check on the patched package, the base revision's evals of every affected
         action before and after, and the backtest. The proposal comes back ready when all pass, drafting with its
         report otherwise. A fingerprint a rejection suppresses (until an insight it answers doubles in severity) is a
-        conflict, as is any proposal on a production deployment, which makes none (D31).
+        conflict, as is, for a proposal answering insights, a fingerprint an open proposal of the pipeline (drafting,
+        validating or ready) has already, and any proposal on a production deployment, which makes none (D31).
       requestBody:
         required: true
         content:

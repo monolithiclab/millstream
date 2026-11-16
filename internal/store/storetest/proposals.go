@@ -237,6 +237,36 @@ func TestProposalSuppression(t *testing.T, open Opener) {
 	e.createProposal(np("b"))
 }
 
+// TestProposalOpenFingerprint: a pipeline holds one open proposal (drafting, validating or ready) per fingerprint
+// among those answering insights: a second one is refused while the first is open, so two runs drafting the same
+// idea at once leave one proposal, and it is created once the first is closed. Proposals answering no insight, the
+// alternatives a person drafts, are neither held back nor hold another back (spec section 11.3).
+func TestProposalOpenFingerprint(t *testing.T, open Opener) {
+	e := newEnv(t, open, fixture)
+	base := hashOf(fixture)
+	np := func(id string) store.NewProposal {
+		p := proposal(id, base, []string{"pipeline.yaml"}, nil)
+		p.Fingerprint, p.Insights = "same idea", []string{"i1"}
+		return p
+	}
+	e.createProposal(np("a"))
+	free := np("free")
+	free.Insights = nil
+	e.createProposal(free)
+	wantErr(t, func() error { _, err := e.s.CreateProposal(e.ctx, np("b")); return err }(), store.ErrConflict)
+	e.ready("a")
+	wantErr(t, func() error { _, err := e.s.CreateProposal(e.ctx, np("b")); return err }(), store.ErrConflict)
+	if _, err := e.s.RejectProposal(e.ctx, "a", "not now", "ana"); err != nil {
+		t.Fatal(err)
+	}
+	e.createProposal(np("b"))
+	if states := e.proposalStates(); !maps.Equal(states,
+		map[string]store.ProposalState{"a": store.ProposalRejected, "b": store.ProposalDrafting,
+			"free": store.ProposalDrafting}) {
+		t.Fatalf("states = %v", states)
+	}
+}
+
 // TestProposalUnitsFailpoints: a crash before the acceptance commits leaves the proposal ready and its overlap open;
 // after it, both are as the unit left them. The proposals-only token's hash is kept and replaced.
 func TestProposalUnitsFailpoints(t *testing.T, open Opener) {

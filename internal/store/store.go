@@ -212,7 +212,8 @@ type Store interface {
 	// CreateProposal is the creation of a proposal (spec section 11.3), drafting: its base must be the pipeline's
 	// active revision (ErrConflict otherwise), and its fingerprint must not be suppressed: a rejected proposal with
 	// the same fingerprint suppresses it until an insight it answers reaches twice the severity weight it had at
-	// the rejection (ErrConflict). A proposal answering no insight is never suppressed. It records proposalCreated.
+	// the rejection (ErrConflict). A proposal answering no insight is never suppressed. An open proposal of the
+	// pipeline with the same fingerprint refuses one answering insights too (ErrConflict). It records proposalCreated.
 	CreateProposal(ctx context.Context, p NewProposal) (Proposal, error)
 	// StartValidation moves a drafting, ready or stale proposal to validating, and takes over a validating one last
 	// updated before takeOver (its validation presumed lost: zero never takes over); any other state is

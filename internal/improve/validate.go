@@ -35,8 +35,10 @@ type DraftFile struct {
 
 // Outcome is validate's output, and what propose and publish pass on: what became of a draft.
 type Outcome struct {
-	// Outcome is proposed (created; State says whether it passed its validation), suppressed (people rejected the idea and its evidence has not
-	// changed enough), refused (the patch breaks its kind's rules) or skipped (the draft proposes nothing).
+	// Outcome is proposed (created; State says whether it passed its validation), open (an open proposal, Proposal,
+	// answers the idea already: another run proposed it meanwhile), suppressed (people rejected the idea and its
+	// evidence has not changed enough), refused (the patch breaks its kind's rules) or skipped (the draft proposes
+	// nothing).
 	Outcome   string   `json:"outcome"`
 	Pipeline  string   `json:"pipeline,omitempty"`
 	Kind      string   `json:"kind,omitempty"`
@@ -54,6 +56,7 @@ type Outcome struct {
 const (
 	OutcomeProposed   = "proposed"
 	OutcomeSuppressed = "suppressed"
+	OutcomeOpen       = "open"
 	OutcomeRefused    = "refused"
 	OutcomeSkipped    = "skipped"
 )
@@ -102,6 +105,14 @@ func (a *action) propose(ctx context.Context, ev Evidence, d Draft) (Outcome, er
 	var ae *apiError
 	switch {
 	case errors.As(err, &ae) && ae.status == http.StatusConflict:
+		open, err := a.openProposal(ctx, ev)
+		if err != nil {
+			return Outcome{}, err
+		}
+		if open.ID != "" {
+			return Outcome{Outcome: OutcomeOpen, Proposal: open.ID, State: open.State, Message: ae.msg,
+				Insights: insights}, nil
+		}
 		return Outcome{Outcome: OutcomeSuppressed, Message: ae.msg, Insights: insights}, nil
 	case errors.As(err, &ae) && ae.status == http.StatusBadRequest:
 		return Outcome{Outcome: OutcomeRefused, Message: ae.msg, Insights: insights}, nil
@@ -109,6 +120,21 @@ func (a *action) propose(ctx context.Context, ev Evidence, d Draft) (Outcome, er
 		return Outcome{}, err
 	}
 	return Outcome{Outcome: OutcomeProposed, Proposal: p.ID, State: p.State, Insights: insights}, nil
+}
+
+// openProposal returns the open proposal (drafting, validating or ready) of the evidence's pipeline with its
+// fingerprint, the zero proposal without one.
+func (a *action) openProposal(ctx context.Context, ev Evidence) (api.Proposal, error) {
+	ps, err := a.api.proposals(ctx, ev.Pipeline, "")
+	if err != nil {
+		return api.Proposal{}, err
+	}
+	for _, p := range ps {
+		if p.Fingerprint == ev.Fingerprint && store.ProposalState(p.State).Open() {
+			return p, nil
+		}
+	}
+	return api.Proposal{}, nil
 }
 
 // evidenceOf reads back the evidence a draft was made from: the parent of the draft's item, in this pipeline.

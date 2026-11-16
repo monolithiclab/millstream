@@ -282,7 +282,8 @@ func TestGatherOpenOpportunities(t *testing.T) {
 }
 
 // validate turns a draft's files into a patch on the evidence's base and creates the proposal with the idea's
-// fingerprint; a suppressed idea and a draft of another kind are reported, not failed.
+// fingerprint; a suppressed idea, an idea an open proposal answers already and a draft of another kind are reported,
+// not failed.
 func TestValidate(t *testing.T) {
 	f := newFakeAPI()
 	ev := Evidence{Pipeline: "listings", BaseRevision: baseHash, Kind: "lessons", Fingerprint: "improve-x",
@@ -311,6 +312,13 @@ func TestValidate(t *testing.T) {
 	if outs, err = validate(context.Background(), a, item(draft)); err != nil ||
 		outs[0].Payload.(Outcome).Outcome != OutcomeSuppressed {
 		t.Errorf("suppressed: %+v, %v", outs, err)
+	}
+	// Another run proposed the idea meanwhile: its open proposal answers this draft too.
+	f.proposals = []api.Proposal{{ID: "pr_0", Pipeline: "listings", Fingerprint: "improve-x", State: "rejected"},
+		{ID: "pr_2", Pipeline: "listings", Fingerprint: "improve-x", State: "ready"}}
+	if outs, err = validate(context.Background(), a, item(draft)); err != nil ||
+		outs[0].Payload.(Outcome).Outcome != OutcomeOpen || outs[0].Payload.(Outcome).Proposal != "pr_2" {
+		t.Errorf("open: %+v, %v", outs, err)
 	}
 	for body, want := range map[string]string{
 		`{"kind":"config","rationale":"r","files":[]}`:                               OutcomeRefused,

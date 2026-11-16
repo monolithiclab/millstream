@@ -84,8 +84,8 @@ func (e *Engine) MintProposalToken(ctx context.Context) (string, error) {
 }
 
 // CreateProposal checks a patch against its kind's path rules on the pipeline's active revision, records it
-// drafting, and validates it. A patch the rules refuse is store.ErrInvalid; a suppressed fingerprint is
-// store.ErrConflict.
+// drafting, and validates it. A patch the rules refuse is store.ErrInvalid; a suppressed fingerprint, or one an
+// open proposal of the pipeline has (for a proposal answering insights), is store.ErrConflict.
 func (e *Engine) CreateProposal(ctx context.Context, req ProposalRequest) (store.Proposal, error) {
 	if err := e.developmentOnly("create a proposal"); err != nil {
 		return store.Proposal{}, err
