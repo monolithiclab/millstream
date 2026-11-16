@@ -248,7 +248,8 @@ paths:
       operationId: applyPackages
       summary: >-
         Apply packages as new revisions (millstream apply). Each package is checked, and so is every other pipeline of
-        the deployment; a check error refuses them all (invalid). The body may be up to 64 MiB.
+        the deployment; a check error refuses them all (invalid). The body may be up to 64 MiB. A package that is
+        exactly an accepted proposal's patch over the active revision, its base, records the proposal applied.
       requestBody:
         required: true
         content:
@@ -1107,8 +1108,8 @@ paths:
                 additionalProperties: false
                 properties:
                   proposal: { type: string }
-                  publisher: { type: string, description: "apply, patch-file, git-pr-gh or git-pr-glab." }
-                  location: { type: string, description: The revision number, the patch file or the pull request URL. }
+                  publisher: { type: string, description: "apply or patch-file." }
+                  location: { type: string, description: The revision number or the patch file. }
                   again: { type: boolean, description: Published before; nothing was done this time. }
         "400": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
@@ -1798,12 +1799,6 @@ components:
                 type: object
                 description: The package's files by slash-separated path, each base64.
                 additionalProperties: { type: string, contentEncoding: base64 }
-              proposals:
-                type: array
-                description: >-
-                  The accepted proposals the package carries: the Millstream-Proposal trailers of the commit it comes
-                  from. Each is recorded applied, validated in this combination or not.
-                items: { type: string }
         force: { type: boolean, description: Let through breaking an importer's contract. }
         message: { type: string, description: Why, kept with each revision. }
     ApplyResponse:
@@ -1915,8 +1910,8 @@ components:
           required: [publisher, location, at]
           additionalProperties: false
           properties:
-            publisher: { type: string, description: "improve.publish's action: apply, patch-file, git-pr-gh or git-pr-glab." }
-            location: { type: string, description: The revision apply created, the file patch-file wrote, or the pull request opened. }
+            publisher: { type: string, description: "improve.publish's action: apply or patch-file." }
+            location: { type: string, description: The revision apply created or the file patch-file wrote. }
             at: { type: string, format: date-time }
     ValidationReport:
       type: object

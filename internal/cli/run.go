@@ -257,7 +257,7 @@ func (h engineHost) run(ctx context.Context, rt *Runtime, env *pipeline.Environm
 	if site == nil {
 		serveDone <- nil
 	} else {
-		pub, err := newPublisher(rt, env, e)
+		pub, err := newPublisher(env, e)
 		var srv *apiServer
 		if err == nil {
 			srv, err = newAPIServer(st, e, notes, logs, apiExtras{rt: rt, arts: h.arts, nodes: nodes, nodeAPI: nodeAPI,

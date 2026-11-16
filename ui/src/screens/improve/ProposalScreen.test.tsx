@@ -114,7 +114,7 @@ describe('ProposalScreen', () => {
     const { user } = await open('p-0151', api);
     await user.click(screen.getByRole('button', { name: 'Accept…' }));
     const dialog = screen.getByRole('dialog', { name: 'Accept proposal p-0151?' });
-    expect(dialog).toHaveTextContent('a development revision (apply), a patch file (patch-file) or a pull request');
+    expect(dialog).toHaveTextContent('a development revision (apply) or a patch file (patch-file).');
     await vi.waitFor(() => expect(dialog).toHaveTextContent('only while r14 is the active revision'));
     expect(dialog).toHaveTextContent('become stale');
     await user.click(within(dialog).getByRole('button', { name: 'Accept' }));
@@ -232,9 +232,7 @@ describe('ProposalScreen', () => {
     await open('p-0142', api);
     expect(section('Validation')).toHaveTextContent('Not validated yet.');
     expect(section('History')).toHaveTextContent(/Accepted by nicolas, /);
-    expect(section('What and why')).toHaveTextContent(
-      /Publishedby git-pr-gh, .*: https:\/\/git\.example\/pipelines\/pull\/12/,
-    );
+    expect(section('What and why')).toHaveTextContent(/Publishedby patch-file, .*: proposals\/p-0142\.patch/);
     expect(
       await within(section('Evidence')).findByRole('link', { name: 'Insight in_fail_score, no longer listed' }),
     ).toBeInTheDocument();

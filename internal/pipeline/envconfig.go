@@ -116,18 +116,18 @@ func applyVariables(e *Environment, lookup func(string) (string, bool), names []
 }
 
 // setText sets s from a variable's (or a default tag's) text: a secret source becomes { env: <s.Var> }, the
-// variable holding the secret itself; a list or a map is YAML flow syntax ({ lab: ghcr.io/x }), replacing the
-// whole value; any other leaf is a scalar.
+// variable holding the secret itself; a map is YAML flow syntax ({ lab: ghcr.io/x }), replacing the whole value;
+// any other leaf is a scalar.
 func setText(s Setting, text string) error {
 	n := &yaml.Node{Kind: yaml.ScalarNode, Value: text}
 	switch s.Value.Kind() {
 	case reflect.Pointer:
 		s.Value.Set(reflect.ValueOf(&SecretSource{Env: s.Var}))
 		return nil
-	case reflect.Map, reflect.Slice:
+	case reflect.Map:
 		var doc yaml.Node
 		if err := yaml.Unmarshal([]byte(text), &doc); err != nil || len(doc.Content) == 0 {
-			return fmt.Errorf("%s: want YAML flow syntax, such as { key: value } or [a, b]", s.Key)
+			return fmt.Errorf("%s: want YAML flow syntax, such as { key: value }", s.Key)
 		}
 		n = doc.Content[0]
 	case reflect.String:
@@ -207,17 +207,6 @@ func decode(n *yaml.Node, v reflect.Value, path string) error {
 			m.SetMapIndex(reflect.ValueOf(n.Content[i].Value), elem)
 		}
 		v.Set(m)
-	case reflect.Slice:
-		if n.Kind != yaml.SequenceNode {
-			return errAt(n, path, "must be a list")
-		}
-		s := reflect.MakeSlice(v.Type(), len(n.Content), len(n.Content))
-		for i, c := range n.Content {
-			if err := decode(c, s.Index(i), indexPath(path, i)); err != nil {
-				return err
-			}
-		}
-		v.Set(s)
 	default:
 		if n.Kind != yaml.ScalarNode || v.Kind() == reflect.Int && n.ShortTag() != "!!int" ||
 			n.Decode(v.Addr().Interface()) != nil {

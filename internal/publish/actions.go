@@ -13,7 +13,6 @@ import (
 
 	"github.com/monolithiclab/millstream/internal/pipeline"
 	"github.com/monolithiclab/millstream/internal/proposals"
-	"github.com/monolithiclab/millstream/internal/runtime/container"
 	"github.com/monolithiclab/millstream/internal/store"
 )
 
@@ -21,7 +20,7 @@ import (
 // (engine.Engine.ApplyProposal).
 type Applier interface {
 	// ApplyProposal applies files as the pipeline's new revision only while its active revision is still base, the
-	// proposal's (store.ErrConflict otherwise), and records the proposal applied in that combination. A production
+	// proposal's (store.ErrConflict otherwise), and records the proposal applied. A production
 	// deployment refuses it.
 	ApplyProposal(ctx context.Context, proposalID, pipelineName, base string, files map[string][]byte) (
 		store.RevisionID, error)
@@ -33,13 +32,6 @@ type Deps struct {
 	Packages Packages
 	// Applier is apply's.
 	Applier Applier
-	// Runtime is the container runtime the git actions run in; without one they refuse to run (spec section 11.7).
-	Runtime container.JobRunner
-	// Env is the engine's environment, from which the git actions take the variables improve.git.env names.
-	Env func(string) (string, bool)
-
-	// jobs runs the git actions' jobs in place of Runtime: tests run them on the host.
-	jobs jobRunner
 }
 
 // New returns the publish action improve.publish names, configured by the rest of improve, with Verify in front of
@@ -63,12 +55,6 @@ func New(im pipeline.Improve, d Deps) (Publisher, error) {
 			return nil, errors.New("publish: patch-file needs improve.patchFile.dir")
 		}
 		a = patchFile{dir: im.PatchFile.Dir}
-	case pipeline.PublishGitPRGH, pipeline.PublishGitPRGLab:
-		g, err := newGitPR(im.Publish, im.Git, d)
-		if err != nil {
-			return nil, err
-		}
-		a = g
 	default:
 		return nil, fmt.Errorf("publish: unknown action %q: want one of %v", im.Publish, pipeline.PublishActions)
 	}
@@ -87,7 +73,7 @@ func (a applyAction) publish(ctx context.Context, acc Accepted, prep proposals.P
 	return strconv.FormatInt(int64(rev), 10), nil
 }
 
-// proposalID is the shape of the proposal ids a file or branch name may hold.
+// proposalID is the shape of the proposal ids a file name may hold.
 var proposalID = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
 
 // patchFile is patch-file: the validated patch, byte for byte, as <dir>/<proposal id>.patch.

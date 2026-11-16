@@ -108,10 +108,9 @@ when started by hand (`gh workflow run scenarios.yml`). Together they cover:
 - The end-to-end CLI and engine tests, and the real-process twins of the in-process tests (under the tag, `fakeexec`
   runs the built fake binary).
 - Docker and Postgres tests, and the long property runs. The candidate sandbox's tests build Go actions in
-  `sandbox.DefaultImage` and the publish container's run `alpine/git`, both pinned by digest and pulled once when
-  missing (the backtest's sandbox test skips without the Go image); the git actions publish to a local bare
-  repository with fake `gh` and `glab` scripts, never to a forge.
-- The test images (Postgres, SeaweedFS, `alpine/git`) are Docker Hub images pulled through `mirror.gcr.io`, Google's
+  `sandbox.DefaultImage`, pinned by digest and pulled once when missing (the backtest's sandbox test skips without
+  it).
+- The test images (Postgres, SeaweedFS) are Docker Hub images pulled through `mirror.gcr.io`, Google's
   anonymous Docker Hub cache, under the same digests. GitHub's runners share their addresses, and so their anonymous
   quotas: Postgres came from ECR Public until its 500 GB a month ran out on 2026-10-26 (`toomanyrequests: Data limit
   exceeded`). `sandbox.DefaultImage` stays on Docker Hub, since it is the product's default, not a test image.

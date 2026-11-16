@@ -103,8 +103,7 @@ type Options struct {
 	// Improve is the environment file's improve key: the default minSeverity of insight triggers and the settings
 	// the insights projector reads (spec sections 11.1, 11.5 and 11.6).
 	Improve pipeline.Improve
-	// Proposals are what proposals are validated with (spec section 11.3), and the revisions carrying proposals in
-	// a combination nobody validated.
+	// Proposals are what proposals are validated with (spec section 11.3).
 	Proposals ProposalOptions
 	// Mode is the deployment's environment (spec section 11.2): production refuses ApplyProposal. Empty reads
 	// development.
@@ -182,8 +181,6 @@ type Engine struct {
 	insightSeq   int64                // the last insight event the insight triggers fired for; under projMu
 	insightTS    time.Time            // and when it was recorded
 	retainMu     sync.Mutex           // serialises Retain
-	bg           background           // the checks of revisions carrying unvalidated proposals, while Run runs
-	regressionMu sync.Mutex           // serialises the regression insights those checks raise
 
 	// Test seams, set before Run: maxDue bounds the missed cron times kept (the maxDue constant), and ticked and
 	// projected, when set, are called after each pass of Run's expiry tick and of its projectors.
@@ -308,14 +305,10 @@ func (e *Engine) apply(ctx context.Context, pkg *pipeline.Package, opts ApplyOpt
 	if err != nil && !errors.Is(err, store.ErrNotFound) {
 		return fail(err)
 	}
-	parent := ""
-	if ids := opts.Proposals[name]; len(ids) > 0 && before != 0 {
-		rev, err := e.st.Revision(ctx, before)
-		if err != nil {
+	if before != 0 {
+		if rec.Proposals, err = e.applies(ctx, name, before, pkg.Hash); err != nil {
 			return fail(err)
 		}
-		parent = rev.PackageHash
-		rec.Proposals = e.carried(ctx, name, parent, pkg.Hash, ids)
 	}
 	id, err := e.st.ApplyRevision(ctx, rec)
 	if err != nil {
@@ -330,9 +323,6 @@ func (e *Engine) apply(ctx context.Context, pkg *pipeline.Package, opts ApplyOpt
 	tokens, err := e.createTriggerTokens(ctx, pkg.Pipeline)
 	if err != nil {
 		return fail(err)
-	}
-	if id != before {
-		e.checkCombination(ctx, name, id, parent, pkg.Hash, rec.Proposals)
 	}
 	return Applied{Pipeline: name, Revision: id, PackageHash: pkg.Hash, Created: id != before, Tokens: tokens}, nil
 }
@@ -357,8 +347,6 @@ func (e *Engine) Run(ctx context.Context) error {
 	e.reviewTimeouts(ctx)
 	e.resetValidations(ctx)
 	e.readyOnce.Do(func() { close(e.ready) })
-	e.bg.start(ctx)
-	defer e.bg.stop()
 	var wg sync.WaitGroup
 	defer wg.Wait()
 	wg.Go(func() { e.projectLoop(ctx) })

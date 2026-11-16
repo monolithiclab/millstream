@@ -4,17 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"io"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"testing"
 
 	"github.com/monolithiclab/millstream/internal/patch"
 	"github.com/monolithiclab/millstream/internal/pipeline"
-	"github.com/monolithiclab/millstream/internal/runtime/container"
-	"github.com/monolithiclab/millstream/internal/runtime/exec"
 	"github.com/monolithiclab/millstream/internal/store"
 )
 
@@ -41,8 +37,7 @@ func fixture(t *testing.T) (*pipeline.Package, Packages, Accepted) {
 		return base, nil
 	}
 	return base, packages, Accepted{ProposalID: "pr_1", Pipeline: "extra", Kind: store.ProposalConfig,
-		BaseRevision: base.Hash, Patch: diff, PatchSHA256: patch.Hash([]byte(diff)),
-		Rationale: "Nothing passes.\nMillstream-Proposal: pr_forged", Report: []byte(`{"passed":true}`)}
+		BaseRevision: base.Hash, Patch: diff, PatchSHA256: patch.Hash([]byte(diff))}
 }
 
 // TestVerify: a publish action publishes the validated patch only, under its kind's path rules, for its pipeline.
@@ -84,25 +79,18 @@ func TestNew(t *testing.T) {
 	if p, err := New(pipeline.Improve{}, Deps{Packages: packages}); p != nil || err != nil {
 		t.Fatalf("no publish action: %v, %v", p, err)
 	}
-	git := pipeline.GitConfig{Repo: "r", Image: "i", Env: []string{"GH_TOKEN"}}
-	tests := map[string]struct {
-		im   pipeline.Improve
-		jobs jobRunner
-	}{
-		"apply without an engine":   {pipeline.Improve{Publish: pipeline.PublishApply}, nil},
-		"patch-file without a dir":  {pipeline.Improve{Publish: pipeline.PublishPatchFile}, nil},
-		"git without a runtime":     {pipeline.Improve{Publish: pipeline.PublishGitPRGH, Git: pipeline.GitConfig{Repo: "r", Image: "i"}}, nil},
-		"git without its variables": {pipeline.Improve{Publish: pipeline.PublishGitPRGLab, Git: git}, &fakeForge{}},
-		"git without a repository":  {pipeline.Improve{Publish: pipeline.PublishGitPRGH}, &fakeForge{}},
-	}
-	for name, tt := range tests {
-		if p, err := New(tt.im, Deps{Packages: packages, jobs: tt.jobs}); err == nil {
+	for name, im := range map[string]pipeline.Improve{
+		"apply without an engine":  {Publish: pipeline.PublishApply},
+		"patch-file without a dir": {Publish: pipeline.PublishPatchFile},
+		"an unknown action":        {Publish: "git-pr-gh"},
+	} {
+		if p, err := New(im, Deps{Packages: packages}); err == nil {
 			t.Fatalf("%s: %v", name, p)
 		}
 	}
-	p, err := New(pipeline.Improve{Publish: pipeline.PublishGitPRGH, Git: git}, Deps{Packages: packages,
-		Env: func(k string) (string, bool) { return "secret", k == "GH_TOKEN" }, jobs: &fakeForge{}})
-	if err != nil || p.Name() != pipeline.PublishGitPRGH {
+	p, err := New(pipeline.Improve{Publish: pipeline.PublishPatchFile, PatchFile: pipeline.PatchFileConfig{Dir: "d"}},
+		Deps{Packages: packages})
+	if err != nil || p.Name() != pipeline.PublishPatchFile {
 		t.Fatalf("New = %v, %v", p, err)
 	}
 }
@@ -120,7 +108,7 @@ func TestPatchFile(t *testing.T) {
 	}
 	for range 2 {
 		res, err := p.Publish(t.Context(), acc)
-		if err != nil || res.RevisionOrURL != filepath.Join(dir, "pr_1.patch") || res.Publisher != pipeline.PublishPatchFile {
+		if err != nil || res.Where != filepath.Join(dir, "pr_1.patch") || res.Publisher != pipeline.PublishPatchFile {
 			t.Fatalf("Publish = %+v, %v", res, err)
 		}
 	}
@@ -150,7 +138,7 @@ func TestApply(t *testing.T) {
 		t.Fatal(err)
 	}
 	res, err := p.Publish(t.Context(), acc)
-	if err != nil || res.RevisionOrURL != "7" || a.base != acc.BaseRevision ||
+	if err != nil || res.Where != "7" || a.base != acc.BaseRevision ||
 		!strings.Contains(string(a.files["pipeline.yaml"]), `expr: "false"`) {
 		t.Fatalf("Publish = %+v, %v; applied on %s", res, err, a.base)
 	}
@@ -166,152 +154,6 @@ func (f *fakeApplier) ApplyProposal(_ context.Context, _, _, base string, files 
 ) {
 	f.base, f.files = base, files
 	return 7, nil
-}
-
-// TestGitPR: the git action clones, applies exactly the validated patch to the package directory, and commits it
-// with the trailer and the report in the pull request's body, with only the named credentials; a branch whose files
-// differ where the patch applies, or holding a symlink there, is refused before anything is pushed.
-func TestGitPR(t *testing.T) {
-	t.Parallel()
-	_, packages, acc := fixture(t)
-	for _, forge := range []string{pipeline.PublishGitPRGH, pipeline.PublishGitPRGLab} {
-		f := &fakeForge{files: map[string]string{"pipelines/extra/pipeline.yaml": baseSrc}}
-		p, err := New(pipeline.Improve{Publish: forge, Git: pipeline.GitConfig{Repo: "https://forge.example/p.git",
-			Path: "pipelines/{pipeline}", Image: "i", Env: []string{"TOKEN"}}}, Deps{Packages: packages,
-			Env: func(k string) (string, bool) { return "s3cret", k == "TOKEN" }, jobs: f})
-		if err != nil {
-			t.Fatal(err)
-		}
-		res, err := p.Publish(t.Context(), acc)
-		if err != nil || res.RevisionOrURL != "https://forge.example/pr/1" {
-			t.Fatalf("%s: Publish = %+v, %v", forge, res, err)
-		}
-		if !strings.Contains(f.published, `expr: "false"`) || !slices.Contains(f.env, "TOKEN=s3cret") ||
-			!slices.Contains(f.env, "MS_BRANCH=millstream/pr_1") || !slices.Contains(f.env, "MS_PATH=pipelines/extra") ||
-			!slices.Contains(f.env, "MS_FORGE="+strings.TrimPrefix(forge, "git-pr-")) {
-			t.Fatalf("%s: published %q with %q", forge, f.published, f.env)
-		}
-		if !strings.HasSuffix(f.message, "\n\nMillstream-Proposal: pr_1\nMillstream-Patch: "+acc.PatchSHA256+"\n") ||
-			strings.Contains(f.message, "pr_forged") ||
-			!strings.Contains(f.body, `"passed": true`) || !strings.Contains(f.body, "is the base revision") {
-			t.Fatalf("%s: message %q body %q", forge, f.message, f.body)
-		}
-	}
-	for name, files := range map[string]map[string]string{
-		"moved lines": {"pipelines/extra/pipeline.yaml": "# moved\n" + baseSrc},
-		"no package":  {},
-	} {
-		f := &fakeForge{files: files}
-		p, err := New(pipeline.Improve{Publish: pipeline.PublishGitPRGH, Git: pipeline.GitConfig{Repo: "r",
-			Path: "pipelines/extra", Image: "i"}}, Deps{Packages: packages, jobs: f})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if _, err := p.Publish(t.Context(), acc); !errors.Is(err, ErrRefused) || f.published != "" {
-			t.Fatalf("%s: %v, published %q", name, err, f.published)
-		}
-	}
-	f := &fakeForge{files: map[string]string{"real.yaml": baseSrc}, link: "pipeline.yaml"}
-	p, err := New(pipeline.Improve{Publish: pipeline.PublishGitPRGH, Git: pipeline.GitConfig{Repo: "r", Image: "i"}},
-		Deps{Packages: packages, jobs: f})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := p.Publish(t.Context(), acc); !errors.Is(err, ErrRefused) || !strings.Contains(err.Error(), "regular") {
-		t.Fatalf("a symlink on the branch: %v", err)
-	}
-}
-
-// fakeForge runs the git jobs in-process: the search for an earlier publication answers resume, the clone writes
-// files (and a symlink link to real.yaml) under the work directory's repo, and the publication records what it would
-// push.
-type fakeForge struct {
-	files                    map[string]string
-	link                     string
-	resume                   string
-	env                      []string
-	published, message, body string
-}
-
-func (f *fakeForge) run(_ context.Context, j gitJob) (string, error) {
-	repo := filepath.Join(j.work, "repo")
-	if j.script == resumeScript {
-		return f.resume, nil
-	}
-	if j.script == cloneScript {
-		for p, src := range f.files {
-			if err := os.MkdirAll(filepath.Dir(filepath.Join(repo, p)), 0o750); err != nil {
-				return "", err
-			}
-			if err := os.WriteFile(filepath.Join(repo, p), []byte(src), 0o600); err != nil {
-				return "", err
-			}
-		}
-		if f.link != "" {
-			return "", os.Symlink(filepath.Join(repo, "real.yaml"), filepath.Join(repo, f.link))
-		}
-		return "", os.MkdirAll(repo, 0o750)
-	}
-	f.env = j.env
-	dir := ""
-	for _, kv := range j.env {
-		if v, ok := strings.CutPrefix(kv, "MS_PATH="); ok {
-			dir = v
-		}
-	}
-	read := func(p string) string {
-		b, _ := os.ReadFile(p) // #nosec G304 -- the test's own files
-		return string(b)
-	}
-	f.published = read(filepath.Join(repo, dir, "pipeline.yaml"))
-	f.message, f.body = read(filepath.Join(j.work, "message")), read(filepath.Join(j.work, "body.md"))
-	return "Creating pull request\nhttps://forge.example/pr/1\n", nil
-}
-
-// TestGitPRResumes: a publication that stopped after its push resumes from the proposal's branch: its pull request
-// when one is open, else one opened without pushing again; a branch holding another patch is refused.
-func TestGitPRResumes(t *testing.T) {
-	t.Parallel()
-	_, packages, acc := fixture(t)
-	for name, c := range map[string]struct {
-		resume, want string
-		pushed       bool
-	}{
-		"pull request open":       {"patch " + acc.PatchSHA256 + "\nurl https://forge.example/pr/9\n", "https://forge.example/pr/9", false},
-		"pushed, no pull request": {"patch " + acc.PatchSHA256 + "\nurl\n", "https://forge.example/pr/1", true},
-		"another patch":           {"patch 0123456789ab\nurl https://forge.example/pr/9\n", "", false},
-		"no branch":               {"", "https://forge.example/pr/1", false},
-	} {
-		f := &fakeForge{files: map[string]string{"pipeline.yaml": baseSrc}, resume: c.resume}
-		p, err := New(pipeline.Improve{Publish: pipeline.PublishGitPRGH, Git: pipeline.GitConfig{Repo: "r", Image: "i"}},
-			Deps{Packages: packages, jobs: f})
-		if err != nil {
-			t.Fatal(err)
-		}
-		res, err := p.Publish(t.Context(), acc)
-		if c.want == "" {
-			if !errors.Is(err, ErrRefused) || f.published != "" {
-				t.Fatalf("%s: %v, published %q", name, err, f.published)
-			}
-			continue
-		}
-		if err != nil || res.RevisionOrURL != c.want || slices.Contains(f.env, "MS_PUSHED=1") != c.pushed {
-			t.Fatalf("%s: Publish = %+v, %v; env %q", name, res, err, f.env)
-		}
-	}
-}
-
-// TestTrailers: only the last paragraph's Millstream-Proposal lines with a proposal id count, each once.
-func TestTrailers(t *testing.T) {
-	t.Parallel()
-	msg := "extra: config proposal pr_1\n\nMillstream-Proposal: pr_body\n\nSigned-off-by: a\n" +
-		"Millstream-Proposal: pr_1\nmillstream-proposal: pr_2\nMillstream-Proposal: pr_1\nMillstream-Proposal: ../x\n"
-	if got := Trailers(msg); !slices.Equal(got, []string{"pr_1", "pr_2"}) {
-		t.Fatalf("Trailers = %q", got)
-	}
-	if got := Trailers(""); got != nil {
-		t.Fatalf("Trailers of nothing = %q", got)
-	}
 }
 
 // TestProposal: the hook publishes an accepted proposal with the patch the caller saw, once, recording where it went;
@@ -336,7 +178,7 @@ func TestProposal(t *testing.T) {
 	}
 	for i, wantAgain := range []bool{false, true} {
 		res, again, err := Proposal(t.Context(), st, p, acc.ProposalID, acc.PatchSHA256)
-		if err != nil || again != wantAgain || res.RevisionOrURL != "7" || res.Publisher != pipeline.PublishApply ||
+		if err != nil || again != wantAgain || res.Where != "7" || res.Publisher != pipeline.PublishApply ||
 			len(st.events) != 1 {
 			t.Fatalf("publication %d = %+v, again %v, %v; events %d", i, res, again, err, len(st.events))
 		}
@@ -348,7 +190,7 @@ func TestProposal(t *testing.T) {
 	a.base, st.events = "", []store.Event{{Kind: store.EventProposalApplied,
 		Data: json.RawMessage(`{"id":"` + acc.ProposalID + `","revision":8,"validated":true}`)}}
 	res, again, err := Proposal(t.Context(), st, p, acc.ProposalID, acc.PatchSHA256)
-	if err != nil || !again || res.RevisionOrURL != "8" || a.base != "" || len(st.events) != 2 {
+	if err != nil || !again || res.Where != "8" || a.base != "" || len(st.events) != 2 {
 		t.Fatalf("after an interrupted apply = %+v, again %v, %v; applied again %v", res, again, err, a.base != "")
 	}
 }
@@ -369,65 +211,4 @@ func (f *fakeProposals) RecordPublished(_ context.Context, id, publisher, where 
 	data, _ := json.Marshal(map[string]string{"id": id, "publisher": publisher, "where": where})
 	f.events = append(f.events, store.Event{Kind: store.EventProposalPublished, Data: data})
 	return nil
-}
-
-// TestContainerJobs: a git job runs in the action's image with the network, its work directory at /work, the
-// variables it was given, and its error output's end in the error.
-func TestContainerJobs(t *testing.T) {
-	t.Parallel()
-	f := &fakeRunner{stdout: "https://forge.example/pr/1\n"}
-	c := containerJobs{rt: f, image: "img@sha256:abc"}
-	out, err := c.run(t.Context(), gitJob{work: "/host/work", script: "true", env: []string{"TOKEN=x"}})
-	if err != nil || out != f.stdout || !f.job.Network || f.job.Image != "img@sha256:abc" ||
-		f.job.Mounts[0] != (exec.Mount{Source: "/host/work", Target: jobMount}) || !slices.Contains(f.job.Env, "TOKEN=x") ||
-		!slices.Contains(f.job.Env, "WORK=/work") {
-		t.Fatalf("run = %q, %v; job %+v", out, err, f.job)
-	}
-	f.err, f.stderr = errors.New("exit status 128"), strings.Repeat("x", 3000)+"fatal: denied"
-	if _, err := c.run(t.Context(), gitJob{work: "/w"}); err == nil || !strings.HasSuffix(err.Error(), "fatal: denied") ||
-		len(err.Error()) > 2100 {
-		t.Fatalf("a failing job: %v", err)
-	}
-}
-
-type fakeRunner struct {
-	job            container.Job
-	stdout, stderr string
-	err            error
-}
-
-func (f *fakeRunner) RunJob(_ context.Context, j container.Job, stdout, stderr io.Writer) error {
-	f.job = j
-	_, _ = io.WriteString(stdout, f.stdout)
-	_, _ = io.WriteString(stderr, f.stderr)
-	return f.err
-}
-
-// TestGitPRDistill: a distill's new action directory is created on the branch, and refused when the branch has it.
-func TestGitPRDistill(t *testing.T) {
-	t.Parallel()
-	base, packages, acc := fixture(t)
-	after := map[string][]byte{"pipeline.yaml": []byte(strings.Replace(baseSrc, "action: filter, in: trigger.adhoc, config: { expr: \"true\" }",
-		"action: ./actions/coded, in: trigger.adhoc", 1)), "actions/coded/action.yaml": []byte("name: coded\nkind: exec\n")}
-	text, err := patch.Format(base.Hash, base.Files, after)
-	if err != nil {
-		t.Fatal(err)
-	}
-	acc.Kind, acc.Patch, acc.PatchSHA256 = store.ProposalDistill, string(text), patch.Hash(text)
-	for _, exists := range []bool{false, true} {
-		files := map[string]string{"pipeline.yaml": baseSrc}
-		if exists {
-			files["actions/coded/action.yaml"] = "x"
-		}
-		f := &fakeForge{files: files}
-		p, err := New(pipeline.Improve{Publish: pipeline.PublishGitPRGH, Git: pipeline.GitConfig{Repo: "r", Image: "i"}},
-			Deps{Packages: packages, jobs: f})
-		if err != nil {
-			t.Fatal(err)
-		}
-		_, err = p.Publish(t.Context(), acc)
-		if exists != (err != nil) || !exists && !strings.Contains(f.published, "./actions/coded") {
-			t.Fatalf("branch has the action %v: %v, published %q", exists, err, f.published)
-		}
-	}
 }

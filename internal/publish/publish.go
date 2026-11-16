@@ -1,6 +1,5 @@
 // Package publish holds the publish actions of accepted proposals (spec sections 11.3 and 11.7): apply creates a
-// development revision on the proposal's base, patch-file writes the patch to a directory, git-pr-gh and git-pr-glab
-// open a pull request with the gh or glab CLI from a container of their own.
+// development revision on the proposal's base, patch-file writes the patch to a directory.
 //
 // Every action publishes the reviewed patch and nothing else (spec section 11.7, rule 3): before it acts, the patch
 // must hash to the validated hash (patch.Hash) and pass its kind's path rules again on its base revision
@@ -30,24 +29,20 @@ type Accepted struct {
 	// a patch that does not hash to it.
 	Patch       string
 	PatchSHA256 string
-	Rationale   string
-	// Report is the validation report (JSON), carried by pull requests.
-	Report json.RawMessage
 }
 
 // FromProposal is a proposal as a publish action receives it.
 func FromProposal(p store.Proposal) Accepted {
 	return Accepted{ProposalID: p.ID, Pipeline: p.Pipeline, Kind: p.Kind, BaseRevision: p.BaseRevision,
-		Patch: p.Patch, PatchSHA256: p.PatchSHA256, Rationale: p.Rationale, Report: p.Report}
+		Patch: p.Patch, PatchSHA256: p.PatchSHA256}
 }
 
 // Result is where a publish action put the proposal.
 type Result struct {
 	// Publisher is the action's name (improve.publish).
 	Publisher string
-	// RevisionOrURL is the revision apply created (its number), the file patch-file wrote, or the pull request a
-	// git action opened.
-	RevisionOrURL string
+	// Where is the revision apply created (its number) or the file patch-file wrote.
+	Where string
 }
 
 // Publisher is a publish action.
@@ -113,7 +108,7 @@ func (c checked) Publish(ctx context.Context, a Accepted) (Result, error) {
 	if err != nil {
 		return Result{}, fmt.Errorf("publish proposal %s with %s: %w", a.ProposalID, c.name, err)
 	}
-	return Result{Publisher: c.name, RevisionOrURL: where}, nil
+	return Result{Publisher: c.name, Where: where}, nil
 }
 
 // ProposalStore is what Proposal reads and records: the store.
@@ -146,7 +141,7 @@ func Proposal(ctx context.Context, st ProposalStore, p Publisher, id, patchSHA25
 		return Result{}, false, err
 	}
 	if done, ok := published[id]; ok {
-		return Result{Publisher: done.Publisher, RevisionOrURL: done.Where}, true, nil
+		return Result{Publisher: done.Publisher, Where: done.Where}, true, nil
 	}
 	if p.Name() == pipeline.PublishApply {
 		evs, err := st.PipelineEvents(ctx, store.EventFilter{Pipeline: prop.Pipeline,
@@ -160,15 +155,15 @@ func Proposal(ctx context.Context, st ProposalStore, p Publisher, id, patchSHA25
 				Revision json.Number
 			}
 			if ev.Kind == store.EventProposalApplied && json.Unmarshal(ev.Data, &applied) == nil && applied.ID == id {
-				res = Result{Publisher: pipeline.PublishApply, RevisionOrURL: applied.Revision.String()}
-				return res, true, st.RecordPublished(ctx, id, res.Publisher, res.RevisionOrURL)
+				res = Result{Publisher: pipeline.PublishApply, Where: applied.Revision.String()}
+				return res, true, st.RecordPublished(ctx, id, res.Publisher, res.Where)
 			}
 		}
 	}
 	if res, err = p.Publish(ctx, FromProposal(prop)); err != nil {
 		return res, false, err
 	}
-	return res, false, st.RecordPublished(ctx, id, res.Publisher, res.RevisionOrURL)
+	return res, false, st.RecordPublished(ctx, id, res.Publisher, res.Where)
 }
 
 // Publication is where a publish action put a proposal, and when: its proposalPublished event.

@@ -79,7 +79,7 @@ platform design (section 14) and the deployment guide describe every key.
 
 Three layers set every key, the last one winning: the environment file, then a `MILLSTREAM_` variable, then a
 flag. A variable is `MILLSTREAM_<SECTION>_<KEY>` in upper snake case, down the key's path: `ui.baseUrl` is
-`MILLSTREAM_UI_BASE_URL`, `improve.git.author.name` is `MILLSTREAM_IMPROVE_GIT_AUTHOR_NAME`. `millstream init
+`MILLSTREAM_UI_BASE_URL`, `improve.patchFile.dir` is `MILLSTREAM_IMPROVE_PATCH_FILE_DIR`. `millstream init
 environment` writes the file with every key commented out at its default, each line naming its variable.
 
 - `MILLSTREAM_SERVER`, `MILLSTREAM_TOKEN`: the engine API that commands changing state go through, and

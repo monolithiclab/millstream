@@ -48,7 +48,7 @@ type Proposal struct {
 	Published *Publication `json:"published,omitempty"`
 }
 
-// Publication is where a publish action put a proposal: a revision, a patch file or a pull request.
+// Publication is where a publish action put a proposal: a revision or a patch file.
 type Publication struct {
 	Publisher string    `json:"publisher"`
 	Location  string    `json:"location"`
@@ -90,7 +90,7 @@ type PublishRequest struct {
 	PatchSHA256 string `json:"patchSha256"`
 }
 
-// PublishedProposal is where a proposal went: the publish action, the revision, file or pull request, and whether
+// PublishedProposal is where a proposal went: the publish action, the revision or file, and whether
 // it had been published already (nothing was done again).
 type PublishedProposal struct {
 	Proposal  string `json:"proposal"`
@@ -279,7 +279,7 @@ func (s *Server) publishProposal(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	writeJSON(w, http.StatusOK, PublishedProposal{Proposal: id, Publisher: res.Publisher, Location: res.RevisionOrURL,
+	writeJSON(w, http.StatusOK, PublishedProposal{Proposal: id, Publisher: res.Publisher, Location: res.Where,
 		Again: again})
 	return nil
 }

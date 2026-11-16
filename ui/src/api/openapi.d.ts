@@ -201,7 +201,7 @@ export interface paths {
     };
     get?: never;
     put?: never;
-    /** Apply packages as new revisions (millstream apply). Each package is checked, and so is every other pipeline of the deployment; a check error refuses them all (invalid). The body may be up to 64 MiB. */
+    /** Apply packages as new revisions (millstream apply). Each package is checked, and so is every other pipeline of the deployment; a check error refuses them all (invalid). The body may be up to 64 MiB. A package that is exactly an accepted proposal's patch over the active revision, its base, records the proposal applied. */
     post: operations['applyPackages'];
     delete?: never;
     options?: never;
@@ -1706,8 +1706,6 @@ export interface components {
         files: {
           [key: string]: string;
         };
-        /** @description The accepted proposals the package carries: the Millstream-Proposal trailers of the commit it comes from. Each is recorded applied, validated in this combination or not. */
-        proposals?: string[];
       }[];
       /** @description Let through breaking an importer's contract. */
       force?: boolean;
@@ -1803,9 +1801,9 @@ export interface components {
       decidedAt?: string;
       /** @description Where its publish action put an accepted proposal (its proposalPublished event); absent until then. */
       published?: {
-        /** @description improve.publish's action: apply, patch-file, git-pr-gh or git-pr-glab. */
+        /** @description improve.publish's action: apply or patch-file. */
         publisher: string;
-        /** @description The revision apply created */
+        /** @description The revision apply created or the file patch-file wrote. */
         location: string;
         /** Format: date-time */
         at: string;
@@ -4074,9 +4072,9 @@ export interface operations {
         content: {
           'application/json': {
             proposal: string;
-            /** @description apply, patch-file, git-pr-gh or git-pr-glab. */
+            /** @description apply or patch-file. */
             publisher: string;
-            /** @description The revision number */
+            /** @description The revision number or the patch file. */
             location: string;
             /** @description Published before; nothing was done this time. */
             again: boolean;

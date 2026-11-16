@@ -8,7 +8,6 @@ import (
 	"net"
 	"net/url"
 	"os"
-	pathpkg "path"
 	"path/filepath"
 	"reflect"
 	"regexp"
@@ -130,9 +129,8 @@ type Improve struct {
 	Enabled     bool             `yaml:"enabled" env:"ENABLED" default:"false" doc:"run the improve pipeline (development only)"`
 	Harness     string           `yaml:"harness" env:"HARNESS" example:"claude-code" doc:"agent harness drafting proposals: claude-code or api"`
 	MinSeverity string           `yaml:"minSeverity" env:"MIN_SEVERITY" default:"warning" doc:"the least severity of the problems considered: info, warning or error; opportunities (reviewPattern, distillable) start whatever theirs"`
-	Publish     string           `yaml:"publish" env:"PUBLISH" example:"patch-file" doc:"publisher of accepted proposals: apply, patch-file, git-pr-gh or git-pr-glab"`
+	Publish     string           `yaml:"publish" env:"PUBLISH" example:"patch-file" doc:"publisher of accepted proposals: apply or patch-file"`
 	PatchFile   PatchFileConfig  `yaml:"patchFile" env:"PATCH_FILE"`
-	Git         GitConfig        `yaml:"git" env:"GIT"`
 	Budget      BudgetConfig     `yaml:"budget" env:"BUDGET"`
 	Evidence    EvidenceConfig   `yaml:"evidence" env:"EVIDENCE"`
 	Backtest    BacktestConfig   `yaml:"backtest" env:"BACKTEST"`
@@ -144,23 +142,6 @@ type Improve struct {
 // PatchFileConfig is improve.patchFile.
 type PatchFileConfig struct {
 	Dir string `yaml:"dir" env:"DIR" example:"./patches" doc:"where the patch-file publisher writes each accepted proposal's patch"`
-}
-
-// GitConfig is improve.git: the repository the git-pr-gh and git-pr-glab actions open pull requests on. Millstream
-// holds no forge credential (D32): Env names the variables passed to the action's container.
-type GitConfig struct {
-	Repo   string    `yaml:"repo" env:"REPO" example:"https://git.example.com/org/repo.git" doc:"clone URL of the repository pull requests are opened on"`
-	Base   string    `yaml:"base" env:"BASE" default:"main" doc:"branch pull requests target"`
-	Path   string    `yaml:"path" env:"PATH" example:"pipelines/{pipeline}" doc:"the package's directory in the repository, {pipeline} for its name; unset: the root"`
-	Image  string    `yaml:"image" env:"IMAGE" example:"ghcr.io/org/git-pr@sha256:0000000000000000000000000000000000000000000000000000000000000000" doc:"the action's image, with git and the forge's CLI, pinned by digest"`
-	Env    []string  `yaml:"env" env:"ENV" example:"[GH_TOKEN]" doc:"variables of the engine passed to the action's container, such as [GH_TOKEN]"`
-	Author GitAuthor `yaml:"author" env:"AUTHOR"`
-}
-
-// GitAuthor is improve.git.author: who signs the commits.
-type GitAuthor struct {
-	Name  string `yaml:"name" env:"NAME" default:"Millstream" doc:"commit author's name"`
-	Email string `yaml:"email" env:"EMAIL" default:"millstream@localhost" doc:"commit author's email"`
 }
 
 // BudgetConfig is improve.budget.
@@ -359,16 +340,6 @@ func (e *Environment) Validate() error {
 	oneOf("improve.publish", im.Publish, append([]string{""}, PublishActions...)...)
 	check(im.Publish != PublishPatchFile || im.PatchFile.Dir != "", "improve.publish", "patch-file needs "+
 		"improve.patchFile.dir")
-	check(im.Publish != PublishGitPRGH && im.Publish != PublishGitPRGLab || im.Git.Repo != "" && im.Git.Image != "",
-		"improve.publish", "%s needs improve.git.repo and improve.git.image", im.Publish)
-	check(im.Git.Image == "" || pinnedRef.MatchString(im.Git.Image), "improve.git.image", "must be pinned by digest: "+
-		"<repository>@sha256:<64 hex characters>")
-	p := im.Git.Path
-	check(p == "" || !filepath.IsAbs(p) && !strings.Contains(p, "\\") && pathpkg.Clean(p) == p && p != ".." &&
-		!strings.HasPrefix(p, "../"), "improve.git.path", "must be a clean relative path inside the repository")
-	for i, name := range im.Git.Env {
-		check(envName.MatchString(name), fmt.Sprintf("improve.git.env[%d]", i), "must be an environment variable's name")
-	}
 	check(im.Budget.DayUSD >= 0, "improve.budget.dayUsd", "must be a non-negative number")
 	positive("improve.evidence.sample", im.Evidence.Sample)
 	positive("improve.backtest.sample", im.Backtest.Sample)
@@ -410,18 +381,14 @@ func (c StoreConfig) validate(check func(ok bool, key, format string, args ...an
 // envName is an environment variable's name.
 var envName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
-var pinnedRef = regexp.MustCompile(`^[^\s@]+@sha256:[0-9a-f]{64}$`)
-
 // Publishers of accepted proposals (spec section 11.3).
 const (
 	PublishApply     = "apply"
 	PublishPatchFile = "patch-file"
-	PublishGitPRGH   = "git-pr-gh"
-	PublishGitPRGLab = "git-pr-glab"
 )
 
 // PublishActions are the publish actions improve.publish may name.
-var PublishActions = []string{PublishApply, PublishPatchFile, PublishGitPRGH, PublishGitPRGLab}
+var PublishActions = []string{PublishApply, PublishPatchFile}
 
 // Environment modes (spec section 11.2).
 const (

@@ -24,9 +24,6 @@ type ApplyOptions struct {
 	// Base, with a single package, is the package hash its pipeline's active revision must still have, or the apply
 	// is store.ErrConflict (the apply publish action, spec section 11.3).
 	Base string
-	// Proposals are the accepted proposals each pipeline's package carries, by pipeline: the Millstream-Proposal
-	// trailers of the commit it was applied from (spec section 11.3).
-	Proposals map[string][]string
 }
 
 // Applied is one package applied.

@@ -417,19 +417,19 @@ func (s *Store) RejectProposal(ctx context.Context, id, reason, by string) (stor
 
 // appliedProposals records proposalApplied for each accepted proposal of the pipeline a new revision carries.
 func (w *wtx) appliedProposals(pipelineName string, rev store.RevisionID, hash, parent string,
-	applied []store.AppliedProposal,
+	applied []string,
 ) error {
-	for _, a := range applied {
+	for _, id := range applied {
 		var state string
-		err := w.queryRow(`SELECT state FROM proposals WHERE id = ? AND pipeline = ?`, a.ID, pipelineName).Scan(&state)
+		err := w.queryRow(`SELECT state FROM proposals WHERE id = ? AND pipeline = ?`, id, pipelineName).Scan(&state)
 		switch {
 		case errors.Is(err, sql.ErrNoRows) || err == nil && state != string(store.ProposalAccepted):
 			continue
 		case err != nil:
 			return err
 		}
-		if err := w.event(pipelineName, "", store.EventProposalApplied, map[string]any{"id": a.ID, "revision": rev,
-			"packageHash": hash, "parent": parent, "validated": a.Validated}); err != nil {
+		if err := w.event(pipelineName, "", store.EventProposalApplied, map[string]any{"id": id, "revision": rev,
+			"packageHash": hash, "parent": parent}); err != nil {
 			return err
 		}
 	}

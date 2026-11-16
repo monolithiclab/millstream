@@ -118,10 +118,10 @@ first is missing: identity, an accountable owner per agent, and records their ow
   pipeline (it serves no API).
 - Publishing (M5 Task 8): the improve package's publish step reaches the publish actions through
   `POST /proposals/{id}/publish`; there is no CLI command for it, and a person's acceptance does not publish by
-  itself (the next improve run does). The git actions need an image with git and `gh` or `glab`, which
-  the project does not ship: publish one, pinned. `millstream apply` reads the trailers of the last commit touching
-  the package only, so a proposal merged under later commits is not recorded applied. Whether a revision carries a
-  proposal in a validated combination lives in `proposalApplied` events, not in the proposal's row the API serves.
+  itself (the next improve run does). A proposal is recorded applied only when a revision is exactly its patch over
+  its base: one merged with other changes is not. Forge publishers (a pull request on GitHub or GitLab) return as
+  external actions (D32). Whether a proposal was applied lives in `proposalApplied` events, not in the proposal's row
+  the API serves.
 - Candidate sandbox: Go actions only, built against the standard library and the SDK (no other module, no vendor
   directory); each validation builds again (no cache of builds by action digest); remote nodes never run proposed
   code, the engine's own process does.

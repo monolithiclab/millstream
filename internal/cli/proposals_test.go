@@ -3,6 +3,11 @@ package cli
 import (
 	"strings"
 	"testing"
+
+	"github.com/monolithiclab/millstream/internal/patch"
+	"github.com/monolithiclab/millstream/internal/pipeline"
+	"github.com/monolithiclab/millstream/internal/store"
+	"github.com/monolithiclab/millstream/internal/store/sqlite"
 )
 
 // Proposals from the command's own process, without the parser: created and validated, listed and shown, one
@@ -46,6 +51,43 @@ func Test_proposalsCommands(t *testing.T) {
 		t.Fatalf("a path outside the kind's: %v", err)
 	}
 	call(ProposalsTokenCmd{}, "mspr_")
+
+	// The accepted proposal's patch (what patch-file publishes) applied to the package on disk, then applied:
+	// recorded applied, by its hash alone.
+	st := s.st
+	if st == nil { // the e2e build's commands open --db
+		var err error
+		if st, err = sqlite.Open(s.db, sqlite.Options{}); err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = st.Close() }()
+	}
+	prop, err := st.Proposal(t.Context(), first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	base, err := pipeline.Load(fixture(lifecycleV1))
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := patch.Parse([]byte(prop.Patch))
+	if err != nil {
+		t.Fatal(err)
+	}
+	files, err := p.Apply(base.Files)
+	if err != nil {
+		t.Fatal(err)
+	}
+	patched, err := pipeline.Materialize(t.TempDir(), files)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.must(0, "apply", patched.Dir)
+	evs, err := st.PipelineEvents(t.Context(), store.EventFilter{Pipeline: "extra",
+		Kinds: []string{store.EventProposalApplied}})
+	if err != nil || len(evs) != 1 || !strings.Contains(string(evs[0].Data), `"id":"`+first+`"`) {
+		t.Fatalf("proposalApplied events = %v, %v", evs, err)
+	}
 }
 
 // validationSummary sums a report up in a line, whatever it holds.

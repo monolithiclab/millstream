@@ -273,8 +273,8 @@ func TestProposalUnitsFailpoints(t *testing.T, open Opener) {
 }
 
 // TestProposalPublishing: an apply under a base applies only while the active revision is still that base, and
-// records proposalApplied for the accepted proposals the revision carries, validated or not, leaving out the rest;
-// only an accepted proposal is recorded published (spec sections 11.3 and 11.7).
+// records proposalApplied for the accepted proposals the revision applies, leaving out the rest; only an accepted
+// proposal is recorded published (spec sections 11.3 and 11.7).
 func TestProposalPublishing(t *testing.T, open Opener) {
 	e := newEnv(t, open, fixture)
 	base := hashOf(fixture)
@@ -289,17 +289,16 @@ func TestProposalPublishing(t *testing.T, open Opener) {
 		t.Fatal(err)
 	}
 	v2, v3 := fixture+"\n# v2\n", fixture+"\n# v3\n"
-	record := func(src, cond string, applied ...store.AppliedProposal) error {
+	record := func(src, cond string, applied ...string) error {
 		_, err := e.s.ApplyRevision(e.ctx, store.PackageRecord{Hash: hashOf(src), Bundle: []byte(src),
 			Pipeline: parse(e.t, src), Base: cond, Proposals: applied})
 		return err
 	}
-	wantErr(t, record(v2, hashOf("elsewhere"), store.AppliedProposal{ID: "p1", Validated: true}), store.ErrConflict)
-	if err := record(v2, base, store.AppliedProposal{ID: "p1", Validated: true},
-		store.AppliedProposal{ID: "open"}, store.AppliedProposal{ID: "absent"}); err != nil {
+	wantErr(t, record(v2, hashOf("elsewhere"), "p1"), store.ErrConflict)
+	if err := record(v2, base, "p1", "open", "absent"); err != nil {
 		t.Fatal(err)
 	}
-	if err := record(v3, "", store.AppliedProposal{ID: "p1"}); err != nil {
+	if err := record(v3, "", "p1"); err != nil {
 		t.Fatal(err)
 	}
 	evs, err := e.s.PipelineEvents(e.ctx, store.EventFilter{Pipeline: "listings",
@@ -313,8 +312,8 @@ func TestProposalPublishing(t *testing.T, open Opener) {
 	}
 	want := []string{
 		`proposalPublished {"id":"p1","publisher":"patch-file","where":"x.patch"}`,
-		`proposalApplied {"id":"p1","packageHash":"` + hashOf(v2) + `","parent":"` + base + `","revision":2,"validated":true}`,
-		`proposalApplied {"id":"p1","packageHash":"` + hashOf(v3) + `","parent":"` + hashOf(v2) + `","revision":3,"validated":false}`,
+		`proposalApplied {"id":"p1","packageHash":"` + hashOf(v2) + `","parent":"` + base + `","revision":2}`,
+		`proposalApplied {"id":"p1","packageHash":"` + hashOf(v3) + `","parent":"` + hashOf(v2) + `","revision":3}`,
 	}
 	if !slices.Equal(got, want) {
 		t.Fatalf("events\n%q\nwant\n%q", got, want)

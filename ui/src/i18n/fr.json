@@ -959,7 +959,7 @@
     "accept": {
       "action": "Accepter…",
       "title": "Accepter la proposition {{id}} ?",
-      "publish": "Le pipeline improve la publie comme le dit improve.publish : une révision de développement (apply), un fichier de patch (patch-file) ou une pull request (git-pr-gh, git-pr-glab).",
+      "publish": "Le pipeline improve la publie comme le dit improve.publish : une révision de développement (apply) ou un fichier de patch (patch-file).",
       "base": "Elle n’est acceptée que tant que {{revision}} est la révision active ; sinon elle devient périmée.",
       "others": "Les autres propositions ouvertes qui touchent ses fichiers ou ses étapes deviennent périmées.",
       "hash": "Vous acceptez le patch que vous avez lu :",

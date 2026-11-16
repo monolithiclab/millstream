@@ -1688,8 +1688,8 @@ const demoProposals: Proposal[] = [
     decidedAt: '2026-10-03T08:00:00Z',
     decidedBy: 'nicolas',
     published: {
-      publisher: 'git-pr-gh',
-      location: 'https://git.example/pipelines/pull/12',
+      publisher: 'patch-file',
+      location: 'proposals/p-0142.patch',
       at: '2026-10-03T08:05:00Z',
     },
   }),

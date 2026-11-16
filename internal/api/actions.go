@@ -121,11 +121,9 @@ type ApplyRequest struct {
 	Message string `json:"message"`
 }
 
-// PackageFiles is one package of an apply, with the accepted proposals it carries: the Millstream-Proposal trailers
-// of the commit it comes from (spec section 11.3).
+// PackageFiles is one package of an apply.
 type PackageFiles struct {
-	Files     map[string][]byte `json:"files"`
-	Proposals []string          `json:"proposals,omitempty"`
+	Files map[string][]byte `json:"files"`
 }
 
 // ApplyResponse is what an apply did: a revision per package, and the check's warnings.
@@ -172,17 +170,15 @@ func (s *Server) applyPackages(w http.ResponseWriter, r *http.Request) error {
 		return fmt.Errorf("apply: no engine: %w", errUnavailable)
 	}
 	pkgs := make([]*pipeline.Package, 0, len(req.Packages))
-	carried := map[string][]string{}
 	for i, p := range req.Packages {
 		pkg, err := s.opts.Engine.PackageFromFiles(p.Files)
 		if err != nil {
 			return invalidf("packages[%d]: %s", i, err.Error())
 		}
 		pkgs = append(pkgs, pkg)
-		carried[pkg.Pipeline.Name] = append(carried[pkg.Pipeline.Name], p.Proposals...)
 	}
 	applied, findings, err := s.opts.Engine.ApplyPackages(r.Context(), pkgs, engine.ApplyOptions{Force: req.Force,
-		Message: req.Message, Proposals: carried})
+		Message: req.Message})
 	if err != nil {
 		return err
 	}

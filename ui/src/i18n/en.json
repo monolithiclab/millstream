@@ -959,7 +959,7 @@
     "accept": {
       "action": "Accept…",
       "title": "Accept proposal {{id}}?",
-      "publish": "The improve pipeline publishes it as improve.publish says: a development revision (apply), a patch file (patch-file) or a pull request (git-pr-gh, git-pr-glab).",
+      "publish": "The improve pipeline publishes it as improve.publish says: a development revision (apply) or a patch file (patch-file).",
       "base": "It is accepted only while {{revision}} is the active revision; otherwise it becomes stale.",
       "others": "The other open proposals that touch its files or steps become stale.",
       "hash": "You accept the patch you read:",

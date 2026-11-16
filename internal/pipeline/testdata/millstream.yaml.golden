@@ -86,35 +86,12 @@
 ##   start whatever theirs
 #   minSeverity: warning   # MILLSTREAM_IMPROVE_MIN_SEVERITY
 
-##   publisher of accepted proposals: apply, patch-file, git-pr-gh or git-pr-glab
+##   publisher of accepted proposals: apply or patch-file
 #   publish: patch-file   # MILLSTREAM_IMPROVE_PUBLISH, example
 
 #   patchFile:
 ##     where the patch-file publisher writes each accepted proposal's patch
 #     dir: ./patches   # MILLSTREAM_IMPROVE_PATCH_FILE_DIR, example
-
-#   git:
-##     clone URL of the repository pull requests are opened on
-#     repo: https://git.example.com/org/repo.git   # MILLSTREAM_IMPROVE_GIT_REPO, example
-
-##     branch pull requests target
-#     base: main   # MILLSTREAM_IMPROVE_GIT_BASE
-
-##     the package's directory in the repository, {pipeline} for its name; unset: the root
-#     path: pipelines/{pipeline}   # MILLSTREAM_IMPROVE_GIT_PATH, example
-
-##     the action's image, with git and the forge's CLI, pinned by digest
-#     image: ghcr.io/org/git-pr@sha256:0000000000000000000000000000000000000000000000000000000000000000   # MILLSTREAM_IMPROVE_GIT_IMAGE, example
-
-##     variables of the engine passed to the action's container, such as [GH_TOKEN]
-#     env: [GH_TOKEN]   # MILLSTREAM_IMPROVE_GIT_ENV, example
-
-#     author:
-##       commit author's name
-#       name: Millstream   # MILLSTREAM_IMPROVE_GIT_AUTHOR_NAME
-
-##       commit author's email
-#       email: millstream@localhost   # MILLSTREAM_IMPROVE_GIT_AUTHOR_EMAIL
 
 #   budget:
 ##     what backtests may spend a day, in USD; unset: no limit

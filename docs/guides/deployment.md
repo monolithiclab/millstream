@@ -361,31 +361,19 @@ longer hashes to the validated one, or that touches a path its kind does not all
 ```yaml
 environment: development
 improve:
-  publish: git-pr-gh            # apply | patch-file | git-pr-gh | git-pr-glab
+  publish: patch-file            # apply | patch-file
   patchFile: { dir: proposals }  # patch-file: <dir>/<proposal id>.patch, relative to this file
-  git:                           # git-pr-gh and git-pr-glab
-    repo: https://github.com/example/pipelines.git
-    base: main                   # the branch pull requests target (default main)
-    path: pipelines/{pipeline}   # the package's directory in the repository (default the root)
-    image: registry.example/publish@sha256:…   # git and gh (or glab), pinned by digest
-    env: [GH_TOKEN]              # the variables passed to the action's container, and nothing else
-    author: { name: Millstream, email: millstream@example.com }
 ```
 
 - The engine runs the action, when the improve pipeline's publish step asks (`POST /proposals/<id>/publish`), once
   per proposal.
 - `apply` makes the patched package the pipeline's next revision, only while its active revision is still the
   proposal's base. Production refuses it.
-- The git actions run `improve.git.image` with the container runtime (`runtime.container`): a hardened container
-  with the network, the variables `improve.git.env` names (`GH_TOKEN`; `GITLAB_TOKEN` and `GITLAB_HOST` for glab)
-  and nothing else. They clone the base branch, apply the patch exactly, commit it with a
-  `Millstream-Proposal: <id>` trailer, push `millstream/<id>` (never forced) and open the pull request with the
-  validation report in its body. git runs with hooks disabled; nothing from the repository is built or run. Pull
-  requests come from a bot: do not expose secrets to the CI jobs of branches it pushes.
-- When the merged package is applied, `millstream apply` reads the `Millstream-Proposal` trailers of the last commit
-  that touched the package directory. A revision that is not exactly the proposal's patch over its validated base is
-  recorded as not validated in that combination; the engine runs the evals and a backtest of it against the revision
-  before it and opens a `regression` insight when it regressed.
+- `patch-file` writes the validated patch as `<dir>/<proposal id>.patch`. Apply it to the package (`git apply`),
+  commit it wherever the package lives, and open the pull request yourself: Millstream holds no forge credential.
+- When the patched package is applied (`millstream apply`) while its base is still the active revision, the engine
+  matches it to the proposal by content hash and records the proposal applied. A package that differs from the
+  proposal's patch over its base in any file is an ordinary revision.
 
 ## Backups
 

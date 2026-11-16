@@ -85,7 +85,7 @@ A run follows the same path whether it is started by `millstream run` on a lapto
 | `internal/distill` | The rules of a distill proposal: training and holdout split, thresholds the candidate code meets |
 | `internal/proposals`, `internal/patch` | Proposal rules and the unified-diff patch format they carry |
 | `internal/backtest` | Replays a patch over past items and compares before and after |
-| `internal/publish` | What an accepted proposal does: apply a revision, write a patch, or open a pull request |
+| `internal/publish` | What an accepted proposal does: apply a revision or write a patch |
 
 ### Interfaces
 

@@ -415,20 +415,21 @@ use insights in production until learning in place is offered.
 
 ### D32. Forge integration goes through actions (2026-10-14)
 
-**Decision.** Accepted proposals are published by an action chosen in `improve.publish`: `apply` (a development
-revision), `patch-file`, or `git-pr-gh` and `git-pr-glab`, which wrap the `gh` and `glab` CLIs in a container. The
-environment file names the repository and the variables holding the forge's credentials (`improve.git`), which are
-passed to that container alone.
+**Decision.** Accepted proposals are published by an action chosen in `improve.publish`. v1 ships two: `apply` (a
+development revision) and `patch-file` (the validated patch, written to a directory). Forge publishers that open a
+pull request return later as external actions, run in a container of their own with the forge's credentials passed
+to it alone; the engine gains none.
 
-**Evidence.** Millstream then stores no forge token, and a new forge is a new action, not an engine change.
+**Evidence.** Millstream then stores no forge token, and a new forge is a new action, not an engine change. v1 ships
+no image with git and a forge CLI, so built-in pull-request publishers could not run as shipped.
 
-**Cost if wrong.** Pull requests depend on the CLIs being installed and authenticated in the action's environment.
+**Cost if wrong.** Until forge actions exist, a person applies the patch file and opens the pull request.
 
 ### D33. Proposal patches are confined and published by hash (2026-10-14)
 
-**Decision.** A proposal's patch may touch only the package paths its kind allows. The publish action runs in its
-own container with only forge credentials, never builds or runs candidate code, disables git hooks, and publishes
-only the patch whose hash was validated. Candidate exec code runs only in a separate network-less sandbox, built
+**Decision.** A proposal's patch may touch only the package paths its kind allows. The publish action never builds
+or runs candidate code and publishes only the patch whose hash was validated; one holding forge credentials runs in
+its own container with those alone. Candidate exec code runs only in a separate network-less sandbox, built
 offline against the embedded SDK, which never holds a credential.
 
 **Evidence.** Patches are drafted by an agent that read crawled, untrusted data; an injected instruction could add
@@ -440,12 +441,11 @@ read forge credentials if they shared an environment.
 ### D34. Acceptance is conditional on the base revision (2026-10-14)
 
 **Decision.** Accepting a proposal succeeds only if its base revision is still active, in one writer transaction
-that also marks overlapping open proposals stale. With the git publish actions, applied revisions are matched to
-proposals by commit trailer, and a proposal merged onto another base triggers evals and a backtest of the new
-revision.
+that also marks overlapping open proposals stale. A revision applied by any means is matched to an accepted proposal
+by content hash: it records the proposal applied when it is exactly the proposal's patch over its base.
 
 **Evidence.** Two proposals validated on the same base could otherwise be combined without ever being validated
-together, and a pull request may merge after other commits.
+together, and the content hash identifies the reviewed package without trusting commit metadata.
 
 **Cost if wrong.** Busy pipelines see more stale proposals and revalidation runs, charged to the improve budget.
 

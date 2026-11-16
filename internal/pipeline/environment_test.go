@@ -61,9 +61,6 @@ improve:
   minSeverity: error
   publish: apply
   patchFile: { dir: proposals }
-  git: { repo: "https://git.example/p.git", base: trunk, path: "pipelines/{pipeline}", env: [GH_TOKEN],
-    image: "ghcr.io/x/publish@sha256:0000000000000000000000000000000000000000000000000000000000000000",
-    author: { name: Bot, email: bot@example.invalid } }
   budget: { dayUsd: 5 }
   evidence: { sample: 50, ttl: 3d }
   backtest: { sample: 20 }
@@ -95,11 +92,8 @@ engine: { lockCheck: 2s, keepalive: 3s }
 		Lessons: LessonsConfig{MaxTokens: 500},
 		UI:      UIConfig{BaseURL: "https://millstream.example", Listen: "127.0.0.1:8080"},
 		Improve: Improve{Enabled: true, Harness: "api", MinSeverity: "error", Publish: PublishApply,
-			PatchFile: PatchFileConfig{Dir: "proposals"}, Git: GitConfig{Repo: "https://git.example/p.git",
-				Base: "trunk", Path: "pipelines/{pipeline}", Env: []string{"GH_TOKEN"},
-				Author: GitAuthor{Name: "Bot", Email: "bot@example.invalid"},
-				Image:  "ghcr.io/x/publish@sha256:0000000000000000000000000000000000000000000000000000000000000000"},
-			Budget: BudgetConfig{DayUSD: 5}, Evidence: EvidenceConfig{Sample: 50, TTL: 3 * day},
+			PatchFile: PatchFileConfig{Dir: "proposals"},
+			Budget:    BudgetConfig{DayUSD: 5}, Evidence: EvidenceConfig{Sample: 50, TTL: 3 * day},
 			Backtest: BacktestConfig{Sample: 20}, Validation: ValidationConfig{Timeout: Duration(45 * time.Minute)},
 			Distill: DistillConfig{MinDeliveries: 50, Language: "go", MinAgreement: 0.9, MinCoverage: 0.5, AuditRate: 0.1},
 			Filter:  FilterConfig{MaxFalseDrop: 0.02}},
@@ -146,7 +140,6 @@ func TestCheckMode(t *testing.T) {
 
 func TestParseEnvironmentErrors(t *testing.T) {
 	t.Parallel()
-	const pinned = "x@sha256:0000000000000000000000000000000000000000000000000000000000000000"
 	tests := map[string]struct{ src, want string }{
 		"unknown key":       {"registry: {}\n", "line 1: registry: unknown key"},
 		"duplicate key":     {"listen: a:1\nlisten: b:2\n", "line 2: listen: duplicate key"},
@@ -191,11 +184,7 @@ func TestParseEnvironmentErrors(t *testing.T) {
 		"improve filter":    {"improve: { filter: 3 }\n", "improve.filter: must be a mapping"},
 		"improve prod":      {"environment: production\nimprove: { enabled: true }\n", "improve.enabled: the improve pipeline runs in development"},
 		"patch-file dir":    {"improve: { publish: patch-file }\n", "improve.publish: patch-file needs improve.patchFile.dir"},
-		"git repo":          {"improve: { publish: git-pr-gh }\n", "improve.publish: git-pr-gh needs improve.git.repo"},
-		"git image":         {"improve: { git: { repo: r, image: alpine/git } }\n", "improve.git.image: must be pinned by digest"},
-		"git path":          {"improve: { git: { repo: r, path: ../x, image: " + pinned + " } }\n", "improve.git.path: must be a clean"},
-		"git env":           {"improve: { git: { repo: r, env: [GH-TOKEN], image: " + pinned + " } }\n", "improve.git.env[0]: must be an environment"},
-		"git env list":      {"improve: { git: { env: GH_TOKEN } }\n", "improve.git.env: must be a list"},
+		"forge publisher":   {"improve: { publish: git-pr-gh }\n", "improve.publish:"},
 		"improve prod pub":  {"environment: production\nimprove: { publish: apply }\n", "improve.publish: apply is refused in production"},
 		"store scalar":      {"store: sqlite\n", "store: must be a mapping"},
 		"store key":         {"store: { sqlite: { path: a } }\n", "store.sqlite: unknown key"},
@@ -267,7 +256,6 @@ func TestVariableShapes(t *testing.T) {
 		"MILLSTREAM_AUTH_TOKEN":         strings.Repeat("t", MinTokenLength),
 		"MILLSTREAM_RETENTION_EVENTS":   "90d",
 		"MILLSTREAM_LISTEN":             "",
-		"MILLSTREAM_IMPROVE_GIT_ENV":    "[GH_TOKEN, GITLAB_TOKEN]",
 		"MILLSTREAM_PRICES":             "{ m: { inPerMtok: 1, outPerMtok: 2 } }",
 		"MILLSTREAM_LESSONS_MAX_TOKENS": "300",
 		"MILLSTREAM_UI_BASE_URL":        "https://ms.example",
@@ -278,7 +266,6 @@ func TestVariableShapes(t *testing.T) {
 	if !reflect.DeepEqual(env.Registries, map[string]string{"lab": "ghcr.io/x/actions"}) ||
 		*env.Auth.Token != (SecretSource{Env: "MILLSTREAM_AUTH_TOKEN"}) ||
 		env.Retention.Events != Duration(90*24*time.Hour) || env.Listen != "127.0.0.1:9000" ||
-		!reflect.DeepEqual(env.Improve.Git.Env, []string{"GH_TOKEN", "GITLAB_TOKEN"}) ||
 		env.Prices["m"] != (Price{InPerMtok: 1, OutPerMtok: 2}) || env.Lessons.MaxTokens != 300 ||
 		env.UI.BaseURL != "https://ms.example" {
 		t.Fatalf("environment %+v", env)
@@ -293,8 +280,8 @@ func TestUnknownVariable(t *testing.T) {
 		t.Fatalf("a misspelt variable: %v", err)
 	}
 	// A section or a map named alone, or a variable under one that names no setting: a map is set whole.
-	for _, name := range []string{"MILLSTREAM_IMPROVE_GIT_AUTHOR_MAIL", "MILLSTREAM_UI", "MILLSTREAM_IMPROVE_GIT",
-		"MILLSTREAM_REGISTRIES_LAB", "MILLSTREAM_PRICES_M", "MILLSTREAM_SECRETS_P"} {
+	for _, name := range []string{"MILLSTREAM_IMPROVE_PATCH_FILE_DIRECTORY", "MILLSTREAM_UI",
+		"MILLSTREAM_IMPROVE_PATCH_FILE", "MILLSTREAM_REGISTRIES_LAB", "MILLSTREAM_PRICES_M", "MILLSTREAM_SECRETS_P"} {
 		if _, _, err := load(t, "", map[string]string{name: "x"}); err == nil ||
 			!strings.Contains(err.Error(), name+": no such setting") {
 			t.Errorf("%s: %v", name, err)
