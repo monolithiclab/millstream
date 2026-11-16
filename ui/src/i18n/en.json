@@ -892,11 +892,6 @@
     }
   },
   "improve": {
-    "viewLabel": "Improve view",
-    "view": {
-      "proposals": "Proposals {{count}}",
-      "insights": "Insights {{count}}"
-    },
     "explain": "The improve pipeline drafts proposals from insights and evidence; the engine validates each one. You accept or reject them.",
     "proposeFix": "Propose a fix",
     "propose": {

@@ -63,6 +63,3 @@ export function screenPath(screen: Screen, pipeline: string | undefined): string
   if (screen.scope === 'workspace') return `/${screen.segment}`;
   return pipeline === undefined ? '/pipelines' : pipelinePath(pipeline, screen.segment);
 }
-
-export const workspaceScreens = screens.filter((s) => s.scope === 'workspace');
-export const pipelineScreens = screens.filter((s) => s.scope === 'pipeline');

@@ -547,8 +547,8 @@ export class FakeApi implements Api {
   getSession: Api['getSession'] = () =>
     Promise.resolve(
       this.options.token === undefined
-        ? { auth: false, user: 'demo', environment: this.environment() }
-        : { auth: true, user: 'operator', environment: this.environment() },
+        ? { auth: false, user: 'demo', environment: this.environment(), improve: this.improve() }
+        : { auth: true, user: 'operator', environment: this.environment(), improve: this.improve() },
     );
   signIn: Api['signIn'] = (token) => {
     if (this.options.token === undefined)
@@ -556,7 +556,12 @@ export class FakeApi implements Api {
     if (token !== this.options.token)
       return Promise.reject(new ApiError(401, 'unauthorized', "the token does not match this server's"));
     this.signedIn = true;
-    return this.record('signIn', [], { auth: true, user: 'operator', environment: this.environment() });
+    return this.record('signIn', [], {
+      auth: true,
+      user: 'operator',
+      environment: this.environment(),
+      improve: this.improve(),
+    });
   };
   signOut: Api['signOut'] = () => {
     this.signedIn = false;
@@ -577,6 +582,11 @@ export class FakeApi implements Api {
     node.state = state;
     if (state === 'revoked') node.leases = 0;
     return this.record(method, args, undefined);
+  }
+
+  // Improve is on where the improve pipeline is loaded (spec section 11.3).
+  private improve(): boolean {
+    return this.fixtures.pipelines.some((p) => p.name === 'improve');
   }
 
   private environment(): 'production' | 'development' {

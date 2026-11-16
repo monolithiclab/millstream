@@ -892,11 +892,6 @@
     }
   },
   "improve": {
-    "viewLabel": "Vue Améliorer",
-    "view": {
-      "proposals": "Propositions {{count}}",
-      "insights": "Constats {{count}}"
-    },
     "explain": "Le pipeline improve rédige des propositions à partir des constats et des preuves ; le moteur valide chacune. À vous de les accepter ou de les rejeter.",
     "proposeFix": "Proposer une correction",
     "propose": {

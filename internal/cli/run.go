@@ -261,7 +261,8 @@ func (h engineHost) run(ctx context.Context, rt *Runtime, env *pipeline.Environm
 		var srv *apiServer
 		if err == nil {
 			srv, err = newAPIServer(st, e, notes, logs, apiExtras{rt: rt, arts: h.arts, nodes: nodes, nodeAPI: nodeAPI,
-				leaseTTL: h.leaseTTL, mode: h.mode, evidence: api.EvidenceSettings{Mode: h.mode,
+				leaseTTL: h.leaseTTL, mode: h.mode, improve: env.Improve.Enabled,
+				evidence: api.EvidenceSettings{Mode: h.mode,
 					Sample: env.Improve.Evidence.Sample, TTL: time.Duration(env.Improve.Evidence.TTL)},
 				training: h.backtests, publisher: pub}, h.lead, h.sec, log)
 		}

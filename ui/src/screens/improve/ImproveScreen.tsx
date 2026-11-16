@@ -14,31 +14,25 @@ import { useFormat } from '../../common/useFormat';
 import { useNow } from '../../common/useNow';
 import { useResource } from '../../common/useResource';
 import { proposalPath } from '../../routes';
-import { InsightsBoard } from '../insights/InsightsBoard';
 import { ScreenPage } from '../ScreenPage';
 import { useProposeFix } from './useProposeFix';
 
-type View = 'proposals' | 'insights';
 // Drafting, validating and ready are open: still to decide.
 type Tab = 'open' | 'stale' | 'accepted' | 'rejected';
 const tabOf = (state: ProposalState): Tab => (isOpenProposal(state) ? 'open' : (state as Exclude<Tab, 'open'>));
 const tabs: Tab[] = ['open', 'stale', 'accepted', 'rejected'];
 
-// The Improve view (spec 12.2): the proposals the improve pipeline drafted, by state and kind, and the insights
-// needing attention with Propose a fix, which runs the improve pipeline by hand.
+// The Improve view (spec 12.2): the proposals the improve pipeline drafted, by state and kind, and Propose a fix,
+// which runs the improve pipeline by hand. The insights, each with its own Propose a fix, are on the Insights screen.
 export function ImproveScreen() {
   const { t } = useTranslation();
   const { pipeline = '' } = useParams();
   const [search, setSearch] = useSearchParams();
   const proposals = useResource(`proposals:${pipeline}`, (api) => api.listProposals({ pipeline }));
-  const insights = useResource(`insights:${pipeline}`, (api) => api.listInsights({ pipeline }));
   const { notice, setNotice, dismiss } = useNotice();
   const fix = useProposeFix(pipeline, setNotice);
   const kindLabel = useProposalKindLabel();
   const reasonId = useId();
-  const view: View = search.get('view') === 'insights' ? 'insights' : 'proposals';
-  const attention =
-    insights.status === 'ready' ? insights.data.filter((i) => i.state === 'open' || i.state === 'acknowledged') : [];
 
   // The proposals by state tab, then by kind; both in the URL.
   const all = proposals.status === 'ready' ? proposals.data : [];
@@ -62,18 +56,6 @@ export function ImproveScreen() {
     rejected: t('improve.tab.rejected', { count: counts.rejected }),
   };
 
-  const proposeButton = (label: string, onClick: () => void, className: string) => (
-    <button
-      type="button"
-      disabled={!fix.available}
-      aria-describedby={fix.reason === null ? undefined : reasonId}
-      onClick={onClick}
-      className={className}
-    >
-      {label}
-    </button>
-  );
-
   return (
     <ScreenPage
       title={t('nav.improve')}
@@ -88,21 +70,20 @@ export function ImproveScreen() {
               {fix.reason}
             </span>
           )}
-          {proposeButton(t('improve.proposeFix'), () => fix.propose(), buttons.primary)}
+          <button
+            type="button"
+            disabled={!fix.available}
+            aria-describedby={fix.reason === null ? undefined : reasonId}
+            onClick={() => fix.propose()}
+            className={buttons.primary}
+          >
+            {t('improve.proposeFix')}
+          </button>
         </>
       }
       toolbar={
         <>
-          <Segmented<View>
-            label={t('improve.viewLabel')}
-            value={view}
-            options={[
-              { value: 'proposals', label: t('improve.view.proposals', { count: counts.open }) },
-              { value: 'insights', label: t('improve.view.insights', { count: attention.length }) },
-            ]}
-            onChange={(value) => setSearch(value === 'proposals' ? {} : { view: value })}
-          />
-          {view === 'proposals' && proposals.status === 'ready' && (
+          {proposals.status === 'ready' && (
             <Segmented<Tab>
               label={t('improve.stateLabel')}
               value={tab}
@@ -110,7 +91,7 @@ export function ImproveScreen() {
               onChange={(value) => set('state', value === 'open' ? null : value)}
             />
           )}
-          {view === 'proposals' && kinds.length > 1 && (
+          {kinds.length > 1 && (
             <label className={filterLabel}>
               {t('improve.kindLabel')}
               <Select value={kind ?? ''} onChange={(e) => set('kind', e.target.value === '' ? null : e.target.value)}>
@@ -126,28 +107,7 @@ export function ImproveScreen() {
         </>
       }
     >
-      {view === 'proposals' ? (
-        <QueryView query={proposals}>
-          {() => <ProposalList pipeline={pipeline} proposals={shown} tab={tab} />}
-        </QueryView>
-      ) : (
-        <QueryView query={insights}>
-          {() => (
-            <InsightsBoard
-              insights={attention}
-              onChanged={insights.refresh}
-              empty={
-                <EmptyState title={t('insights.none')} done>
-                  {t('insights.noneBody')}
-                </EmptyState>
-              }
-              action={(insight) =>
-                proposeButton(t('improve.proposeFix'), () => fix.propose(insight), buttons.secondary)
-              }
-            />
-          )}
-        </QueryView>
-      )}
+      <QueryView query={proposals}>{() => <ProposalList pipeline={pipeline} proposals={shown} tab={tab} />}</QueryView>
       <NoticeRegion notice={notice} onDismiss={dismiss} />
     </ScreenPage>
   );

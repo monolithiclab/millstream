@@ -6,7 +6,11 @@ import { ScreenPage } from '../ScreenPage';
 import { Breadcrumb, pipelineCrumb } from '../../common/Breadcrumb';
 import { Segmented } from '../../common/Segmented';
 import { EmptyState, QueryView } from '../../common/States';
+import { buttons } from '../../common/styles';
 import { useResource } from '../../common/useResource';
+import { useSession } from '../../auth/SessionGate';
+import { NoticeRegion, useNotice } from '../../common/Notice';
+import { useProposeFix } from '../improve/useProposeFix';
 import { InsightsBoard } from './InsightsBoard';
 
 // The canvas groups open and acknowledged insights as needing attention.
@@ -15,12 +19,16 @@ const tabOf = (state: InsightState): Tab =>
   state === 'resolved' ? 'resolved' : state === 'muted' ? 'muted' : 'attention';
 
 // The insights of a pipeline (spec 11.1), by kind and step, each with its evidence: figures, sample items, a way
-// in (metrics, dead letters) and Acknowledge or Mute. The Improve view shows them too, with Propose a fix.
+// in (metrics, dead letters) and Acknowledge or Mute, and Propose a fix, which runs the improve pipeline, where
+// improve is on.
 export function InsightsScreen() {
   const { t } = useTranslation();
   const { pipeline = '' } = useParams();
   const [search, setSearch] = useSearchParams();
   const insights = useResource(`insights:${pipeline}`, (api) => api.listInsights({ pipeline }));
+  const { session } = useSession();
+  const { notice, setNotice, dismiss } = useNotice();
+  const fix = useProposeFix(pipeline, setNotice);
   // A link to one insight (#id, from a lesson) opens on its tab, scrolled to its card and focused.
   const { hash } = useLocation();
   const target = hash.length > 1 ? decodeURIComponent(hash.slice(1)) : null;
@@ -74,9 +82,24 @@ export function InsightsScreen() {
                 {tab === 'attention' && t('insights.noneBody')}
               </EmptyState>
             }
+            action={(insight) =>
+              session?.improve === true &&
+              (insight.state === 'open' || insight.state === 'acknowledged') && (
+                <button
+                  type="button"
+                  disabled={!fix.available}
+                  title={fix.reason ?? undefined}
+                  onClick={() => fix.propose(insight)}
+                  className={buttons.secondary}
+                >
+                  {t('improve.proposeFix')}
+                </button>
+              )
+            }
           />
         )}
       </QueryView>
+      <NoticeRegion notice={notice} onDismiss={dismiss} />
     </ScreenPage>
   );
 }

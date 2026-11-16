@@ -2162,6 +2162,8 @@ export interface components {
     Session: {
       /** @description Whether the server requires the token. */
       auth: boolean;
+      /** @description Whether the served engine has improve.enabled (spec section 11.3); the UI shows the Improve view only then. */
+      improve: boolean;
       /** @description Who the request's decisions are recorded under. */
       user?: string;
       /**

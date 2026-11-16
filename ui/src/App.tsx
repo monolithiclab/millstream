@@ -22,6 +22,7 @@ import { PipelinesScreen } from './screens/pipelines/PipelinesScreen';
 import { RunScreen } from './screens/runs/RunScreen';
 import { RunsScreen } from './screens/runs/RunsScreen';
 import { Loading } from './common/States';
+import { NodesProvider } from './common/useNodes';
 import { PipelinesProvider } from './common/usePipelines';
 import { routePattern, screens, type ScreenId } from './routes';
 import { AppShell } from './shell/AppShell';
@@ -92,7 +93,9 @@ export function App({
         {(guarded) => (
           <ApiProvider api={guarded} eventSource={eventSource} demo={demo}>
             <PipelinesProvider>
-              <ShellNoticeProvider>{children}</ShellNoticeProvider>
+              <NodesProvider>
+                <ShellNoticeProvider>{children}</ShellNoticeProvider>
+              </NodesProvider>
             </PipelinesProvider>
           </ApiProvider>
         )}

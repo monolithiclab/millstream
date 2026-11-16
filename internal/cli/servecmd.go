@@ -225,7 +225,7 @@ func (s *server) standby(ctx context.Context, since time.Time) {
 	a, err := api.New(api.Options{Store: st, Artifacts: s.arts, Version: s.rt.Version,
 		User: identity(s.rt), Auth: s.sec.auth, Logger: s.log, Identity: api.Identity{ID: s.id, Since: since},
 		Deployment: dep, Standby: true, NodeAPI: nodes, LeaseTTL: s.cmd.LeaseTTL,
-		Environment: s.env.EffectiveMode(pipeline.ModeProduction)})
+		Environment: s.env.EffectiveMode(pipeline.ModeProduction), Improve: s.env.Improve.Enabled})
 	if err != nil {
 		s.log.Error("the standby serves no API", "error", err.Error())
 		return

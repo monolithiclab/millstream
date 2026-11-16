@@ -1,7 +1,7 @@
-import { screen, waitFor, within } from '@testing-library/react';
+import { cleanup, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '../../api/api';
-import { DEMO_NOW, demoFixtures } from '../../api/demo';
+import { DEMO_NOW, demoFixtures, demoImprovePipeline } from '../../api/demo';
 import { FakeApi } from '../../api/fake';
 import type { Insight } from '../../api/schema';
 import { renderApp } from '../../test/render';
@@ -197,6 +197,30 @@ describe('InsightsScreen', () => {
     expect(hints).toHaveTextContent('Config99% of 40 decisions at analyst-review approved without an edit');
     expect(hints).toHaveTextContent('oddodd');
     expect(within(hints).queryByRole('heading', { name: 'Who wrote the edited fields' })).not.toBeInTheDocument();
+  });
+
+  it('offers Propose a fix on a card only when improve is on', async () => {
+    await open();
+    expect(screen.queryByRole('button', { name: 'Propose a fix' })).not.toBeInTheDocument();
+    cleanup();
+
+    const api = new FakeApi({ ...demoFixtures, pipelines: [...demoFixtures.pipelines, demoImprovePipeline] });
+    const { user } = await open(ROUTE, api);
+    const drift = card(/The fallback disagrees with score/);
+    const propose = within(drift).getByRole('button', { name: 'Propose a fix' });
+    await vi.waitFor(() => expect(propose).toBeEnabled());
+    await user.click(propose);
+    expect(api.calls.at(-1)).toEqual({
+      method: 'triggerRun',
+      args: [
+        'improve',
+        {
+          payload: { pipeline: 'listings-daily', insight: 'in_drift_score' },
+          requestId: expect.any(String) as unknown,
+        },
+      ],
+    });
+    expect(await screen.findByText(/^Improve run run_1 started/)).toBeInTheDocument();
   });
 
   it('teaches when nothing needs attention, and retries a failed read', async () => {

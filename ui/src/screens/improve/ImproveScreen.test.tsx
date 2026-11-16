@@ -27,7 +27,6 @@ describe('ImproveScreen', () => {
     await open();
     const list = await screen.findByRole('list', { name: 'Proposals, newest first' });
     expect(within(list).getAllByRole('listitem')).toHaveLength(4);
-    expect(screen.getByRole('button', { name: 'Proposals 4' })).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByRole('button', { name: 'To decide 4' })).toHaveAttribute('aria-pressed', 'true');
     for (const tab of ['Stale 1', 'Accepted 1', 'Rejected 1']) {
       expect(screen.getByRole('button', { name: tab })).toBeInTheDocument();
@@ -101,9 +100,9 @@ describe('ImproveScreen', () => {
     );
   });
 
-  it('runs the improve pipeline for the pipeline, or for one insight from its card', async () => {
+  it('runs the improve pipeline for the pipeline', async () => {
     const api = withImprove();
-    const { user, location } = await open(ROUTE, api);
+    const { user } = await open(ROUTE, api);
     const propose = screen.getByRole('button', { name: 'Propose a fix' });
     await vi.waitFor(() => expect(propose).toBeEnabled());
     await user.click(propose);
@@ -114,21 +113,13 @@ describe('ImproveScreen', () => {
         args: ['improve', { payload: { pipeline: 'listings-daily' }, requestId: expect.any(String) as unknown }],
       },
     ]);
+  });
 
-    await user.click(screen.getByRole('button', { name: 'Insights 6' }));
-    expect(location()).toBe(`${ROUTE}?view=insights`);
-    const drift = await screen.findByRole('article', { name: /The fallback disagrees with score/ });
-    await user.click(within(drift).getByRole('button', { name: 'Propose a fix' }));
-    expect(api.calls[1]).toEqual({
-      method: 'triggerRun',
-      args: [
-        'improve',
-        {
-          payload: { pipeline: 'listings-daily', insight: 'in_drift_score' },
-          requestId: expect.any(String) as unknown,
-        },
-      ],
-    });
+  it('has no insights tab: the board lives on the Insights screen', async () => {
+    await open();
+    await screen.findByRole('list', { name: 'Proposals, newest first' });
+    expect(screen.queryByRole('group', { name: 'Improve view' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Insights/ })).not.toBeInTheDocument();
   });
 
   it('says when the improve pipeline does not start', async () => {
@@ -141,13 +132,6 @@ describe('ImproveScreen', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'The improve pipeline did not start: pipeline improve is disabled',
     );
-  });
-
-  it('shows insights needing attention, and teaches when there are none', async () => {
-    const { user } = await open(`${ROUTE}?view=insights`, new FakeApi({ ...demoFixtures, insights: [] }));
-    expect(await screen.findByText('Nothing needs attention')).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'Proposals 4' }));
-    expect(await screen.findByRole('list', { name: 'Proposals, newest first' })).toBeInTheDocument();
   });
 
   it('speaks French', async () => {

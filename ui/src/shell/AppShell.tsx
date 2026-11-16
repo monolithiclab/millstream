@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { NavLink, Outlet, useMatch, useNavigate } from 'react-router-dom';
+import { useNodes } from '../common/useNodes';
 import { usePipelines } from '../common/usePipelines';
 import { liveUrls } from '../api/api';
 import { useDemo } from '../api/context';
@@ -10,7 +11,7 @@ import { buttons } from '../common/styles';
 import { languages, type Language } from '../i18n';
 import { useLiveStream } from '../live/useLiveStream';
 import { themes, usePreferences, type Theme } from '../preferences';
-import { pipelinePath, pipelineScreens, screenPath, screens, workspaceScreens, type Screen } from '../routes';
+import { pipelinePath, screenPath, screens, type Screen } from '../routes';
 import { CommandPalette, type Command } from './CommandPalette';
 import { DemoBadge } from './DemoBadge';
 import { EnvironmentBadge } from './EnvironmentBadge';
@@ -80,6 +81,18 @@ export function AppShell() {
   const pipelines = usePipelines();
   const demo = useDemo();
   const { session, signOut } = useSession();
+  const nodes = useNodes();
+  // Improve applies where improve.enabled is set, Nodes once a node is listed: the rest stay out of the navigation,
+  // the palette and the g shortcuts.
+  const shown = useMemo(
+    () =>
+      screens.filter((screen) => {
+        if (screen.id === 'improve') return session?.improve === true;
+        if (screen.id === 'nodes') return nodes.status === 'ready' && nodes.data.nodes.length > 0;
+        return true;
+      }),
+    [session, nodes],
+  );
   const live = useLiveStream(pipeline === undefined ? null : liveUrls.pipeline(pipeline));
   const [palette, setPalette] = useState(false);
   const [help, setHelp] = useState(false);
@@ -95,7 +108,7 @@ export function AppShell() {
       openPalette: () => setPalette(true),
       openHelp: () => setHelp(true),
       go: (key) => {
-        const screen = screens.find((s) => s.goKey === key);
+        const screen = shown.find((s) => s.goKey === key);
         if (screen) go(screen);
       },
     },
@@ -107,7 +120,7 @@ export function AppShell() {
     const action = t('palette.action');
     const otherLanguage: Language = prefs.language === 'en' ? 'fr' : 'en';
     return [
-      ...screens
+      ...shown
         .filter((screen) => screen.scope === 'workspace' || pipeline !== undefined)
         .map((screen) => ({
           id: `go-${screen.id}`,
@@ -141,7 +154,7 @@ export function AppShell() {
         ? [{ id: 'sign-out', group: action, label: t('palette.signOut'), run: () => void signOut() }]
         : []),
     ];
-  }, [t, pipeline, pipelines, prefs, navigate, go, session, signOut]);
+  }, [t, pipeline, pipelines, prefs, navigate, go, shown, session, signOut]);
 
   const closeMenu = () => setMenu(false);
 
@@ -165,9 +178,19 @@ export function AppShell() {
           <span className="font-display text-[26px] leading-[26px] tracking-[-0.01em]">{t('app.name')}</span>
         </div>
         <PipelineSwitcher current={pipeline} />
-        <NavGroup title={t('shell.workspace')} items={workspaceScreens} pipeline={pipeline} onNavigate={closeMenu} />
+        <NavGroup
+          title={t('shell.workspace')}
+          items={shown.filter((s) => s.scope === 'workspace')}
+          pipeline={pipeline}
+          onNavigate={closeMenu}
+        />
         {pipeline !== undefined && (
-          <NavGroup title={t('shell.pipeline')} items={pipelineScreens} pipeline={pipeline} onNavigate={closeMenu} />
+          <NavGroup
+            title={t('shell.pipeline')}
+            items={shown.filter((s) => s.scope === 'pipeline')}
+            pipeline={pipeline}
+            onNavigate={closeMenu}
+          />
         )}
         <div className="mt-auto flex flex-col gap-2 border-t border-line px-2.5 pt-3 text-small text-ink-2">
           <h2 className="sr-only">{t('shell.preferences')}</h2>

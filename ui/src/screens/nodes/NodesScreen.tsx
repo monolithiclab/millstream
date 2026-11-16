@@ -11,7 +11,7 @@ import { StatusBadge } from '../../common/Status';
 import { buttons, card, cardTitle } from '../../common/styles';
 import { useFormat, type Format } from '../../common/useFormat';
 import { useNow } from '../../common/useNow';
-import { useResource } from '../../common/useResource';
+import { useNodes } from '../../common/useNodes';
 
 // The API has no node stream: the screen reads again this often.
 export const NODES_REFRESH_MS = 10_000;
@@ -31,12 +31,15 @@ export function NodesScreen() {
   const { notice, setNotice, dismiss } = useNotice();
   const [confirm, setConfirm] = useState<Confirm | null>(null);
   const close = () => setConfirm(null);
-  const nodes = useResource('nodes', (a) => a.listNodes());
+  const nodes = useNodes();
   const refresh = nodes.refresh;
+  // The shell read the nodes already: coming here from another screen, read again at once, in the background.
+  const [shellRead] = useState(nodes.status === 'ready');
   useEffect(() => {
+    if (shellRead) refresh();
     const timer = setInterval(refresh, NODES_REFRESH_MS);
     return () => clearInterval(timer);
-  }, [refresh]);
+  }, [refresh, shellRead]);
 
   const data = nodes.status === 'ready' ? nodes.data : null;
   const serving = data?.nodes.filter((n) => n.state !== 'revoked') ?? [];

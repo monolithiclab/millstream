@@ -54,7 +54,7 @@ func newAPIServer(st store.Store, e *engine.Engine, notes *review.Notifier, logs
 	a, err := api.New(api.Options{Store: st, Engine: e, Artifacts: x.arts, Broker: b, Logs: logs,
 		Nodes: x.nodes, Version: x.rt.Version, User: identity(x.rt), Auth: sec.auth, Logger: log,
 		Identity: lead.identity, Deployment: lead.deployment, NotificationFailures: notes.Failures,
-		NodeAPI: x.nodeAPI, LeaseTTL: x.leaseTTL, Environment: x.mode,
+		NodeAPI: x.nodeAPI, LeaseTTL: x.leaseTTL, Environment: x.mode, Improve: x.improve,
 		Evidence: x.evidence, Training: x.training, Publisher: x.publisher})
 	if err != nil {
 		return nil, err
@@ -71,6 +71,7 @@ type apiExtras struct {
 	nodeAPI  http.Handler
 	leaseTTL time.Duration
 	mode     string // the deployment's environment
+	improve  bool   // whether improve.enabled is set
 	evidence api.EvidenceSettings
 	// training serves the API's distill training sets (spec section 11.5).
 	training api.TrainingSource

@@ -7,8 +7,8 @@ import { filterLabel } from '../../common/styles';
 import { useNow } from '../../common/useNow';
 import { InsightCard } from './InsightCard';
 
-// Insights by kind and step (spec 11.1): the kinds to show and a step on the side, the cards beside them. The
-// Insights screen shows one state tab of them, the Improve view those needing attention, each with Propose a fix.
+// Insights by kind and step (spec 11.1): the kinds to show and a step on the side, the cards beside them, each with
+// the action the screen adds (Propose a fix).
 export function InsightsBoard({
   insights,
   empty,

@@ -332,8 +332,8 @@ function ReviewLearning({ evidence }: { evidence: Evidence }) {
   );
 }
 
-// An insight with its evidence, Acknowledge or Mute, and an optional action of the screen showing it (the Improve
-// view's Propose a fix).
+// An insight with its evidence, Acknowledge or Mute, and an optional action of the screen showing it (the Insights
+// screen's Propose a fix).
 export function InsightCard({
   insight,
   now,

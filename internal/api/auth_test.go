@@ -40,7 +40,7 @@ func TestTokenAuth(t *testing.T) {
 	// The reviewer is auth.user, whatever the request says.
 	rec = do(t, srv, request{target: "/api/v1/session", header: map[string]string{"Authorization": "bearer s3cret",
 		UserHeader: "mallory"}})
-	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `{"auth":true,"user":"operator","environment":"development"}`) {
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `{"auth":true,"user":"operator","environment":"development","improve":false}`) {
 		t.Fatalf("session: %d %s", rec.Code, rec.Body)
 	}
 
@@ -114,6 +114,18 @@ func TestTokenAuth(t *testing.T) {
 		if rec.Code != want {
 			t.Errorf("host %s: %d, want %d", host, rec.Code, want)
 		}
+	}
+}
+
+// The session says whether improve is on: the server's Improve option.
+func TestSessionImprove(t *testing.T) {
+	f := readFixture(t)
+	if got := get[Session](t, f.srv, "/api/v1/session"); got.Improve {
+		t.Errorf("improve on by default: %+v", got)
+	}
+	s := must(New(Options{Store: f.st, Version: "v-test", Improve: true}))
+	if got := get[Session](t, s, "/api/v1/session"); !got.Improve {
+		t.Errorf("improve off with Options.Improve: %+v", got)
 	}
 }
 

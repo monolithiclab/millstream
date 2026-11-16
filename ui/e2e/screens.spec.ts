@@ -147,10 +147,6 @@ const screens: ScreenCase[] = [
       expect(
         page.getByRole('list', { name: /Proposals, newest first|Propositions, de la plus récente/ }),
       ).toBeVisible(),
-    open: async (page) => {
-      await page.getByRole('button', { name: /^(Insights|Constats) \d+$/ }).click();
-      await expect(page.getByRole('complementary', { name: /Filter insights|Filtrer les constats/ })).toBeVisible();
-    },
   },
   {
     name: 'proposal',

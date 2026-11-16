@@ -13,6 +13,7 @@ const nav = () => within(document.getElementById('main-nav')!);
 describe('app shell', () => {
   it('shows the workspace navigation and the page, with landmarks and a skip link', async () => {
     renderApp();
+    await nav().findByRole('link', { name: 'Nodes' });
     expect(screen.getByRole('link', { name: 'Skip to main content' })).toHaveAttribute('href', '#main');
     expect(screen.getByRole('main')).toHaveAttribute('id', 'main');
     expect(screen.getByRole('banner')).toBeInTheDocument();
@@ -27,6 +28,30 @@ describe('app shell', () => {
     // No pipeline: no live stream, no live mark.
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
     await screen.findByRole('button', { name: 'Switch pipeline, showing All pipelines' });
+  });
+
+  it('shows Nodes only once the deployment lists a node', async () => {
+    const empty = { ...demoFixtures.nodes, nodes: [] };
+    renderApp({ api: new FakeApi({ ...demoFixtures, nodes: empty }) });
+    await screen.findByRole('button', { name: 'Switch pipeline, showing All pipelines' });
+    expect(
+      nav()
+        .getAllByRole('link')
+        .map((a) => a.textContent),
+    ).toEqual(['Pipelines', 'Inbox', 'Metrics', 'Logs']);
+  });
+
+  it('shows Improve in a pipeline only when the session says improve is on', async () => {
+    const off = renderApp({ route: '/p/listings-daily/runs' });
+    await nav().findByRole('link', { name: 'Nodes' });
+    expect(nav().getByRole('link', { name: 'Insights' })).toBeInTheDocument();
+    expect(nav().queryByRole('link', { name: 'Improve' })).not.toBeInTheDocument();
+    off.unmount();
+
+    const api = new FakeApi();
+    api.getSession = () => Promise.resolve({ auth: false, environment: 'development', improve: true });
+    renderApp({ route: '/p/listings-daily/runs', api });
+    expect(await nav().findByRole('link', { name: 'Improve' })).toHaveAttribute('href', '/p/listings-daily/improve');
   });
 
   it('adds the pipeline navigation and the live mark inside a pipeline', () => {
@@ -234,6 +259,7 @@ describe('app shell', () => {
 
   it('opens and closes the navigation drawer on small screens', async () => {
     const { user } = renderApp();
+    await nav().findByRole('link', { name: 'Nodes' });
     const toggle = screen.getByRole('button', { name: 'Open navigation' });
     expect(toggle).toHaveAttribute('aria-expanded', 'false');
     await user.click(toggle);
@@ -249,7 +275,7 @@ describe('app shell', () => {
 
   it('focuses the heading after navigating', async () => {
     const { user } = renderApp();
-    await user.click(nav().getByRole('link', { name: 'Nodes' }));
+    await user.click(await nav().findByRole('link', { name: 'Nodes' }));
     expect(screen.getByRole('heading', { level: 1, name: 'Nodes' })).toHaveFocus();
   });
 
@@ -275,7 +301,7 @@ describe('environment badge', () => {
     expect(await within(screen.getByRole('banner')).findByText('Development')).toBeInTheDocument();
     cleanup();
     const api = new FakeApi();
-    api.getSession = () => Promise.resolve({ auth: false, environment: 'production' });
+    api.getSession = () => Promise.resolve({ auth: false, environment: 'production', improve: false });
     renderApp({ api, language: 'fr' });
     expect(await within(screen.getByRole('banner')).findByText('Production')).toBeInTheDocument();
   });
