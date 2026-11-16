@@ -28,7 +28,9 @@ before it reaches the spec.
 - A webhook trigger that waits a bounded time for the run's output, for light interactive use (next to the durable
   wait of the [Convex Workflow analysis](docs/research/20261022.convex-workflow.md)).
 - The `api` harness tool loop (below, under follow-ups) with a sandboxed code-execution tool, so a code harness runs
-  on any model: worth bringing forward to M6 or just after.
+  on any model: worth bringing forward to M6 or just after. Without it an `api` step is one model call, not an agent
+  that chooses its own tools, so agent steps on a European or local model (the sovereign deployments of section 15.1)
+  wait on this loop.
 
 ## Self-improvement
 
@@ -63,6 +65,34 @@ decision before it reaches the spec.
   large pipeline, sample them (as `distillable` samples 50 deliveries) once a profile shows the pass is slow.
 - Insight evidence is JSON with HTML escaping (`\u003e` for `>`, `\u003curl\u003e`); readers decode it, but the raw
   rows would read better without it.
+
+## Enterprise and governance
+
+From a comparison of Millstream with the agent platforms and agent governance tools on the market (November 2026),
+ranked; each needs a decision before it reaches the spec. Millstream covers running, observing and improving
+pipelines well, and nothing on the market matches `distill`. What an organisation's IT and compliance teams ask
+first is missing: identity, an accountable owner per agent, and records their own tools can read.
+
+- The commercial edition's identity layer first: OIDC sign-in and RBAC per pipeline and inbox (section 15.2) before
+  the connector catalogue. An IT department blocks a pilot on single sign-on and roles before it looks at
+  connectors.
+- An accountable owner per pipeline and per agent step: a business owner answerable for what the step is for and
+  what it delivers, apart from the technical owner who maintains it, with a review date. `millstream check` warns on
+  an agent step without one, and the UI shows it. Today the only person recorded is the reviewer of each decision.
+  The market's tools name an owner for access and compliance; none names one for value, and Millstream already
+  measures that value (cost per approved item, intervention rate). Changes the pipeline file, so it needs a spec
+  change.
+- An inventory export of agent steps for the organisation's governance tools (an identity provider's agent registry,
+  a CMDB, an AI governance platform): per step its action, model, `tools`, `mcp`, `network`, `effects`, owners,
+  budgets, the reviews in front of external effects, and the value figures above. Millstream governs only its own
+  pipelines and should feed the organisation's registry rather than become one.
+- Human oversight evidence: a per-pipeline report of which agent outputs reach an `effects: external` step through
+  a person, by sample or by rule, with reviewers, decisions and transcripts, for an organisation documenting the
+  human oversight the EU AI Act asks of deployers (article 26).
+- Positioning: section 20 compares Millstream with workflow engines and agent frameworks, not with agent platforms
+  (Copilot Studio, Agentforce, Bedrock AgentCore, Gemini Enterprise, Dust). Add them: Millstream is a workflow
+  platform with agent steps, for back-office work on item streams, not assistants or chat; the non-goals
+  already rule those out on purpose.
 
 ## Follow-ups
 
