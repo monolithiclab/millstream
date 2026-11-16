@@ -23,8 +23,6 @@ type Options struct {
 	Client *http.Client
 	// Logger receives the action's logs (stderr, which the node relays); nil discards them.
 	Logger *slog.Logger
-	// Poll is how often validate polls a backtest; zero means a second.
-	Poll time.Duration
 }
 
 // config is the steps' config: the API and its token, and each step's settings.
@@ -75,9 +73,6 @@ func Serve(ctx context.Context, step string, in io.Reader, out io.Writer, opts O
 	}
 	if opts.Client == nil {
 		opts.Client = &http.Client{Timeout: time.Minute}
-	}
-	if opts.Poll <= 0 {
-		opts.Poll = time.Second
 	}
 	r, w := protocol.NewReader(in), protocol.NewWriter(out)
 	m, err := r.Read()

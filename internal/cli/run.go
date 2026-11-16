@@ -190,7 +190,7 @@ type engineHost struct {
 	laptop bool
 	// mode is the environment's effective mode (spec section 11.2): run defaults to development, serve to production.
 	mode string
-	// backtests runs the backtests of the API and of the engine's proposal validation, sharing one improve budget.
+	// backtests runs the engine's proposal validation and serves the API's distill training sets, sharing one improve budget.
 	backtests *backtest.Backtester
 	// served, when set, learns the site's URL once it serves: the improve pipeline's API secret.
 	served func(url string)
@@ -263,7 +263,7 @@ func (h engineHost) run(ctx context.Context, rt *Runtime, env *pipeline.Environm
 			srv, err = newAPIServer(st, e, notes, logs, apiExtras{rt: rt, arts: h.arts, nodes: nodes, nodeAPI: nodeAPI,
 				leaseTTL: h.leaseTTL, mode: h.mode, evidence: api.EvidenceSettings{Mode: h.mode,
 					Sample: env.Improve.Evidence.Sample, TTL: time.Duration(env.Improve.Evidence.TTL)},
-				backtests: backtest.NewJobs(runCtx, h.backtests, nil), publisher: pub}, h.lead, h.sec, log)
+				training: h.backtests, publisher: pub}, h.lead, h.sec, log)
 		}
 		if err != nil {
 			cancel(nil)

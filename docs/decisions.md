@@ -391,7 +391,7 @@ backtest, evals, proposals). There is no shadow mode: a distilled step is valida
 held out by time.
 
 **Evidence.** As an ordinary pipeline, the LLM work gets budgets, transcripts, replay and the UI for free, can be read
-and forked, and leaves the engine with no improvement logic beyond insights, evidence, the backtest endpoint and the
+and forked, and leaves the engine with no improvement logic beyond insights, evidence, the backtest runner and the
 proposal rules. Deterministic insights work on a laptop with no API key.
 
 **Cost if wrong.** The public API must expose enough (backtests, evidence) for the package to work, which also

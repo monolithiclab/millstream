@@ -18,7 +18,7 @@ info:
     out aside); the server also answers ui.baseUrl's host and its listen address's; a request authenticated by the
     cookie that changes state must name its origin; and every decision is recorded under auth.user, whatever the
     request says. A bearer token that is the proposals-only token (POST /proposal-token) reaches only listing,
-    reading, creating and revalidating proposals, running backtests, and the reads the improve pipeline gathers
+    reading, creating and revalidating proposals, and the reads the improve pipeline gathers
     evidence with (insights, pipelines, revisions and their files, items and their lineage); anything else is
     forbidden, with or without auth.token: the improve package calls the API with it.
 
@@ -902,49 +902,6 @@ paths:
               schema: { $ref: "#/components/schemas/EvidenceImport" }
         "400": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }
-        "503": { $ref: "#/components/responses/Error" }
-  /backtests:
-    post:
-      operationId: createBacktest
-      summary: Start a backtest of a patch against past items, in a development deployment (spec section 11.3).
-      description: |
-        The patch, a unified diff against the base revision's package, is applied to a scratch copy; the steps it
-        changes are replayed on a stratified sample of past deliveries (local history, else imported evidence) in a
-        scratch store, once on the base revision and once patched, with every effects external action stubbed. The
-        answer comes at once: the backtest runs in the background, its state and report at its Location. A malformed
-        or unapplicable request, a production deployment and a spent improve budget are refused at once.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: "#/components/schemas/BacktestRequest" }
-      responses:
-        default: { $ref: "#/components/responses/Error" }
-        "415": { $ref: "#/components/responses/Error" }
-        "202":
-          description: The backtest, started.
-          headers:
-            Location: { schema: { type: string }, description: Where its state is read. }
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/Backtest" }
-        "400": { $ref: "#/components/responses/Error" }
-        "409": { $ref: "#/components/responses/Error" }
-        "503": { $ref: "#/components/responses/Error" }
-  /backtests/{backtest}:
-    parameters: [{ name: backtest, in: path, required: true, schema: { type: string } }]
-    get:
-      operationId: getBacktest
-      summary: A backtest's state, and its report once done.
-      description: Backtests live in the engine process's memory, the last 100 kept; a restart forgets them.
-      responses:
-        default: { $ref: "#/components/responses/Error" }
-        "200":
-          description: The backtest.
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/Backtest" }
-        "404": { $ref: "#/components/responses/Error" }
         "503": { $ref: "#/components/responses/Error" }
   /pipelines/{pipeline}/steps/{step}/distill-training:
     parameters:
@@ -1997,7 +1954,7 @@ components:
           properties:
             passed: { type: boolean }
             skipped: { type: string, description: Why the backtest did not run (check failed, or the backtest was refused); it did not pass. }
-            report: { description: "The backtest's report, as GET /backtests/{backtest} answers it." }
+            report: { description: "The backtest's report, shaped as the BacktestReport schema." }
     EvalReport:
       type: object
       required: [step, action, passed, cases]
@@ -2072,29 +2029,6 @@ components:
         productionRevision: { type: string, description: The package hash of the revision the bundle was exported on. }
         localRevision: { type: string, description: The package hash of this deployment's active revision, empty when the pipeline is not applied. }
         diverged: { type: boolean, description: The two revisions differ. }
-    BacktestRequest:
-      type: object
-      required: [pipeline, baseRevision, patch]
-      additionalProperties: false
-      properties:
-        pipeline: { type: string }
-        baseRevision: { type: string, description: The package hash of the revision the patch applies to; a patch whose Millstream-Base trailer names another is refused. }
-        patch: { type: string, description: The unified diff against the base revision's package files. }
-        sample: { type: integer, minimum: 0, description: The past deliveries to sample; improve.backtest.sample (200) by default. }
-        steps: { type: array, items: { type: string }, description: Steps replayed besides those the patch changes. }
-        source: { type: string, enum: [local, evidence], description: Where the sample comes from; local history when it reaches the changed steps, else imported evidence, by default. }
-    Backtest:
-      type: object
-      required: [id, pipeline, state, createdAt]
-      additionalProperties: false
-      properties:
-        id: { type: string }
-        pipeline: { type: string }
-        state: { type: string, enum: [running, done, failed] }
-        createdAt: { type: string, format: date-time }
-        finishedAt: { type: string, format: date-time }
-        error: { $ref: "#/components/schemas/Error/properties/error" }
-        report: { $ref: "#/components/schemas/BacktestReport" }
     BacktestReport:
       type: object
       required: [pipeline, baseRevision, patchHash, patchedRevision, source, changedSteps, sampled, strata, runs, before, after, steps, costUsd, startedAt, finishedAt]

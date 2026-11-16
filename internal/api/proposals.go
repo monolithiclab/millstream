@@ -19,7 +19,7 @@ import (
 // resources sit under /proposals, filtered by pipeline.
 //
 // The proposals-only token (POST /proposal-token, answered once, kept as its SHA-256) is what the improve package
-// calls the API with: a request bearing it may list, read, create and revalidate proposals and run backtests, and
+// calls the API with: a request bearing it may list, read, create and revalidate proposals, and
 // nothing else, whether or not the server requires auth.token. Accepting and rejecting stay a person's.
 
 // Proposal is a proposal as the API shows it.
@@ -115,8 +115,6 @@ var proposalRoutes = map[string]bool{
 	"GET /proposals/{proposal}":             true,
 	"POST /proposals/{proposal}/revalidate": true,
 	"POST /proposals/{proposal}/publish":    true, // the improve package's publish step (spec section 11.7)
-	"POST /backtests":                       true, // spec section 11.3: the backtest endpoint the validate step calls
-	"GET /backtests/{backtest}":             true,
 	// The training side of a distill split (spec section 11.5); the holdout is never served.
 	"GET /pipelines/{pipeline}/steps/{step}/distill-training": true,
 	// The reads the improve pipeline gathers evidence with (spec section 11.3): insights, pipelines, revisions with

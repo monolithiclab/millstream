@@ -99,8 +99,7 @@ first is missing: identity, an accountable owner per agent, and records their ow
 - Backtests: the improve budget they charge is a per-process `backtest.Ledger` against `improve.budget.dayUsd`,
   while the improve pipeline's own agents charge its `budget.dayUsd` (the same figure) in the store: charge the
   backtests to the pipeline's `budget_days` too, so both share one day budget across restarts (the store has no
-  per-pipeline charge outside deliveries yet). Backtests
-  live in the engine's memory (the last 100); persist them if proposals need their reports after a restart.
+  per-pipeline charge outside deliveries yet).
   Replays of runs a replay or an import opened, and of evidence (which carries no run variables, resolved anew), are
   left out or approximated.
 - Distill (spec section 11.5): validation builds the candidate and runs its evals and the holdout, not its unit

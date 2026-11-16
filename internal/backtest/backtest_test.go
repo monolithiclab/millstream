@@ -336,38 +336,3 @@ func TestMeasure(t *testing.T) {
 		t.Errorf("unreviewed = %+v", m)
 	}
 }
-
-// fakeRunner answers what it is given.
-type fakeRunner struct {
-	rep *Report
-	err error
-}
-
-func (f fakeRunner) Run(context.Context, Request) (*Report, error) { return f.rep, f.err }
-
-// TestJobs: a job starts running and ends done with its report or failed with its error; Start refuses at once
-// what Prepare refuses.
-func TestJobs(t *testing.T) {
-	ok := NewJobs(context.Background(), fakeRunner{rep: &Report{Pipeline: "bt"}}, nil)
-	job, err := ok.Start(Request{Pipeline: "bt"})
-	if err != nil || job.State != JobRunning || job.ID == "" {
-		t.Fatalf("Start = %+v, %v", job, err)
-	}
-	ok.Wait()
-	if got, found := ok.Get(job.ID); !found || got.State != JobDone || got.Report.Pipeline != "bt" {
-		t.Errorf("Get = %+v, %v", got, found)
-	}
-	failing := NewJobs(context.Background(), fakeRunner{err: ErrNoHistory}, nil)
-	job, _ = failing.Start(Request{})
-	failing.Wait()
-	if got, _ := failing.Get(job.ID); got.State != JobFailed || !errors.Is(got.Err, ErrNoHistory) {
-		t.Errorf("failed job = %+v", got)
-	}
-	if _, found := failing.Get("bt_nope"); found {
-		t.Error("an unknown job was found")
-	}
-	prepared := NewJobs(context.Background(), New(Options{Store: revisionOnly}), nil)
-	if _, err := prepared.Start(Request{}); !errors.Is(err, store.ErrInvalid) {
-		t.Errorf("Start of an invalid request = %v", err)
-	}
-}

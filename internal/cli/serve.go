@@ -15,7 +15,6 @@ import (
 
 	"github.com/monolithiclab/millstream/internal/api"
 	"github.com/monolithiclab/millstream/internal/artifacts"
-	"github.com/monolithiclab/millstream/internal/backtest"
 	"github.com/monolithiclab/millstream/internal/engine"
 	"github.com/monolithiclab/millstream/internal/pipeline"
 	"github.com/monolithiclab/millstream/internal/publish"
@@ -56,7 +55,7 @@ func newAPIServer(st store.Store, e *engine.Engine, notes *review.Notifier, logs
 		Nodes: x.nodes, Version: x.rt.Version, User: identity(x.rt), Auth: sec.auth, Logger: log,
 		Identity: lead.identity, Deployment: lead.deployment, NotificationFailures: notes.Failures,
 		NodeAPI: x.nodeAPI, LeaseTTL: x.leaseTTL, Environment: x.mode,
-		Evidence: x.evidence, Backtests: x.backtests, Publisher: x.publisher})
+		Evidence: x.evidence, Training: x.training, Publisher: x.publisher})
 	if err != nil {
 		return nil, err
 	}
@@ -73,8 +72,8 @@ type apiExtras struct {
 	leaseTTL time.Duration
 	mode     string // the deployment's environment
 	evidence api.EvidenceSettings
-	// backtests runs the API's backtests (spec section 11.3).
-	backtests *backtest.Jobs
+	// training serves the API's distill training sets (spec section 11.5).
+	training api.TrainingSource
 	// publisher publishes accepted proposals (POST /proposals/{id}/publish); nil without improve.publish.
 	publisher publish.Publisher
 }

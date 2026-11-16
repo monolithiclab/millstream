@@ -42,8 +42,7 @@ how the suites work, and `make help` for every command.
   deployment's own items.
 - Proposals (spec section 11.3) are accepted on their base revision only, and an accepted one makes overlapping open
   proposals stale; apply and rollback make proposals on another base stale. The proposals-only token is checked in
-  `ServeHTTP` against `proposalRoutes` before routing (`internal/api/proposals.go`). Backtest jobs live in memory, not
-  the store.
+  `ServeHTTP` against `proposalRoutes` before routing (`internal/api/proposals.go`).
 - The `improve` pipeline (spec section 11.3) is an ordinary package embedded in `internal/improve/package`, loaded by
   `run` (while serving) and `serve` when `improve.enabled` is set; its exec steps run the binary itself (the
   program name `millstream` is the running binary, `millstream improve-action <step>`) and reach the API through

@@ -99,8 +99,8 @@ func TestProposalActions(t *testing.T) {
 	p2 := proposal(call(http.MethodPost, "/proposals", proposalBody("topology", filterPatch("true", "item.n > 2")),
 		tok.Token, http.StatusCreated))
 	call(http.MethodGet, "/proposals/"+p2.ID, "", tok.Token, http.StatusOK)
-	// The backtest routes pass the token's gate: this server runs no backtests.
-	call(http.MethodGet, "/backtests/bt_nope", "", tok.Token, http.StatusServiceUnavailable)
+	// The distill training route passes the token's gate: this server serves no training sets.
+	call(http.MethodGet, "/pipelines/extra/steps/s/distill-training", "", tok.Token, http.StatusServiceUnavailable)
 
 	for _, bad := range []struct{ kind, patch string }{
 		{"topology", "--- /dev/null\n+++ b/Makefile\n@@ -0,0 +1 @@\n+all:\n"},

@@ -940,52 +940,6 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/backtests': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Start a backtest of a patch against past items, in a development deployment (spec section 11.3).
-     * @description The patch, a unified diff against the base revision's package, is applied to a scratch copy; the steps it
-     *     changes are replayed on a stratified sample of past deliveries (local history, else imported evidence) in a
-     *     scratch store, once on the base revision and once patched, with every effects external action stubbed. The
-     *     answer comes at once: the backtest runs in the background, its state and report at its Location. A malformed
-     *     or unapplicable request, a production deployment and a spent improve budget are refused at once.
-     */
-    post: operations['createBacktest'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/backtests/{backtest}': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        backtest: string;
-      };
-      cookie?: never;
-    };
-    /**
-     * A backtest's state, and its report once done.
-     * @description Backtests live in the engine process's memory, the last 100 kept; a restart forgets them.
-     */
-    get: operations['getBacktest'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
   '/pipelines/{pipeline}/steps/{step}/distill-training': {
     parameters: {
       query?: never;
@@ -1880,7 +1834,7 @@ export interface components {
         passed: boolean;
         /** @description Why the backtest did not run (check failed */
         skipped?: string;
-        /** @description The backtest's report, as GET /backtests/{backtest} answers it. */
+        /** @description The backtest's report, shaped as the BacktestReport schema. */
         report?: unknown;
       };
     };
@@ -1958,34 +1912,6 @@ export interface components {
       localRevision: string;
       /** @description The two revisions differ. */
       diverged: boolean;
-    };
-    BacktestRequest: {
-      pipeline: string;
-      /** @description The package hash of the revision the patch applies to; a patch whose Millstream-Base trailer names another is refused. */
-      baseRevision: string;
-      /** @description The unified diff against the base revision's package files. */
-      patch: string;
-      /** @description The past deliveries to sample; improve.backtest.sample (200) by default. */
-      sample?: number;
-      /** @description Steps replayed besides those the patch changes. */
-      steps?: string[];
-      /**
-       * @description Where the sample comes from; local history when it reaches the changed steps
-       * @enum {string}
-       */
-      source?: 'local' | 'evidence';
-    };
-    Backtest: {
-      id: string;
-      pipeline: string;
-      /** @enum {string} */
-      state: 'running' | 'done' | 'failed';
-      /** Format: date-time */
-      createdAt: string;
-      /** Format: date-time */
-      finishedAt?: string;
-      error?: components['schemas']['Error']['error'];
-      report?: components['schemas']['BacktestReport'];
     };
     BacktestReport: {
       pipeline: string;
@@ -3888,62 +3814,6 @@ export interface operations {
       400: components['responses']['Error'];
       409: components['responses']['Error'];
       415: components['responses']['Error'];
-      503: components['responses']['Error'];
-      default: components['responses']['Error'];
-    };
-  };
-  createBacktest: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['BacktestRequest'];
-      };
-    };
-    responses: {
-      /** @description The backtest, started. */
-      202: {
-        headers: {
-          /** @description Where its state is read. */
-          Location?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['Backtest'];
-        };
-      };
-      400: components['responses']['Error'];
-      409: components['responses']['Error'];
-      415: components['responses']['Error'];
-      503: components['responses']['Error'];
-      default: components['responses']['Error'];
-    };
-  };
-  getBacktest: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        backtest: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description The backtest. */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['Backtest'];
-        };
-      };
-      404: components['responses']['Error'];
       503: components['responses']['Error'];
       default: components['responses']['Error'];
     };

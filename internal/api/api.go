@@ -158,11 +158,16 @@ type Options struct {
 	// Evidence is the deployment's evidence settings (spec section 11.2): its environment's mode, which refuses
 	// imports in production, and improve.evidence.
 	Evidence EvidenceSettings
-	// Backtests runs the backtests POST /backtests starts (spec section 11.3); nil answers them unavailable.
-	Backtests *backtest.Jobs
+	// Training serves the training side of a distill split (spec section 11.5); nil answers it unavailable.
+	Training TrainingSource
 	// Publisher is the publish action improve.publish names (spec section 11.7); nil answers publications
 	// unavailable.
 	Publisher publish.Publisher
+}
+
+// TrainingSource serves an agent step's training set (backtest.Backtester).
+type TrainingSource interface {
+	Training(ctx context.Context, pipelineName, step string) (backtest.Training, error)
 }
 
 // EvidenceSettings are what evidence export and import read from the environment file: the effective mode, the
@@ -244,8 +249,6 @@ var routes = []route{
 	{http.MethodGet, "/metrics/names", (*Server).listMetricNames},
 	{http.MethodPost, "/pipelines/{pipeline}/evidence", (*Server).exportEvidence},
 	{http.MethodPost, "/evidence/imports", (*Server).importEvidence},
-	{http.MethodPost, "/backtests", (*Server).createBacktest},
-	{http.MethodGet, "/backtests/{backtest}", (*Server).getBacktest},
 	{http.MethodGet, "/pipelines/{pipeline}/steps/{step}/distill-training", (*Server).getDistillTraining},
 	{http.MethodGet, "/proposals", (*Server).listProposals},
 	{http.MethodPost, "/proposals", (*Server).createProposal},

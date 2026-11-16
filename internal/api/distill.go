@@ -1,12 +1,10 @@
 package api
 
 import (
-	"errors"
 	"fmt"
 	"net/http"
 	"time"
 
-	"github.com/monolithiclab/millstream/internal/backtest"
 	"github.com/monolithiclab/millstream/internal/distill"
 	"github.com/monolithiclab/millstream/internal/pipeline"
 )
@@ -29,13 +27,10 @@ type DistillTraining struct {
 
 // getDistillTraining answers an agent step's training set.
 func (s *Server) getDistillTraining(w http.ResponseWriter, r *http.Request) error {
-	if s.opts.Backtests == nil {
+	if s.opts.Training == nil {
 		return fmt.Errorf("distill training: not configured on this server: %w", errUnavailable)
 	}
-	t, err := s.opts.Backtests.Training(r.Context(), r.PathValue("pipeline"), r.PathValue("step"))
-	if errors.Is(err, backtest.ErrNoTraining) {
-		err = fmt.Errorf("%w: %w", err, errUnavailable)
-	}
+	t, err := s.opts.Training.Training(r.Context(), r.PathValue("pipeline"), r.PathValue("step"))
 	if err != nil {
 		return err
 	}
