@@ -40,7 +40,7 @@ describe('ImproveScreen', () => {
     expect(ready).toHaveTextContent(/^ReadyLessonsscoreby improve 10 hours ago/);
     expect(ready).toHaveTextContent('Validation passed');
     expect(ready).toHaveTextContent('lessons/score.yaml');
-    expect(row(/^p-0152/)).toHaveTextContent('DraftingPrompt');
+    expect(row(/^p-0152/)).toHaveTextContent('DraftingLessons');
     expect(row(/^p-0152/)).toHaveTextContent('Validation failed: evals, backtest');
     expect(row(/^p-0153/)).toHaveTextContent('ValidatingConfig');
     expect(row(/^p-0153/)).toHaveTextContent('Not validated yet');
@@ -51,7 +51,7 @@ describe('ImproveScreen', () => {
     await user.selectOptions(await screen.findByRole('combobox', { name: 'Kind' }), 'lessons');
     expect(location()).toBe(`${ROUTE}?kind=lessons`);
     const list = screen.getByRole('list', { name: 'Proposals, newest first' });
-    expect(within(list).getAllByRole('listitem')).toHaveLength(1);
+    expect(within(list).getAllByRole('listitem')).toHaveLength(2);
     await user.click(screen.getByRole('button', { name: 'Rejected 1' }));
     expect(location()).toBe(`${ROUTE}?kind=lessons&state=rejected`);
     // The kind chosen is not among the rejected ones: it does not filter them.

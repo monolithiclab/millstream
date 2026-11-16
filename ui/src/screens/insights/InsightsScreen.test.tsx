@@ -168,7 +168,7 @@ describe('InsightsScreen', () => {
     expect(review).toHaveTextContent(
       'TopologyA filter item.priceEur <= 520000 after parse, before score: it drops 5 rejected items and 0 of 18 approved ones.',
     );
-    expect(review).toHaveTextContent('Lessons6 edits of /marginPct written by score: a lesson, or a prompt change.');
+    expect(review).toHaveTextContent('Lessons6 edits of /marginPct written by score: a lesson.');
     expect(review).toHaveTextContent('Reason codes3 rejections at analyst-review with a text and no reason code');
   });
 

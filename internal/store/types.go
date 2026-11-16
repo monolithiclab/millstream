@@ -1280,14 +1280,13 @@ type ProposalKind string
 
 const (
 	ProposalConfig   ProposalKind = "config"
-	ProposalPrompt   ProposalKind = "prompt"
 	ProposalLessons  ProposalKind = "lessons"
 	ProposalTopology ProposalKind = "topology"
 	ProposalDistill  ProposalKind = "distill"
 )
 
 // ProposalKinds are the kinds, in the spec's order.
-var ProposalKinds = []ProposalKind{ProposalConfig, ProposalPrompt, ProposalLessons, ProposalTopology, ProposalDistill}
+var ProposalKinds = []ProposalKind{ProposalConfig, ProposalLessons, ProposalTopology, ProposalDistill}
 
 // ProposalState is where a proposal is in its life (spec section 11.3).
 type ProposalState string

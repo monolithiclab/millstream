@@ -262,7 +262,6 @@ function useHintText(): (hint: Hint) => string {
           approvals: n('approvals'),
         });
       case 'lessons':
-      case 'prompt':
         return t('insights.hint.lessons', { step: s('step'), pointer: s('pointer'), edits: n('edits') });
       case 'config':
         return t('insights.hint.config', {

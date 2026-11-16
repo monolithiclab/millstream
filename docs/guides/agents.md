@@ -88,7 +88,6 @@ so a change never alters work in flight, and `millstream rollback` reactivates t
   and agent steps predictable enough to replace (`distillable`).
 - **Proposals.** In a development deployment, the `improve` pipeline turns insights into proposals:
   - `lessons`: rules and examples taken from reviewers' edits, rendered into the prompt;
-  - `prompt`: a changed `prompt.md`;
   - `config`: retries, thresholds, an `autoApprove` rule;
   - `topology`: a filter moved upstream of the most expensive step it can precede;
   - `distill`: code replacing an agent.

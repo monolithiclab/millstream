@@ -519,7 +519,7 @@ CREATE INDEX evidence_imports_expiry ON evidence_imports (expires_at);
 CREATE TABLE proposals (
     id                text PRIMARY KEY,
     pipeline          text NOT NULL,
-    kind              text NOT NULL, -- config | prompt | lessons | topology | distill
+    kind              text NOT NULL, -- config | lessons | topology | distill
     base_revision     text NOT NULL,
     patch             text NOT NULL, -- a unified diff
     patch_sha256      text NOT NULL,

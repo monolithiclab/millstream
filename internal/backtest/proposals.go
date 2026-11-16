@@ -18,7 +18,7 @@ const Tolerance = 0.02
 // the base revision's over the whole sample: agreement with the reviewers' decisions falls by at most Tolerance;
 // agreement with the historical outputs, on the reviewed lineages and on those no review lies below alike, falls by
 // at most the share of reviewed-lineage deliveries that moved toward the reviewers' truth (TowardReviewersShare)
-// plus Tolerance. A lessons or prompt change is meant to do to the unreviewed items what reviewers did to theirs, so
+// plus Tolerance. A lessons change is meant to do to the unreviewed items what reviewers did to theirs, so
 // its unreviewed outputs may move as far as its reviewed ones moved toward the reviewers; a patch fixing one
 // reviewed item and wrecking the rest still fails, its share being tiny. An agreement with nothing to compare does
 // not count. The

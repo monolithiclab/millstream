@@ -104,9 +104,9 @@ describe('ProposalScreen', () => {
   it('shows the patch unified below 1024 px', async () => {
     mockMatchMedia(() => false);
     await open('p-0152');
-    const prompt = within(section('Patch')).getByRole('region', { name: 'actions/score/prompt.md' });
-    expect(prompt).toHaveTextContent('Removed: Use `get_comparables` for the price per m² of the area.');
-    expect(within(prompt).getByText('## Output')).toHaveClass('text-accent');
+    const lessons = within(section('Patch')).getByRole('region', { name: 'lessons/score.yaml' });
+    expect(lessons).toHaveTextContent('Removed: - text: Ignore the agency fee when it is not stated in the listing.');
+    expect(within(lessons).getByText('examples')).toHaveClass('text-accent');
   });
 
   it('accepts a ready proposal naming the patch read, saying what follows', async () => {

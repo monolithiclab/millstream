@@ -68,11 +68,11 @@ func rejections(rejected []api.Proposal) string {
 	return b.String()
 }
 
-// relevant are the files a brief shows for an idea: the pipeline file, and for a lessons or prompt proposal the
-// step's lessons file and its agent's prompt.
+// relevant are the files a brief shows for an idea: the pipeline file, and for a lessons proposal the step's
+// lessons file and its agent's prompt.
 func relevant(id idea, files api.RevisionFiles) []string {
 	out := []string{pipeline.FileName}
-	if id.kind != string(store.ProposalLessons) && id.kind != string(store.ProposalPrompt) || id.step == "" {
+	if id.kind != string(store.ProposalLessons) || id.step == "" {
 		return out
 	}
 	lessons := "lessons/" + id.step + ".yaml"

@@ -73,14 +73,14 @@ func (d *Data) attribute(people []Decision) (all []attribution, unattributed int
 type hint map[string]any
 
 // hints matches a review step's decisions by a person against the patterns of spec section 11.6, in the table's
-// order: filter candidates (topology), recurring edits (lessons, or prompt), near-universal approval (config) and
+// order: filter candidates (topology), recurring edits (lessons), near-universal approval (config) and
 // uncovered free-text reasons (reasons).
 func (d *Data) hints(step string, people []Decision, edits []attribution) []hint {
 	out := d.filterHints(people)
 	for _, a := range edits {
 		if a.Step != nil && a.Edits >= minRecurringEdits {
 			out = append(out, hint{"kind": "lessons", "pattern": "recurringEdits", "step": *a.Step,
-				"pointer": a.Pointer, "edits": a.Edits, "alternative": "prompt"})
+				"pointer": a.Pointer, "edits": a.Edits})
 		}
 	}
 	clean, uncovered := 0, 0

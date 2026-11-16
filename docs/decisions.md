@@ -373,7 +373,7 @@ similarity is parked in the roadmap.
 
 ### D29. Learnings reach production only through accepted proposals (2026-10-14)
 
-**Decision.** Lessons, prompt changes, new filters, tuning and code that replaces an agent are proposals that a
+**Decision.** Lessons, config changes, new filters, tuning and code that replaces an agent are proposals that a
 person accepts, each validated by evals and a backtest against past items. Nothing applies on its own, agents do not
 read a live learnings store, and accepted changes reach production through the normal release of the package.
 

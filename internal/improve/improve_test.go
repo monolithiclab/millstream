@@ -68,10 +68,13 @@ func TestPackage(t *testing.T) {
 		!slices.Equal(opportunities.Kinds, pipeline.InsightOpportunities) {
 		t.Fatalf("opportunities trigger %+v: want %v at any severity", tr["opportunities"], pipeline.InsightOpportunities)
 	}
-	// Every kind fires exactly one of them, so no insight starts two runs and pays for two drafts.
-	both := slices.Sorted(slices.Values(slices.Concat(problems.Kinds, opportunities.Kinds)))
-	if want := slices.Sorted(slices.Values(pipeline.InsightKinds)); !slices.Equal(both, want) {
-		t.Errorf("the insight triggers read %v, want each of %v once", both, want)
+	// A kind that drafts fires exactly one of them, so no insight starts two runs and pays for two drafts; the
+	// others (cost, waste, drift, unschedulable) fire none, as no idea answers them.
+	for _, kind := range pipeline.InsightKinds {
+		fires := btoi(slices.Contains(problems.Kinds, kind)) + btoi(slices.Contains(opportunities.Kinds, kind))
+		if want := btoi(slices.Contains(drafting, kind)); fires != want {
+			t.Errorf("a %s insight fires %d improve triggers, want %d", kind, fires, want)
+		}
 	}
 	if tr["weekly"].Cron == nil || tr["propose"].Manual == nil {
 		t.Errorf("triggers %+v", tr)
@@ -166,4 +169,15 @@ func TestCheck(t *testing.T) {
 			t.Errorf("%s: %v, want %v", c.name, err, c.want)
 		}
 	}
+}
+
+// drafting are the insight kinds ideasOf makes proposals from.
+var drafting = []string{pipeline.InsightSlowStep, pipeline.InsightFailureCluster, pipeline.InsightReviewPattern,
+	pipeline.InsightDistillable}
+
+func btoi(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
 }

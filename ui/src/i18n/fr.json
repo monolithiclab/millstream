@@ -885,7 +885,7 @@
     "hint": {
       "unattributed": "aucune étape seule",
       "topology": "Un filtre {{condition}} après {{after}}, avant {{before}} : il écarte {{rejections}} items rejetés et {{falseDrops}} des {{approvals}} approuvés.",
-      "lessons": "{{edits}} modifications de {{pointer}} écrit par {{step}} : une leçon, ou une modification du prompt.",
+      "lessons": "{{edits}} modifications de {{pointer}} écrit par {{step}} : une leçon.",
       "config": "{{rate}} des {{decisions}} décisions à {{step}} approuvées sans modification : une règle autoApprove.",
       "reasons": "{{rejections}} rejets à {{step}} avec un texte et sans code de motif : de nouveaux codes.",
       "reasonCodes": "Codes de motif"
@@ -917,7 +917,6 @@
     "allKinds": "Tous les types",
     "kind": {
       "config": "Configuration",
-      "prompt": "Prompt",
       "lessons": "Leçons",
       "topology": "Topologie",
       "distill": "Distillation"

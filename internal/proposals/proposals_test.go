@@ -100,11 +100,7 @@ func TestPrepare(t *testing.T) {
 		{store.ProposalLessons, newFile("lessons/nope.yaml", "rules: []"), nil, "a step of the pipeline"},
 		{store.ProposalLessons, newFile("lessons/score.yml", "rules: []"), nil, "lessons/<step>.yaml"},
 		{store.ProposalLessons, configPatch, nil, "pipeline.yaml"},
-		{store.ProposalPrompt, promptPatch, []string{"score"}, ""},
-		{store.ProposalPrompt, newFile("actions/other/prompt.md", "x"), nil, "an action of the package"},
-		{store.ProposalPrompt, newFile("actions/scorer/main.go", "package main"), nil, "prompt.md"},
-		{store.ProposalPrompt, "--- a/actions/scorer/prompt.md\n+++ /dev/null\n@@ -1 +0,0 @@\n-Score the listing.\n", nil,
-			"needs its prompt"},
+		{store.ProposalLessons, promptPatch, nil, "lessons/<step>.yaml"},
 		{store.ProposalConfig, configPatch, []string{"score"}, ""},
 		{store.ProposalTopology, configPatch, []string{"score"}, ""},
 		{store.ProposalConfig, configPatch + lessonsPatch, nil, "pipeline.yaml alone"},
@@ -152,7 +148,7 @@ func TestFingerprint(t *testing.T) {
 	if a != Fingerprint("p", store.ProposalLessons, []string{"i1", "i2"}, []string{"a", "b"}) || len(a) != 32 {
 		t.Fatalf("fingerprint %q depends on order", a)
 	}
-	if a == Fingerprint("p", store.ProposalPrompt, []string{"i1", "i2"}, []string{"a", "b"}) {
+	if a == Fingerprint("p", store.ProposalConfig, []string{"i1", "i2"}, []string{"a", "b"}) {
 		t.Fatal("the kind does not change the fingerprint")
 	}
 }

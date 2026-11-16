@@ -103,7 +103,6 @@
           "rejections": 5
         },
         {
-          "alternative": "prompt",
           "edits": 4,
           "kind": "lessons",
           "pattern": "recurringEdits",

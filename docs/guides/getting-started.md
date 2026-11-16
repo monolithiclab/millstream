@@ -1055,7 +1055,7 @@ Stop the engine with Ctrl-C.
 
   `millstream metrics` prints the rollups behind them, or a Prometheus exposition with `--prometheus`.
 - **Self-improvement.** Production exports evidence (`millstream evidence export`), a development deployment imports
-  it, and the `improve` pipeline drafts proposals from insights: new lessons, prompt and config changes, or code that
+  it, and the `improve` pipeline drafts proposals from insights: new lessons and config changes, or code that
   replaces an agent step (`distill`), each validated by a backtest before a person accepts it (`millstream
   proposals`, the Improve view). It needs `improve.enabled` in a development environment file and a model for the
   drafting agent. Spec section 11 describes the loop and [the M5 exit](../development/m5-exit.md) walks through it end

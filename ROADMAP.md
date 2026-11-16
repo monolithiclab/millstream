@@ -44,7 +44,8 @@ decision before it reaches the spec.
   intervention rate before and after, against the backtest's prediction, recorded on the proposal. A miss raises an
   insight, a clear regression drafts a rollback, and later drafts read the record. Prerequisite for auto-applying.
 - Every insight leads somewhere: `waste` drafts the `topology` proposal it suggests in words, and `drift` a fix or a
-  rollback (`ideasOf`, `internal/improve/gather.go`, makes no idea from `waste`, `cost` or `drift`).
+  rollback. `cost`, `waste`, `drift` and `unschedulable` are for people until `ideasOf` (`internal/improve/gather.go`)
+  makes an idea from them, and the `improve` package's `insights` trigger then lists them.
 - Declared objectives: a pipeline key stating targets and hard constraints over metrics Millstream already measures,
   which insights report against, proposals rank by and validation enforces. Objectives judge a pipeline and never route
   an item (section 4.7). Changes the pipeline file, so it needs a spec change.
@@ -108,8 +109,6 @@ first is missing: identity, an accountable owner per agent, and records their ow
   does, built into its `bin/<os>-<arch>/` (nothing builds it on `apply` yet). A retention or erasure pass between the
   gathering and the validation that removes an entity's oldest pair can move it to the holdout: record the training
   entities if that ever matters. Python and other `improve.distill.language` values wait for a sandbox image each.
-- Proposals: the evals of a `prompt` proposal replay the action's recordings, which a changed prompt misses: the
-  `improve` package validates in its harness's live or record mode.
 - The improve package: its actions call the API over plain HTTP on the address the engine serves; with `tls`, a
   self-signed certificate would fail them (trust the configured certificate, or a loopback listener for them). Only the
   embedded `improve` pipeline gets the `improveApi` and `improveToken` secrets: a fork (`init pipeline --from improve`)

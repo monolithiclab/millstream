@@ -190,7 +190,7 @@ func validationSummary(raw json.RawMessage) string {
 type ProposalsCreateCmd struct {
 	Patch       string   `arg:"" type:"existingfile" help:"The patch: a unified diff of the package, as git diff writes it."`
 	Pipeline    string   `required:"" help:"The pipeline whose active revision it patches."`
-	Kind        string   `required:"" enum:"config,prompt,lessons,topology,distill" help:"What it changes: config, prompt, lessons, topology or distill."`
+	Kind        string   `required:"" enum:"config,lessons,topology,distill" help:"What it changes: config, lessons, topology or distill."`
 	Rationale   string   `help:"Why."`
 	Insight     []string `help:"The id of an insight it answers (repeatable)."`
 	Fingerprint string   `help:"Names the idea, whose rejection suppresses it (default: from the pipeline, kind, insights and paths)."`

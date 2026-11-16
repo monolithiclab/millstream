@@ -117,7 +117,6 @@ func Fingerprint(pipelineName string, kind store.ProposalKind, insights, paths [
 // allowed checks each change against its kind's paths (spec section 11.7):
 //
 //	lessons            lessons/<step>.yaml, for a step of the base revision
-//	prompt             actions/<action>/prompt.md, for an action directory of the base revision, never deleted
 //	config, topology   pipeline.yaml, changed
 //	distill            pipeline.yaml changed, and files added under one new actions/<name>/ directory
 func allowed(kind store.ProposalKind, base *pipeline.Package, changes []patch.File) error {
@@ -142,14 +141,6 @@ func allowed(kind store.ProposalKind, base *pipeline.Package, changes []patch.Fi
 			step, yaml := strings.CutSuffix(step, ".yaml")
 			if _, exists := base.Pipeline.Steps[step]; !ok || !yaml || !exists {
 				return refuse("want lessons/<step>.yaml for a step of the pipeline")
-			}
-		case store.ProposalPrompt:
-			action, ok := actionFile(c.Path, "prompt.md")
-			if !ok || !hasDir(base.Files, "actions/"+action+"/") {
-				return refuse("want actions/<action>/prompt.md of an action of the package")
-			}
-			if c.Op == patch.OpDelete {
-				return refuse("an agent action needs its prompt")
 			}
 		case store.ProposalDistill:
 			dir, ok := actionDir(c.Path)
@@ -182,12 +173,6 @@ func actionDir(p string) (string, bool) {
 	rest, ok := strings.CutPrefix(p, "actions/")
 	dir, file, found := strings.Cut(rest, "/")
 	return dir, ok && found && dir != "" && file != ""
-}
-
-// actionFile returns the action of actions/<action>/<name>.
-func actionFile(p, name string) (string, bool) {
-	dir, ok := actionDir(p)
-	return dir, ok && p == "actions/"+dir+"/"+name
 }
 
 func hasDir(files map[string][]byte, prefix string) bool {

@@ -25,7 +25,7 @@ output:
   properties:
     pipeline: { type: string }
     baseRevision: { type: string }
-    kind: { enum: [lessons, prompt, config, topology, distill] }
+    kind: { enum: [lessons, config, topology, distill] }
     fingerprint: { type: string }
     insights: { type: array, items: { type: string } }
     hint: { type: object }

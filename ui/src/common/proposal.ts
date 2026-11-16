@@ -8,13 +8,12 @@ export const isOpenProposal = (state: ProposalState) =>
 // A proposal decided for good.
 export const isDecided = (state: ProposalState) => state === 'accepted' || state === 'rejected';
 
-export const PROPOSAL_KINDS: readonly ProposalKind[] = ['config', 'prompt', 'lessons', 'topology', 'distill'];
+export const PROPOSAL_KINDS: readonly ProposalKind[] = ['config', 'lessons', 'topology', 'distill'];
 
 export function useProposalKindLabel() {
   const { t } = useTranslation();
   const labels: Record<ProposalKind, string> = {
     config: t('improve.kind.config'),
-    prompt: t('improve.kind.prompt'),
     lessons: t('improve.kind.lessons'),
     topology: t('improve.kind.topology'),
     distill: t('improve.kind.distill'),

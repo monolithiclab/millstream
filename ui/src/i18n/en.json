@@ -885,7 +885,7 @@
     "hint": {
       "unattributed": "no single step",
       "topology": "A filter {{condition}} after {{after}}, before {{before}}: it drops {{rejections}} rejected items and {{falseDrops}} of {{approvals}} approved ones.",
-      "lessons": "{{edits}} edits of {{pointer}} written by {{step}}: a lesson, or a prompt change.",
+      "lessons": "{{edits}} edits of {{pointer}} written by {{step}}: a lesson.",
       "config": "{{rate}} of {{decisions}} decisions at {{step}} approved without an edit: an autoApprove rule.",
       "reasons": "{{rejections}} rejections at {{step}} with a text and no reason code: new codes.",
       "reasonCodes": "Reason codes"
@@ -917,7 +917,6 @@
     "allKinds": "All kinds",
     "kind": {
       "config": "Config",
-      "prompt": "Prompt",
       "lessons": "Lessons",
       "topology": "Topology",
       "distill": "Distill"

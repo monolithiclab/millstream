@@ -9,7 +9,6 @@ The kinds and the only files each may change:
   one rule and a few examples taken from the edits, citing the insight as `source: insight/<id>`. Keep the file
   under {{ .Vars.lessonsMaxTokens }} tokens (characters divided by four): merge rules that say the same thing and
   prune examples a rule already covers.
-- `prompt`: the action's `prompt.md`, when the step's instructions themselves are wrong.
 - `config`: `pipeline.yaml`, changing retries, timeouts, concurrency, thresholds or a review step's `autoApprove`
   and `reasons`, never its steps or streams.
 - `topology`: `pipeline.yaml`, inserting a `filter` step with the given CEL condition before the costliest step it

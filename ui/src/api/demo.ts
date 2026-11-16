@@ -1063,7 +1063,6 @@ const demoInsights: Insight[] = [
           step: 'score',
           pointer: '/marginPct',
           edits: 6,
-          alternative: 'prompt',
         },
         { kind: 'reasons', pattern: 'uncoveredReasons', step: 'analyst-review', rejections: 3 },
       ],
@@ -1286,21 +1285,18 @@ index 3f1a2b4..8c9d0e1 100644
        title: T2 · 41 m² · Paris 11e
 `;
 
-const promptPatch = `${base(R14)}diff --git a/actions/score/prompt.md b/actions/score/prompt.md
-index 1a2b3c4..5d6e7f8 100644
---- a/actions/score/prompt.md
-+++ b/actions/score/prompt.md
-@@ -1,8 +1,9 @@
- # Score a listing
- 
- Score this listing for a buy-to-let investor, from 0 to 100.
--Use \`get_comparables\` for the price per m² of the area.
-+Use \`get_comparables\` for the price per m² of the area, and **only** listings
-+sold in the last 12 months.
- 
- ## Output
- 
- Return \`score\`, \`marginPct\` and a short \`reason\`.
+const recencyPatch = `${base(R14)}diff --git a/lessons/score.yaml b/lessons/score.yaml
+index 3f1a2b4..9a8b7c6 100644
+--- a/lessons/score.yaml
++++ b/lessons/score.yaml
+@@ -7,5 +7,5 @@ rules:
+     source: insight/in_review_analyst
+     added: 2026-10-14
+-  - text: Ignore the agency fee when it is not stated in the listing.
++  - text: Compare only with listings sold in the last 12 months.
+ examples:
+   - input:
+       title: T2 · 41 m² · Paris 11e
 `;
 
 const configPatch = `${base(R14)}diff --git a/pipeline.yaml b/pipeline.yaml
@@ -1434,10 +1430,10 @@ const demoProposals: Proposal[] = [
     updatedAt: '2026-10-15T06:10:00Z',
   }),
   proposal('p-0152', {
-    kind: 'prompt',
+    kind: 'lessons',
     state: 'drafting',
-    patch: promptPatch,
-    paths: ['actions/score/prompt.md'],
+    patch: recencyPatch,
+    paths: ['lessons/score.yaml'],
     rationale: 'Ask score for recent sales only: reviewers lower marginPct when the comparables are old.',
     insights: ['in_review_analyst'],
     createdAt: '2026-10-15T05:40:00Z',

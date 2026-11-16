@@ -38,7 +38,7 @@ func TestHolds(t *testing.T) {
 			m.ReviewedAgreement, m.TowardReviewers, m.TowardReviewersShare, m.ReviewAgreement = 0.8, 1, 0.1, 0.9
 			m.UnreviewedAgreement, m.Agreement = 0.3, 0.4
 		}, false},
-		// What a lessons or prompt change is for: what the reviewers did to their items, done to the unreviewed ones.
+		// What a lessons change is for: what the reviewers did to their items, done to the unreviewed ones.
 		"reviewers' corrections generalised to unreviewed outputs": {func(m *Metrics) {
 			m.ReviewedAgreement, m.TowardReviewers, m.TowardReviewersShare, m.ReviewAgreement = 0.4, 5, 0.5, 1
 			m.UnreviewedAgreement = 0.5

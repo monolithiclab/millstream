@@ -1753,7 +1753,7 @@ export interface components {
     /** @enum {string} */
     ProposalState: 'drafting' | 'validating' | 'ready' | 'accepted' | 'rejected' | 'stale';
     /** @enum {string} */
-    ProposalKind: 'config' | 'prompt' | 'lessons' | 'topology' | 'distill';
+    ProposalKind: 'config' | 'lessons' | 'topology' | 'distill';
     ProposalRequest: {
       pipeline: string;
       kind: components['schemas']['ProposalKind'];

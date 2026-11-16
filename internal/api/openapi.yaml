@@ -1857,7 +1857,7 @@ components:
         payload: { description: "The trigger item's payload; {} by default." }
         requestId: { type: string, description: Firing the same request id again returns the same run. }
     ProposalState: { type: string, enum: [drafting, validating, ready, accepted, rejected, stale] }
-    ProposalKind: { type: string, enum: [config, prompt, lessons, topology, distill] }
+    ProposalKind: { type: string, enum: [config, lessons, topology, distill] }
     ProposalRequest:
       type: object
       required: [pipeline, kind, patch]
