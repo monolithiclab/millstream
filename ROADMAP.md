@@ -1,7 +1,7 @@
 # Roadmap
 
 Parked ideas and follow-ups. Committed scope and milestones are in the
-[platform spec](docs/specs/20261014.platform-design.md), section 19. Items under *icebox* headings were designed and
+[platform spec](docs/specs/20261014.platform-design.md), section 19. Items under _icebox_ headings were designed and
 then cut from v1 in the final adversarial review, for adding more complexity than a first customer needs; their
 earlier designs are in the git history of the spec.
 
