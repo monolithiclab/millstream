@@ -109,7 +109,7 @@ func TestDistill(t *testing.T) {
 		rep.Backtest.Skipped == "" || len(rep.NewEvals) != 1 || !rep.NewEvals[0].Passed {
 		t.Fatalf("improve: %s\nproposal %+v\nreport %s", r, p, p.Report)
 	}
-	if !strings.Contains(p.Patch, "+    fallback: { action: ./actions/tier, when: [abstain] }") ||
+	if !strings.Contains(p.Patch, "+    fallback: { action: ./actions/tier, when: [abstain], auditRate: 0.02 }") ||
 		!strings.Contains(p.Patch, "+++ b/actions/tier-rules/main.go") {
 		t.Errorf("patch:\n%s", p.Patch)
 	}
