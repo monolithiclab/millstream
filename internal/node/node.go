@@ -100,8 +100,8 @@ type Transport interface {
 // Waker is a Transport that says when new work may be due: the embedded node's engine, whose own loop completes
 // the builtin steps. The node then pulls at once, rather than at its next interval.
 type Waker interface {
-	// Due returns a channel closed when new work may next be due, other than what the node's own completions make
-	// due.
+	// Due returns a channel closed when the engine's own loop next completes work that may make the node's due.
+	// Other new work (a remote node's completion, a trigger, a retry, a decided review) waits for the interval.
 	Due() <-chan struct{}
 }
 
