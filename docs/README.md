@@ -19,7 +19,7 @@ editor; `make docs` checks that every link here resolves.
 | [Action protocol](reference/action-protocol.md) | How the engine and an action process talk: write an action in any language, without an SDK |
 | [Pipeline file](specs/20261014.platform-design.md#4-the-pipeline-file) | Every key of `pipeline.yaml`, action manifests, variables, secrets, triggers and streams (spec section 4) |
 | [HTTP API](../internal/api/openapi.yaml) | The OpenAPI document of `/api/v1`, also served by a running engine at `/api/v1/openapi.yaml` |
-| [CLI](specs/20261014.platform-design.md#13-cli) | Every command and its flags (spec section 13); `millstream <command> --help` prints the same |
+| [CLI](reference/cli.md) | Every command, its flags and examples, generated from the commands; `millstream <command> --help` prints the same |
 
 ## Understand the design
 
