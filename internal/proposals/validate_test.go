@@ -164,7 +164,6 @@ func testValidate(t *testing.T, distillCases bool) {
 				}
 			}, holdout(9, 0, 1)},
 	}
-	scratch := t.TempDir()
 	for _, tt := range tests {
 		if (tt.kind == store.ProposalDistill) != distillCases {
 			continue
@@ -219,20 +218,30 @@ func testValidate(t *testing.T, distillCases bool) {
 	}
 }
 
+// scratch is where the tests' validations write their packages, shared as an engine's package directory is: each
+// package is written once, under its content hash, instead of in every test's own directory, and removed once.
+var scratch string
+
 // TestMain validates a distill once before the tests: the YAML decoder, the pipeline's check, the eval assertions'
 // CEL environment and the in-process action are a process's set-up, which the first test would otherwise pay
-// (scripts/test-times leaves TestMain out). A failure is left to the tests to report.
+// (scripts/test-times leaves TestMain out); the packages it writes stay in scratch. A failure is left to the tests to
+// report.
 func TestMain(m *testing.M) {
-	if dir, err := os.MkdirTemp("", "millstream-proposals-warm-"); err == nil {
-		if base, err := pipeline.FromFiles("", baseFiles()); err == nil {
-			if p, err := Prepare(store.ProposalDistill, base, distillPatch("coded")); err == nil {
-				v := Validator{Check: checker, Evals: Evals{Launchers: inProcess, Sandbox: &inSandbox{}}, Scratch: dir}
-				_, _ = v.Validate(context.Background(), "listings", p)
-			}
-		}
-		_ = os.RemoveAll(dir)
+	dir, err := os.MkdirTemp("", "millstream-proposals-")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
 	}
-	os.Exit(m.Run())
+	scratch = dir
+	if base, err := pipeline.FromFiles("", baseFiles()); err == nil {
+		if p, err := Prepare(store.ProposalDistill, base, distillPatch("coded")); err == nil {
+			v := Validator{Check: checker, Evals: Evals{Launchers: inProcess, Sandbox: &inSandbox{}}, Scratch: scratch}
+			_, _ = v.Validate(context.Background(), "listings", p)
+		}
+	}
+	code := m.Run()
+	_ = os.RemoveAll(dir)
+	os.Exit(code)
 }
 
 // TestEvalsFallBack: after a distill, a base eval case the code abstains on is answered by the step's fallback, as
@@ -250,7 +259,7 @@ func TestEvalsFallBack(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	v := Validator{Check: checker, Evals: Evals{Launchers: inProcess, Sandbox: &inSandbox{}}, Scratch: t.TempDir(),
+	v := Validator{Check: checker, Evals: Evals{Launchers: inProcess, Sandbox: &inSandbox{}}, Scratch: scratch,
 		Holdout: holdout(4, 0, 0), Distill: fewCovered}
 	r, err := v.Validate(context.Background(), "listings", p)
 	if err != nil {
@@ -311,7 +320,7 @@ func TestUnreferencedCodeSandboxed(t *testing.T) {
 			host++
 			return exectest.Serve(ctx, args, env, in, out, errw)
 		}}}
-		v := Validator{Check: checker, Evals: Evals{Launchers: launchers}, Scratch: t.TempDir()}
+		v := Validator{Check: checker, Evals: Evals{Launchers: launchers}, Scratch: scratch}
 		r, err := v.Validate(context.Background(), "listings", p)
 		if err != nil {
 			t.Fatal(err)
