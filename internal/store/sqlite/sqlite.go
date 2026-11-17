@@ -300,6 +300,7 @@ func (s *Store) open(path, from string) error {
 		return fmt.Errorf("open store %s: %w", path, err)
 	}
 	read.SetMaxOpenConns(s.opts.ReadConns)
+	read.SetMaxIdleConns(s.opts.ReadConns) // database/sql keeps 2: a third reader would reopen, parsing the schema again
 	s.read = sqlstore.NewReadDB(read, dialect, nil)
 	return nil
 }

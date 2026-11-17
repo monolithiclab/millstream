@@ -3,6 +3,7 @@ package sqlite
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"errors"
 	"io/fs"
 	"os"
@@ -33,6 +34,22 @@ func TestOpenFileAndReopen(t *testing.T) {
 	}
 	if d := time.Since(revs.AppliedAt); d < -time.Minute || d > time.Minute {
 		t.Errorf("applied at %v, want about now", revs.AppliedAt)
+	}
+	// The read pool keeps every connection it may open: one closed when released is reopened by the next read,
+	// parsing the schema again.
+	var conns []*sql.Conn
+	for range s.opts.ReadConns {
+		c, err := s.read.Conn(ctx)
+		if err != nil {
+			t.Fatalf("Conn: %v", err)
+		}
+		conns = append(conns, c)
+	}
+	for _, c := range conns {
+		_ = c.Close()
+	}
+	if st := s.read.Stats(); st.MaxIdleClosed != 0 || st.Idle != s.opts.ReadConns {
+		t.Errorf("read pool after %d reads at once: %d idle, %d closed", s.opts.ReadConns, st.Idle, st.MaxIdleClosed)
 	}
 	if err := s.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
