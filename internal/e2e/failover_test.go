@@ -368,8 +368,9 @@ func (f *failover) fireRun(engines []*engineProc) {
 	f.onActive(engines, "trigger", pipelineName, "adhoc", "--request-id", crashRequest)
 }
 
-// waitSettled waits until the crash suite's run and every run it opened settled, reading the store read-only beside
-// the engines.
+// waitSettled waits until the crash suite's run and every run it opened settled, and their audits ended (a run
+// settles without waiting for its audits, as run --once's wait does not), reading the store read-only beside the
+// engines.
 func (f *failover) waitSettled() {
 	f.t.Helper()
 	ctx := f.t.Context()
@@ -384,7 +385,7 @@ func (f *failover) waitSettled() {
 		if err == nil && !run.SettledAt.IsZero() {
 			// The importer's run settles once its own work after the producer run's is done.
 			open, err := st.Runs(ctx, store.RunFilter{Unsettled: true})
-			if err == nil && len(open) == 0 {
+			if err == nil && len(open) == 0 && f.auditsEnded(st) {
 				return
 			}
 		}
@@ -393,6 +394,16 @@ func (f *failover) waitSettled() {
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
+}
+
+// auditsEnded reports whether no audit is pending or leased on st.
+func (f *failover) auditsEnded(st store.Store) bool {
+	for _, state := range []store.AuditState{store.AuditPending, store.AuditLeased} {
+		if as, err := st.Audits(f.t.Context(), store.AuditFilter{State: state}); err != nil || len(as) > 0 {
+			return false
+		}
+	}
+	return true
 }
 
 // takeover is how long a standby took to lead after the active engine ended, and to dispatch its first delivery.

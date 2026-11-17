@@ -272,7 +272,9 @@ first is missing: identity, an accountable owner per agent, and records their ow
   in the environment file; the rate buckets live in the active engine's memory, so a failover or a restart starts
   each one full; the apply's tokens and its revision are two units, so an apply interrupted between them leaves a
   webhook trigger without a token until the same apply runs again or the token is rotated.
-- Flaky under load: `TestFailoverAtFailpoints` (`internal/e2e`) failed twice in the full race suite on 2026-10-21
-  ("audit … of delivery … is pending after the run", at `endAudit.beforeCommit` and `park.beforeCommit`) and passed
-  run alone, on the branch and on its base. If it recurs, log the audit's state and the takeover times of the run
-  that leaves it pending, and check whether the clean-outcome wait ends before the new leader resumes audits.
+- Flaky under load, `internal/e2e` (2026-11-17, full race suite on a loaded machine; each passed run alone and in a
+  quiet full suite): `TestFailoverAtFailpoints` cells whose standby redoes the crawl lost the leadership three times
+  in a row when the crawl's Done unit (50 items, imported into `m1-importer`) or the metrics rollup outran the 3 s
+  batch timeout (3 × the 1 s keepalive), dead-lettering the crawl; `TestM5Exit` charged a fallback's 0.05 USD
+  reservation for a lease that expired under `--lease-ttl 1s`, which breaks its cost assertion. If either recurs on
+  a quiet machine, give those scenarios a longer keepalive or lease.
