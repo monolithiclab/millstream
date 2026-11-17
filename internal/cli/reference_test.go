@@ -14,6 +14,7 @@ const referencePath = "../../docs/reference/cli.md"
 // Test_cliReference renders the CLI reference from the Kong model, with the walkers of the help, and compares it with
 // docs/reference/cli.md; -update rewrites the file.
 func Test_cliReference(t *testing.T) {
+	t.Parallel()
 	p, err := takeParser(&Runtime{})
 	if err != nil {
 		t.Fatal(err)
