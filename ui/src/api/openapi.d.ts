@@ -182,7 +182,7 @@ export interface paths {
     };
     get?: never;
     put?: never;
-    /** Apply packages as new revisions (millstream apply). Each package is checked, and so is every other pipeline of the deployment; a check error refuses them all (invalid). The body may be up to 64 MiB. A package that is exactly an accepted proposal's patch over the active revision, its base, records the proposal applied. */
+    /** Apply packages as new revisions (millstream apply). Each package is checked, and so is every other pipeline of the deployment; a check error refuses them all (invalid). The body may be up to 64 MiB. A package that is exactly an accepted proposal's patch over the active revision, its base, its compiled actions (actions/<name>/bin/) aside, records the proposal applied. */
     post: operations['applyPackages'];
     delete?: never;
     options?: never;

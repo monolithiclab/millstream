@@ -10,7 +10,8 @@ import (
 
 // Publishing (spec sections 11.3 and 11.7): the apply publish action creates a development revision on the
 // proposal's base only; and whatever applies a revision that is exactly an accepted proposal's patch over its base
-// (the apply action, or millstream apply of the patched package) records the proposal applied.
+// (the apply action, or millstream apply of the patched package, its actions built or not) records the proposal
+// applied.
 
 // ApplyProposal applies an accepted proposal's patched files as the pipeline's new development revision while its
 // active revision is still base (store.ErrConflict otherwise), recording the proposal applied: the apply publish
@@ -37,17 +38,19 @@ func (e *Engine) ApplyProposal(ctx context.Context, proposalID, pipelineName, ba
 }
 
 // applies returns the accepted proposals of the pipeline whose patch over the active revision before, their base,
-// is the package hash: those the revision applies. A proposal whose patch no longer prepares is logged and left out.
-func (e *Engine) applies(ctx context.Context, pipelineName string, before store.RevisionID, hash string,
-) ([]string, error) {
+// is pkg, compiled actions aside (Package.SourceHash): those the revision applies. A proposal whose patch no longer
+// prepares is logged and left out.
+func (e *Engine) applies(ctx context.Context, before store.RevisionID, pkg *pipeline.Package) ([]string, error) {
 	rev, err := e.st.Revision(ctx, before)
 	if err != nil {
 		return nil, err
 	}
-	accepted, err := e.st.Proposals(ctx, store.ProposalFilter{Pipeline: pipelineName, State: store.ProposalAccepted})
+	accepted, err := e.st.Proposals(ctx, store.ProposalFilter{Pipeline: pkg.Pipeline.Name,
+		State: store.ProposalAccepted})
 	if err != nil {
 		return nil, err
 	}
+	hash := pkg.SourceHash()
 	var ids []string
 	for _, p := range accepted {
 		if p.BaseRevision != rev.PackageHash {
@@ -55,11 +58,11 @@ func (e *Engine) applies(ctx context.Context, pipelineName string, before store.
 		}
 		prep, err := e.prepare(ctx, false, p.Kind, p.BaseRevision, p.Patch)
 		if err != nil {
-			e.log.Warn("accepted proposal no longer prepares on its base: not matched", "pipeline", pipelineName,
-				"proposal", p.ID, "error", err)
+			e.log.Warn("accepted proposal no longer prepares on its base: not matched", "pipeline",
+				pkg.Pipeline.Name, "proposal", p.ID, "error", err)
 			continue
 		}
-		if prep.Patched.Hash == hash {
+		if prep.Patched.SourceHash() == hash {
 			ids = append(ids, p.ID)
 		}
 	}

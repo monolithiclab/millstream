@@ -307,7 +307,7 @@ func (e *Engine) apply(ctx context.Context, pkg *pipeline.Package, opts ApplyOpt
 		return fail(err)
 	}
 	if before != 0 {
-		if rec.Proposals, err = e.applies(ctx, name, before, pkg.Hash); err != nil {
+		if rec.Proposals, err = e.applies(ctx, before, pkg); err != nil {
 			return fail(err)
 		}
 	}

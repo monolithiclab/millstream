@@ -390,8 +390,9 @@ improve:
 - `patch-file` writes the validated patch as `<dir>/<proposal id>.patch`. Apply it to the package (`git apply`),
   commit it wherever the package lives, and open the pull request yourself: Millstream holds no forge credential.
 - When the patched package is applied (`millstream apply`) while its base is still the active revision, the engine
-  matches it to the proposal by content hash and records the proposal applied. A package that differs from the
-  proposal's patch over its base in any file is an ordinary revision.
+  matches it to the proposal by content hash and records the proposal applied. The match leaves out compiled actions
+  (`actions/<name>/bin/`), so a distill's action built before the apply still matches. A package that differs from
+  the proposal's patch over its base in any other file is an ordinary revision.
 
 ## Backups
 

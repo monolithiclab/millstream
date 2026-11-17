@@ -163,6 +163,19 @@ func (p *Package) ActionDigest(dir string) string {
 	return "sha256:" + hashFiles(files)
 }
 
+// SourceHash is the package's hash, as Hash is, without its compiled actions (the files under actions/<name>/bin/):
+// what an accepted proposal's patch is matched by, so a distill's action built before the apply still matches (spec
+// section 11.5). Revisions stay identified by Hash.
+func (p *Package) SourceHash() string {
+	files := map[string][]byte{}
+	for path, data := range p.Files {
+		if parts := strings.SplitN(path, "/", 4); len(parts) < 4 || parts[0] != "actions" || parts[2] != "bin" {
+			files[path] = data
+		}
+	}
+	return hashFiles(files)
+}
+
 // hashFiles is SHA-256 over path NUL content NUL for each file, in path order.
 func hashFiles(files map[string][]byte) string {
 	h := sha256.New()

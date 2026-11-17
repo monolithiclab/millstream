@@ -2,10 +2,13 @@ package engine
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/monolithiclab/millstream/internal/patch"
 	"github.com/monolithiclab/millstream/internal/pipeline"
@@ -14,24 +17,20 @@ import (
 	"github.com/monolithiclab/millstream/internal/testdir"
 )
 
-// The apply publish action applies an accepted proposal on its base only, never in production, and records it
-// applied; so does applying its patched package any other way, while a package that is not exactly its patch over
-// its base records nothing (spec section 11.3).
-func TestPublishApply(t *testing.T) {
+// publishEngine is a development engine on a store of its own, with apply, which applies a package's files, and
+// applied, which checks how many proposalApplied events pipeline extra has.
+func publishEngine(t *testing.T, opts ProposalOptions) (e *Engine, apply func(map[string][]byte), applied func(int)) {
+	t.Helper()
 	ctx := context.Background()
 	st, err := sqlite.Open(sqlite.Memory, sqlite.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = st.Close() })
-	e, err := New(Options{Store: st, PackageDir: testdir.New(t), Proposals: ProposalOptions{Backtest: passing{}}})
-	if err != nil {
+	if e, err = New(Options{Store: st, PackageDir: testdir.New(t), Proposals: opts}); err != nil {
 		t.Fatal(err)
 	}
-	files := func(extra, expr string) map[string][]byte {
-		return map[string][]byte{"pipeline.yaml": fmt.Appendf(nil, proposalSrc, extra, expr)}
-	}
-	apply := func(f map[string][]byte) {
+	apply = func(f map[string][]byte) {
 		t.Helper()
 		pkg, err := e.PackageFromFiles(f)
 		if err == nil {
@@ -41,13 +40,25 @@ func TestPublishApply(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	applied := func(want int) {
+	applied = func(want int) {
 		t.Helper()
 		evs, err := st.PipelineEvents(ctx, store.EventFilter{Pipeline: "extra",
 			Kinds: []string{store.EventProposalApplied}})
 		if err != nil || len(evs) != want {
 			t.Fatalf("proposalApplied events = %d, %v; want %d", len(evs), err, want)
 		}
+	}
+	return e, apply, applied
+}
+
+// The apply publish action applies an accepted proposal on its base only, never in production, and records it
+// applied; so does applying its patched package any other way, while a package that is not exactly its patch over
+// its base records nothing (spec section 11.3).
+func TestPublishApply(t *testing.T) {
+	ctx := context.Background()
+	e, apply, applied := publishEngine(t, ProposalOptions{Backtest: passing{}})
+	files := func(extra, expr string) map[string][]byte {
+		return map[string][]byte{"pipeline.yaml": fmt.Appendf(nil, proposalSrc, extra, expr)}
 	}
 	apply(files("", "true"))
 	diff := "--- a/pipeline.yaml\n+++ b/pipeline.yaml\n@@ -4 +4 @@\n" +
@@ -84,5 +95,65 @@ func TestPublishApply(t *testing.T) {
 	if err != nil || rev != 4 {
 		t.Fatalf("ApplyProposal = %d, %v", rev, err)
 	}
+	applied(1)
+}
+
+// An accepted distill proposal's patch, applied with its new action built into bin/ (and the base's own action
+// rebuilt), records the proposal applied: compiled actions are left out of the match; any other file is not
+// (spec section 11.5).
+func TestPublishApplyBuiltDistill(t *testing.T) {
+	ctx := context.Background()
+	e, apply, applied := publishEngine(t, ProposalOptions{})
+	st := e.st
+	base := map[string][]byte{
+		"pipeline.yaml": []byte("pipeline: extra\ntriggers: { adhoc: { manual: {} } }\nsteps:\n" +
+			"  score:\n    action: ./actions/scorer\n    in: trigger.adhoc\n"),
+		"actions/scorer/action.yaml": []byte("name: scorer\nversion: 1.0.0\nkind: exec\n" +
+			"runtime: { exec: { command: [scorer] } }\n"),
+		"actions/scorer/bin/linux-amd64/scorer": []byte("scorer v1"),
+	}
+	apply(base)
+	diff := "--- a/pipeline.yaml\n+++ b/pipeline.yaml\n@@ -5,1 +5,2 @@\n-    action: ./actions/scorer\n" +
+		"+    action: ./actions/coded\n+    fallback: { action: ./actions/scorer, when: [abstain] }\n" +
+		"--- /dev/null\n+++ b/actions/coded/action.yaml\n@@ -0,0 +1,4 @@\n+name: coded\n+version: 1.0.0\n" +
+		"+kind: exec\n+runtime: { exec: { command: [coded] } }\n"
+	parsed, err := patch.Parse([]byte(diff))
+	if err != nil {
+		t.Fatal(err)
+	}
+	patched, err := parsed.Apply(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rev, err := e.activeRevision(ctx, "extra")
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := st.CreateProposal(ctx, store.NewProposal{ID: "pr_distill", Pipeline: "extra",
+		Kind: store.ProposalDistill, BaseRevision: rev.PackageHash, Patch: diff, PatchSHA256: patch.Hash([]byte(diff)),
+		Paths: []string{"actions/coded/action.yaml", "pipeline.yaml"}, Steps: []string{"score"},
+		Fingerprint: "distill-score"})
+	if err == nil {
+		_, err = st.StartValidation(ctx, p.ID, time.Time{})
+	}
+	if err == nil {
+		_, err = st.RecordValidation(ctx, store.Validation{ID: p.ID, Report: json.RawMessage(`{}`), Passed: true})
+	}
+	if err == nil {
+		_, err = st.AcceptProposal(ctx, p.ID, p.PatchSHA256, "ana")
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	built := maps.Clone(patched)
+	built["actions/coded/bin/linux-amd64/coded"] = []byte("coded")
+	built["actions/scorer/bin/linux-amd64/scorer"] = []byte("scorer v2")
+
+	edited := maps.Clone(built)
+	edited["actions/coded/README.md"] = []byte("not in the patch")
+	apply(edited)
+	applied(0)
+	apply(base)
+	apply(built)
 	applied(1)
 }

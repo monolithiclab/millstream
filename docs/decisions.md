@@ -442,7 +442,8 @@ read forge credentials if they shared an environment.
 
 **Decision.** Accepting a proposal succeeds only if its base revision is still active, in one writer transaction
 that also marks overlapping open proposals stale. A revision applied by any means is matched to an accepted proposal
-by content hash: it records the proposal applied when it is exactly the proposal's patch over its base.
+by content hash: it records the proposal applied when it is exactly the proposal's patch over its base, compiled
+actions (`actions/<name>/bin/`) aside, so a distill built before its apply still matches.
 
 **Evidence.** Two proposals validated on the same base could otherwise be combined without ever being validated
 together, and the content hash identifies the reviewed package without trusting commit metadata.
