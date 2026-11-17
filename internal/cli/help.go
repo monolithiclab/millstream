@@ -212,21 +212,37 @@ func (h *helpWriter) detail(text string) {
 
 // flagRow is a flag's row: its name and placeholder, and its help with its default.
 func (h *helpWriter) flagRow(f *kong.Flag) row {
+	plain := flagLabel(f)
+	painted := plain
+	if h.on {
+		name := strings.TrimSuffix(plain, "="+placeholder(f))
+		painted = h.flag(name)
+		if name != plain {
+			painted += h.flag("=") + h.arg(placeholder(f))
+		}
+	}
+	return h.row(painted, plain, flagHelp(f))
+}
+
+// flagLabel is a flag's name as help lists it: its short form, its long form and a placeholder for its value.
+func flagLabel(f *kong.Flag) string {
 	name := "--" + f.Name
 	if f.Short != 0 {
 		name = "-" + string(f.Short) + ", " + name
 	}
-	plain, painted := name, h.flag(name)
 	if !f.IsBool() && !f.IsCounter() {
-		ph := placeholder(f)
-		plain += "=" + ph
-		painted += h.flag("=") + h.arg(ph)
+		name += "=" + placeholder(f)
 	}
+	return name
+}
+
+// flagHelp is a flag's help with its default, unless the help already names one.
+func flagHelp(f *kong.Flag) string {
 	help := f.Help
 	if f.HasDefault && f.Default != "" && !strings.Contains(strings.ToLower(help), "default") {
 		help = strings.TrimSuffix(help, ".") + " (default: " + f.Default + ")."
 	}
-	return h.row(painted, plain, help)
+	return help
 }
 
 // summary is a command's usage after the program name: its path, its required flags (one of each exclusive set),

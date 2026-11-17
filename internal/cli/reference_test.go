@@ -30,7 +30,7 @@ func Test_cliReference(t *testing.T) {
 		t.Fatalf("%v (rerun with -update)", err)
 	}
 	if got != string(want) {
-		t.Errorf("%s differs from the commands (rerun with -update)", referencePath)
+		t.Errorf("%s differs from the commands (rerun go test ./internal/cli -run Test_cliReference -update)", referencePath)
 	}
 }
 
@@ -102,18 +102,7 @@ func flagTable(flags []*kong.Flag) string {
 		if !shown(f) {
 			continue
 		}
-		name := "--" + f.Name
-		if f.Short != 0 {
-			name = "-" + string(f.Short) + ", " + name
-		}
-		if !f.IsBool() && !f.IsCounter() {
-			name += "=" + placeholder(f)
-		}
-		help := f.Help
-		if f.HasDefault && f.Default != "" && !strings.Contains(strings.ToLower(help), "default") {
-			help = strings.TrimSuffix(help, ".") + " (default: " + f.Default + ")."
-		}
-		b.WriteString("| `" + cell(name) + "` | " + cell(help) + " |\n")
+		b.WriteString("| `" + cell(flagLabel(f)) + "` | " + cell(flagHelp(f)) + " |\n")
 	}
 	if b.Len() == 0 {
 		return ""
