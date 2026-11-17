@@ -73,6 +73,7 @@ func exposedNames() map[string]bool {
 var (
 	promString   = regexp.MustCompile(`"[^"]*"`)
 	promMatchers = regexp.MustCompile(`\{[^}]*\}|\[[^\]]*\]`)
+	promOffset   = regexp.MustCompile(`\boffset\s+\S+`)
 	promGrouping = regexp.MustCompile(`\b(by|without|on|ignoring|group_left|group_right)\s*\([^)]*\)`)
 	promIdent    = regexp.MustCompile(`[a-zA-Z_:][a-zA-Z0-9_:]*(\s*\()?`)
 	promKeywords = []string{"and", "or", "unless", "bool", "offset", "by", "without", "on", "ignoring"}
@@ -82,6 +83,7 @@ var (
 // keywords, label matchers, ranges, groupings or strings.
 func exprMetrics(expr string) []string {
 	expr = promString.ReplaceAllString(expr, "")
+	expr = promOffset.ReplaceAllString(expr, "")
 	expr = promGrouping.ReplaceAllString(expr, "")
 	expr = promMatchers.ReplaceAllString(expr, "")
 	var names []string

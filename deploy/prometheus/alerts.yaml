@@ -15,8 +15,14 @@ groups:
           summary: "Millstream engine {{ $labels.instance }} is not answering scrapes"
 
       # Example: any new dead letter in 15 minutes. Replay or discard them with `millstream replay` or the inbox.
+      # A series appears at its first dead letter and increase() gives 0 for its first sample, so the second
+      # operand catches a series absent 15 minutes ago.
       - alert: MillstreamDeadLetters
-        expr: sum by (pipeline, step) (increase(millstream_items_dead_total[15m])) > 0
+        expr: >-
+          sum by (pipeline, step) (
+            (increase(millstream_items_dead_total[15m]) > 0)
+            or (millstream_items_dead_total unless millstream_items_dead_total offset 15m)
+          ) > 0
         for: 5m
         labels: { severity: warn }
         annotations:

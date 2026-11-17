@@ -149,7 +149,7 @@ engine exposes.
 | Alert | Fires when |
 | --- | --- |
 | `MillstreamEngineDown` | The scrape of an engine fails for two minutes (a failover shows as a short outage) |
-| `MillstreamDeadLetters` | A step has a new dead letter in the last 15 minutes: replay or discard it |
+| `MillstreamDeadLetters` | A step has a new dead letter in the last 15 minutes, including the first one of a (step, class) series: replay or discard it |
 | `MillstreamNodeLost` | Leases of a step expire repeatedly: a node stopped reporting and its work moves to another |
 | `MillstreamQueueStuck` | A step's oldest due delivery has waited over ten minutes: no node takes it, or none has a free slot |
 
