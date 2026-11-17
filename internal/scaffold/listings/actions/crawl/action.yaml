@@ -1,0 +1,17 @@
+# The crawler of the listings example: Python 3 speaking the action protocol, with the standard library only.
+name: listings/crawl
+version: 0.1.0
+description: Emits the sample listings of listings.json, keyed by id
+kind: exec
+effects: none
+input: { type: object }
+output:
+  type: object
+  properties:
+    id: { type: string }
+    city: { type: string }
+    priceEur: { type: integer }
+    surfaceM2: { type: integer }
+    condition: { enum: [good, fair, poor] }
+  required: [id, city, priceEur, surfaceM2, condition]
+runtime: { exec: { command: [python3, main.py] } }

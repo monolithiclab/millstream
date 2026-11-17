@@ -41,7 +41,7 @@ millstream init pipeline <name> [flags]
 | Flag | Help |
 | --- | --- |
 | `--dir=DIR` | The directory to create the package in (default: the current one). |
-| `--from=improve` | Copy a package embedded in the binary to fork it: improve. |
+| `--from=improve\|listings` | Copy a package embedded in the binary: listings, the example that runs offline; improve, to fork it. |
 
 #### `init action`
 

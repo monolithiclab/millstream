@@ -1,0 +1,6 @@
+# The environment file of the listings example (millstream init environment writes one with every key). It is not
+# part of the package. The score agent runs as a child process rather than in a container sandbox, and its model's
+# price turns the recorded tokens into a cost.
+agents:
+  allowUnsandboxed: true # MILLSTREAM_AGENTS_ALLOW_UNSANDBOXED
+prices: { fake-scorer: { inPerMtok: 3, outPerMtok: 15 } }

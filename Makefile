@@ -125,8 +125,8 @@ export GOFLAGS ?= -gcflags=modernc.org/...=-d=checkptr=0
 
 # Harness recordings are made against a fake model server, never the network.
 .PHONY: recordings
-recordings: ## Rewrite the agent harness recordings: internal/agent/testdata, the M2 fixture's and the improve and distill drafts'
-	@go test ./internal/agent ./examples/m2-fixture -run TestRecordings -count=1 -update
+recordings: ## Rewrite the agent harness recordings: internal/agent/testdata, the M2 fixture's, the listings example's and the improve and distill drafts'
+	@go test ./internal/agent ./examples/m2-fixture ./examples/fakemodel -run TestRecordings -count=1 -update
 	@go test -tags e2e ./internal/e2e -run 'TestImprove|TestDistill' -count=1 -update
 
 # The web UI (ui/) builds and tests only in containers (D35): ui/images.mk pins the images by digest. node_modules

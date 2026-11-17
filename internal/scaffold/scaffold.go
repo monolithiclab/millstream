@@ -32,6 +32,15 @@ const Step = "greet"
 //go:embed templates
 var templates embed.FS
 
+// listings is the listings example, millstream init pipeline <name> --from listings: the reference pipeline on
+// sample data, with the recordings its agent replays.
+//
+//go:embed all:listings
+var listings embed.FS
+
+// ListingsName is the --from name of the listings example and its pipeline's name as embedded.
+const ListingsName = "listings"
+
 // actionFiles are the files of an action in each language; pipelineFiles those of a package besides its action.
 var (
 	actionFiles = map[string][]string{
@@ -95,6 +104,40 @@ func Files(parent, name string, files map[string][]byte) (string, error) {
 		}
 	}
 	return dir, nil
+}
+
+// ReadFS returns the files of fsys by slash-separated path: an embedded package, to copy with Files.
+func ReadFS(fsys fs.FS) (map[string][]byte, error) {
+	files := map[string][]byte{}
+	err := fs.WalkDir(fsys, ".", func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		files[p], err = fs.ReadFile(fsys, p)
+		return err
+	})
+	return files, err
+}
+
+// ListingsFiles returns the files of the listings example as embedded.
+func ListingsFiles() (map[string][]byte, error) {
+	sub, err := fs.Sub(listings, ListingsName)
+	if err != nil {
+		return nil, err
+	}
+	return ReadFS(sub)
+}
+
+// Listings writes the listings example in a new directory named name under parent, its pipeline named name, and
+// returns its path.
+func Listings(parent, name string) (string, error) {
+	files, err := ListingsFiles()
+	if err != nil {
+		return "", err
+	}
+	files[pipeline.FileName] = bytes.Replace(files[pipeline.FileName], []byte("\npipeline: "+ListingsName+"\n"),
+		[]byte("\npipeline: "+name+"\n"), 1)
+	return Files(parent, name, files)
 }
 
 // Environment writes the default environment file as dir/millstream.yaml and returns its path, refusing to

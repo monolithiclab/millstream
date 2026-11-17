@@ -1,0 +1,55 @@
+# The listings example (millstream init pipeline <name> --from listings): the reference pipeline of the platform
+# design, section 1.3, on sample data. A crawler emits the listings bundled with it, a dedupe drops the ones already
+# seen, an agent scores each one, a filter keeps the good scores and a person reviews what is left.
+#
+# It runs offline: the crawler is Python 3 with the standard library only, and the score agent replays the answers
+# recorded in recordings/ when MILLSTREAM_HARNESS_MODE=replay and MILLSTREAM_HARNESS_DIR=recordings are set, with no
+# model and no key. millstream.yaml, the environment file next to this one, runs the agent as a child process.
+pipeline: listings
+description: Sample real estate listings scored by an agent, then reviewed
+
+vars:
+  minScore: 60
+
+secrets: [scorerKey]
+
+triggers:
+  adhoc: { manual: {} }
+
+steps:
+  crawl:
+    action: ./actions/crawl
+    in: trigger.adhoc
+    out: listings.raw
+
+  dedupe:
+    action: dedupe
+    in: listings.raw
+    out: listings.unique
+    config: { key: item.id, window: 30d }
+
+  score:
+    action: ./actions/score
+    in: listings.unique
+    out: listings.scored
+    concurrency: 2
+
+  keep-good:
+    action: filter
+    in: listings.scored
+    out: listings.shortlist
+    config: { expr: "item.score >= vars.minScore" }
+
+  review:
+    action: review
+    in: listings.shortlist
+    out: listings.approved
+    config:
+      inbox: analysts
+      timeout: 72h
+      editable: [/score]
+      reasons: [overpriced, bad-area]
+      display: "{{ .item.id }}: {{ .item.surfaceM2 }} m² in {{ .item.city }} at {{ .item.priceEur }} EUR, score {{ .item.score }}"
+
+budget:
+  runUsd: 1

@@ -94,7 +94,7 @@ A run follows the same path whether it is started by `millstream run` on a lapto
 | `internal/cli` | Every command, on Kong; state-changing commands go through the API when `--server` names an engine |
 | `internal/api` | The HTTP API under `/api/v1` ([OpenAPI](../../internal/api/openapi.yaml)), webhooks and server-sent events |
 | `internal/ui` | Serves the web UI embedded from `internal/ui/dist` |
-| `internal/scaffold` | The templates `millstream init` writes |
+| `internal/scaffold` | The templates `millstream init` writes, and the listings example (`init pipeline --from listings`) |
 | `sdk/go` | The Go SDK for actions, its own module |
 | `ui/` | The React web UI (Vite, Tailwind with the project's tokens only), built in containers by `make ui` |
 
@@ -105,7 +105,7 @@ Support packages for tests (`internal/testdir`, `internal/failpoint`, the `*test
 
 | Path | Holds |
 | --- | --- |
-| `examples/` | The fixture packages the tests and the tutorial build on: `m1-fixture`, `m2-fixture`, `m5-distill` |
+| `examples/` | The fixture packages the tests build on (`m1-fixture`, `m2-fixture`, `m5-distill`) and the tutorial's stand-in model (`fakemodel`) |
 | `deploy/` | Docker Compose and systemd files, described by the [deployment guide](../guides/deployment.md) |
 | `scripts/` | The scripts behind make targets: docs check, test-time budget, image and deploy checks, the e2e lock |
 | `tools/` | Pinned linters (`tools/go.mod`) and release tooling (`tools/release/go.mod`) |

@@ -1,0 +1,37 @@
+# The agent of the listings example. Its answers replay from the package's recordings/ (MILLSTREAM_HARNESS_MODE=replay,
+# MILLSTREAM_HARNESS_DIR=recordings), so it needs no model and no key. They were recorded against the stand-in model
+# of the repository, go run ./examples/fakemodel, which serves baseUrl below; for a real model, see the
+# getting-started guide's "With a real model".
+name: listings/score
+version: 0.1.0
+description: Scores a listing as a renovation opportunity, with an LLM
+kind: agent
+input:
+  type: object
+  properties:
+    id: { type: string }
+    city: { type: string }
+    priceEur: { type: integer }
+    surfaceM2: { type: integer }
+    condition: { enum: [good, fair, poor] }
+  required: [id, city, priceEur, surfaceM2, condition]
+output:
+  type: object
+  properties:
+    id: { type: string }
+    city: { type: string }
+    priceEur: { type: integer }
+    surfaceM2: { type: integer }
+    condition: { enum: [good, fair, poor] }
+    score: { type: integer, minimum: 0, maximum: 100 }
+    reason: { type: string }
+  required: [id, city, priceEur, surfaceM2, condition, score, reason]
+runtime:
+  agent:
+    harness: api
+    provider: openai
+    baseUrl: http://127.0.0.1:8099/v1
+    model: fake-scorer
+    apiKeySecret: scorerKey
+    network: [127.0.0.1]
+    maxCostUsd: 0.01

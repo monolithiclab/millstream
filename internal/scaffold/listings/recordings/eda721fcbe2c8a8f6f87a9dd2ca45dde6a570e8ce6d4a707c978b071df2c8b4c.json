@@ -1,0 +1,38 @@
+{
+  "harness": "api",
+  "key": "eda721fcbe2c8a8f6f87a9dd2ca45dde6a570e8ce6d4a707c978b071df2c8b4c",
+  "model": "fake-scorer",
+  "response": {
+    "text": "```json\n{\"city\":\"Lille\",\"condition\":\"poor\",\"id\":\"L1004\",\"priceEur\":150000,\"reason\":\"3333 EUR per square metre in Lille.\",\"score\":84,\"surfaceM2\":45}\n```",
+    "tokensIn": 300,
+    "tokensOut": 60,
+    "transcript": [
+      {
+        "role": "user",
+        "text": "You score real estate listings as renovation opportunities, from 0 to 100.\n\nListing L1004 in Lille: 45 m², condition poor, asking 150000 EUR.\n\nAnswer with the listing as given, every field unchanged, plus `score` (an integer) and `reason` (one sentence).\n\n\nEnd your answer with a fenced ```json block holding only your result, a JSON value valid against this JSON Schema:\n\n```\n{\"properties\":{\"city\":{\"type\":\"string\"},\"condition\":{\"enum\":[\"good\",\"fair\",\"poor\"]},\"id\":{\"type\":\"string\"},\"priceEur\":{\"type\":\"integer\"},\"reason\":{\"type\":\"string\"},\"score\":{\"maximum\":100,\"minimum\":0,\"type\":\"integer\"},\"surfaceM2\":{\"type\":\"integer\"}},\"required\":[\"id\",\"city\",\"priceEur\",\"surfaceM2\",\"condition\",\"score\",\"reason\"],\"type\":\"object\"}\n```\n"
+      },
+      {
+        "data": {
+          "choices": [
+            {
+              "finish_reason": "stop",
+              "index": 0,
+              "message": {
+                "content": "```json\n{\"city\":\"Lille\",\"condition\":\"poor\",\"id\":\"L1004\",\"priceEur\":150000,\"reason\":\"3333 EUR per square metre in Lille.\",\"score\":84,\"surfaceM2\":45}\n```",
+                "role": "assistant"
+              }
+            }
+          ],
+          "model": "fake-scorer",
+          "usage": {
+            "completion_tokens": 60,
+            "prompt_tokens": 300
+          }
+        },
+        "role": "assistant",
+        "text": "```json\n{\"city\":\"Lille\",\"condition\":\"poor\",\"id\":\"L1004\",\"priceEur\":150000,\"reason\":\"3333 EUR per square metre in Lille.\",\"score\":84,\"surfaceM2\":45}\n```"
+      }
+    ],
+    "turns": 1
+  }
+}

@@ -19,7 +19,7 @@ type InitCmd struct {
 type InitPipelineCmd struct {
 	Name string `arg:"" help:"The pipeline's name: lowercase letters, digits and single dashes."`
 	Dir  string `type:"path" help:"The directory to create the package in (default: the current one)."`
-	From string `enum:",improve" default:"" help:"Copy a package embedded in the binary to fork it: improve."`
+	From string `enum:",improve,listings" default:"" help:"Copy a package embedded in the binary: listings, the example that runs offline; improve, to fork it."`
 }
 
 // Run writes the package and says what to do next.
@@ -36,6 +36,15 @@ func (c InitPipelineCmd) Run(rt *Runtime) error {
 		fmt.Fprintf(rt.IO.Out, "created %s, a copy of the improve package\nnext: map its %s and %s secrets "+
 			"(the API's URL and a token from millstream proposals token), then millstream check %s\n", dir,
 			improve.SecretAPI, improve.SecretToken, dir)
+		return nil
+	}
+	if c.From == scaffold.ListingsName {
+		dir, err := scaffold.Listings(dirOrCurrent(c.Dir), c.Name)
+		if err != nil {
+			return initErr(err)
+		}
+		fmt.Fprintf(rt.IO.Out, "created %s, the listings example\nnext: cd %s && "+
+			"MILLSTREAM_HARNESS_MODE=replay MILLSTREAM_HARNESS_DIR=recordings millstream run --once\n", dir, dir)
 		return nil
 	}
 	dir, err := scaffold.Pipeline(dirOrCurrent(c.Dir), c.Name)

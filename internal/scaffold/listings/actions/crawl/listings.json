@@ -1,0 +1,8 @@
+[
+  { "id": "L1001", "city": "Lyon", "priceEur": 185000, "surfaceM2": 48, "condition": "poor" },
+  { "id": "L1002", "city": "Nantes", "priceEur": 210000, "surfaceM2": 70, "condition": "fair" },
+  { "id": "L1003", "city": "Rennes", "priceEur": 240000, "surfaceM2": 52, "condition": "good" },
+  { "id": "L1004", "city": "Lille", "priceEur": 150000, "surfaceM2": 45, "condition": "poor" },
+  { "id": "L1005", "city": "Bordeaux", "priceEur": 320000, "surfaceM2": 75, "condition": "fair" },
+  { "id": "L1006", "city": "Lyon", "priceEur": 275000, "surfaceM2": 80, "condition": "poor" }
+]

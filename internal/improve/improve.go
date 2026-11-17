@@ -18,6 +18,7 @@ import (
 	"strings"
 
 	"github.com/monolithiclab/millstream/internal/pipeline"
+	"github.com/monolithiclab/millstream/internal/scaffold"
 )
 
 // Name is the improve pipeline's name.
@@ -65,16 +66,7 @@ func Source() (map[string][]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	files := map[string][]byte{}
-	err = fs.WalkDir(sub, ".", func(p string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
-			return err
-		}
-		data, err := fs.ReadFile(sub, p)
-		files[p] = data
-		return err
-	})
-	return files, err
+	return scaffold.ReadFS(sub)
 }
 
 // Files returns the package as the deployment runs it: its source with the environment file's settings filled in

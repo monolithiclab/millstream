@@ -145,8 +145,10 @@ checks the store's invariants and writes `build/soak/report.md`. It is `TestSoak
 ## Agent recordings and the live smoke test
 
 Tests never reach a model: agent calls replay from recordings made against a fake model server. `make recordings`
-rewrites them (`internal/agent/testdata/recordings`, `examples/m2-fixture/recordings`) after a change to a prompt, a
-lessons file, an output schema or the fake model.
+rewrites them (`internal/agent/testdata/recordings`, `examples/m2-fixture/recordings`, and the listings example's
+`internal/scaffold/listings/recordings`, recorded against `examples/fakemodel`) after a change to a prompt, a lessons
+file, an output schema or the fake model. `Test_initListings` (`internal/cli`, e2e build) replays the listings
+example's: a prompt they no longer match dead-letters its score step there.
 
 The improve pipeline's draft agent replays `internal/improve/testdata/recordings` in `TestImprove`
 (`internal/e2e/improve_test.go`): the M2 fixture with a review step, analysts lowering the scores of poor listings,
