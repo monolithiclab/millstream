@@ -390,7 +390,7 @@ func (f *failover) waitSettled() {
 			}
 		}
 		if time.Now().After(deadline) {
-			f.t.Fatalf("the run did not settle within %s: %+v, %v", settleTimeout, run, err)
+			f.t.Fatalf("the run or its audits did not end within %s: %+v, %v", settleTimeout, run, err)
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
@@ -501,12 +501,16 @@ func TestFailoverAtFailpoints(t *testing.T) {
 					b := f.startEngine("b", f.db, extra...)
 					f.fireRun([]*engineProc{a, b})
 					f.waitSettled()
-					died := !a.alive() && a.code == failpoint.ExitCode
+					exited := !a.alive() // a.code is written by the Wait goroutine: read it only once exited
+					died := exited && a.code == failpoint.ExitCode
 					if died {
 						tks.add(measureTakeover(t, b, a.end, 0))
 					} else if slices.Contains(failoverReached, unit) {
-						t.Logf("engine a did not die at %s (alive %v, exit %d):\n%s", name, a.alive(), a.code,
-							lastLines(a.log.String(), 30))
+						status := "still running"
+						if exited {
+							status = fmt.Sprintf("exit %d", a.code)
+						}
+						t.Logf("engine a did not die at %s (%s):\n%s", name, status, lastLines(a.log.String(), 30))
 					}
 					a.stop(t)
 					b.stop(t)
