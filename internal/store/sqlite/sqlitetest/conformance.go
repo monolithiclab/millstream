@@ -45,12 +45,13 @@ func Main(m *testing.M) {
 }
 
 // Memory is the conformance suite's opener: a Memory store, which reuses a closed one's connection and its prepared
-// statements, where a clone would prepare them all again. For a test of storetest.SchemaChanging, it first holds,
-// until the test ends, the pool's latest connection, which the tests before left with their statements prepared: the
-// test takes the spare connection Main warmed, and the tests after it keep the other. A binary using it runs Main.
+// statements, where a clone would prepare them all again. For a test of storetest.SchemaChanging (the subtest
+// storetest.RunArea names after it), it first holds, until the test ends, the pool's latest connection, which the
+// tests before left with their statements prepared: the test takes the spare connection Main warmed, and the tests
+// after it keep the other. A binary using it runs Main.
 func Memory(t *testing.T, opts storetest.Options) storetest.Store {
 	t.Helper()
-	if top, _, _ := strings.Cut(t.Name(), "/"); slices.Contains(storetest.SchemaChanging, top) {
+	if name := strings.Split(t.Name(), "/"); len(name) > 1 && slices.Contains(storetest.SchemaChanging, name[1]) {
 		held, err := sqlite.Open(sqlite.Memory, sqlite.Options{})
 		if err != nil {
 			t.Fatalf("Open: %v", err)

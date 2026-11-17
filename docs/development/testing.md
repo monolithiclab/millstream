@@ -77,13 +77,14 @@ The default build runs them from three packages by area, each with its own warme
   API reads.
 - `internal/store/sqlstore/conformance/retention`: retention, purges, rollups, evidence, nodes, missing tables.
 
-Each package has one top-level wrapper per test in its `conformance_test.go`, so `make test-times` measures each test.
-The e2e-only tests are wrapped in `internal/store/sqlstore/conformance_e2e_test.go`.
+`storetest.Tests` lists each test once, under its area (`storetest.Delivery`, `Review` or `Retention`); the e2e-only
+tests are listed in `tests_e2e.go` and join their area under the tag. Each package's `TestConformance` runs its area
+with `storetest.RunArea`, one subtest per test, and `make test-times` counts each subtest of a `TestConformance` as a
+test of its own, so the 20 ms limit applies to each conformance test.
 
-A new store test goes in storetest, listed in `storetest.Tests` and wrapped in the package of its area. A package
-nearing 70 ms wall splits again. `TestTestsListed` and `TestConformanceListed` name what is missing, or wrapped
-twice. A test that must reach behind the units uses the store's `Exec`, `Unit` or `QueryRow`, written with `?`
-placeholders.
+A new store test goes in storetest, listed in `storetest.Tests` under its area. A package nearing 70 ms wall splits
+again. `TestTestsListed` names a test the list misses, or lists twice. A test that must reach behind the units uses
+the store's `Exec`, `Unit` or `QueryRow`, written with `?` placeholders.
 
 ### Coverage
 

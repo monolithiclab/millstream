@@ -3,7 +3,8 @@
 # initialisation and TestMain are not counted.
 #   - Serial-equivalent test time: the suite runs RUNS times (3, 5 when CI=1) one package and one test at a time
 #     (-p 1 -parallel 1). Each top-level test's time comes from the events' timestamps (test2json's Elapsed has a
-#     10 ms resolution), and its figure is the median of its runs. The total is the sum of those medians: at most
+#     10 ms resolution), and its figure is the median of its runs. The store conformance suite's TestConformance
+#     counts each of its subtests as a test. The total is the sum of those medians: at most
 #     BUDGET_TOTAL_MS, with a warning above TARGET_TOTAL_MS (the working target), and no test's median above
 #     BUDGET_TEST_MS. The listed tests show their median and their slowest run.
 #   - Package wall time: the suite runs three times one package at a time with t.Parallel in effect (-p 1). A
@@ -80,8 +81,13 @@ awk -v runs="$RUNS" -v total_budget="$BUDGET_TOTAL_MS" -v target="$TARGET_TOTAL_
 	# One test runs at a time: the time up to an event belongs to the top-level test of that event (its own or one of
 	# its subtests), unless the event starts or resumes a test: the time before it goes to the framework. A resumed
 	# test need not announce itself (go test prints no CONT line when no other test printed since), hence the
-	# attribution to the later event.
-	{ key = pkg " " substr(test, 1, index(test "/", "/") - 1) }
+	# attribution to the later event. A test named TestConformance runs the store conformance suite, one subtest per
+	# test (storetest.RunArea): each of its subtests counts as a test of its own.
+	{
+		n = split(test, seg, "/")
+		key = pkg " " seg[1]
+		if (seg[1] == "TestConformance" && n > 1) key = key "/" seg[2]
+	}
 	action !~ /^(run|cont)$/ && pkg == lastpkg {
 		d = (now - then) * 1000
 		took[run, key] += d

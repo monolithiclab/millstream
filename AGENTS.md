@@ -68,10 +68,10 @@ how the suites work, and `make help` for every command.
 - CLI help is `internal/cli/help.go` (three levels, colored on a terminal only) and the `millstream help` guide is
   `internal/cli/guide.md`; a new command takes a `group:""` tag and a one-line `help:""`, examples go in a `Help()`
   method, and `go test ./internal/cli -run Test_help -update` rewrites the golden files.
-- A new store test goes in `internal/store/storetest`, listed in `storetest.Tests` and wrapped in the
-  `conformance_test.go` of the `internal/store/sqlstore/conformance/` package of its area (`delivery`, `review` or
-  `retention`; a package nearing 70 ms wall splits again); `TestTestsListed` and `TestConformanceListed` name what is
-  missing, or wrapped twice.
+- A new store test goes in `internal/store/storetest`, listed in `storetest.Tests` under its area (`Delivery`,
+  `Review` or `Retention`), which the `internal/store/sqlstore/conformance/` package of that name runs as subtests of
+  its `TestConformance` (a package nearing 70 ms wall splits again); `TestTestsListed` names a test the list misses,
+  or lists twice.
 - A test that needs a process, `go build`, Docker, a file database or drives the CLI or engine end to end goes behind
   the `e2e` build tag, in a `*_e2e_test.go` file.
 - Architecture decisions live in `docs/decisions.md`. Until the first public release the log is kept current: edit

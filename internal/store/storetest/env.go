@@ -1,9 +1,9 @@
 // Package storetest is the log store's conformance suite: the behaviour of every unit and read of store.Store,
 // which the SQLite and Postgres stores must both show. Each test is an exported function taking the test and an
-// Opener; a store's package runs them, the SQLite store one top-level test per function in the default build
-// (the internal/store/sqlstore/conformance/... packages, kept in step with Tests by TestConformanceListed), the
-// Postgres store all of Tests under the e2e tag against a database of its own per test. Files named *_e2e.go hold the tests that only the e2e
-// build runs, and scale.go sets how far the default build scales the long ones down.
+// Opener, listed in Tests by area; a store's package runs them, the SQLite store one area per package
+// (internal/store/sqlstore/conformance/<area>, through RunArea), the Postgres store all of Tests under the e2e tag
+// against a database of its own per test. Files named *_e2e.go hold the tests that only the e2e build runs, and
+// scale.go sets how far the default build scales the long ones down.
 package storetest
 
 import (
