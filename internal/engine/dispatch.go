@@ -138,7 +138,8 @@ func (e *Engine) RunBuiltins(ctx context.Context) {
 	}
 }
 
-// builtinPass leases up to builtinBatch builtin deliveries and completes them, and returns how many it leased.
+// builtinPass leases up to builtinBatch builtin deliveries and completes them, wakes the embedded node (Due) when
+// it completed any, and returns how many it leased.
 func (e *Engine) builtinPass(ctx context.Context) int {
 	resolve, cancel := resolving(ctx)
 	defer cancel()
@@ -153,6 +154,14 @@ func (e *Engine) builtinPass(ctx context.Context) int {
 		if !e.settle(resolve, l) { // its revision unreadable: retried
 			e.failDispatch(resolve, l, dispatchErr(ClassEngine, true, "builtin step %s did not run", l.Step))
 		}
+	}
+	if len(leases) > 0 {
+		e.mu.Lock()
+		if e.due != nil {
+			close(e.due)
+			e.due = nil
+		}
+		e.mu.Unlock()
 	}
 	return len(leases)
 }

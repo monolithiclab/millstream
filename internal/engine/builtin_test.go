@@ -104,6 +104,39 @@ func TestBuiltinsRunInTheEngine(t *testing.T) {
 	}
 }
 
+// Due wakes the embedded node only when the builtin loop completed deliveries: a node's own completion, which the
+// node sees itself, and a pass that found nothing leave it closed, or the node pulls for nothing.
+func TestDueOnlyAfterBuiltins(t *testing.T) {
+	t.Parallel()
+	v := newEnv(t, Options{})
+	v.apply(newPackage(t, manualPipeline("p", `  src: { action: ./actions/a, in: trigger.adhoc, out: raw }
+  gate: { action: filter, in: raw, config: { expr: "item.n >= 5" } }
+`), "a"))
+	v.fire("p", "adhoc", "r1")
+	closed := func(c <-chan struct{}) bool {
+		select {
+		case <-c:
+			return true
+		default:
+			return false
+		}
+	}
+	due := v.e.Due()
+	v.emit(output("a", `{"n":7}`))
+	if closed(due) {
+		t.Fatal("a node's own completion closed Due")
+	}
+	v.builtins()
+	if !closed(due) {
+		t.Fatal("the builtin loop completed the gate without closing Due")
+	}
+	due = v.e.Due()
+	v.builtins()
+	if closed(due) {
+		t.Fatal("a builtin pass that found nothing closed Due")
+	}
+}
+
 // Builtins run in the engine's own loop, under the engine's owner: with no node pulling (remote nodes full or
 // absent), the run's filter and dedupe deliveries still finish.
 func TestBuiltinsRunWithoutAPull(t *testing.T) {

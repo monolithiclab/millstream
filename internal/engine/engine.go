@@ -170,6 +170,9 @@ type Engine struct {
 	// changed, made when WaitSettled first asks for it, is closed (and forgotten) when a lease in flight ends, the
 	// moments a run may settle.
 	changed chan struct{}
+	// due, made when the embedded node first asks for it (Due), is closed (and forgotten) when the builtin loop
+	// completes deliveries.
+	due chan struct{}
 
 	crons map[[2]string]*cronState // cron triggers by pipeline and name; the scheduler's goroutine only
 
@@ -480,9 +483,21 @@ func (e *Engine) auditsEnded(ctx context.Context, runs []RunRef) (bool, error) {
 	return true, nil
 }
 
-// Changes returns a channel closed when a lease in flight next ends: when new work may be due, which the embedded
-// node (node.Waker) and a remote node's long poll wait for.
+// Changes returns a channel closed when a lease in flight next ends: when new work may be due, which a remote
+// node's long poll waits for.
 func (e *Engine) Changes() <-chan struct{} { return e.changes() }
+
+// Due implements node.Waker: it returns a channel closed when the builtin loop next completes deliveries, whose
+// outputs may make the embedded node's work due. The node's own completions it sees itself, and waking it on every
+// lease end would have it pull for nothing about twice per delivery.
+func (e *Engine) Due() <-chan struct{} {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.due == nil {
+		e.due = make(chan struct{})
+	}
+	return e.due
+}
 
 // changes returns the channel closed when a lease in flight next ends.
 func (e *Engine) changes() <-chan struct{} {

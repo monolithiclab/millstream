@@ -100,8 +100,9 @@ type Transport interface {
 // Waker is a Transport that says when new work may be due: the embedded node's engine, whose own loop completes
 // the builtin steps. The node then pulls at once, rather than at its next interval.
 type Waker interface {
-	// Changes returns a channel closed when new work may next be due.
-	Changes() <-chan struct{}
+	// Due returns a channel closed when new work may next be due, other than what the node's own completions make
+	// due.
+	Due() <-chan struct{}
 }
 
 // Options configure a Node. Owner and Pool are required; zero durations and slots take the defaults.
@@ -240,17 +241,17 @@ func (n *Node) Run(ctx context.Context) error {
 	pull, stopPull := n.newTimer(n.opts.PullInterval, true)
 	defer stopPull()
 	waker, _ := n.t.(Waker)
-	var changed <-chan struct{} // nil, never ready, without a Waker
+	var due <-chan struct{} // nil, never ready, without a Waker
 	for ctx.Err() == nil {
 		if waker != nil {
-			changed = waker.Changes() // before the pull, so a change during it wakes the next one
+			due = waker.Due() // before the pull, so work coming due during it wakes the next one
 		}
 		l.pull(ctx)
 		select {
 		case <-ctx.Done():
 		case <-pull:
 		case <-l.finished:
-		case <-changed:
+		case <-due:
 		}
 	}
 	if errors.Is(context.Cause(ctx), ErrAbandon) {
