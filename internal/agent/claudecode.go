@@ -16,8 +16,8 @@ const maxHarnessOutput = 64 << 20
 
 // ClaudeCode is the claude-code harness: Claude Code in headless mode (claude -p), with the manifest's tools as its
 // only tools, no MCP servers, no session saved, and the output schema as its native structured output. The prompt
-// goes on stdin, never on the command line. The output is stream-json, so the transcript holds every message,
-// tool calls included; its last line is the result Claude Code prints with --output-format json.
+// goes on stdin, never on the command line (claudePrompt). The output is stream-json, so the transcript holds every
+// message, tool calls included; its last line is the result Claude Code prints with --output-format json.
 type ClaudeCode struct {
 	// Bin is the claude CLI.
 	Bin string
@@ -52,6 +52,17 @@ func (c ClaudeCode) Args(req Request) []string {
 	return args
 }
 
+// claudePrompt is the prompt of req on stdin. Claude Code keeps no session to continue (--no-session-persistence),
+// so a repair is a fresh run whose prompt holds the original one, then each rejected answer with its feedback.
+func claudePrompt(req Request) string {
+	var b strings.Builder
+	b.WriteString(req.Prompt)
+	for _, r := range req.Repairs {
+		b.WriteString("\n\nYour previous answer was:\n\n```\n" + r.Answer + "\n```\n\n" + r.Feedback + "\n")
+	}
+	return b.String()
+}
+
 // claudeResult is the result line of Claude Code's output. Every field is optional: a missing one reads as zero.
 type claudeResult struct {
 	Type             string          `json:"type"`
@@ -82,13 +93,14 @@ func (c ClaudeCode) run(cmd *osexec.Cmd) error {
 func (c ClaudeCode) Run(ctx context.Context, req Request) (Response, error) {
 	cmd := osexec.CommandContext(ctx, c.Bin, c.Args(req)...) // #nosec G204 -- the claude CLI, with arguments we build
 	cmd.Env, cmd.Dir = c.Env, c.Dir
-	cmd.Stdin = strings.NewReader(req.Prompt)
+	prompt := claudePrompt(req)
+	cmd.Stdin = strings.NewReader(prompt)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &limitedWriter{w: &stdout, n: maxHarnessOutput}
 	cmd.Stderr = &limitedWriter{w: &stderr, n: 64 << 10}
 	runErr := c.run(cmd)
 
-	resp := Response{Transcript: []Turn{{Role: "user", Text: req.Prompt}}}
+	resp := Response{Transcript: []Turn{{Role: "user", Text: prompt}}}
 	var result *claudeResult
 	sc := bufio.NewScanner(&stdout)
 	sc.Buffer(make([]byte, 0, 64<<10), maxHarnessOutput)

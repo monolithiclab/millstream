@@ -106,6 +106,13 @@ func TestRecorder(t *testing.T) {
 	if Key(pipeline.HarnessClaudeCode, req) == key {
 		t.Fatal("the harness is not part of the key")
 	}
+	repaired := req
+	repaired.Repairs = []Repair{{Answer: "a", Feedback: "f"}}
+	other := req
+	other.Repairs = []Repair{{Answer: "a", Feedback: "g"}}
+	if k := Key(pipeline.HarnessAPI, repaired); k == key || k == Key(pipeline.HarnessAPI, other) {
+		t.Fatal("the repairs are not part of the key")
+	}
 	if err := os.WriteFile(filepath.Join(dir, "rec", Key("x", req)+".json"), []byte("{"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -420,5 +427,23 @@ func TestClaudeCodeFailuresInProcess(t *testing.T) {
 				t.Fatalf("the cost of a stopped run is lost: %+v", resp)
 			}
 		})
+	}
+}
+
+// TestClaudeCodeRepair: the claude-code harness keeps no session to continue (--no-session-persistence), so a
+// repair is a fresh run whose prompt holds the original prompt, then each rejected answer with the feedback on it.
+func TestClaudeCodeRepair(t *testing.T) {
+	t.Parallel()
+	cli := &fakeCLI{out: claudeStream}
+	h := ClaudeCode{Bin: "claude", cli: cli}
+	resp, err := h.Run(t.Context(), Request{Model: "m", Prompt: "Score it.", MaxTurns: 6,
+		Repairs: []Repair{{Answer: `{"score":"high"}`, Feedback: "The score must be an integer."}}})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if !strings.HasPrefix(cli.stdin, "Score it.\n") || !strings.Contains(cli.stdin, "```\n{\"score\":\"high\"}\n```") ||
+		!strings.HasSuffix(cli.stdin, "The score must be an integer.\n") || resp.Transcript[0].Text != cli.stdin ||
+		!strings.Contains(strings.Join(cli.args, " "), "--max-turns 6") {
+		t.Fatalf("stdin %q, args %v", cli.stdin, cli.args)
 	}
 }

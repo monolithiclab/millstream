@@ -49,9 +49,9 @@ func harnessMode(env func(string) (string, bool)) (mode, dir string, err error) 
 	return mode, dir, nil
 }
 
-// Recorder wraps a harness with record/replay. A recording is keyed by the harness, the model, the rendered prompt
-// and the output schema (Key), so anything that changes the prompt, a lessons file included, misses the old
-// recordings rather than replaying a stale answer.
+// Recorder wraps a harness with record/replay. A recording is keyed by the harness, the model, the rendered prompt,
+// the output schema and the repair turns before it (Key), so anything that changes the prompt, a lessons file
+// included, misses the old recordings rather than replaying a stale answer.
 type Recorder struct {
 	Harness Harness
 	// Name is the harness's name (claude-code, api), part of the key.
@@ -79,9 +79,14 @@ type Recording struct {
 }
 
 // Key is the recording key of a request to the harness name: the hex SHA-256 of the harness, the model, the
-// rendered prompt and the output schema.
+// rendered prompt, the output schema and, for a repair turn, every earlier answer with its feedback, so a repair
+// replays the conversation it was recorded in.
 func Key(harness string, req Request) string {
-	enc, _ := json.Marshal([]string{harness, req.Model, req.Prompt, string(req.Schema)}) // strings always encode
+	parts := []string{harness, req.Model, req.Prompt, string(req.Schema)}
+	for _, r := range req.Repairs {
+		parts = append(parts, r.Answer, r.Feedback)
+	}
+	enc, _ := json.Marshal(parts) // strings always encode
 	sum := sha256.Sum256(enc)
 	return hex.EncodeToString(sum[:])
 }

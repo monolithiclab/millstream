@@ -24,6 +24,15 @@ type Request struct {
 	// MaxTurns bounds the run's turns; MaxCostUSD its cost, zero meaning no bound of the action's own.
 	MaxTurns   int
 	MaxCostUSD float64
+	// Repairs are the attempt's earlier answers that failed the output schema, in order, each with the feedback the
+	// adapter sends back on it (spec section 7.1): empty for the first turn, the harness answers the last feedback.
+	Repairs []Repair
+}
+
+// Repair is a rejected answer and the feedback on it: the follow-up turn holding the validator's errors.
+type Repair struct {
+	Answer   string
+	Feedback string
 }
 
 // Response is what a harness run produced.

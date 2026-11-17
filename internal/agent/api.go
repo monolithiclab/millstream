@@ -23,6 +23,7 @@ const (
 // completions endpoint (Mistral, a local model). It has no tool loop in M2: an action that declares tools is refused
 // before it runs ("api harness tools arrive later"). Neither provider's native structured output is used, since
 // OpenAI-compatible endpoints differ in it: the prompt asks for a final fenced JSON block matching the output schema.
+// A repair turn sends the conversation so far, each rejected answer followed by the feedback on it.
 type API struct {
 	// Provider is pipeline.ProviderAnthropic or pipeline.ProviderOpenAI.
 	Provider string
@@ -52,10 +53,12 @@ func (a API) Run(ctx context.Context, req Request) (Response, error) {
 	if len(req.Schema) > 0 {
 		prompt += fmt.Sprintf(schemaInstruction, bytes.TrimSpace(req.Schema))
 	}
-	body, err := json.Marshal(map[string]any{
-		"model": req.Model, "max_tokens": DefaultMaxTokens,
-		"messages": []map[string]string{{"role": "user", "content": prompt}},
-	})
+	messages := []map[string]string{{"role": "user", "content": prompt}}
+	for _, r := range req.Repairs {
+		messages = append(messages, map[string]string{"role": "assistant", "content": r.Answer},
+			map[string]string{"role": "user", "content": r.Feedback})
+	}
+	body, err := json.Marshal(map[string]any{"model": req.Model, "max_tokens": DefaultMaxTokens, "messages": messages})
 	if err != nil {
 		return Response{}, permanent("api harness: encode request: %v", err)
 	}
@@ -73,7 +76,7 @@ func (a API) Run(ctx context.Context, req Request) (Response, error) {
 		header.Set("X-Api-Key", a.APIKey)
 		header.Set("Anthropic-Version", AnthropicVersion)
 	}
-	resp := Response{Turns: 1, Transcript: []Turn{{Role: "user", Text: prompt}}}
+	resp := Response{Turns: 1, Transcript: []Turn{{Role: "user", Text: messages[len(messages)-1]["content"]}}}
 	raw, err := a.post(ctx, url, header, body)
 	if err != nil {
 		return resp, err

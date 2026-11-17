@@ -79,7 +79,7 @@ runtime: { exec: { command: [score, --fast] } }
 		{"./actions/agent", Action{Ref: "./actions/agent", Name: "g", Kind: KindAgent, Lifecycle: LifecyclePerItem,
 			Dir: "actions/agent", Output: []byte(`{"type":"object"}` + "\n"), Agent: &AgentRuntime{
 				Harness: HarnessClaudeCode, Model: "m", Prompt: "actions/agent/prompts/score.md", Tools: []string{"WebFetch"},
-				MaxTurns: DefaultMaxTurns, MaxCostUSD: 0.5,
+				MaxTurns: DefaultMaxTurns, RepairTurns: DefaultRepairTurns, MaxCostUSD: 0.5,
 			}}},
 		{"./actions/container", Action{
 			Ref: "./actions/container", Name: "c", Kind: KindContainer, Lifecycle: LifecyclePerItem,
@@ -160,6 +160,9 @@ func TestResolveErrors(t *testing.T) {
 		{"agent tools", "./actions/x", agentWith("tools: WebFetch"), nil, "runtime.agent.tools: must be a list"},
 		{"agent max turns", "./actions/x", agentWith("maxTurns: 0"), nil, "runtime.agent.maxTurns: must be a positive"},
 		{"agent max turns float", "./actions/x", agentWith("maxTurns: 1.5"), nil, "runtime.agent.maxTurns"},
+		{"agent repair turns", "./actions/x", agentWith("repairTurns: -1"), nil,
+			"runtime.agent.repairTurns: must be a non-negative integer"},
+		{"agent repair turns float", "./actions/x", agentWith("repairTurns: 1.5"), nil, "runtime.agent.repairTurns"},
 		{"agent max cost", "./actions/x", agentWith("maxCostUsd: 0"), nil, "runtime.agent.maxCostUsd: must be a positive"},
 		{"agent max cost string", "./actions/x", agentWith("maxCostUsd: cheap"), nil, "runtime.agent.maxCostUsd"},
 		{"agent bad provider", "./actions/x", agentWith("provider: azure"), nil, "runtime.agent.provider: must be one of"},

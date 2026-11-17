@@ -29,8 +29,11 @@ accumulate, the `improve` pipeline proposes moving it down this table (section 5
 A model's answer is data from outside the system, and a crawled page or a document in its prompt can steer it.
 
 - **The output schema.** Every agent action declares `output`, a JSON Schema. The adapter validates each answer
-  before anything is published. An answer that does not match is a retryable error, retried under the step's
-  `retry` like a crash. The attempt keeps its transcript and the `schema_validation_failures` metric counts it.
+  before anything is published. An answer that does not match goes back to the model with the validator's errors,
+  as a repair turn inside the same attempt: `runtime.agent.repairTurns` of them (1 by default, 0 for none), within
+  `maxTurns` and `maxCostUsd`. One that still does not match is a retryable error, retried under the step's `retry`
+  like a crash. The attempt keeps its transcript, every turn in it, and the `schema_validation_failures` metric
+  counts it.
   Make the schema tight: enums over free strings, `minimum` and `maximum` on numbers, `required` on every field a
   later step reads.
 - **Abstaining.** An agent that cannot answer should say so rather than guess. If the output schema admits
@@ -73,9 +76,9 @@ so a change never alters work in flight, and `millstream rollback` reactivates t
 - **Lineage.** Every item names its parents, so an output can be traced to the input, the revision and the attempt
   that produced it.
 - **Recordings.** With `MILLSTREAM_HARNESS_MODE=record`, agent calls are recorded, keyed by the harness, the model,
-  the rendered prompt and the output schema. In `replay` mode, tests and evals run offline and deterministically,
-  without an API key. A changed prompt or lessons file misses its old recordings instead of replaying a stale
-  answer.
+  the rendered prompt, the output schema and any repair turns before it. In `replay` mode, tests and evals run
+  offline and deterministically, without an API key. A changed prompt or lessons file misses its old recordings
+  instead of replaying a stale answer.
 
 ## 5. Improve from what was recorded
 

@@ -25,6 +25,9 @@ const (
 const (
 	DefaultPromptFile = "prompt.md"
 	DefaultMaxTurns   = 10
+	// DefaultRepairTurns is how many times, by default, the adapter sends an answer that fails the output schema
+	// back with the validator's errors (spec section 7.1).
+	DefaultRepairTurns = 1
 )
 
 // AgentRuntime is an agent action's runtime.agent (spec section 6.1).
@@ -41,6 +44,9 @@ type AgentRuntime struct {
 	// cost of one delivery, zero meaning no bound of the action's own.
 	MaxTurns   int
 	MaxCostUSD float64
+	// RepairTurns is how many follow-up turns may carry the validator's errors back after an answer fails the
+	// output schema (DefaultRepairTurns when the manifest says nothing, 0 for none), within MaxTurns and MaxCostUSD.
+	RepairTurns int
 	// Provider, BaseURL and APIKeySecret configure the api harness: the provider (anthropic by default), its
 	// endpoint (required for openai), and the name of the pipeline secret holding the API key. APIKeySecret also
 	// gives the claude-code harness its ANTHROPIC_API_KEY.
@@ -51,7 +57,7 @@ type AgentRuntime struct {
 
 // agentKeys are the keys of runtime.agent.
 var agentKeys = []string{"harness", "model", "prompt", "tools", "mcp", "network", "maxTurns", "maxCostUsd",
-	"provider", "baseUrl", "apiKeySecret"}
+	"repairTurns", "provider", "baseUrl", "apiKeySecret"}
 
 // agentRuntime reads runtime.agent; the prompt is kept as written, for finish to resolve against the package.
 func agentRuntime(rt map[string]any) (*AgentRuntime, error) {
@@ -64,7 +70,7 @@ func agentRuntime(rt map[string]any) (*AgentRuntime, error) {
 			return nil, fmt.Errorf("runtime.agent.%s: unknown key", k)
 		}
 	}
-	a := &AgentRuntime{Prompt: DefaultPromptFile, MaxTurns: DefaultMaxTurns}
+	a := &AgentRuntime{Prompt: DefaultPromptFile, MaxTurns: DefaultMaxTurns, RepairTurns: DefaultRepairTurns}
 	var err error
 	strs := []struct {
 		key      string
@@ -107,6 +113,13 @@ func agentRuntime(rt map[string]any) (*AgentRuntime, error) {
 			return nil, errors.New("runtime.agent.maxTurns: must be a positive integer")
 		}
 		a.MaxTurns = int(n)
+	}
+	if v, set := raw["repairTurns"]; set {
+		n, ok := v.(int64)
+		if !ok || n < 0 || n > math.MaxInt32 {
+			return nil, errors.New("runtime.agent.repairTurns: must be a non-negative integer")
+		}
+		a.RepairTurns = int(n)
 	}
 	if v, set := raw["maxCostUsd"]; set {
 		switch n := v.(type) {

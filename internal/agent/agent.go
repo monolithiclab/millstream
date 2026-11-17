@@ -4,7 +4,8 @@
 //
 // For each item it renders the action's prompt template with the payload, config, vars and the step's lessons (from
 // hello), runs the harness with the manifest's tools and limits, extracts the structured output (native when the
-// harness has it, else the last fenced JSON block) and validates it against the output schema; a mismatch is a
+// harness has it, else the last fenced JSON block) and validates it against the output schema; a mismatch goes back
+// to the harness with the validator's errors as a repair turn, up to the manifest's repairTurns, and past them is a
 // retryable error. An answer that is an object whose only key is "abstain", holding a string, is not validated:
 // the adapter answers abstain with it as the reason, and the engine hands the delivery to the step's fallback (spec
 // section 11.5). It emits the output with the metrics tokens_in, tokens_out, cost_usd, turns and duration_ms
@@ -285,8 +286,9 @@ func (a *adapter) handle(ctx context.Context, w *protocol.Writer, it protocol.It
 	return w.Write(protocol.Done{Delivery: it.Delivery, Artifacts: arts})
 }
 
-// attempt renders the prompt, runs the harness and validates its output, recording each step in t: its prompt is
-// set once the harness runs.
+// attempt renders the prompt, runs the harness and validates its output, with repair turns while it fails the
+// output schema, recording each step in t, every turn's transcript, tokens and cost summed: its prompt is set once
+// the harness runs.
 func (a *adapter) attempt(ctx context.Context, it protocol.Item, t *Transcript) (json.RawMessage, error) {
 	var payload any
 	if err := json.Unmarshal(it.Payload, &payload); err != nil {
@@ -298,19 +300,53 @@ func (a *adapter) attempt(ctx context.Context, it protocol.Item, t *Transcript) 
 		return nil, permanent("%v", err) // a template that fails on this payload fails on every retry
 	}
 	t.Prompt = prompt
-	resp, err := a.harness.Run(ctx, Request{
-		Model: a.agent.Model, Prompt: prompt, Schema: a.schema, Tools: a.agent.Tools,
-		MaxTurns: a.agent.MaxTurns, MaxCostUSD: a.agent.MaxCostUSD,
-	})
-	t.Turns, t.TokensIn, t.TokensOut, t.NumTurns = resp.Transcript, resp.TokensIn, resp.TokensOut, resp.Turns
-	t.CostUSD = a.cost(resp)
-	if limit := a.agent.MaxCostUSD; limit > 0 && t.CostUSD > limit {
-		// Whatever the harness answered, the attempt spent more than one delivery may: no retry.
-		return nil, overBudget("the attempt cost $%g, over the action's maxCostUsd of $%g", t.CostUSD, limit)
+	req := Request{Model: a.agent.Model, Prompt: prompt, Schema: a.schema, Tools: a.agent.Tools,
+		MaxTurns: a.agent.MaxTurns, MaxCostUSD: a.agent.MaxCostUSD}
+	for {
+		resp, err := a.harness.Run(ctx, req)
+		t.Turns = append(t.Turns, resp.Transcript...)
+		t.TokensIn += resp.TokensIn
+		t.TokensOut += resp.TokensOut
+		t.NumTurns += resp.Turns
+		t.CostUSD += a.cost(resp)
+		limit := a.agent.MaxCostUSD
+		if limit > 0 && t.CostUSD > limit {
+			// Whatever the harness answered, the attempt spent more than one delivery may: no retry.
+			return nil, overBudget("the attempt cost $%g, over the action's maxCostUsd of $%g", t.CostUSD, limit)
+		}
+		if err != nil {
+			return nil, err
+		}
+		out, err := a.validate(resp, t)
+		e, failed := errors.AsType[*Error](err)
+		if !failed || !e.Schema || len(req.Repairs) >= a.agent.RepairTurns || t.NumTurns >= a.agent.MaxTurns ||
+			(limit > 0 && t.CostUSD >= limit) {
+			return out, err
+		}
+		// A repair turn (spec section 7.1): the answer goes back with the validator's errors, within what the
+		// attempt has left of its turns and its cost.
+		answer := resp.Text
+		if len(resp.Structured) > 0 {
+			answer = string(resp.Structured)
+		}
+		req.Repairs = append(req.Repairs, Repair{Answer: answer, Feedback: repairFeedback(e)})
+		req.MaxTurns = a.agent.MaxTurns - t.NumTurns
+		if limit > 0 {
+			req.MaxCostUSD = limit - t.CostUSD
+		}
 	}
-	if err != nil {
-		return nil, err
-	}
+}
+
+// repairFeedback is the follow-up turn holding the validator's errors on a rejected answer.
+func repairFeedback(e *Error) string {
+	return "Your answer was rejected: " + e.Msg + "\n\nAnswer again with a corrected result, in the form asked " +
+		"for above."
+}
+
+// validate extracts the structured output of an answer and validates it against the output schema, recording it
+// in t: a schema-class Error when it is not JSON or does not match, an abstention when it abstains.
+func (a *adapter) validate(resp Response, t *Transcript) (json.RawMessage, error) {
+	t.Output = nil // a repair's answer replaces the rejected one
 	out, err := Extract(resp)
 	if err != nil {
 		return nil, err

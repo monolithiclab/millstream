@@ -15,9 +15,6 @@ earlier designs are in the git history of the spec.
 From the [agentic harnesses analysis](docs/research/20261026.agentic-harnesses.md), ranked; each needs a decision
 before it reaches the spec.
 
-- Validation feedback within a delivery: an answer failing the output schema gets the validator's errors back as a
-  follow-up turn, up to a `repairTurns` limit, within `maxTurns` and `maxCostUsd`, recorded in the transcript and
-  keyed in recordings by the whole conversation. Today the retry renders the same prompt (`internal/agent/agent.go`).
 - Output assertions on agent steps: `assert`, CEL over `output`, `input` and `vars` as in eval cases, failing as a
   schema-class error. Assertions state that an answer is wrong (an invariant); thresholds stay in `filter` steps,
   and the spec must say so.

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"net/http"
 	"os"
 	"path/filepath"
 	"runtime/debug"
@@ -16,6 +17,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/monolithiclab/millstream/internal/agent/agenttest"
 	"github.com/monolithiclab/millstream/internal/pipeline"
 	"github.com/monolithiclab/millstream/internal/protocol"
 
@@ -524,5 +526,123 @@ func TestRunLessons(t *testing.T) {
 	s.lessons = json.RawMessage(`{"rules": 3}`)
 	if msgs := s.run(`{}`); len(msgs) != 1 || !strings.Contains(msgs[0].(protocol.Error).Message, "hello lessons") {
 		t.Fatalf("malformed lessons: %+v", msgs)
+	}
+}
+
+// TestRunRepairs: an answer failing the output schema goes back to the model, a fake Messages API, with the
+// validator's errors as a follow-up turn, and the corrected answer is emitted: two turns, both in the transcript,
+// each recorded under the key of the whole conversation so far, so a replay answers the same without a model.
+func TestRunRepairs(t *testing.T) {
+	t.Parallel()
+	var mu sync.Mutex
+	var convs [][]map[string]string
+	client := agenttest.Client(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var b struct {
+			Messages []map[string]string `json:"messages"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&b)
+		mu.Lock()
+		convs = append(convs, b.Messages)
+		mu.Unlock()
+		text := "Here.\n```json\n{\"score\": \"high\"}\n```"
+		if len(b.Messages) == 3 {
+			text = "```json\n{\"score\": 7}\n```"
+		}
+		body, _ := json.Marshal(map[string]any{"content": []map[string]string{{"type": "text", "text": text}},
+			"usage": map[string]int{"input_tokens": 100, "output_tokens": 10}})
+		_, _ = w.Write(body)
+	}))
+	manifest := strings.Replace(testManifest, "apiKeySecret: apiToken",
+		"apiKeySecret: apiToken, baseUrl: \""+agenttest.URL+"\"", 1)
+	pkg, dir := memPackage(t, manifest, testPrompt), testdir.New(t)
+	for _, mode := range []string{ModeRecord, ModeReplay} {
+		s := newSession(t, pkg, nil).withWorkdir()
+		s.opts.Client = client
+		s.env[EnvHarnessMode], s.env[EnvHarnessDir] = mode, dir
+		msgs := s.run(`{"url": "u"}`)
+		if emit, ok := msgs[len(msgs)-2].(protocol.Emit); !ok || string(emit.Payload) != `{"score":7}` {
+			t.Fatalf("%s: messages %+v", mode, msgs)
+		}
+		if !slices.ContainsFunc(msgs, func(m protocol.Message) bool {
+			mt, ok := m.(protocol.Metric)
+			return ok && mt.Name == MetricTurns && mt.Value == 2
+		}) {
+			t.Fatalf("%s: no turns metric of 2 in %+v", mode, msgs)
+		}
+		tr, _ := s.transcript()
+		if tr.NumTurns != 2 || tr.TokensIn != 200 || len(tr.Turns) != 4 || tr.Turns[2].Role != "user" ||
+			!strings.Contains(tr.Turns[2].Text, "does not match the output schema") || tr.Error != "" ||
+			compact(t, tr.Output) != `{"score":7}` {
+			t.Fatalf("%s: transcript %+v", mode, tr)
+		}
+	}
+	if len(convs) != 2 {
+		t.Fatalf("the model was called %d times, want 2 (the replay calls none)", len(convs))
+	}
+	if recs, _ := filepath.Glob(filepath.Join(dir, "*.json")); len(recs) != 2 {
+		t.Fatalf("recordings %v, want one per turn", recs)
+	}
+	repair := convs[1]
+	if repair[0]["role"] != "user" || repair[0]["content"] != convs[0][0]["content"] || repair[1]["role"] != "assistant" ||
+		repair[1]["content"] != "Here.\n```json\n{\"score\": \"high\"}\n```" || repair[2]["role"] != "user" ||
+		!strings.Contains(repair[2]["content"], "score") {
+		t.Fatalf("repair conversation %+v", repair)
+	}
+}
+
+// TestRunRepairLimits: repairs stop at repairTurns (0 keeping one answer per attempt), at maxTurns and at
+// maxCostUsd; the last failure is the schema-class error as without repairs, or the budget error when the repairs
+// spent past the limit. Each repair runs with the turns and the cost the attempt has left.
+func TestRunRepairLimits(t *testing.T) {
+	t.Parallel()
+	invalid := func(Request) (Response, error) {
+		cost := 0.001
+		return Response{Text: `{"score": "high"}`, Turns: 1, CostUSD: &cost, Transcript: []Turn{{Role: "assistant"}}}, nil
+	}
+	tests := []struct {
+		name      string
+		agent     string
+		calls     int
+		retryable bool
+		message   string
+	}{
+		{"default", "", 2, true, "does not match the output schema"},
+		{"disabled", "repairTurns: 0", 1, true, "does not match the output schema"},
+		{"two", "repairTurns: 2", 3, true, "does not match the output schema"},
+		{"max turns", "repairTurns: 2, maxTurns: 2", 2, true, "does not match the output schema"},
+		{"cost cap reached", "repairTurns: 2, maxCostUsd: 0.001", 1, true, "does not match the output schema"},
+		{"repair over the cap", "maxCostUsd: 0.0015", 2, false, "budget: "},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			manifest := testManifest
+			if tt.agent != "" {
+				manifest = strings.Replace(testManifest, "apiKeySecret: apiToken", "apiKeySecret: apiToken, "+tt.agent, 1)
+			}
+			h := &fakeHarness{fn: invalid}
+			msgs := newSession(t, memPackage(t, manifest, testPrompt), h).run(`{"url": "u"}`)
+			last, ok := msgs[len(msgs)-1].(protocol.Error)
+			if !ok || last.Retryable != tt.retryable || !strings.Contains(last.Message, tt.message) ||
+				len(h.reqs) != tt.calls {
+				t.Fatalf("calls %d, answer %+v", len(h.reqs), msgs[len(msgs)-1])
+			}
+			for i, req := range h.reqs {
+				if len(req.Repairs) != i || req.MaxTurns != h.reqs[0].MaxTurns-i ||
+					(req.MaxCostUSD != 0) != (h.reqs[0].MaxCostUSD != 0) {
+					t.Fatalf("request %d: %+v", i, req)
+				}
+			}
+			if tt.calls > 1 {
+				r := h.reqs[1]
+				if r.Prompt != h.reqs[0].Prompt || r.Repairs[0].Answer != `{"score": "high"}` ||
+					!strings.Contains(r.Repairs[0].Feedback, "does not match the output schema") {
+					t.Fatalf("repair request %+v", r)
+				}
+				if h.reqs[0].MaxCostUSD > 0 && r.MaxCostUSD > h.reqs[0].MaxCostUSD-0.001+1e-9 {
+					t.Fatalf("the repair may spend %v, more than what is left", r.MaxCostUSD)
+				}
+			}
+		})
 	}
 }
