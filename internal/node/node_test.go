@@ -280,6 +280,42 @@ func TestRunRespectsSlots(t *testing.T) {
 	}
 }
 
+// wakingTransport is a fake transport that is a Waker: the test closes its changes channel to say work is due.
+type wakingTransport struct {
+	*fakeTransport
+	pulls   chan struct{} // one per Pull, after it
+	changes chan struct{}
+}
+
+func (w *wakingTransport) Pull(ctx context.Context, owner string, maxN int) ([]Assignment, error) {
+	defer func() { w.pulls <- struct{}{} }()
+	return w.fakeTransport.Pull(ctx, owner, maxN)
+}
+
+func (w *wakingTransport) Changes() <-chan struct{} {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.changes
+}
+
+// TestWakerWakesThePull: work that comes due between pulls (a builtin step the engine completed) is pulled when the
+// transport says so, not at the next pull tick, which this test never fires.
+func TestWakerWakesThePull(t *testing.T) {
+	t.Parallel()
+	tr := &wakingTransport{fakeTransport: newFakeTransport(), pulls: make(chan struct{}, 8), changes: make(chan struct{})}
+	stop, _ := startNodeClock(t, tr, Options{})
+	await(t, tr.pulls, 1) // nothing to pull yet
+	tr.mu.Lock()
+	tr.queue = append(tr.queue, assignment("dl_1", "echo", nil))
+	close(tr.changes)
+	tr.changes = make(chan struct{})
+	tr.mu.Unlock()
+	await(t, tr.reported, 1)
+	if err := stop(); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+}
+
 func TestHeartbeatRenewsHeldLeases(t *testing.T) {
 	t.Parallel()
 	pool, release, started := heldPool(t)

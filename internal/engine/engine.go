@@ -480,8 +480,8 @@ func (e *Engine) auditsEnded(ctx context.Context, runs []RunRef) (bool, error) {
 	return true, nil
 }
 
-// Changes returns a channel closed when a lease in flight next ends: when new work may be due, which a remote
-// node's long poll waits for.
+// Changes returns a channel closed when a lease in flight next ends: when new work may be due, which the embedded
+// node (node.Waker) and a remote node's long poll wait for.
 func (e *Engine) Changes() <-chan struct{} { return e.changes() }
 
 // changes returns the channel closed when a lease in flight next ends.

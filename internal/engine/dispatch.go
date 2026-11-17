@@ -14,7 +14,10 @@ import (
 	"github.com/monolithiclab/millstream/internal/store"
 )
 
-var _ node.Transport = (*Engine)(nil)
+var (
+	_ node.Transport = (*Engine)(nil)
+	_ node.Waker     = (*Engine)(nil)
+)
 
 // resolveTimeout bounds resolving the deliveries one Pull leased.
 const resolveTimeout = 30 * time.Second
