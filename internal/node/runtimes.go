@@ -11,8 +11,8 @@ import (
 // A node's capacity is the runtimes it offers (spec section 5.10): exec, container, and agent:<harness> for each
 // agent harness it can run. A delivery goes only to a node offering the runtime its action needs (RuntimeOf).
 
-// RuntimeOf is the runtime an action of kind needs, an agent's with its harness; empty for a builtin, which runs in
-// the engine whatever node leased it.
+// RuntimeOf is the runtime an action of kind needs, an agent's with its harness; empty for a builtin, which the
+// engine runs itself (spec section 4.7).
 func RuntimeOf(a *pipeline.Action) string {
 	switch {
 	case a == nil || a.Builtin:

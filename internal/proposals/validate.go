@@ -27,9 +27,9 @@ import (
 // its new evals reported separately, so it cannot redefine its own success), then a backtest. A proposal is ready
 // when all three pass. A distill proposal is measured on its holdout in the backtest's place (distill.go).
 
-// Backtester runs a backtest of a patch (spec section 11.3, POST /api/v1/backtests): the changed steps replayed on a
-// sample of past items in a scratch store, before and after. The engine's implementation adapts the backtest
-// package's runner; it says whether the after side holds up and gives its report as JSON.
+// Backtester runs a backtest of a patch (spec section 11.3): the changed steps replayed on a sample of past items in
+// a scratch store, before and after. The engine's implementation adapts the backtest package's runner; it says
+// whether the after side holds up and gives its report as JSON.
 type Backtester interface {
 	Backtest(ctx context.Context, req BacktestRequest) (BacktestResult, error)
 }
