@@ -123,24 +123,6 @@ func (c RollbackCmd) Run(rt *Runtime) error {
 	return err
 }
 
-// DisableCmd is "millstream disable <pipeline>".
-type DisableCmd struct {
-	Pipeline string `arg:"" help:"Pipeline name."`
-}
-
-// Run disables the pipeline until "millstream resume" enables it again.
-func (c DisableCmd) Run(rt *Runtime) error {
-	err := changeState(rt, func(cl *apiClient) error {
-		_, err := cl.post(rt.Ctx, pipelinePath(c.Pipeline, "disable"), nil, nil)
-		return err
-	}, func(st store.Store) error { return st.Disable(rt.Ctx, c.Pipeline) })
-	if err != nil {
-		return err
-	}
-	_, err = fmt.Fprintf(rt.IO.Out, "%s disabled\n", c.Pipeline)
-	return err
-}
-
 // changeState runs viaAPI with the served engine's client when a server is named, else direct on the store opened
 // to change state from this process.
 func changeState(rt *Runtime, viaAPI func(*apiClient) error, direct func(store.Store) error) error {

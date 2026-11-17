@@ -150,12 +150,12 @@ func TestWebhooks(t *testing.T) {
 
 	// A paused pipeline's triggers fire, its deliveries wait; a disabled one's do not.
 	for _, state := range []struct {
-		action string
+		body   string
 		status int
-	}{{"pause", http.StatusAccepted}, {"disable", http.StatusConflict}} {
-		do(t, h, request{method: http.MethodPost, target: "/api/v1/pipelines/hooked/" + state.action})
+	}{{"", http.StatusAccepted}, {`{"triggers":true}`, http.StatusConflict}} {
+		do(t, h, request{method: http.MethodPost, target: "/api/v1/pipelines/hooked/pause", body: state.body})
 		if rec := fire(hook.Path, hook.Token, `{"city":"Nice"}`, nil); rec.Code != state.status {
-			t.Errorf("%s: %d %s", state.action, rec.Code, rec.Body.String())
+			t.Errorf("pause %s: %d %s", state.body, rec.Code, rec.Body.String())
 		}
 		do(t, h, request{method: http.MethodPost, target: "/api/v1/pipelines/hooked/resume"})
 	}

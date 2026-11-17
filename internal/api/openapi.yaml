@@ -115,11 +115,19 @@ paths:
     parameters: [{ $ref: "#/components/parameters/pipeline" }]
     post:
       operationId: pausePipeline
-      summary: Pause the pipeline; its deliveries stay pending. A disabled pipeline is resumed first (conflict).
+      summary: >-
+        Pause the pipeline; its deliveries stay pending. With triggers, its triggers stop firing too: the pipeline is
+        disabled until it is resumed. A disabled pipeline is resumed before it is paused again without triggers
+        (conflict).
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PauseRequest" }
       responses:
         default: { $ref: "#/components/responses/Error" }
+        "400": { $ref: "#/components/responses/Error" }
         "415": { $ref: "#/components/responses/Error" }
-        "204": { description: Paused. }
+        "204": { description: Paused, or disabled (or disabled already). }
         "404": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }
   /pipelines/{pipeline}/resume:
@@ -131,16 +139,6 @@ paths:
         default: { $ref: "#/components/responses/Error" }
         "415": { $ref: "#/components/responses/Error" }
         "204": { description: Resumed. }
-        "404": { $ref: "#/components/responses/Error" }
-  /pipelines/{pipeline}/disable:
-    parameters: [{ $ref: "#/components/parameters/pipeline" }]
-    post:
-      operationId: disablePipeline
-      summary: Disable the pipeline; its triggers stop firing and its deliveries wait until it is resumed.
-      responses:
-        default: { $ref: "#/components/responses/Error" }
-        "415": { $ref: "#/components/responses/Error" }
-        "204": { description: Disabled (or disabled already). }
         "404": { $ref: "#/components/responses/Error" }
   /pipelines/{pipeline}/rollback:
     parameters: [{ $ref: "#/components/parameters/pipeline" }]
@@ -1778,6 +1776,11 @@ components:
       additionalProperties: false
       properties:
         count: { type: integer }
+    PauseRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        triggers: { type: boolean, description: "Stop the pipeline's triggers too: it is disabled until resumed." }
     RollbackRequest:
       type: object
       additionalProperties: false

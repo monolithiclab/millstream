@@ -530,7 +530,7 @@ run_20261020T162614Z-960e8ee4_adhoc  listings  running  2026-10-20T16:26:14Z  6 
 listings.affordable resumed
 ```
 
-The run finishes once the step resumes. `millstream disable listings` stops the triggers too.
+The run finishes once the step resumes. `millstream pause listings --triggers` stops the triggers too.
 
 ### Fix a dead letter and replay it
 

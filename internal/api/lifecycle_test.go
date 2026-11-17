@@ -31,7 +31,7 @@ func applyBody(message string, pipelines ...string) string {
 	return fmt.Sprintf(`{"packages":[%s],"message":%q}`, strings.Join(pkgs, ","), message)
 }
 
-// Apply, disable, resume and rollback, through the API on a store of their own, served by an engine that keeps
+// Apply, pause with its triggers, resume and rollback, through the API on a store of their own, served by an engine that keeps
 // the packages it is sent in its package directory.
 func TestLifecycleActions(t *testing.T) {
 	st, err := sqlite.Open(sqlite.Memory, sqlite.Options{})
@@ -79,9 +79,9 @@ func TestLifecycleActions(t *testing.T) {
 		t.Fatalf("revisions = %+v", revs)
 	}
 
-	// Disable: the pipeline's triggers refuse to fire until it is resumed.
-	if res := post("/pipelines/extra/disable", ""); res.StatusCode != http.StatusNoContent {
-		t.Fatalf("disable: %d", res.StatusCode)
+	// Pause with its triggers: the pipeline is disabled, its triggers refuse to fire until it is resumed.
+	if res := post("/pipelines/extra/pause", `{"triggers":true}`); res.StatusCode != http.StatusNoContent {
+		t.Fatalf("pause triggers: %d", res.StatusCode)
 	}
 	if p := get[Pipeline](t, h, "/api/v1/pipelines/extra"); p.State != "disabled" {
 		t.Fatalf("state = %s", p.State)
@@ -117,7 +117,8 @@ func TestLifecycleActions(t *testing.T) {
 		{"/pipelines/extra/rollback", `{"revision":9}`, 404, codeNotFound},
 		{"/pipelines/extra/rollback", `{"revision":-1}`, 400, codeInvalid},
 		{"/pipelines/nope/rollback", ``, 404, codeNotFound},
-		{"/pipelines/nope/disable", ``, 404, codeNotFound},
+		{"/pipelines/nope/pause", `{"triggers":true}`, 404, codeNotFound},
+		{"/pipelines/extra/pause", `{"triggers":"yes"}`, 400, codeInvalid},
 		{"/revisions", `{"packages":[]}`, 400, codeInvalid},
 		{"/revisions", `{"packages":[{"files":{"other.yaml":""}}]}`, 400, codeInvalid},
 		{"/revisions", applyBody("", "pipeline: bad\nsteps: { s: { action: ./actions/none, in: trigger.x } }\n"), 400,

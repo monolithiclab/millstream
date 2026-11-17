@@ -378,10 +378,28 @@ func (c DeadLettersDiscardCmd) Run(rt *Runtime) error {
 type PauseCmd struct {
 	Pipeline string `arg:"" help:"Pipeline name."`
 	Step     string `arg:"" optional:"" help:"Step name; the whole pipeline when omitted."`
+	Triggers bool   `help:"Stop the pipeline's triggers too: it is disabled until resume."`
 }
 
-// Run pauses the pipeline or step: its deliveries stay pending.
-func (c PauseCmd) Run(rt *Runtime) error { return setPaused(rt, c.Pipeline, c.Step, true) }
+// Run pauses the pipeline or step: its deliveries stay pending. With --triggers it disables the pipeline: its
+// triggers stop firing as well, until "millstream resume".
+func (c PauseCmd) Run(rt *Runtime) error {
+	if !c.Triggers {
+		return setPaused(rt, c.Pipeline, c.Step, true)
+	}
+	if c.Step != "" {
+		return usageError("--triggers pauses a whole pipeline, not a step")
+	}
+	err := changeState(rt, func(cl *apiClient) error {
+		_, err := cl.post(rt.Ctx, pipelinePath(c.Pipeline, "pause"), api.PauseRequest{Triggers: true}, nil)
+		return err
+	}, func(st store.Store) error { return st.Disable(rt.Ctx, c.Pipeline) })
+	if err != nil {
+		return err
+	}
+	_, err = fmt.Fprintf(rt.IO.Out, "%s disabled\n", c.Pipeline)
+	return err
+}
 
 // ResumeCmd is "millstream resume".
 type ResumeCmd struct {

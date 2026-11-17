@@ -209,7 +209,6 @@ var routes = []route{
 	{http.MethodGet, "/pipelines/{pipeline}", (*Server).getPipeline},
 	{http.MethodPost, "/pipelines/{pipeline}/pause", (*Server).pausePipeline},
 	{http.MethodPost, "/pipelines/{pipeline}/resume", (*Server).resumePipeline},
-	{http.MethodPost, "/pipelines/{pipeline}/disable", (*Server).disablePipeline},
 	{http.MethodPost, "/pipelines/{pipeline}/rollback", (*Server).rollbackPipeline},
 	{http.MethodPost, "/pipelines/{pipeline}/triggers/{trigger}/token", (*Server).rotateTriggerToken},
 	{http.MethodPost, "/revisions", (*Server).applyPackages},

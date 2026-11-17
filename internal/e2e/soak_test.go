@@ -771,10 +771,10 @@ func listed(xs []string) string {
 func (s *soak) quiesce(end time.Time) bool {
 	t := s.t
 	active := s.waitActive()
-	lifecycle := func(action string) {
+	lifecycle := func(action, body string) {
 		for _, p := range []string{pipelineName, m2Pipeline} {
-			if code, body, err := s.request(active, http.MethodPost, "/api/v1/pipelines/"+p+"/"+action); err != nil ||
-				code/100 != 2 {
+			if code, body, err := s.send(active, http.MethodPost, "/api/v1/pipelines/"+p+"/"+action, body,
+				map[string]string{"Authorization": "Bearer " + s.token}); err != nil || code/100 != 2 {
 				t.Fatalf("%s %s: %d %v %s", action, p, code, err, body)
 			}
 		}
@@ -791,12 +791,12 @@ func (s *soak) quiesce(end time.Time) bool {
 	deadline := time.Now().Add(s.cfg.stuck)
 	for {
 		if sec := time.Now().Second(); sec >= 15 && sec <= 50 && len(open()) == 0 {
-			lifecycle("disable")
+			lifecycle("pause", `{"triggers":true}`)
 			if len(open()) == 0 {
 				s.check(true, "every run settled, the triggers disabled")
 				return true
 			}
-			lifecycle("resume")
+			lifecycle("resume", "{}")
 		}
 		if time.Now().After(deadline) {
 			var stuck []string

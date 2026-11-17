@@ -264,8 +264,9 @@ func crashInCommands(t *testing.T, b backend) {
 			want := cleanRunOn(t, b)
 			db := b.newDB(t)
 			mustExit(t, 1, db, nil, runOnce(fixtureV1)...)
-			mustExit(t, failpoint.ExitCode, db, failpointEnv("disable."+phase), "disable", pipelineName)
-			mustExit(t, 0, db, nil, "disable", pipelineName) // disabling a disabled pipeline is a no-op
+			mustExit(t, failpoint.ExitCode, db, failpointEnv("disable."+phase), "pause", pipelineName,
+				"--triggers")
+			mustExit(t, 0, db, nil, "pause", pipelineName, "--triggers") // disabling a disabled pipeline is a no-op
 			if st := mustExit(t, 0, db, nil, "status"); !regexp.MustCompile(`(?m)^m1-fixture\s+disabled\s`).
 				MatchString(st.stdout) {
 				t.Fatalf("status after disabling:\n%s", st.stdout)

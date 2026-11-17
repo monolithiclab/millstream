@@ -92,7 +92,7 @@ export class HttpApi implements Api {
   cancelRun: Api['cancelRun'] = (p, run) => this.post(`${pipelinePath(p)}/runs/${enc(run)}/cancel`);
   pause: Api['pause'] = (target) => this.post(`${targetPath(target)}/pause`);
   resume: Api['resume'] = (target) => this.post(`${targetPath(target)}/resume`);
-  disable: Api['disable'] = (p) => this.post(`${pipelinePath(p)}/disable`);
+  disable: Api['disable'] = (p) => this.post(`${pipelinePath(p)}/pause`, { triggers: true });
   rollback: Api['rollback'] = (p, request = {}) => this.post(`${pipelinePath(p)}/rollback`, request);
   replay: Api['replay'] = (p, request) => this.post(`${pipelinePath(p)}/replay`, request);
   replayDeadLetters: Api['replayDeadLetters'] = (p, selection) =>

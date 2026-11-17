@@ -28,7 +28,7 @@ import (
 // The lifecycle fixtures: a package of builtins in two revisions, and one whose check fails.
 const lifecycleV1, lifecycleV2, lifecycleBad = "lifecycle-v1", "lifecycle-v2", "lifecycle-bad"
 
-// apply, rollback, disable and resume from the command's own process, on SQLite: apply and rollback through the
+// apply, rollback, pause --triggers and resume from the command's own process, on SQLite: apply and rollback through the
 // parser, the rest built directly (the parser costs more than their work).
 func Test_lifecycleCommands(t *testing.T) {
 	s := newEmptyState(t)
@@ -48,7 +48,8 @@ func Test_lifecycleCommands(t *testing.T) {
 			"extra webhook hook: POST /hooks/extra/hook with Authorization: Bearer mswh_"},
 		{TriggerTokenCmd{Pipeline: "extra", Trigger: "adhoc", Rotate: true}, "not a webhook trigger", ""},
 		{RollbackCmd{Pipeline: "extra", Revision: 2}, "conflict", ""},
-		{DisableCmd{Pipeline: "extra"}, "", "extra disabled\n"},
+		{PauseCmd{Pipeline: "extra", Step: "pass", Triggers: true}, "--triggers pauses a whole pipeline", ""},
+		{PauseCmd{Pipeline: "extra", Triggers: true}, "", "extra disabled\n"},
 		{TriggerFireCmd{Pipeline: "extra", Trigger: "adhoc", Payload: "{}"}, "is disabled", ""},
 		{PauseCmd{Pipeline: "extra"}, "resume it before pausing it", ""},
 		{ResumeCmd{Pipeline: "extra"}, "", "extra resumed\n"},
@@ -60,9 +61,14 @@ func Test_lifecycleCommands(t *testing.T) {
 			!strings.HasPrefix(out, step.out) {
 			t.Fatalf("%+v: %q, %q, %v", step.cmd, out, errOut, err)
 		}
-		if _, ok := step.cmd.(DisableCmd); ok {
+		if p, ok := step.cmd.(PauseCmd); ok && p.Triggers && step.fail == "" {
 			if st := s.status(); !regexp.MustCompile(`extra\s+disabled\s+2`).MatchString(st) {
-				t.Fatalf("status after disable:\n%s", st)
+				t.Fatalf("status after pause --triggers:\n%s", st)
+			}
+		}
+		if _, ok := step.cmd.(ResumeCmd); ok {
+			if st := s.status(); !regexp.MustCompile(`extra\s+active\s+2`).MatchString(st) {
+				t.Fatalf("status after resume:\n%s", st)
 			}
 		}
 		if a, ok := step.cmd.(ApplyCmd); ok && a.Dirs[0] == fixture(lifecycleBad) && !strings.Contains(errOut, "extra: error steps.pass") {
@@ -82,7 +88,7 @@ func Test_lifecycleCommands(t *testing.T) {
 func TestStateChangeRefusals(t *testing.T) {
 	pg := fixture("environments/postgres.yaml")
 	for _, argv := range [][]string{
-		{"--env-file", pg, "disable", "p"},
+		{"--env-file", pg, "pause", "p", "--triggers"},
 		{"--env-file", pg, "pause", "p"},
 		{"--env-file", pg, "apply", sharedPackage(t, "valid")},
 	} {
@@ -92,11 +98,11 @@ func TestStateChangeRefusals(t *testing.T) {
 		}
 	}
 	// --direct goes on to open the store, which needs the DSN.
-	code, _, errOut := runCLICtx(t, context.Background(), nil, "--env-file", pg, "--direct", "disable", "p")
+	code, _, errOut := runCLICtx(t, context.Background(), nil, "--env-file", pg, "--direct", "pause", "p", "--triggers")
 	if code != exitFail || !strings.Contains(errOut, "127.0.0.1") {
 		t.Fatalf("--direct: code %d, stderr %q", code, errOut)
 	}
-	code, _, errOut = runCLICtx(t, context.Background(), nil, "--server", "localhost:7070", "disable", "p")
+	code, _, errOut = runCLICtx(t, context.Background(), nil, "--server", "localhost:7070", "pause", "p", "--triggers")
 	if code != exitUsage || !strings.Contains(errOut, "want the API's base URL") {
 		t.Fatalf("--server without a scheme: code %d, stderr %q", code, errOut)
 	}
@@ -173,7 +179,8 @@ func Test_commandsThroughTheServer(t *testing.T) {
 		{TriggerTokenCmd{Pipeline: "extra", Trigger: "hook", Rotate: true}, "extra webhook hook: POST", false},
 		{TriggerTokenCmd{Pipeline: "extra", Trigger: "nope", Rotate: true}, "no trigger", true},
 		{RollbackCmd{Pipeline: "extra"}, "extra rolled back to revision 1\n", false},
-		{DisableCmd{Pipeline: "extra"}, "extra disabled\n", false},
+		{PauseCmd{Pipeline: "extra", Triggers: true}, "extra disabled\n", false},
+		{TriggerFireCmd{Pipeline: "extra", Trigger: "adhoc", Payload: "{}"}, "is disabled", true},
 		{ResumeCmd{Pipeline: "extra"}, "extra resumed\n", false},
 		{PauseCmd{Pipeline: "extra", Step: "pass"}, "extra.pass paused\n", false},
 		{ResumeCmd{Pipeline: "extra", Step: "pass"}, "extra.pass resumed\n", false},

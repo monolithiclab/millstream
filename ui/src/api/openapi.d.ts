@@ -87,7 +87,7 @@ export interface paths {
     };
     get?: never;
     put?: never;
-    /** Pause the pipeline; its deliveries stay pending. A disabled pipeline is resumed first (conflict). */
+    /** Pause the pipeline; its deliveries stay pending. With triggers, its triggers stop firing too: the pipeline is disabled until it is resumed. A disabled pipeline is resumed before it is paused again without triggers (conflict). */
     post: operations['pausePipeline'];
     delete?: never;
     options?: never;
@@ -108,25 +108,6 @@ export interface paths {
     put?: never;
     /** Resume a paused or disabled pipeline, lifting the pauses a budget made too. */
     post: operations['resumePipeline'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/pipelines/{pipeline}/disable': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        pipeline: components['parameters']['pipeline'];
-      };
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Disable the pipeline; its triggers stop firing and its deliveries wait until it is resumed. */
-    post: operations['disablePipeline'];
     delete?: never;
     options?: never;
     head?: never;
@@ -1697,6 +1678,10 @@ export interface components {
     Count: {
       count: number;
     };
+    PauseRequest: {
+      /** @description Stop the pipeline's triggers too: it is disabled until resumed. */
+      triggers?: boolean;
+    };
     RollbackRequest: {
       /** @description The revision to reactivate; 0 or absent: the one before the active one. */
       revision?: number;
@@ -2528,15 +2513,20 @@ export interface operations {
       };
       cookie?: never;
     };
-    requestBody?: never;
+    requestBody?: {
+      content: {
+        'application/json': components['schemas']['PauseRequest'];
+      };
+    };
     responses: {
-      /** @description Paused. */
+      /** @description Paused */
       204: {
         headers: {
           [name: string]: unknown;
         };
         content?: never;
       };
+      400: components['responses']['Error'];
       404: components['responses']['Error'];
       409: components['responses']['Error'];
       415: components['responses']['Error'];
@@ -2555,29 +2545,6 @@ export interface operations {
     requestBody?: never;
     responses: {
       /** @description Resumed. */
-      204: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      404: components['responses']['Error'];
-      415: components['responses']['Error'];
-      default: components['responses']['Error'];
-    };
-  };
-  disablePipeline: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        pipeline: components['parameters']['pipeline'];
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Disabled (or disabled already). */
       204: {
         headers: {
           [name: string]: unknown;

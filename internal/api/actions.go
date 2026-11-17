@@ -16,8 +16,26 @@ import (
 // The actions apply the store's units, or the engine's when variables must resolve against a revision (trigger,
 // replay): the same code paths as the CLI commands.
 
+// PauseRequest is the optional body of a pause: with Triggers, a pipeline's triggers stop firing too (its state is
+// disabled) until it is resumed.
+type PauseRequest struct {
+	Triggers bool `json:"triggers"`
+}
+
+// pausePipeline pauses the pipeline, or with triggers set disables it.
 func (s *Server) pausePipeline(w http.ResponseWriter, r *http.Request) error {
-	return s.setPaused(w, r, "", true)
+	var req PauseRequest
+	if err := s.decodeBody(w, r, &req); err != nil {
+		return err
+	}
+	if !req.Triggers {
+		return s.setPaused(w, r, "", true)
+	}
+	if err := s.opts.Store.Disable(r.Context(), r.PathValue("pipeline")); err != nil {
+		return err
+	}
+	w.WriteHeader(http.StatusNoContent)
+	return nil
 }
 
 func (s *Server) resumePipeline(w http.ResponseWriter, r *http.Request) error {
@@ -71,14 +89,6 @@ func (s *Server) setNodeState(w http.ResponseWriter, r *http.Request, state stor
 		}
 	}
 	if err := s.opts.Engine.SetNodeState(r.Context(), id, state, false); err != nil {
-		return err
-	}
-	w.WriteHeader(http.StatusNoContent)
-	return nil
-}
-
-func (s *Server) disablePipeline(w http.ResponseWriter, r *http.Request) error {
-	if err := s.opts.Store.Disable(r.Context(), r.PathValue("pipeline")); err != nil {
 		return err
 	}
 	w.WriteHeader(http.StatusNoContent)

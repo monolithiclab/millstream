@@ -6,7 +6,7 @@ variables, then flags. Every key is a variable, `MILLSTREAM_<SECTION>_<KEY>` (`u
 `MILLSTREAM_UI_BASE_URL`), and `millstream init environment` writes the file with every key and its variable. This
 guide covers the three targets: a laptop, a VPS with Docker Compose, and a VPS with systemd.
 
-> **M4 status.** `millstream serve`, `apply`, `rollback` and `disable`, every key of the environment file, the
+> **M4 status.** `millstream serve`, `apply`, `rollback` and `pause --triggers`, every key of the environment file, the
 > standby's takeover, remote nodes with the node token over TLS, the S3 artifact store, token auth, `/metrics`,
 > retention and `millstream purge` are in (Tasks 2, 3, 4, 7 and 8 of the [M4 plan](../plans/20261016.m4-server.md); see
 > Standby and failover, and Retention and purge).
@@ -147,7 +147,7 @@ host or through an SSH tunnel to its loopback port:
 export MILLSTREAM_SERVER=http://127.0.0.1:7070 MILLSTREAM_TOKEN=…   # MILLSTREAM_AUTH_TOKEN from .env or millstream.env
 millstream apply ./property-sourcing ./deal-flow --message "lower the score threshold"
 millstream rollback property-sourcing          # the revision before the active one, or name one
-millstream disable deal-flow                   # until: millstream resume deal-flow
+millstream pause deal-flow --triggers          # until: millstream resume deal-flow
 ```
 
 `apply` checks each package and every other pipeline of the deployment before it uploads anything; the server keeps

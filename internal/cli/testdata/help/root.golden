@@ -30,9 +30,8 @@ Operate:
   serve          Run an engine from the environment file, or its standby.
   apply          Check packages against the deployment and upload them as new revisions.
   rollback       Reactivate an earlier revision of a pipeline.
-  pause          Pause a pipeline or one of its steps.
+  pause          Pause a pipeline or one of its steps, or a pipeline's triggers too.
   resume         Resume a pipeline or one of its steps.
-  disable        Disable a pipeline: its triggers stop firing until resume.
   purge          Erase items by key or id, with their descendants and copies.
   node           Run a remote node that joins an engine.
   nodes          List the remote nodes, drain the one running here, or revoke one.

@@ -148,9 +148,8 @@ type CLI struct {
 	Serve         ServeCmd         `cmd:"" group:"Operate" help:"Run an engine from the environment file, or its standby."`
 	Apply         ApplyCmd         `cmd:"" group:"Operate" help:"Check packages against the deployment and upload them as new revisions."`
 	Rollback      RollbackCmd      `cmd:"" group:"Operate" help:"Reactivate an earlier revision of a pipeline."`
-	Pause         PauseCmd         `cmd:"" group:"Operate" help:"Pause a pipeline or one of its steps."`
+	Pause         PauseCmd         `cmd:"" group:"Operate" help:"Pause a pipeline or one of its steps, or a pipeline's triggers too."`
 	Resume        ResumeCmd        `cmd:"" group:"Operate" help:"Resume a pipeline or one of its steps."`
-	Disable       DisableCmd       `cmd:"" group:"Operate" help:"Disable a pipeline: its triggers stop firing until resume."`
 	Purge         PurgeCmd         `cmd:"" group:"Operate" help:"Erase items by key or id, with their descendants and copies."`
 	Node          NodeCmd          `cmd:"" group:"Operate" help:"Run a remote node that joins an engine."`
 	Nodes         NodesCmd         `cmd:"" group:"Operate" help:"List the remote nodes, drain the one running here, or revoke one."`
