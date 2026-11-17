@@ -139,6 +139,23 @@ Prometheus scrapes `/metrics` on the same listener, with the token as a bearer t
 the engine's own gauges: leases held per node, the writer's batch sizes, failed review notifications and each eval
 case's latest score (spec section 10.2).
 
+## Alerting
+
+`deploy/prometheus/alerts.yaml` holds sample Prometheus alert rules over the metrics above. Copy it beside
+`prometheus.yml` and list it under `rule_files`; its `job="millstream"` selector is the job name of the scrape
+configuration, and every threshold is an example to tune. A test checks that each metric the rules name is one the
+engine exposes.
+
+| Alert | Fires when |
+| --- | --- |
+| `MillstreamEngineDown` | The scrape of an engine fails for two minutes (a failover shows as a short outage) |
+| `MillstreamDeadLetters` | A step has a new dead letter in the last 15 minutes: replay or discard it |
+| `MillstreamNodeLost` | Leases of a step expire repeatedly: a node stopped reporting and its work moves to another |
+| `MillstreamQueueStuck` | A step's oldest due delivery has waited over ten minutes: no node takes it, or none has a free slot |
+
+The engine exposes no leader or standby gauge, no budget-paused state, no age of the oldest pending review and no
+node count, so no rule covers them: watch the engine's logs and `millstream status` for those.
+
 ## Applying packages
 
 A server runs the packages applied to its store, never a directory. From a checkout of the packages, on the engine

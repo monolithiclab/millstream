@@ -1,0 +1,39 @@
+# Sample Prometheus alert rules for a Millstream deployment (docs/guides/deployment.md, "Alerting").
+# Load them with `rule_files` in prometheus.yml. Every threshold and duration below is an example: tune it to
+# the deployment. The job label is the one the scrape configuration gives the engine's /metrics.
+#
+# internal/metrics/alerts_test.go checks that every metric an expression names is one the engine exposes.
+groups:
+  - name: millstream
+    rules:
+      # Example: down for two minutes. An engine in failover is down for the standby's takeover time.
+      - alert: MillstreamEngineDown
+        expr: up{job="millstream"} == 0
+        for: 2m
+        labels: { severity: page }
+        annotations:
+          summary: "Millstream engine {{ $labels.instance }} is not answering scrapes"
+
+      # Example: any new dead letter in 15 minutes. Replay or discard them with `millstream replay` or the inbox.
+      - alert: MillstreamDeadLetters
+        expr: sum by (pipeline, step) (increase(millstream_items_dead_total[15m])) > 0
+        for: 5m
+        labels: { severity: warn }
+        annotations:
+          summary: "Dead letters in {{ $labels.pipeline }}/{{ $labels.step }}"
+
+      # Example: leases expire when a node stops reporting (crashed, partitioned, or stopped), then its work is
+      # given to another node. Two or more in ten minutes.
+      - alert: MillstreamNodeLost
+        expr: sum by (pipeline, step) (increase(millstream_lease_expiries_total[10m])) >= 2
+        labels: { severity: warn }
+        annotations:
+          summary: "Leases of {{ $labels.pipeline }}/{{ $labels.step }} keep expiring: a node may be lost"
+
+      # Example: the oldest due delivery of a step has waited ten minutes: no node takes it, or none has a free slot.
+      - alert: MillstreamQueueStuck
+        expr: max by (pipeline, step) (millstream_oldest_pending_seconds) > 600
+        for: 5m
+        labels: { severity: warn }
+        annotations:
+          summary: "{{ $labels.pipeline }}/{{ $labels.step }} has had a delivery waiting for over ten minutes"
