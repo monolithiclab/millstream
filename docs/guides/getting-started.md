@@ -600,68 +600,14 @@ tests and CI run agents. With a real provider, only the manifest's `runtime.agen
 
 ### A stand-in model
 
-Outside the package, in `~/millstream-tutorial/fakemodel/main.go`:
-
-```go
-// Command fakemodel is a stand-in for an OpenAI-compatible model: it scores the listing a prompt describes, so the
-// tutorial's agent step can be recorded without an API key.
-package main
-
-import (
-	"encoding/json"
-	"fmt"
-	"log"
-	"net/http"
-	"regexp"
-	"strconv"
-)
-
-var listing = regexp.MustCompile(`Listing (\w+) in (\w+): (\d+) m², condition (\w+), asking (\d+) EUR`)
-
-func main() {
-	http.HandleFunc("/v1/chat/completions", func(w http.ResponseWriter, r *http.Request) {
-		var req struct {
-			Model    string `json:"model"`
-			Messages []struct {
-				Content string `json:"content"`
-			} `json:"messages"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil || len(req.Messages) == 0 {
-			http.Error(w, "not a chat completion", http.StatusBadRequest)
-			return
-		}
-		m := listing.FindStringSubmatch(req.Messages[0].Content)
-		if m == nil {
-			http.Error(w, "no listing in the prompt", http.StatusBadRequest)
-			return
-		}
-		surface, _ := strconv.Atoi(m[3])
-		price, _ := strconv.Atoi(m[5])
-		perM2 := price / surface
-		score := max(0, min(100, 100-(perM2-3000)/20)) // cheaper per square metre scores higher
-		answer, _ := json.Marshal(map[string]any{
-			"id": m[1], "city": m[2], "surfaceM2": surface, "condition": m[4], "priceEur": price,
-			"score":  score,
-			"reason": fmt.Sprintf("%d EUR per square metre in %s.", perM2, m[2]),
-		})
-		json.NewEncoder(w).Encode(map[string]any{
-			"model": req.Model,
-			"choices": []map[string]any{{"index": 0, "finish_reason": "stop",
-				"message": map[string]string{"role": "assistant", "content": "```json\n" + string(answer) + "\n```"}}},
-			"usage": map[string]int{"prompt_tokens": 300, "completion_tokens": 60},
-		})
-	})
-	log.Println("fake model on http://127.0.0.1:8099/v1")
-	log.Fatal(http.ListenAndServe("127.0.0.1:8099", nil))
-}
-```
-
-Start it in a third terminal:
+The repository ships the stand-in, [`examples/fakemodel`](../../examples/fakemodel/main.go): an OpenAI-compatible
+endpoint on `127.0.0.1:8099` that scores the listing a prompt describes, `Listing <id> in <city>: <surface> m²,
+condition <condition>, asking <price> EUR`, from its price per square metre. Start it from the checkout in a third
+terminal:
 
 ```sh
-cd ~/millstream-tutorial/fakemodel
-go mod init fakemodel
-go run .
+cd $MILLSTREAM_REPO
+go run ./examples/fakemodel
 ```
 
 ```text
