@@ -31,7 +31,6 @@ const lifecycleV1, lifecycleV2, lifecycleBad = "lifecycle-v1", "lifecycle-v2", "
 // apply, rollback, pause --triggers and resume from the command's own process, on SQLite: apply and rollback through the
 // parser, the rest built directly (the parser costs more than their work).
 func Test_lifecycleCommands(t *testing.T) {
-	t.Parallel()
 	s := newEmptyState(t)
 	if out, _ := s.must(0, "apply", fixture(lifecycleV1), "--message", "first"); !regexp.MustCompile(
 		`^extra revision 1 [0-9a-f]{12}\n$`).MatchString(out) {
@@ -87,7 +86,6 @@ func Test_lifecycleCommands(t *testing.T) {
 // On Postgres, a command that changes state refuses to write from its own process unless --direct says so; a
 // --server that is not a URL is a usage error.
 func TestStateChangeRefusals(t *testing.T) {
-	t.Parallel()
 	pg := fixture("environments/postgres.yaml")
 	for _, argv := range [][]string{
 		{"--env-file", pg, "pause", "p", "--triggers"},
@@ -122,7 +120,6 @@ func (t handlerTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 // The commands that change state go through a served engine's API with --server, sending the token and the
 // reviewer.
 func Test_commandsThroughTheServer(t *testing.T) {
-	t.Parallel()
 	st := memoryStore(t)
 	eng, err := engine.New(engine.Options{Store: st, PackageDir: testdir.New(t),
 		Proposals: engine.ProposalOptions{Backtest: backtest.ForProposals(backtest.New(backtest.Options{Store: st}), 0)}})
@@ -251,7 +248,6 @@ func Test_commandsThroughTheServer(t *testing.T) {
 // serve refuses what it cannot serve before it opens anything: a non-loopback listener without auth.token, a token
 // or a certificate it cannot read, what production forbids, and bad flags.
 func TestServeRefusals(t *testing.T) {
-	t.Parallel()
 	dir := testdir.New(t)
 	write := func(name, src string) string {
 		p := filepath.Join(dir, name)

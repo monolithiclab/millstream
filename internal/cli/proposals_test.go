@@ -16,7 +16,6 @@ import (
 // patch outside its kind's paths is refused; the proposals-only token is minted. Test_proposalsLifecycle (e2e) runs
 // the same through the parser.
 func Test_proposalsCommands(t *testing.T) {
-	t.Parallel()
 	s := newEmptyState(t)
 	s.must(0, "apply", fixture(lifecycleV1))
 	env := map[string]string{"USER": "ana"}
