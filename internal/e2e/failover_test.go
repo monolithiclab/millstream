@@ -504,6 +504,9 @@ func TestFailoverAtFailpoints(t *testing.T) {
 					died := !a.alive() && a.code == failpoint.ExitCode
 					if died {
 						tks.add(measureTakeover(t, b, a.end, 0))
+					} else if slices.Contains(failoverReached, unit) {
+						t.Logf("engine a did not die at %s (alive %v, exit %d):\n%s", name, a.alive(), a.code,
+							lastLines(a.log.String(), 30))
 					}
 					a.stop(t)
 					b.stop(t)

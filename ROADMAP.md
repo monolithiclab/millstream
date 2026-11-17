@@ -276,5 +276,10 @@ first is missing: identity, an accountable owner per agent, and records their ow
   quiet full suite): `TestFailoverAtFailpoints` cells whose standby redoes the crawl lost the leadership three times
   in a row when the crawl's Done unit (50 items, imported into `m1-importer`) or the metrics rollup outran the 3 s
   batch timeout (3 × the 1 s keepalive), dead-lettering the crawl; `TestM5Exit` charged a fallback's 0.05 USD
-  reservation for a lease that expired under `--lease-ttl 1s`, which breaks its cost assertion. If either recurs on
-  a quiet machine, give those scenarios a longer keepalive or lease.
+  reservation for a lease that expired under `--lease-ttl 1s`, which breaks its cost assertion; `TestImprove`'s
+  propose step was retried once and met the proposal its first attempt had created ("has this fingerprint already").
+  If one recurs on a quiet machine, give those scenarios a longer keepalive or lease.
+- Unexplained: `TestFailoverAtFailpoints` reported a required cell not reached (`fire.beforeCommit` once,
+  `park.beforeCommit` once) in 2 of the 8 matrix runs on 2026-11-17 that had no batch timeout (the last 3, alone,
+  missed none), and in neither of main's 2. The matrix now logs engine a's exit code and last lines when that
+  happens: read them when it recurs.
