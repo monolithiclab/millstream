@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/alecthomas/kong"
+	"github.com/monolithiclab/millstream/internal/pipeline"
 )
 
 // guide is the guide millstream help prints, and its topics: Markdown that reads as documentation as well
@@ -69,10 +70,42 @@ func guideSections() (main string, topics []topic) {
 		name, body, _ := strings.Cut(p, "\n")
 		body = strings.TrimSpace(body)
 		summary, _, _ := strings.Cut(body, "\n")
-		topics = append(topics, topic{name: name, summary: summary, text: "### " + name + "\n\n" + body + "\n"})
+		text := "### " + name + "\n\n" + body + "\n"
+		if name == "environment" {
+			text += "\n" + foldedKeys()
+		}
+		topics = append(topics, topic{name: name, summary: summary, text: text})
 	}
 	return parts[0], topics
 }
+
+// foldedKeys lists the keys init environment folds into one line (pipeline.FoldedSection), from the struct that
+// reads them: each with its doc, its default or an example, and its variable.
+func foldedKeys() string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "Keys of `%s`:\n\n", pipeline.FoldedSection)
+	for _, s := range pipeline.Settings(pipeline.Defaults()) {
+		if !strings.HasPrefix(s.Key, pipeline.FoldedSection+".") {
+			continue
+		}
+		value := "default `" + s.Default + "`"
+		if s.Default == "" {
+			value = "example `" + s.Example + "`"
+		}
+		item := fmt.Sprintf("`%s`: %s; %s, `%s`.", s.Key, s.Doc, value, s.Var)
+		for i, l := range wrap(item, guideWidth-2) {
+			if i == 0 {
+				b.WriteString("- " + l + "\n")
+			} else {
+				b.WriteString("  " + l + "\n")
+			}
+		}
+	}
+	return b.String()
+}
+
+// guideWidth is the column the guide wraps at.
+const guideWidth = 110
 
 // renderMarkdown renders the guide's Markdown for a terminal: headings bold without their marks, code spans as
 // commands without their backticks, emphasis unmarked, fenced code indented with its fences dropped.

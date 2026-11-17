@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"slices"
 	"strings"
 	"testing"
 
@@ -239,7 +238,8 @@ func Test_guideSections(t *testing.T) {
 }
 
 // The listings leave out the improve package's proposals commands, whose own help still shows them, and the global
-// --direct; help environment names every improve key, which init environment folds into one line.
+// --direct; help environment shows every improve key, which init environment folds into one line, as the struct
+// declares it: its doc, its default or example, and its variable.
 func Test_helpAdvanced(t *testing.T) {
 	t.Parallel()
 	_, group, _ := runHelp(t, nil, false, "proposals", "--help")
@@ -255,11 +255,24 @@ func Test_helpAdvanced(t *testing.T) {
 	if !strings.Contains(group, "\n  accept ") {
 		t.Errorf("proposals --help lacks accept:\n%s", group)
 	}
-	_, topics := guideSections()
-	i := slices.IndexFunc(topics, func(tp topic) bool { return tp.name == "environment" })
+	_, env, _ := runHelp(t, nil, false, "help", "environment")
+	_, keys, ok := strings.Cut(env, "Keys of "+pipeline.FoldedSection+":\n")
+	keys = strings.Join(strings.Fields(keys), " ") // unwrapped
+	n := 0
 	for _, s := range pipeline.Settings(pipeline.Defaults()) {
-		if strings.HasPrefix(s.Key, pipeline.FoldedSection+".") && !strings.Contains(topics[i].text, "`"+s.Key+"`") {
-			t.Errorf("help environment does not name %s", s.Key)
+		if !strings.HasPrefix(s.Key, pipeline.FoldedSection+".") {
+			continue
 		}
+		n++
+		value := "default " + s.Default
+		if s.Default == "" {
+			value = "example " + s.Example
+		}
+		if want := "- " + s.Key + ": " + s.Doc + "; " + value + ", " + s.Var + "."; !ok || !strings.Contains(keys, want) {
+			t.Errorf("help environment lacks %q", want)
+		}
+	}
+	if n < 10 || strings.Count(keys, "- "+pipeline.FoldedSection+".") != n {
+		t.Errorf("help environment shows %d improve keys, the struct %d:\n%s", strings.Count(keys, "- improve."), n, keys)
 	}
 }
