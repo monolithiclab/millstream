@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"time"
 
 	"github.com/monolithiclab/millstream/internal/ids"
@@ -30,7 +31,15 @@ var ErrFiringConfig = errors.New("firing configuration")
 func (e *Engine) Fire(ctx context.Context, pipelineName, trigger, key string, payload json.RawMessage) (string, bool,
 	error,
 ) {
-	return e.fireRequest(ctx, store.SourceManual, pipelineName, trigger, key, payload)
+	return e.FireVars(ctx, pipelineName, trigger, key, payload, nil)
+}
+
+// FireVars fires as Fire does, the run taking vars as --var values over Options.Flags: a var the pipeline does not
+// declare, or whose value does not fit its type, refuses the firing with ErrFiringConfig.
+func (e *Engine) FireVars(ctx context.Context, pipelineName, trigger, key string, payload json.RawMessage,
+	vars map[string]string,
+) (string, bool, error) {
+	return e.fireRequest(ctx, store.SourceManual, pipelineName, trigger, key, payload, vars)
 }
 
 // FireCron fires a cron trigger for its scheduled time, with the cron run input {trigger, scheduledAt}, under the
@@ -43,11 +52,12 @@ func (e *Engine) FireCron(ctx context.Context, pipelineName, trigger string, at 
 	return e.fire(ctx, store.Firing{
 		Pipeline: pipelineName, Trigger: trigger, Key: ids.CronKey(at), RunID: ids.CronRun(at, trigger),
 		Source: store.SourceCron, ScheduledAt: at, Payload: payload,
-	})
+	}, nil)
 }
 
-// fire resolves the run's variables against the active revision and applies the Trigger unit.
-func (e *Engine) fire(ctx context.Context, f store.Firing) (string, bool, error) {
+// fire resolves the run's variables against the active revision, vars over Options.Flags, and applies the Trigger
+// unit.
+func (e *Engine) fire(ctx context.Context, f store.Firing, vars map[string]string) (string, bool, error) {
 	fail := func(err error) (string, bool, error) {
 		return "", false, fmt.Errorf("fire %s.%s: %w", f.Pipeline, f.Trigger, err)
 	}
@@ -77,7 +87,7 @@ func (e *Engine) fire(ctx context.Context, f store.Firing) (string, bool, error)
 			return fail(err)
 		}
 	}
-	res, err := pipeline.ResolveVarsWith(rev.p, e.declaredFlags(rev.p), e.opts.Env, e.secrets(rev.p.Name))
+	res, err := pipeline.ResolveVarsWith(rev.p, e.runFlags(rev.p, vars), e.opts.Env, e.secrets(rev.p.Name))
 	if err != nil {
 		return fail(fmt.Errorf("%w: %w", ErrFiringConfig, err))
 	}
@@ -99,6 +109,13 @@ func (e *Engine) declaredFlags(p *pipeline.Pipeline) map[string]string {
 			out[name] = v
 		}
 	}
+	return out
+}
+
+// runFlags returns the flags of a run of p: its declared flags, then vars over them, each of which p must declare.
+func (e *Engine) runFlags(p *pipeline.Pipeline, vars map[string]string) map[string]string {
+	out := e.declaredFlags(p)
+	maps.Copy(out, vars)
 	return out
 }
 

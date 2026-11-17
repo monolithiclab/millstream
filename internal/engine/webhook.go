@@ -68,12 +68,12 @@ func (e *Engine) createTriggerTokens(ctx context.Context, p *pipeline.Pipeline) 
 func (e *Engine) FireWebhook(ctx context.Context, pipelineName, trigger, key string, payload json.RawMessage) (string,
 	bool, error,
 ) {
-	return e.fireRequest(ctx, store.SourceWebhook, pipelineName, trigger, key, payload)
+	return e.fireRequest(ctx, store.SourceWebhook, pipelineName, trigger, key, payload, nil)
 }
 
 // fireRequest fires a trigger for a request, by hand or a webhook's, under its request id.
 func (e *Engine) fireRequest(ctx context.Context, source store.TriggerSource, pipelineName, trigger, key string,
-	payload json.RawMessage,
+	payload json.RawMessage, vars map[string]string,
 ) (string, bool, error) {
 	key, err := e.requestKey(key)
 	if err != nil {
@@ -82,7 +82,7 @@ func (e *Engine) fireRequest(ctx context.Context, source store.TriggerSource, pi
 	return e.fire(ctx, store.Firing{
 		Pipeline: pipelineName, Trigger: trigger, Key: key, RunID: ids.ManualRun(key, trigger), Source: source,
 		Payload: payload,
-	})
+	}, vars)
 }
 
 // requestKey returns a request's id, generated when it gives none (NewRequestID), refusing one that would not make

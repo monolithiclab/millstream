@@ -127,7 +127,7 @@ func (e *Engine) fireInsight(ctx context.Context, t insightTrigger, seq int64, i
 	}
 	key := ids.InsightKey(in.ID, seq)
 	_, _, err = e.fire(ctx, store.Firing{Pipeline: t.pipeline, Trigger: t.name, Key: key,
-		RunID: ids.ManualRun(key, t.name), Source: store.SourceInsight, Payload: payload})
+		RunID: ids.ManualRun(key, t.name), Source: store.SourceInsight, Payload: payload}, nil)
 	if errors.Is(err, ErrFiringConfig) { // firing again changes nothing: logged, and the next insights go on
 		e.log.Error("insight trigger", "pipeline", t.pipeline, "trigger", t.name, "insightId", in.ID,
 			"error", err.Error())

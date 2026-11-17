@@ -65,7 +65,8 @@ const DefaultMaxPackagesBody = 64 << 20
 // request) and starting a replay run, which resolve variables against the revision, and applying packages, which the
 // engine checks and keeps.
 type Engine interface {
-	Fire(ctx context.Context, pipeline, trigger, key string, payload json.RawMessage) (string, bool, error)
+	FireVars(ctx context.Context, pipeline, trigger, key string, payload json.RawMessage, vars map[string]string) (string,
+		bool, error)
 	FireWebhook(ctx context.Context, pipeline, trigger, key string, payload json.RawMessage) (string, bool, error)
 	Replay(ctx context.Context, req engine.ReplayRequest) (string, bool, error)
 	PackageFromFiles(files map[string][]byte) (*pipeline.Package, error)

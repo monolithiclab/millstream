@@ -210,6 +210,8 @@ type TriggerRequest struct {
 	Trigger   string          `json:"trigger"`
 	Payload   json.RawMessage `json:"payload"`
 	RequestID string          `json:"requestId"`
+	// Vars set variables of the run as --var does; each must be one the pipeline declares.
+	Vars map[string]string `json:"vars,omitempty"`
 }
 
 func (s *Server) triggerRun(w http.ResponseWriter, r *http.Request) error {
@@ -234,7 +236,7 @@ func (s *Server) triggerRun(w http.ResponseWriter, r *http.Request) error {
 	if len(req.Payload) == 0 || string(req.Payload) == "null" {
 		req.Payload = nil
 	}
-	id, created, err := s.opts.Engine.Fire(r.Context(), name, req.Trigger, req.RequestID, req.Payload)
+	id, created, err := s.opts.Engine.FireVars(r.Context(), name, req.Trigger, req.RequestID, req.Payload, req.Vars)
 	if err != nil {
 		return err
 	}
@@ -274,6 +276,8 @@ type ReplayRequest struct {
 	Where     string `json:"where"`
 	Revision  int64  `json:"revision"`
 	RequestID string `json:"requestId"`
+	// Vars set variables of the run as --var does; each must be one the pipeline declares.
+	Vars map[string]string `json:"vars,omitempty"`
 }
 
 func (s *Server) replay(w http.ResponseWriter, r *http.Request) error {
@@ -300,8 +304,7 @@ func (s *Server) replay(w http.ResponseWriter, r *http.Request) error {
 	}
 	id, created, err := s.opts.Engine.Replay(r.Context(), engine.ReplayRequest{
 		Pipeline: name, Step: req.Step, Stream: req.Stream, Revision: store.RevisionID(req.Revision), Since: since,
-		RunID: req.Run,
-		Where: req.Where, RequestID: req.RequestID,
+		RunID: req.Run, Where: req.Where, RequestID: req.RequestID, Vars: req.Vars,
 	})
 	if err != nil {
 		return err

@@ -34,7 +34,7 @@ func Test_triggerCommand(t *testing.T) {
 	}
 	s.checkRefusals(t, nil, []refusal{
 		{TriggerFireCmd{Pipeline: "listings", Trigger: "adhoc", Payload: "{"}, true, "--payload: not valid JSON"},
-		{TriggerFireCmd{Pipeline: "listings", Trigger: "adhoc", Payload: "{}", Var: map[string]string{"nope": "1"}}, true,
+		{TriggerFireCmd{Pipeline: "listings", Trigger: "adhoc", Payload: "{}", Var: map[string]string{"nope": "1"}}, false,
 			"declares no such variable"},
 		{TriggerFireCmd{Pipeline: "other", Trigger: "adhoc", Payload: "{}", Var: map[string]string{"nope": "1"}}, false,
 			"pipeline other: not found"},
@@ -229,7 +229,7 @@ func Test_replayStepCommand(t *testing.T) {
 		{replayCmd(ReplayCmd{Stream: "raw", RunID: "run_r1_adhoc"}), true, "a back-fill selects by --since and --where"},
 		{replayCmd(ReplayCmd{Stream: "raw"}), false, `does not import a stream "raw"`},
 		{replayCmd(ReplayCmd{Step: "score", Since: "soon"}), true, "--since: invalid duration"},
-		{replayCmd(ReplayCmd{Step: "score", Var: map[string]string{"nope": "1"}}), true, "declares no such variable"},
+		{replayCmd(ReplayCmd{Step: "score", Var: map[string]string{"nope": "1"}}), false, "declares no such variable"},
 		{replayCmd(ReplayCmd{Step: "score", Where: "item.n >"}), false, "--where"},
 		{replayCmd(ReplayCmd{Step: "score", RunID: "nope"}), false, "selects no item"},
 	})

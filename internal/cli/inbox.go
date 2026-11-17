@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -121,6 +122,19 @@ func firstLine(s string) string {
 type deliveryRef struct {
 	Delivery string `arg:"" help:"Delivery id."`
 	Pipeline string `help:"The delivery's pipeline, when several pipelines have a delivery with this id."`
+}
+
+// remotePipeline returns --pipeline, else the pipeline whose open record (a "review", a "review sample") the API
+// lists at path for the delivery.
+func (r deliveryRef) remotePipeline(ctx context.Context, cl *apiClient, path, what string) (string, error) {
+	if r.Pipeline != "" {
+		return r.Pipeline, nil
+	}
+	owners, err := cl.deliveryPipelines(ctx, path, r.Delivery)
+	if err != nil {
+		return "", err
+	}
+	return onePipeline("open "+what+" of delivery "+r.Delivery, owners)
 }
 
 // InboxShowCmd is "millstream inbox show <delivery>".
@@ -273,10 +287,11 @@ func decide(rt *Runtime, ref deliveryRef, who reviewerFlag, req store.ReviewDeci
 	}
 	var state string
 	err = changeState(rt, func(cl *apiClient) error {
-		if ref.Pipeline == "" {
-			return errRemotePipeline("delivery")
+		pipelineName, err := ref.remotePipeline(rt.Ctx, cl, "/inbox", "review")
+		if err != nil {
+			return err
 		}
-		path := pipelinePath(ref.Pipeline, "reviews", ref.Delivery)
+		path := pipelinePath(pipelineName, "reviews", ref.Delivery)
 		if req.Version == 0 {
 			var r api.Review
 			if _, err := cl.do(rt.Ctx, http.MethodGet, path, nil, &r); err != nil {
@@ -286,7 +301,7 @@ func decide(rt *Runtime, ref deliveryRef, who reviewerFlag, req store.ReviewDeci
 			current(r.Version)
 		}
 		cl.user = reviewer // the API answers the review, not its delivery's state
-		_, err := cl.post(rt.Ctx, path+"/decision", api.ReviewDecision{Decision: req.Decision, Version: req.Version,
+		_, err = cl.post(rt.Ctx, path+"/decision", api.ReviewDecision{Decision: req.Decision, Version: req.Version,
 			Patch: req.Patch, Reason: req.Reason, Text: req.Text}, nil)
 		return err
 	}, func(st store.Store) error {
@@ -381,11 +396,12 @@ func (c InboxSampleCmd) Run(rt *Runtime) error {
 		return err
 	}
 	err = changeState(rt, func(cl *apiClient) error {
-		if c.Pipeline == "" {
-			return errRemotePipeline("delivery")
+		pipelineName, err := c.remotePipeline(rt.Ctx, cl, "/inbox/samples", "review sample")
+		if err != nil {
+			return err
 		}
 		cl.user = reviewer
-		_, err := cl.post(rt.Ctx, pipelinePath(c.Pipeline, "samples", c.Delivery, "decision"),
+		_, err = cl.post(rt.Ctx, pipelinePath(pipelineName, "samples", c.Delivery, "decision"),
 			api.SampleDecision{Decision: c.Decision, Reason: c.Reason}, nil)
 		return err
 	}, func(st store.Store) error {

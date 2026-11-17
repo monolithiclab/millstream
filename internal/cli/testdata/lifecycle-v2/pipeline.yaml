@@ -1,3 +1,4 @@
 pipeline: extra
 triggers: { adhoc: { manual: {} }, hook: { webhook: {} } }
 steps: { pass: { action: filter, in: [trigger.adhoc, trigger.hook], config: { expr: "item.n > 1" } } }
+vars: { level: 1 }

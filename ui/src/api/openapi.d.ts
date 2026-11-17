@@ -1735,6 +1735,10 @@ export interface components {
       payload?: unknown;
       /** @description Firing the same request id again returns the same run. */
       requestId?: string;
+      /** @description Variables of the run, as --var sets them (name to value): each must be declared by the pipeline and fit its type. They go over the engine's own values. */
+      vars?: {
+        [key: string]: string;
+      };
     };
     /** @enum {string} */
     ProposalState: 'drafting' | 'validating' | 'ready' | 'accepted' | 'rejected' | 'stale';
@@ -1992,6 +1996,10 @@ export interface components {
       /** @description The revision to run on; the active one by default. */
       revision?: number;
       requestId?: string;
+      /** @description Variables of the run, as --var sets them (name to value): each must be declared by the pipeline and fit its type. They go over the engine's own values. */
+      vars?: {
+        [key: string]: string;
+      };
     };
     MetricSeries: {
       name: string;

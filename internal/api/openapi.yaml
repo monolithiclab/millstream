@@ -1861,6 +1861,7 @@ components:
         trigger: { type: string, description: The pipeline's first manual trigger by default. }
         payload: { description: "The trigger item's payload; {} by default." }
         requestId: { type: string, description: Firing the same request id again returns the same run. }
+        vars: { type: object, additionalProperties: { type: string }, description: "Variables of the run, as --var sets them (name to value): each must be declared by the pipeline and fit its type. They go over the engine's own values." }
     ProposalState: { type: string, enum: [drafting, validating, ready, accepted, rejected, stale] }
     ProposalKind: { type: string, enum: [config, lessons, topology, distill] }
     ProposalRequest:
@@ -2110,6 +2111,7 @@ components:
         where: { type: string, description: Only the items for which this CEL expression holds. }
         revision: { type: integer, description: The revision to run on; the active one by default. }
         requestId: { type: string }
+        vars: { type: object, additionalProperties: { type: string }, description: "Variables of the run, as --var sets them (name to value): each must be declared by the pipeline and fit its type. They go over the engine's own values." }
     MetricSeries:
       type: object
       required: [name, group, points]

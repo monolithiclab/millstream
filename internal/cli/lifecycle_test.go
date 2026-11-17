@@ -159,16 +159,10 @@ func Test_commandsThroughTheServer(t *testing.T) {
 		t.Fatalf("apply: %q", out)
 	}
 	// The other commands built directly, as the parser would build them.
-	call := func(cmd runner) (string, error) {
-		var out, errb bytes.Buffer
-		rt := &Runtime{Ctx: context.Background(), IO: IO{In: strings.NewReader(""), Out: &out, Err: &errb},
-			Env: func(k string) (string, bool) { v, ok := env[k]; return v, ok }, DB: dsn(unusedDB()),
-			HTTPClient: &http.Client{Transport: handlerTransport{h}}, CurrentUser: noAccount}
-		err := cmd.Run(rt)
-		return out.String(), err
-	}
-	trigger := TriggerFireCmd{Pipeline: "extra", Trigger: "adhoc", Payload: "{}", RequestID: "r1"}
-	replay := ReplayCmd{Pipeline: "extra", Step: "pass", RequestID: "rp"}
+	call := viaServer(h, env)
+	trigger := TriggerFireCmd{Pipeline: "extra", Trigger: "adhoc", Payload: "{}", RequestID: "r1",
+		Var: map[string]string{"level": "3"}}
+	replay := ReplayCmd{Pipeline: "extra", Step: "pass", RequestID: "rp", Var: map[string]string{"level": "4"}}
 	bundle := filepath.Join(testdir.New(t), "bundle.tar.gz")
 	for _, step := range []struct {
 		cmd runner
@@ -195,11 +189,9 @@ func Test_commandsThroughTheServer(t *testing.T) {
 		{PurgeCmd{Key: "nobody", RequestID: "pg"}, "purge_pg done: 0 items erased (already started)\n", false},
 		{EvidenceExportCmd{Pipeline: "extra", Since: "1d", Out: bundle}, "of extra (0 sampled), expires", false},
 		{EvidenceImportCmd{Bundle: bundle}, "no artifact store", true},
-		{TriggerFireCmd{Pipeline: "extra", Trigger: "adhoc", Payload: "{}", Var: map[string]string{"x": "1"}}, "--var", true},
-		{InboxApproveCmd{deliveryRef: deliveryRef{Delivery: "d1"}, reviewerFlag: reviewerFlag{As: "ana"}}, "--pipeline", true},
-		{InboxSampleCmd{deliveryRef: deliveryRef{Delivery: "d1"}, Decision: "agree", reviewerFlag: reviewerFlag{As: "ana"}},
-			"--pipeline", true},
-		{InsightsAcknowledgeCmd{insightRef{ID: "i1"}}, "--pipeline", true},
+		{TriggerFireCmd{Pipeline: "extra", Trigger: "adhoc", Payload: "{}", Var: map[string]string{"x": "1"}},
+			"--var x: pipeline extra declares no such variable", true},
+		{ReplayCmd{Pipeline: "extra", Step: "pass", Var: map[string]string{"level": "high"}}, "variable level from flag", true},
 		{InboxSampleCmd{deliveryRef: deliveryRef{Delivery: "d1", Pipeline: "extra"}, Decision: "agree",
 			reviewerFlag: reviewerFlag{As: "ana"}}, "d1", true},
 		{InboxApproveCmd{deliveryRef: deliveryRef{Delivery: "d1", Pipeline: "extra"}, reviewerFlag: reviewerFlag{As: "ana"}},
@@ -216,6 +208,13 @@ func Test_commandsThroughTheServer(t *testing.T) {
 		}
 		if (err != nil) != step.err || !strings.Contains(got, step.out) {
 			t.Fatalf("%+v: %q, %v", step.cmd, out, err)
+		}
+	}
+	// --var reached the runs the server started.
+	for id, want := range map[string]int64{"run_r1_adhoc": 3, "run_replay_rp": 4} {
+		if r, err := st.Run(context.Background(), "extra", id); err != nil || r.Vars["level"] != want ||
+			r.VarSources["level"] != pipeline.SourceFlag {
+			t.Fatalf("%s: vars %v from %v, %v; want level %d from the flag", id, r.Vars, r.VarSources, err, want)
 		}
 	}
 	// Proposals through the server: created and validated, accepted at the hash the server reads, then refused.

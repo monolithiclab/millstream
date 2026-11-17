@@ -30,10 +30,10 @@ import (
 	"github.com/monolithiclab/millstream/internal/store"
 )
 
-// Paging bounds: a page holds defaultLimit records unless the client asks for up to maxLimit.
+// Paging bounds: a page holds defaultLimit records unless the client asks for up to MaxLimit.
 const (
 	defaultLimit = 50
-	maxLimit     = 500
+	MaxLimit     = 500
 )
 
 // Lineage bounds: how many generations a lineage walks by default and at most, and how many items each side holds
@@ -56,8 +56,8 @@ func limit(r *http.Request) (int, error) {
 		return defaultLimit, nil
 	}
 	n, err := strconv.Atoi(v)
-	if err != nil || n < 1 || n > maxLimit {
-		return 0, invalidf("limit %q: want 1 to %d", v, maxLimit)
+	if err != nil || n < 1 || n > MaxLimit {
+		return 0, invalidf("limit %q: want 1 to %d", v, MaxLimit)
 	}
 	return n, nil
 }
@@ -489,7 +489,7 @@ func (s *Server) listItems(w http.ResponseWriter, r *http.Request) error {
 	}
 	f := store.ItemFilter{Pipeline: name, Stream: q.Get("stream"), RunID: q.Get("run"), After: cur[0], Limit: n + 1}
 	if filter.where != nil {
-		f.Limit = maxLimit
+		f.Limit = MaxLimit
 	}
 	page := Page[Item]{Items: []Item{}}
 	for scanned := 0; ; {

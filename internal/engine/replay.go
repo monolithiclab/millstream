@@ -31,6 +31,8 @@ type ReplayRequest struct {
 	// RequestID names the replay run (ids.ReplayRun), so retrying the same request starts nothing new; generated
 	// when empty.
 	RequestID string
+	// Vars are --var values for the run, over Options.Flags; each must name a variable of the revision.
+	Vars map[string]string
 }
 
 // Replay starts a replay run: it resolves the run's variables against the revision as a firing does, selects the
@@ -75,7 +77,7 @@ func (e *Engine) Replay(ctx context.Context, req ReplayRequest) (string, bool, e
 	} else if _, ok := rev.p.Steps[req.Step]; !ok {
 		return fail(fmt.Errorf("revision %d has no step %q: %w", revID, req.Step, store.ErrInvalid))
 	}
-	res, err := pipeline.ResolveVarsWith(rev.p, e.declaredFlags(rev.p), e.opts.Env, e.secrets(rev.p.Name))
+	res, err := pipeline.ResolveVarsWith(rev.p, e.runFlags(rev.p, req.Vars), e.opts.Env, e.secrets(rev.p.Name))
 	if err != nil {
 		return fail(fmt.Errorf("%w: %w", ErrFiringConfig, err))
 	}

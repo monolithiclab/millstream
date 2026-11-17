@@ -3,9 +3,7 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
-	"maps"
 	"net/http"
-	"slices"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -49,27 +47,17 @@ func (c TriggerFireCmd) Run(rt *Runtime) error {
 	var id string
 	var fired bool
 	err := changeState(rt, func(cl *apiClient) error {
-		if len(c.Var) > 0 {
-			return errNoVarsRemote
-		}
 		var run api.Run
 		status, err := cl.post(rt.Ctx, pipelinePath(c.Pipeline, "runs"), api.TriggerRequest{Trigger: c.Trigger,
-			Payload: json.RawMessage(c.Payload), RequestID: c.RequestID}, &run)
+			Payload: json.RawMessage(c.Payload), RequestID: c.RequestID, Vars: c.Var}, &run)
 		id, fired = run.ID, created(status)
 		return err
 	}, func(st store.Store) error {
-		if err := checkFlagsDeclared(rt, st, c.Pipeline, c.Var); err != nil {
-			return err
-		}
-		env, err := environment(rt)
+		e, err := localEngine(rt, st)
 		if err != nil {
 			return err
 		}
-		e, err := engine.New(engine.Options{Store: st, Env: rt.Env, Secrets: secrets(rt, env), Flags: c.Var})
-		if err != nil {
-			return err
-		}
-		id, fired, err = e.Fire(rt.Ctx, c.Pipeline, c.Trigger, c.RequestID, json.RawMessage(c.Payload))
+		id, fired, err = e.FireVars(rt.Ctx, c.Pipeline, c.Trigger, c.RequestID, json.RawMessage(c.Payload), c.Var)
 		return err
 	})
 	if err != nil {
@@ -120,29 +108,14 @@ func printTokens(rt *Runtime, pipelineName string, tokens []api.TriggerToken) {
 	}
 }
 
-// checkFlagsDeclared fails when a --var names a variable the pipeline's active revision does not declare.
-func checkFlagsDeclared(rt *Runtime, st store.Store, pipelineName string, flags map[string]string) error {
-	if len(flags) == 0 {
-		return nil
-	}
-	revID, err := st.ActiveRevision(rt.Ctx, pipelineName)
+// localEngine is an engine on st for a command that fires or replays from this process: variables from the
+// environment, secrets from the environment file's grant.
+func localEngine(rt *Runtime, st store.Store) (*engine.Engine, error) {
+	env, err := environment(rt)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	rev, err := st.Revision(rt.Ctx, revID)
-	if err != nil {
-		return err
-	}
-	p, err := rev.Decode()
-	if err != nil {
-		return err
-	}
-	for _, name := range slices.Sorted(maps.Keys(flags)) {
-		if _, ok := p.Vars[name]; !ok {
-			return usageError(fmt.Sprintf("--var %s: pipeline %s declares no such variable", name, pipelineName))
-		}
-	}
-	return nil
+	return engine.New(engine.Options{Store: st, Env: rt.Env, Secrets: secrets(rt, env)})
 }
 
 // CancelCmd is "millstream cancel".
@@ -209,30 +182,20 @@ func (c ReplayCmd) Run(rt *Runtime) error {
 	var id string
 	var started bool
 	err := changeState(rt, func(cl *apiClient) error {
-		if len(c.Var) > 0 {
-			return errNoVarsRemote
-		}
 		var run api.Run
 		status, err := cl.post(rt.Ctx, pipelinePath(c.Pipeline, "replay"), api.ReplayRequest{Step: c.Step,
-			Stream: c.Stream, Since: c.Since, Run: c.RunID, Where: c.Where, Revision: c.Revision, RequestID: c.RequestID}, &run)
+			Stream: c.Stream, Since: c.Since, Run: c.RunID, Where: c.Where, Revision: c.Revision, RequestID: c.RequestID,
+			Vars: c.Var}, &run)
 		id, started = run.ID, created(status)
 		return err
 	}, func(st store.Store) error {
-		if err := checkFlagsDeclared(rt, st, c.Pipeline, c.Var); err != nil {
-			return err
-		}
-		env, err := environment(rt)
-		if err != nil {
-			return err
-		}
-		e, err := engine.New(engine.Options{Store: st, Env: rt.Env, Secrets: secrets(rt, env), Flags: c.Var})
+		e, err := localEngine(rt, st)
 		if err != nil {
 			return err
 		}
 		id, started, err = e.Replay(rt.Ctx, engine.ReplayRequest{
 			Pipeline: c.Pipeline, Step: c.Step, Stream: c.Stream, Revision: store.RevisionID(c.Revision), Since: since,
-			RunID: c.RunID,
-			Where: c.Where, RequestID: c.RequestID,
+			RunID: c.RunID, Where: c.Where, RequestID: c.RequestID, Vars: c.Var,
 		})
 		return err
 	})

@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/monolithiclab/millstream/internal/api"
 	"github.com/monolithiclab/millstream/internal/pipeline"
 	"github.com/monolithiclab/millstream/internal/store"
 	"github.com/monolithiclab/millstream/internal/store/sqlite"
@@ -42,25 +43,39 @@ func newReviewState(t *testing.T) (*state, map[string]string) {
 		}
 		defer func() { _ = st.Close() }()
 	}
+	return s, seedReviews(t, st, "deals")
+}
+
+// reviewPipelines are the pipelines seedReviews may seed: each lease leaves the others' steps alone.
+var reviewPipelines = []string{"deals", "audit"}
+
+// seedReviews applies reviewPipeline as pipeline name, one of reviewPipelines, and parks the items of its run r1:
+// a, b and c in inbox analysts, d auto-approved as a review sample. It returns their delivery ids, which depend on
+// neither the pipeline nor the store: two pipelines seeded alike hold the same ids.
+func seedReviews(t *testing.T, st store.Store, name string) map[string]string {
+	t.Helper()
 	ctx := context.Background()
-	p, err := pipeline.Parse([]byte(reviewPipeline))
+	src := strings.Replace(reviewPipeline, "pipeline: deals", "pipeline: "+name, 1)
+	p, err := pipeline.Parse([]byte(src))
 	if err != nil {
 		t.Fatal(err)
 	}
-	sum := sha256.Sum256([]byte(reviewPipeline))
+	sum := sha256.Sum256([]byte(src))
 	if _, err := st.ApplyRevision(ctx, store.PackageRecord{Hash: hex.EncodeToString(sum[:]), Bundle: []byte("{}"),
 		Pipeline: p}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := st.Fire(ctx, store.Firing{Pipeline: "deals", Trigger: "adhoc", Key: "r1", RunID: "r1"}); err != nil {
+	if _, err := st.Fire(ctx, store.Firing{Pipeline: name, Trigger: "adhoc", Key: "r1", RunID: "r1"}); err != nil {
 		t.Fatal(err)
 	}
 	lease := func(step string) store.Lease {
 		t.Helper()
 		slots := map[store.StepRef]int{}
-		for _, other := range []string{"crawl", "gate", "sink"} {
-			if other != step {
-				slots[store.StepRef{Pipeline: "deals", Step: other}] = 0
+		for _, other := range reviewPipelines {
+			for _, s := range []string{"crawl", "gate", "sink"} {
+				if other != name || s != step {
+					slots[store.StepRef{Pipeline: other, Step: s}] = 0
+				}
 			}
 		}
 		ls, err := st.Lease(ctx, store.LeaseRequest{Owner: "n", Max: 1, TTL: time.Minute, Slots: slots})
@@ -89,7 +104,7 @@ func newReviewState(t *testing.T) (*state, map[string]string) {
 		}
 		ids[l.Item.Key] = l.DeliveryID
 	}
-	return s, ids
+	return ids
 }
 
 func Test_inboxCommands(t *testing.T) {
@@ -191,4 +206,68 @@ func Test_inboxCommands(t *testing.T) {
 			Decision: "agree"}, false, "not found"},
 		{InboxShowCmd{deliveryRef: deliveryRef{Delivery: "dl_missing"}}, false, "not found"},
 	})
+}
+
+// Through the server, the inbox decisions and insight states find the pipeline in the API's listings when
+// --pipeline names none; an id two pipelines hold asks for --pipeline.
+func Test_decisionsThroughTheServer(t *testing.T) {
+	t.Parallel()
+	st := memoryStore(t)
+	ids := seedReviews(t, st, "deals")
+	srv, err := api.New(api.Options{Store: st})
+	if err != nil {
+		t.Fatal(err)
+	}
+	call := viaServer(srv, map[string]string{ServerEnv: "http://127.0.0.1:7070"})
+	ana := reviewerFlag{As: "ana"}
+	ref := func(k string) deliveryRef { return deliveryRef{Delivery: ids[k]} }
+	insight := func(name, id string) store.Insight {
+		return store.Insight{Pipeline: name, ID: id, Kind: "failureCluster", Scope: "crawl", Severity: "warning",
+			Evidence: json.RawMessage(`{}`)}
+	}
+	if err := st.RecordInsights(context.Background(), store.InsightReport{Pipeline: "deals",
+		Kinds: []string{"failureCluster"}, Insights: []store.Insight{insight("deals", "in_1")}}); err != nil {
+		t.Fatal(err)
+	}
+	for _, step := range []struct {
+		cmd runner
+		out string
+	}{
+		{InboxApproveCmd{deliveryRef: ref("a"), reviewerFlag: ana, versionFlag: versionFlag{Version: 1}},
+			ids["a"] + " approved\n"},
+		{InboxSampleCmd{deliveryRef: ref("d"), reviewerFlag: ana, Decision: "agree"}, ids["d"] + " agree\n"},
+		{InsightsAcknowledgeCmd{insightRef{ID: "in_1"}}, "in_1 acknowledged\n"},
+	} {
+		if out, err := call(step.cmd); err != nil || out != step.out {
+			t.Fatalf("%+v: %q, %v; want %q", step.cmd, out, err, step.out)
+		}
+	}
+	// A second pipeline holding the same ids.
+	seedReviews(t, st, "audit")
+	if err := st.RecordInsights(context.Background(), store.InsightReport{Pipeline: "audit",
+		Kinds: []string{"failureCluster"}, Insights: []store.Insight{insight("audit", "in_1")}}); err != nil {
+		t.Fatal(err)
+	}
+	for _, step := range []struct {
+		cmd  runner
+		want string // the error, or what it prints
+	}{
+		{InboxRejectCmd{deliveryRef: ref("b"), reviewerFlag: ana, Reason: "overpriced"},
+			"open review of delivery " + ids["b"] + " exists in audit, deals: name one with --pipeline"},
+		{InsightsMuteCmd{insightRef{ID: "in_1"}}, "insight in_1 exists in audit, deals: name one with --pipeline"},
+		{InboxApproveCmd{deliveryRef: deliveryRef{Delivery: "dl_missing"}, reviewerFlag: ana},
+			"open review of delivery dl_missing: not found"},
+		{InboxRejectCmd{deliveryRef: deliveryRef{Delivery: ids["b"], Pipeline: "audit"}, reviewerFlag: ana,
+			Reason: "overpriced"}, ids["b"] + " rejected\n"},
+		// deals' sample is decided: audit's is the one open.
+		{InboxSampleCmd{deliveryRef: ref("d"), reviewerFlag: ana, Decision: "disagree"}, ids["d"] + " disagree\n"},
+	} {
+		out, err := call(step.cmd)
+		if err != nil {
+			out = err.Error()
+		}
+		if !strings.Contains(out, step.want) {
+			t.Errorf("%+v: %q; want %q", step.cmd, out, step.want)
+		}
+	}
 }

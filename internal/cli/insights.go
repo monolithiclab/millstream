@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"maps"
+	"net/http"
 	"slices"
 	"strconv"
 	"strings"
@@ -142,14 +143,30 @@ func (c InsightsAcknowledgeCmd) Run(rt *Runtime) error { return c.set(rt, store.
 // Run mutes the insight.
 func (c InsightsMuteCmd) Run(rt *Runtime) error { return c.set(rt, store.InsightMuted) }
 
-// set finds the insight, in --pipeline or in the one pipeline that has it, and sets its state.
+// set finds the insight, in --pipeline or in the one pipeline that has it (through the server, the one its
+// /insights listing names), and sets its state.
 func (c insightRef) set(rt *Runtime, state store.InsightState) error {
+	what := "insight " + c.ID
 	err := changeState(rt, func(cl *apiClient) error {
-		if c.Pipeline == "" {
-			return errRemotePipeline("insight")
+		pipelineName := c.Pipeline
+		if pipelineName == "" {
+			var ins []api.Insight
+			if _, err := cl.do(rt.Ctx, http.MethodGet, "/insights", nil, &ins); err != nil {
+				return err
+			}
+			var owners []string
+			for _, in := range ins {
+				if in.ID == c.ID && in.Imported == "" { // an imported bundle's insights are not the deployment's
+					owners = append(owners, in.Pipeline)
+				}
+			}
+			var err error
+			if pipelineName, err = onePipeline(what, owners); err != nil {
+				return err
+			}
 		}
 		verb := map[store.InsightState]string{store.InsightAcknowledged: "acknowledge", store.InsightMuted: "mute"}[state]
-		_, err := cl.post(rt.Ctx, pipelinePath(c.Pipeline, "insights", c.ID, verb), nil, nil)
+		_, err := cl.post(rt.Ctx, pipelinePath(pipelineName, "insights", c.ID, verb), nil, nil)
 		return err
 	}, func(st store.Store) error {
 		ins, err := st.Insights(rt.Ctx, store.InsightFilter{Pipeline: c.Pipeline})
@@ -162,15 +179,11 @@ func (c insightRef) set(rt *Runtime, state store.InsightState) error {
 				owners = append(owners, in.Pipeline)
 			}
 		}
-		switch len(owners) {
-		case 0:
-			return fmt.Errorf("insight %s: %w", c.ID, store.ErrNotFound)
-		case 1:
-		default:
-			return usageError(fmt.Sprintf("insight %s exists in %s: name one with --pipeline", c.ID,
-				strings.Join(owners, ", ")))
+		pipelineName, err := onePipeline(what, owners)
+		if err != nil {
+			return err
 		}
-		return st.SetInsightState(rt.Ctx, owners[0], c.ID, state)
+		return st.SetInsightState(rt.Ctx, pipelineName, c.ID, state)
 	})
 	if err != nil {
 		return err

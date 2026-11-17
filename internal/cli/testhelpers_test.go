@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"net/http"
 	"os"
 	"path/filepath"
 	"runtime/debug"
@@ -324,5 +325,18 @@ func direct(env map[string]string, cmd runner) (code int, stdout, stderr string)
 		return exitUsage, stdout, stderr + "millstream: " + err.Error() + "\n"
 	default:
 		return exitFail, stdout, stderr + "millstream: " + err.Error() + "\n"
+	}
+}
+
+// viaServer returns a runner of commands built as the parser would build them, going through the API h serves:
+// env, their whole environment, names the server (ServerEnv). It returns what a command prints, and its error.
+func viaServer(h http.Handler, env map[string]string) func(runner) (string, error) {
+	return func(cmd runner) (string, error) {
+		var out, errb bytes.Buffer
+		rt := &Runtime{Ctx: context.Background(), IO: IO{In: strings.NewReader(""), Out: &out, Err: &errb},
+			Env: func(k string) (string, bool) { v, ok := env[k]; return v, ok }, DB: dsn(unusedDB()),
+			HTTPClient: &http.Client{Transport: handlerTransport{h}}, CurrentUser: noAccount}
+		err := cmd.Run(rt)
+		return out.String(), err
 	}
 }

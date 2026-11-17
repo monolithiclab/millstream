@@ -165,8 +165,7 @@ first is missing: identity, an accountable owner per agent, and records their ow
   applied; one unit for the whole apply would make it atomic. Apply re-checks every other pipeline's active package,
   so a pipeline broken by a change of the deployment (a secret unmapped) blocks every apply until it is fixed or
   applied again; `--force` does not bypass check errors.
-- CLI through `--server`: `trigger` and `replay --step` refuse `--var` (the API takes no variables), the inbox
-  decisions and insight states need `--pipeline`, and `eval` records scores only from its own process (no API).
+- CLI through `--server`: `eval` records scores only from its own process (no API).
 - HTTP API and purge: an item's descendants are found by scanning its pipeline's items' parents (`json_each`), the
   lineage view and a purge's fence alike; an index of parent to child (or reading the deliveries of the item) before
   volumes grow.

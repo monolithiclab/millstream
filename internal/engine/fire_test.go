@@ -48,6 +48,12 @@ func TestFireStoresVarsAndSources(t *testing.T) {
 		}
 	}
 
+	// A run's own vars go over the flags (the API's trigger body).
+	withVars, _, err := v.e.FireVars(v.ctx, "listings", "adhoc", "own", nil, map[string]string{"maxPrice": "5"})
+	if r := v.run("listings", withVars); err != nil || r.Vars["maxPrice"] != int64(5) || r.VarSources["maxPrice"] != "flag" {
+		t.Fatalf("FireVars: %v, %v, %v", err, r.Vars, r.VarSources)
+	}
+
 	again, created, err := v.e.Fire(v.ctx, "listings", "adhoc", strings.TrimSuffix(strings.TrimPrefix(id, "run_"),
 		"_adhoc"), nil)
 	if err != nil || created || again != id {
@@ -77,15 +83,20 @@ func TestFireErrors(t *testing.T) {
 	tests := []struct {
 		name     string
 		env      map[string]string
+		vars     map[string]string
 		pipeline string
 		trigger  string
 		want     string
 		wantErr  error
 	}{
-		{"required variable", map[string]string{"MILLSTREAM_SECRET_API_TOKEN": "t"}, "listings", "adhoc",
+		{"required variable", map[string]string{"MILLSTREAM_SECRET_API_TOKEN": "t"}, nil, "listings", "adhoc",
 			"variable maxPrice is required", nil},
-		{"unknown trigger", full, "listings", "weekly", `has no trigger "weekly"`, store.ErrInvalid},
-		{"unknown pipeline", full, "nope", "adhoc", "pipeline nope", store.ErrNotFound},
+		{"undeclared var", full, map[string]string{"nope": "1"}, "listings", "adhoc",
+			"--var nope: pipeline listings declares no such variable", ErrFiringConfig},
+		{"ill-typed var", full, map[string]string{"minScore": "high"}, "listings", "adhoc", "variable minScore from flag",
+			ErrFiringConfig},
+		{"unknown trigger", full, nil, "listings", "weekly", `has no trigger "weekly"`, store.ErrInvalid},
+		{"unknown pipeline", full, nil, "nope", "adhoc", "pipeline nope", store.ErrNotFound},
 	}
 	// One engine for every case: none fires, and each sets the environment it fires in.
 	var environ map[string]string
@@ -94,7 +105,7 @@ func TestFireErrors(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			environ = tt.env
-			_, _, err := v.e.Fire(v.ctx, tt.pipeline, tt.trigger, "", nil)
+			_, _, err := v.e.FireVars(v.ctx, tt.pipeline, tt.trigger, "", nil, tt.vars)
 			if err == nil || !strings.Contains(err.Error(), tt.want) {
 				t.Fatalf("err = %v, want %q", err, tt.want)
 			}

@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"cmp"
 	"errors"
 	"slices"
 	"strings"
@@ -74,6 +75,8 @@ func TestReplaySelection(t *testing.T) {
 		{"where", ReplayRequest{Step: "score", Where: "item.n > 5 && envelope.key != ''", RequestID: "where"}, 2},
 		{"where with vars and run", ReplayRequest{Step: "score", RunID: r1,
 			Where: "vars.label == 'v' && run.id.startsWith('run_replay_') && item.n == 7", RequestID: "vars"}, 1},
+		{"the request's vars", ReplayRequest{Step: "score", Vars: map[string]string{"label": "w"},
+			Where: "vars.label == 'w'", RequestID: "own"}, 4},
 	}
 	gens := map[int64]bool{0: true}
 	for _, tt := range tests {
@@ -82,7 +85,7 @@ func TestReplaySelection(t *testing.T) {
 			t.Errorf("%s: run %s with %d deliveries, want %d", tt.name, id, count(id), tt.want)
 		}
 		r := v.run("p", id)
-		if r.Kind != store.RunKindReplay || gens[r.Generation] || r.Vars["label"] != "v" {
+		if r.Kind != store.RunKindReplay || gens[r.Generation] || r.Vars["label"] != cmp.Or(tt.req.Vars["label"], "v") {
 			t.Errorf("%s: run %+v", tt.name, r)
 		}
 		gens[r.Generation] = true
@@ -100,6 +103,7 @@ func TestReplaySelection(t *testing.T) {
 		{"where does not compile", ReplayRequest{Step: "score", Where: "item.n >"}, store.ErrInvalid},
 		{"where fails", ReplayRequest{Step: "score", Where: "item.missing > 1"}, store.ErrInvalid},
 		{"unknown step", ReplayRequest{Step: "nope"}, store.ErrInvalid},
+		{"undeclared var", ReplayRequest{Step: "score", Vars: map[string]string{"nope": "1"}}, ErrFiringConfig},
 		{"unknown revision", ReplayRequest{Step: "score", Revision: 99}, store.ErrNotFound},
 	} {
 		tt.req.Pipeline = "p"

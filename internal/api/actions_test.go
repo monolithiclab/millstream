@@ -54,6 +54,21 @@ func TestActions(t *testing.T) {
 	if rec := post("/api/v1/pipelines/listings/runs", `{"trigger":"daily","payload":null}`, nil); rec.Code != 201 {
 		t.Errorf("trigger daily by hand: %d %s", rec.Code, rec.Body.String())
 	}
+	// The body's vars set the run's, checked as --var is, with its message.
+	wantInvalid := func(rec *httptest.ResponseRecorder, msg string) {
+		t.Helper()
+		if wantError(t, rec, 400, codeInvalid); !strings.Contains(rec.Body.String(), msg) {
+			t.Errorf("answer %s, want %q", rec.Body.String(), msg)
+		}
+	}
+	if rec := post("/api/v1/pipelines/listings/runs", `{"requestId":"v1","vars":{"minScore":"80"}}`, nil); rec.Code != 201 ||
+		!strings.Contains(rec.Body.String(), `"vars":{"minScore":80},"varSources":{"minScore":"flag"}`) {
+		t.Errorf("trigger with vars: %d %s", rec.Code, rec.Body.String())
+	}
+	wantInvalid(post("/api/v1/pipelines/listings/runs", `{"vars":{"nope":"1"}}`, nil),
+		"--var nope: pipeline listings declares no such variable")
+	wantInvalid(post("/api/v1/pipelines/listings/runs", `{"vars":{"minScore":"high"}}`, nil),
+		"variable minScore from flag")
 	wantError(t, post("/api/v1/pipelines/listings/runs", `{"trigger":"nope"}`, nil), 400, codeInvalid)
 	wantError(t, post("/api/v1/pipelines/listings/runs", `{"bogus":1}`, nil), 400, codeInvalid)
 	wantError(t, post("/api/v1/pipelines/listings/runs", `{} {}`, nil), 400, codeInvalid)
@@ -76,6 +91,8 @@ func TestActions(t *testing.T) {
 	wantError(t, post("/api/v1/pipelines/listings/replay", `{}`, nil), 400, codeInvalid)
 	wantError(t, post("/api/v1/pipelines/listings/replay", `{"step":"score","since":"soon"}`, nil), 400, codeInvalid)
 	wantError(t, post("/api/v1/pipelines/listings/replay", `{"step":"nope"}`, nil), 400, codeInvalid)
+	wantInvalid(post("/api/v1/pipelines/listings/replay", `{"step":"score","vars":{"nope":"1"}}`, nil),
+		"--var nope: pipeline listings declares no such variable")
 
 	// Review decisions: a stale version is a conflict, a rejection needs a reason code, an approval edits.
 	review := "/api/v1/pipelines/listings/reviews/" + f.reviewDelivery + "/decision"

@@ -8,6 +8,8 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -171,10 +173,40 @@ func pipelinePath(name string, parts ...string) string {
 	return p
 }
 
-// errNoVarsRemote refuses --var through the API: a served engine resolves variables from its own environment.
-var errNoVarsRemote = usageError("--var: the server resolves variables from its own environment; drop --var or use --direct")
+// deliveryPipelines returns the pipelines of the records the API's paged listing at path (/inbox or /inbox/samples:
+// the open ones) holds for the delivery.
+func (c *apiClient) deliveryPipelines(ctx context.Context, path, delivery string) ([]string, error) {
+	var owners []string
+	q := url.Values{"limit": {strconv.Itoa(api.MaxLimit)}}
+	for {
+		var page api.Page[struct {
+			Pipeline   string `json:"pipeline"`
+			DeliveryID string `json:"deliveryId"`
+		}]
+		if _, err := c.do(ctx, http.MethodGet, path+"?"+q.Encode(), nil, &page); err != nil {
+			return nil, err
+		}
+		for _, r := range page.Items {
+			if r.DeliveryID == delivery {
+				owners = append(owners, r.Pipeline)
+			}
+		}
+		if page.Next == "" {
+			return owners, nil
+		}
+		q.Set("cursor", page.Next)
+	}
+}
 
-// errRemotePipeline is the usage error of a command that needs --pipeline to go through the API.
-func errRemotePipeline(what string) error {
-	return usageError(fmt.Sprintf("--pipeline: name the %s's pipeline when going through the server", what))
+// onePipeline returns the one pipeline of owners that holds what (a "review of delivery d1", an "insight i1"): not
+// found without one, a usage error asking for --pipeline with several.
+func onePipeline(what string, owners []string) (string, error) {
+	switch len(owners) {
+	case 0:
+		return "", fmt.Errorf("%s: %w", what, store.ErrNotFound)
+	case 1:
+		return owners[0], nil
+	}
+	slices.Sort(owners)
+	return "", usageError(fmt.Sprintf("%s exists in %s: name one with --pipeline", what, strings.Join(owners, ", ")))
 }
