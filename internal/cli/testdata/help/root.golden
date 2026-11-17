@@ -39,7 +39,7 @@ Operate:
 Improve:
   evidence       Export an evidence bundle in production; import it in development.
   improve        Run the improve pipeline on one insight or every open one; development only.
-  proposals      List, create and decide proposals.
+  proposals      List, show and decide proposals.
   backtest       Validate a patch against past items, before and after.
 
 Help:
@@ -47,4 +47,4 @@ Help:
   version        Print the version.
 
 Run "millstream help" for a guide to Millstream, "millstream <command> --help" for a command's help.
-Global flags, listed in every command's help: --db, --env-file, --server, --direct, --color.
+Global flags, listed in every command's help: --db, --env-file, --server, --color.

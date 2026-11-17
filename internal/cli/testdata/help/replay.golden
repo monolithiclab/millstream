@@ -32,7 +32,5 @@ Global flags:
                               one.
   --server=URL                Change state through the API of the engine serving at this URL
                               (default: $MILLSTREAM_SERVER; token: $MILLSTREAM_TOKEN).
-  --direct                    Change state from this process, not through --server; on Postgres this
-                              takes the leadership lock, waiting while an engine runs.
   --color=auto|always|never   Color the help: auto (on a terminal, unless NO_COLOR or TERM=dumb),
                               always or never (default: $MILLSTREAM_COLOR, else auto).

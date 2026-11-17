@@ -54,7 +54,7 @@ func TestDefaultFileUncommented(t *testing.T) {
 }
 
 // TestDefaultFileHasEveryKey: every leaf has a key, a variable, a doc and a default or an example, no two leaves
-// share a variable, and each exact key line names its variable.
+// share a variable, and each exact key line names its variable; FoldedSection's keys have one line for them all.
 func TestDefaultFileHasEveryKey(t *testing.T) {
 	t.Parallel()
 	lines := strings.Split(string(DefaultFile()), "\n")
@@ -70,6 +70,9 @@ func TestDefaultFileHasEveryKey(t *testing.T) {
 			t.Errorf("%s: variable %s is used twice", s.Key, s.Var)
 		}
 		vars[s.Var] = true
+		if strings.HasPrefix(s.Key, FoldedSection+".") {
+			continue
+		}
 		prefix := "# " + strings.Repeat("  ", strings.Count(s.Key, ".")) + s.Key[strings.LastIndex(s.Key, ".")+1:] + ": "
 		suffix := "   # " + s.Var
 		if s.Default == "" {
@@ -80,6 +83,9 @@ func TestDefaultFileHasEveryKey(t *testing.T) {
 		}) {
 			t.Errorf("%s: no key line %q ... %q", s.Key, prefix, suffix)
 		}
+	}
+	if !slices.Contains(lines, "## "+FoldedSection+": development only; millstream help environment lists its keys.") {
+		t.Errorf("no line for %s", FoldedSection)
 	}
 	if len(vars) < 40 {
 		t.Fatalf("%d settings", len(vars))

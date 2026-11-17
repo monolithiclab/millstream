@@ -3,8 +3,9 @@
 One binary is the engine, the CLI and a node, with the web UI embedded. It runs the same packages everywhere; the
 environment says where (spec section 14): defaults, then the environment file `millstream.yaml`, then `MILLSTREAM_*`
 variables, then flags. Every key is a variable, `MILLSTREAM_<SECTION>_<KEY>` (`ui.baseUrl` is
-`MILLSTREAM_UI_BASE_URL`), and `millstream init environment` writes the file with every key and its variable. This
-guide covers the three targets: a laptop, a VPS with Docker Compose, and a VPS with systemd.
+`MILLSTREAM_UI_BASE_URL`), and `millstream init environment` writes the file with every key and its variable
+(`improve`'s, development only, are one line pointing to `millstream help environment`). This guide covers the
+three targets: a laptop, a VPS with Docker Compose, and a VPS with systemd.
 
 > **M4 status.** `millstream serve`, `apply`, `rollback` and `pause --triggers`, every key of the environment file, the
 > standby's takeover, remote nodes with the node token over TLS, the S3 artifact store, token auth, `/metrics`,
@@ -39,7 +40,7 @@ package) and serves the API and the UI on `127.0.0.1:7070`. No configuration is 
 the default environment file and uncomment the keys:
 
 ```sh
-millstream init environment     # millstream.yaml, every key commented out at its default
+millstream init environment     # millstream.yaml, every key commented out at its default, improve's folded
 ```
 
 In the image:

@@ -68,6 +68,9 @@ How an agent, or a script, should drive Millstream.
    `inbox reject`, naming the decider with `--as`.
 7. Long-running commands (`run`, `serve`, `node`, `tail -f`) stop on SIGINT or SIGTERM; prefer
    `run --once` for a run that ends on its own.
+8. The listings leave out what the improve package and maintenance use: `proposals create`, `revalidate` and
+   `token`, and the global `--direct` (on Postgres, write from this process while no engine runs). Their
+   `--help` still documents them.
 
 ### environment
 
@@ -81,7 +84,15 @@ platform design (section 14) and the deployment guide describe every key.
 Three layers set every key, the last one winning: the environment file, then a `MILLSTREAM_` variable, then a
 flag. A variable is `MILLSTREAM_<SECTION>_<KEY>` in upper snake case, down the key's path: `ui.baseUrl` is
 `MILLSTREAM_UI_BASE_URL`, `improve.patchFile.dir` is `MILLSTREAM_IMPROVE_PATCH_FILE_DIR`. `millstream init
-environment` writes the file with every key commented out at its default, each line naming its variable.
+environment` writes the file with every key commented out at its default, each line naming its variable, but for
+`improve`, a single line pointing here.
+
+`improve` (development only, spec sections 11.2 to 11.7) holds `improve.enabled` (false), `improve.harness`,
+`improve.minSeverity` (warning), `improve.publish` with `improve.patchFile.dir`, `improve.budget.dayUsd`,
+`improve.evidence.sample` (500), `improve.evidence.ttl` (30d), `improve.backtest.sample` (200),
+`improve.validation.timeout` (30m), `improve.distill.minDeliveries` (500), `improve.distill.language` (go),
+`improve.distill.minAgreement` (0.98), `improve.distill.minCoverage` (0.6), `improve.distill.auditRate` (0.02)
+and `improve.filter.maxFalseDrop` (0.01).
 
 - `MILLSTREAM_SERVER`, `MILLSTREAM_TOKEN`: the engine API that commands changing state go through, and
   its bearer token.

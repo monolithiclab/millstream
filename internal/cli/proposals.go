@@ -25,11 +25,11 @@ import (
 type ProposalsCmd struct {
 	List       ProposalsListCmd       `cmd:"" default:"withargs" help:"List proposals (the default)."`
 	Show       ProposalsShowCmd       `cmd:"" help:"Show a proposal: its patch and its validation report."`
-	Create     ProposalsCreateCmd     `cmd:"" help:"Propose a patch of a pipeline's package; it is validated before it is ready."`
+	Create     ProposalsCreateCmd     `cmd:"" hidden:"" help:"Propose a patch of a pipeline's package; it is validated before it is ready."`
 	Accept     ProposalsAcceptCmd     `cmd:"" help:"Accept a ready proposal on its base revision."`
 	Reject     ProposalsRejectCmd     `cmd:"" help:"Reject a proposal with a reason, given to later drafts."`
-	Revalidate ProposalsRevalidateCmd `cmd:"" help:"Validate a proposal again; a stale one is rebased onto the active revision first."`
-	Token      ProposalsTokenCmd      `cmd:"" help:"Mint the proposals-only API token of the improve package, printed once."`
+	Revalidate ProposalsRevalidateCmd `cmd:"" hidden:"" help:"Validate a proposal again; a stale one is rebased onto the active revision first."`
+	Token      ProposalsTokenCmd      `cmd:"" hidden:"" help:"Mint the proposals-only API token of the improve package, printed once."`
 }
 
 // proposalOptions are what an engine validates proposals with: the evals of the affected actions run as eval runs

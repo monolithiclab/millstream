@@ -124,7 +124,7 @@ type CLI struct {
 	DB      string `name:"db" placeholder:"DSN" help:"Store DSN, overriding store.dsn: sqlite://<path> (created with its directory) or postgres://host/db (default: sqlite://.millstream/millstream.db)."`
 	EnvFile string `name:"env-file" type:"path" env:"MILLSTREAM_ENV_FILE" help:"Environment file (default: $MILLSTREAM_ENV_FILE, else ./millstream.yaml when it exists); millstream init environment writes one."`
 	Server  string `name:"server" placeholder:"URL" help:"Change state through the API of the engine serving at this URL (default: $MILLSTREAM_SERVER; token: $MILLSTREAM_TOKEN)."`
-	Direct  bool   `name:"direct" help:"Change state from this process, not through --server; on Postgres this takes the leadership lock, waiting while an engine runs."`
+	Direct  bool   `name:"direct" hidden:"" help:"Change state from this process, not through --server; on Postgres this takes the leadership lock, waiting while an engine runs."`
 	Color   string `name:"color" enum:"auto,always,never" default:"auto" placeholder:"WHEN" help:"Color the help: auto (on a terminal, unless NO_COLOR or TERM=dumb), always or never (default: $MILLSTREAM_COLOR, else auto)."`
 
 	Init          InitCmd          `cmd:"" group:"Develop" help:"Scaffold a pipeline package or an action."`
@@ -155,7 +155,7 @@ type CLI struct {
 	Nodes         NodesCmd         `cmd:"" group:"Operate" help:"List the remote nodes, drain the one running here, or revoke one."`
 	Evidence      EvidenceCmd      `cmd:"" group:"Improve" help:"Export an evidence bundle in production; import it in development."`
 	Improve       ImproveCmd       `cmd:"" group:"Improve" help:"Run the improve pipeline on one insight or every open one; development only."`
-	Proposals     ProposalsCmd     `cmd:"" group:"Improve" help:"List, create and decide proposals."`
+	Proposals     ProposalsCmd     `cmd:"" group:"Improve" help:"List, show and decide proposals."`
 	Backtest      BacktestCmd      `cmd:"" group:"Improve" help:"Validate a patch against past items, before and after."`
 	Help          HelpCmd          `cmd:"" group:"Help" help:"Print the guide, a topic, or a command's help."`
 	Version       VersionCmd       `cmd:"" group:"Help" help:"Print the version."`

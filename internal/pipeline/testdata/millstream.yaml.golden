@@ -75,63 +75,7 @@
 ##   loopback host:port run serves the API and the UI on; unset: listen, else 127.0.0.1:7070
 #   listen: 127.0.0.1:7070   # MILLSTREAM_UI_LISTEN, example
 
-# improve:
-##   run the improve pipeline (development only)
-#   enabled: false   # MILLSTREAM_IMPROVE_ENABLED
-
-##   agent harness drafting proposals: claude-code or api
-#   harness: claude-code   # MILLSTREAM_IMPROVE_HARNESS, example
-
-##   the least severity of the problems considered: info, warning or error; opportunities (reviewPattern, distillable)
-##   start whatever theirs
-#   minSeverity: warning   # MILLSTREAM_IMPROVE_MIN_SEVERITY
-
-##   publisher of accepted proposals: apply or patch-file
-#   publish: patch-file   # MILLSTREAM_IMPROVE_PUBLISH, example
-
-#   patchFile:
-##     where the patch-file publisher writes each accepted proposal's patch
-#     dir: ./patches   # MILLSTREAM_IMPROVE_PATCH_FILE_DIR, example
-
-#   budget:
-##     what backtests may spend a day, in USD; unset: no limit
-#     dayUsd: 5   # MILLSTREAM_IMPROVE_BUDGET_DAY_USD, example
-
-#   evidence:
-##     items an evidence bundle samples
-#     sample: 500   # MILLSTREAM_IMPROVE_EVIDENCE_SAMPLE
-
-##     how long an evidence bundle lasts
-#     ttl: 30d   # MILLSTREAM_IMPROVE_EVIDENCE_TTL
-
-#   backtest:
-##     past items a backtest replays
-#     sample: 200   # MILLSTREAM_IMPROVE_BACKTEST_SAMPLE
-
-#   validation:
-##     how long a proposal's validation may run
-#     timeout: 30m   # MILLSTREAM_IMPROVE_VALIDATION_TIMEOUT
-
-#   distill:
-##     deliveries of an agent step before a distill is proposed
-#     minDeliveries: 500   # MILLSTREAM_IMPROVE_DISTILL_MIN_DELIVERIES
-
-##     language of distilled actions: go, the only one for now
-#     language: go   # MILLSTREAM_IMPROVE_DISTILL_LANGUAGE
-
-##     agreement with the agent a distilled action needs, from 0 to 1
-#     minAgreement: 0.98   # MILLSTREAM_IMPROVE_DISTILL_MIN_AGREEMENT
-
-##     share of the holdout a distilled action must answer, from 0 to 1
-#     minCoverage: 0.6   # MILLSTREAM_IMPROVE_DISTILL_MIN_COVERAGE
-
-##     share of a distilled step's items also checked by the agent, from 0 (none) to 1; needs the agent's effects to be
-##     none
-#     auditRate: 0.02   # MILLSTREAM_IMPROVE_DISTILL_AUDIT_RATE
-
-#   filter:
-##     share of past approvals a proposed filter may drop, from 0 to 1
-#     maxFalseDrop: 0.01   # MILLSTREAM_IMPROVE_FILTER_MAX_FALSE_DROP
+## improve: development only; millstream help environment lists its keys.
 
 ## token prices of agent models, by model: { <model>: { inPerMtok, outPerMtok } } in USD per million tokens
 # prices: { claude-sonnet-5: { inPerMtok: 3, outPerMtok: 15 } }   # MILLSTREAM_PRICES, example

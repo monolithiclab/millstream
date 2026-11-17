@@ -8,8 +8,11 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
+
+	"github.com/monolithiclab/millstream/internal/pipeline"
 )
 
 var update = flag.Bool("update", false, "rewrite the help golden files")
@@ -231,6 +234,32 @@ func Test_guideSections(t *testing.T) {
 	for _, tp := range topics {
 		if tp.name == "" || strings.Contains(tp.name, " ") || tp.summary == "" {
 			t.Errorf("topic %+v", tp)
+		}
+	}
+}
+
+// The listings leave out the improve package's proposals commands, whose own help still shows them, and the global
+// --direct; help environment names every improve key, which init environment folds into one line.
+func Test_helpAdvanced(t *testing.T) {
+	t.Parallel()
+	_, group, _ := runHelp(t, nil, false, "proposals", "--help")
+	for _, name := range []string{"create", "revalidate", "token"} {
+		if strings.Contains(group, "\n  "+name+" ") {
+			t.Errorf("proposals --help lists %s:\n%s", name, group)
+		}
+		if code, out, _ := runHelp(t, nil, false, "proposals", name, "--help"); code != 0 ||
+			!strings.HasPrefix(out, "Usage: millstream proposals "+name) {
+			t.Errorf("proposals %s --help: code %d:\n%s", name, code, out)
+		}
+	}
+	if !strings.Contains(group, "\n  accept ") {
+		t.Errorf("proposals --help lacks accept:\n%s", group)
+	}
+	_, topics := guideSections()
+	i := slices.IndexFunc(topics, func(tp topic) bool { return tp.name == "environment" })
+	for _, s := range pipeline.Settings(pipeline.Defaults()) {
+		if strings.HasPrefix(s.Key, pipeline.FoldedSection+".") && !strings.Contains(topics[i].text, "`"+s.Key+"`") {
+			t.Errorf("help environment does not name %s", s.Key)
 		}
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"slices"
 	"strings"
 	"time"
 
@@ -223,8 +224,13 @@ var scalarKinds = map[reflect.Kind]string{reflect.Bool: "true or false", reflect
 // fileWidth is the column the generated file's comments wrap at.
 const fileWidth = 120
 
+// FoldedSection is the section DefaultFile writes as one line pointing to millstream help environment: its keys
+// matter only in development.
+const FoldedSection = "improve"
+
 // DefaultFile is the environment file `millstream init environment` writes: every setting commented out at its
-// default (at an example when it has none), grouped by section, each key under its doc and followed by its variable.
+// default (at an example when it has none), grouped by section, each key under its doc and followed by its variable;
+// FoldedSection is one line.
 func DefaultFile() []byte {
 	var b strings.Builder
 	b.WriteString("## millstream.yaml: the environment file (spec section 14).\n##\n" +
@@ -233,6 +239,13 @@ func DefaultFile() []byte {
 		"## and a flag overrides both.\n")
 	var open []string // the sections the last line sits in
 	for _, s := range Settings(Defaults()) {
+		if strings.HasPrefix(s.Key, FoldedSection+".") {
+			if !slices.Equal(open, []string{FoldedSection}) {
+				fmt.Fprintf(&b, "\n## %s: development only; millstream help environment lists its keys.\n", FoldedSection)
+				open = []string{FoldedSection}
+			}
+			continue
+		}
 		path := strings.Split(s.Key, ".")
 		sections, leaf := path[:len(path)-1], path[len(path)-1]
 		common := 0
