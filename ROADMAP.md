@@ -40,9 +40,6 @@ decision before it reaches the spec.
 - Evidence carried without a person: a scheduled export in production and a pull in development, instead of export and
   import files, under the same redaction, expiry and export record (D31 stands). Imported insights fire `insight`
   triggers once; today they are listed, not recorded, so they fire nothing.
-- Measure after release: for each applied proposal, compare the insight's figures, the cost per approved item and the
-  intervention rate before and after, against the backtest's prediction, recorded on the proposal. A miss raises an
-  insight, a clear regression drafts a rollback, and later drafts read the record. Prerequisite for auto-applying.
 - Every insight leads somewhere: `waste` drafts the `topology` proposal it suggests in words, and `drift` a fix or a
   rollback. `cost`, `waste`, `drift` and `unschedulable` are for people until `ideasOf` (`internal/improve/gather.go`)
   makes an idea from them, and the `improve` package's `insights` trigger then lists them.
@@ -255,13 +252,6 @@ first is missing: identity, an accountable owner per agent, and records their ow
 - Signed approve and reject links in notifications, and email notifications.
 - A control plane across customer deployments (commercial edition).
 - The Claude Agent SDK as an agent harness.
-- The release workflow, at the first public release: tag push, `goreleaser release` publishing the archives and the
-  image to GHCR, cosign keyless signing (the `.goreleaser.yaml` sections are written, snapshots skip them), a Homebrew
-  formula in `monolithiclab/homebrew-tap`, and Dependabot for the `docker` ecosystem so the pinned digests refresh.
-- Publish the Go SDK at the first public release: tag the nested module `sdk/go/v0.1.0` (no separate repository, so
-  the protocol, its spec, the conformance suite and the sandbox's embedded SDK stay in one commit). In the same
-  commit, the scaffold's `go.mod.tmpl` requires that version and drops its replace comment, and
-  `docs/guides/getting-started.md` drops `MILLSTREAM_REPO` and both `go mod edit -replace` steps.
 - An image variant for nodes that run interpreted or container actions (a shell, Python, the Docker CLI): the
   distroless image runs static exec binaries only.
 
@@ -272,7 +262,6 @@ first is missing: identity, an accountable owner per agent, and records their ow
 - Sharding pipelines across several Postgres stores (D26).
 - Federation of independent instances with their own stores, for data residency.
 - Streams shared across instances.
-- Python SDK.
 - Go SDK schema generation from Go types (spec section 6.6).
 - Vault and Kubernetes secret sources.
 - NATS JetStream store for high-throughput deployments (D2).
