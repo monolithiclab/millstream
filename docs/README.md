@@ -7,6 +7,7 @@ editor; `make docs` checks that every link here resolves.
 
 | Page | Read it to |
 | --- | --- |
+| [Quickstart](guides/quickstart.md) | Run the example pipeline offline, with no model key, and approve its first reviews in the web UI, in five minutes |
 | [Getting started](guides/getting-started.md) | Go from nothing to a running pipeline with an agent step and a human review, on a laptop, in about 40 minutes |
 | [Agents in production](guides/agents.md) | Run agent steps whose answers are validated, whose cost is bounded and whose behaviour improves: schemas, abstain and fallback, sandbox, budgets, transcripts, evals, proposals |
 | [Deployment](guides/deployment.md) | Run Millstream on a server: the container image, Docker Compose, systemd, remote nodes, failover, security, retention, backups and upgrades |

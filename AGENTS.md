@@ -133,6 +133,7 @@ how the suites work, and `make help` for every command.
 | `docs/decisions.md` | Architecture decisions D1 onward |
 | `docs/reference/action-protocol.md` | The action protocol, for action authors and SDKs |
 | `docs/guides/deployment.md` | Deployment: the image, Compose, systemd, security, backups and upgrades |
+| `docs/guides/quickstart.md` | The quickstart over the listings example (`init pipeline --from listings`): every command and output run for real |
 | `docs/guides/getting-started.md` | The getting-started tutorial: every command and output in it is run for real |
 | `docs/development/testing.md` | The test suites: budget mechanics, fixtures, Postgres, end-to-end and UI suites |
 | `docs/development/soak.md` | The soak test |
