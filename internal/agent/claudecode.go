@@ -53,14 +53,17 @@ func (c ClaudeCode) Args(req Request) []string {
 }
 
 // claudePrompt is the prompt of req on stdin. Claude Code keeps no session to continue (--no-session-persistence),
-// so a repair is a fresh run whose prompt holds the original one, then each rejected answer with its feedback.
-func claudePrompt(req Request) string {
+// so a repair is a fresh run whose prompt holds the original one, then each rejected answer with its feedback; the
+// transcript's user turn is what this run adds, the prompt or the last repair, as the earlier ones are in it already.
+func claudePrompt(req Request) (prompt, turn string) {
 	var b strings.Builder
 	b.WriteString(req.Prompt)
+	turn = req.Prompt
 	for _, r := range req.Repairs {
-		b.WriteString("\n\nYour previous answer was:\n\n```\n" + r.Answer + "\n```\n\n" + r.Feedback + "\n")
+		turn = "\n\nYour previous answer was:\n\n```\n" + r.Answer + "\n```\n\n" + r.Feedback + "\n"
+		b.WriteString(turn)
 	}
-	return b.String()
+	return b.String(), turn
 }
 
 // claudeResult is the result line of Claude Code's output. Every field is optional: a missing one reads as zero.
@@ -93,14 +96,14 @@ func (c ClaudeCode) run(cmd *osexec.Cmd) error {
 func (c ClaudeCode) Run(ctx context.Context, req Request) (Response, error) {
 	cmd := osexec.CommandContext(ctx, c.Bin, c.Args(req)...) // #nosec G204 -- the claude CLI, with arguments we build
 	cmd.Env, cmd.Dir = c.Env, c.Dir
-	prompt := claudePrompt(req)
+	prompt, turn := claudePrompt(req)
 	cmd.Stdin = strings.NewReader(prompt)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &limitedWriter{w: &stdout, n: maxHarnessOutput}
 	cmd.Stderr = &limitedWriter{w: &stderr, n: 64 << 10}
 	runErr := c.run(cmd)
 
-	resp := Response{Transcript: []Turn{{Role: "user", Text: prompt}}}
+	resp := Response{Transcript: []Turn{{Role: "user", Text: turn}}}
 	var result *claudeResult
 	sc := bufio.NewScanner(&stdout)
 	sc.Buffer(make([]byte, 0, 64<<10), maxHarnessOutput)

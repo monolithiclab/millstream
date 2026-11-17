@@ -325,11 +325,7 @@ func (a *adapter) attempt(ctx context.Context, it protocol.Item, t *Transcript) 
 		}
 		// A repair turn (spec section 7.1): the answer goes back with the validator's errors, within what the
 		// attempt has left of its turns and its cost.
-		answer := resp.Text
-		if len(resp.Structured) > 0 {
-			answer = string(resp.Structured)
-		}
-		req.Repairs = append(req.Repairs, Repair{Answer: answer, Feedback: repairFeedback(e)})
+		req.Repairs = append(req.Repairs, a.repair(resp, e))
 		req.MaxTurns = a.agent.MaxTurns - t.NumTurns
 		if limit > 0 {
 			req.MaxCostUSD = limit - t.CostUSD
@@ -337,10 +333,22 @@ func (a *adapter) attempt(ctx context.Context, it protocol.Item, t *Transcript) 
 	}
 }
 
-// repairFeedback is the follow-up turn holding the validator's errors on a rejected answer.
-func repairFeedback(e *Error) string {
-	return "Your answer was rejected: " + e.Msg + "\n\nAnswer again with a corrected result, in the form asked " +
-		"for above."
+// repair is the repair turn on the rejected answer resp: the answer as a replay reads it back from its recording
+// (redacted, and native structured output compact with sorted keys), so the repair's recording key is the same in
+// record and replay, and the feedback holding the validator's errors.
+func (a *adapter) repair(resp Response, e *Error) Repair {
+	answer := a.redact.String(resp.Text)
+	if len(resp.Structured) > 0 {
+		var v any
+		dec := json.NewDecoder(bytes.NewReader(resp.Structured))
+		dec.UseNumber()                 // numbers keep their text, as in a recording
+		_ = dec.Decode(&v)              // Extract checked it is JSON
+		canonical, _ := json.Marshal(v) // decoded JSON always encodes
+		canonical, _ = a.redact.JSON(canonical)
+		answer = string(canonical)
+	}
+	return Repair{Answer: answer, Feedback: a.redact.String("Your answer was rejected: " + e.Msg + "\n\nAnswer " +
+		"again with a JSON value valid against the output schema, in the form asked for above.")}
 }
 
 // validate extracts the structured output of an answer and validates it against the output schema, recording it

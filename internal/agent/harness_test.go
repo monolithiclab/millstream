@@ -431,7 +431,8 @@ func TestClaudeCodeFailuresInProcess(t *testing.T) {
 }
 
 // TestClaudeCodeRepair: the claude-code harness keeps no session to continue (--no-session-persistence), so a
-// repair is a fresh run whose prompt holds the original prompt, then each rejected answer with the feedback on it.
+// repair is a fresh run whose prompt holds the original prompt, then each rejected answer with the feedback on it;
+// its transcript turn is the repair alone.
 func TestClaudeCodeRepair(t *testing.T) {
 	t.Parallel()
 	cli := &fakeCLI{out: claudeStream}
@@ -442,7 +443,7 @@ func TestClaudeCodeRepair(t *testing.T) {
 		t.Fatalf("Run: %v", err)
 	}
 	if !strings.HasPrefix(cli.stdin, "Score it.\n") || !strings.Contains(cli.stdin, "```\n{\"score\":\"high\"}\n```") ||
-		!strings.HasSuffix(cli.stdin, "The score must be an integer.\n") || resp.Transcript[0].Text != cli.stdin ||
+		!strings.HasSuffix(cli.stdin, "The score must be an integer.\n") || !strings.HasPrefix(resp.Transcript[0].Text, "\n\nYour previous answer") ||
 		!strings.Contains(strings.Join(cli.args, " "), "--max-turns 6") {
 		t.Fatalf("stdin %q, args %v", cli.stdin, cli.args)
 	}

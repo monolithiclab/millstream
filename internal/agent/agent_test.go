@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	osexec "os/exec"
 	"path/filepath"
 	"runtime/debug"
 	"slices"
@@ -281,7 +282,8 @@ func TestRunAbstains(t *testing.T) {
 	}
 }
 
-// TestRunFailures: what each failure answers, retryable or not, always with the transcript once the harness ran.
+// TestRunFailures: what each failure answers, retryable or not, always with the transcript once the harness ran;
+// an answer without JSON is a schema-validation failure, after its repair turn.
 func TestRunFailures(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
@@ -290,17 +292,17 @@ func TestRunFailures(t *testing.T) {
 		fn        func(Request) (Response, error)
 		retryable bool
 		message   string
-		metrics   bool
+		metrics   int // the metrics sent: 5, with the schema-validation failure 6
 	}{
-		{"no structured output", testPrompt, answer("I cannot score this.", 1, 1), true, "no structured output", true},
-		{"invalid fenced block", testPrompt, answer("```json\n{score: 7}\n```", 1, 1), true, "is not JSON", true},
+		{"no structured output", testPrompt, answer("I cannot score this.", 1, 1), true, "no structured output", 6},
+		{"invalid fenced block", testPrompt, answer("```json\n{score: 7}\n```", 1, 1), true, "is not JSON", 6},
 		{"harness permanent", testPrompt, func(Request) (Response, error) {
 			return Response{}, permanent("replay: no recording")
-		}, false, "no recording", true},
+		}, false, "no recording", 5},
 		{"harness transient", testPrompt, func(Request) (Response, error) {
 			return Response{}, errors.New("connection reset")
-		}, true, "connection reset", true},
-		{"template fails", "{{ .Nope }}", answer("", 0, 0), false, "render prompt", false},
+		}, true, "connection reset", 5},
+		{"template fails", "{{ .Nope }}", answer("", 0, 0), false, "render prompt", 0},
 	}
 	workdir := testdir.New(t) // the cases run in turn, each writing its transcript over the last
 	for _, tt := range tests {
@@ -312,8 +314,8 @@ func TestRunFailures(t *testing.T) {
 				len(last.Artifacts) != 1 {
 				t.Fatalf("answer %+v", msgs[len(msgs)-1])
 			}
-			if got := len(msgs) == 6; got != tt.metrics {
-				t.Fatalf("metrics sent %v, want %v: %+v", got, tt.metrics, msgs)
+			if got := len(msgs) - 1; got != tt.metrics {
+				t.Fatalf("metrics sent %d, want %d: %+v", got, tt.metrics, msgs)
 			}
 		})
 	}
@@ -531,7 +533,9 @@ func TestRunLessons(t *testing.T) {
 
 // TestRunRepairs: an answer failing the output schema goes back to the model, a fake Messages API, with the
 // validator's errors as a follow-up turn, and the corrected answer is emitted: two turns, both in the transcript,
-// each recorded under the key of the whole conversation so far, so a replay answers the same without a model.
+// each recorded under the key of the whole conversation so far, so a replay answers the same without a model. The
+// rejected answer holds a secret value, which the recording stores redacted: the repair sends it redacted, so its
+// key is the same in record and replay.
 func TestRunRepairs(t *testing.T) {
 	t.Parallel()
 	var mu sync.Mutex
@@ -544,7 +548,7 @@ func TestRunRepairs(t *testing.T) {
 		mu.Lock()
 		convs = append(convs, b.Messages)
 		mu.Unlock()
-		text := "Here.\n```json\n{\"score\": \"high\"}\n```"
+		text := "Here, with sk-test-0123456789.\n```json\n{\"score\": \"high\"}\n```"
 		if len(b.Messages) == 3 {
 			text = "```json\n{\"score\": 7}\n```"
 		}
@@ -584,7 +588,7 @@ func TestRunRepairs(t *testing.T) {
 	}
 	repair := convs[1]
 	if repair[0]["role"] != "user" || repair[0]["content"] != convs[0][0]["content"] || repair[1]["role"] != "assistant" ||
-		repair[1]["content"] != "Here.\n```json\n{\"score\": \"high\"}\n```" || repair[2]["role"] != "user" ||
+		repair[1]["content"] != "Here, with [redacted:apiToken].\n```json\n{\"score\": \"high\"}\n```" || repair[2]["role"] != "user" ||
 		!strings.Contains(repair[2]["content"], "score") {
 		t.Fatalf("repair conversation %+v", repair)
 	}
@@ -644,5 +648,69 @@ func TestRunRepairLimits(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// cliFunc answers a ClaudeCode invocation in-process with the output fn prints for its stdin.
+type cliFunc func(stdin string) string
+
+func (f cliFunc) Run(cmd *osexec.Cmd) error {
+	b, err := io.ReadAll(cmd.Stdin)
+	if err == nil {
+		_, err = io.WriteString(cmd.Stdout, f(string(b)))
+	}
+	return err
+}
+
+// TestRunRepairsClaudeCode: a claude-code repair replays from its recording although the recording stores the
+// rejected structured output redacted, re-encoded and re-indented: the repair sends it compact, with sorted keys and
+// redacted, as a replay reads it back.
+func TestRunRepairsClaudeCode(t *testing.T) {
+	t.Parallel()
+	var mu sync.Mutex
+	var stdins []string
+	cli := cliFunc(func(stdin string) string {
+		mu.Lock()
+		stdins = append(stdins, stdin)
+		mu.Unlock()
+		out := `{"score":   "high", "note": "sk-test-0123456789", "a": 1.50}`
+		if strings.Contains(stdin, "Your previous answer") {
+			out = `{"score": 7}`
+		}
+		return `{"type":"result","subtype":"success","num_turns":1,"result":"","structured_output":` + out +
+			`,"total_cost_usd":0.001}` + "\n"
+	})
+	manifest := strings.Replace(testManifest, "harness: api", "harness: claude-code", 1)
+	pkg, dir := memPackage(t, manifest, testPrompt), testdir.New(t)
+	for _, mode := range []string{ModeRecord, ModeReplay} {
+		s := newSession(t, pkg, ClaudeCode{Bin: "claude", cli: cli})
+		s.env[EnvHarnessMode], s.env[EnvHarnessDir] = mode, dir
+		msgs := s.run(`{"url": "u"}`)
+		if emit, ok := msgs[len(msgs)-2].(protocol.Emit); !ok || string(emit.Payload) != `{"score":7}` {
+			t.Fatalf("%s: messages %+v", mode, msgs)
+		}
+	}
+	if len(stdins) != 2 || !strings.Contains(stdins[1],
+		"```\n{\"a\":1.50,\"note\":\"[redacted:apiToken]\",\"score\":\"high\"}\n```") {
+		t.Fatalf("the CLI ran %d times, the repair's stdin:\n%s", len(stdins), stdins[len(stdins)-1])
+	}
+}
+
+// TestRunRepairsNoJSON: an answer holding no JSON at all gets a repair turn too, saying what form to answer in.
+func TestRunRepairsNoJSON(t *testing.T) {
+	t.Parallel()
+	h := &fakeHarness{fn: func(req Request) (Response, error) {
+		if len(req.Repairs) == 0 {
+			return answer("I would say about seven.", 1, 1)(req)
+		}
+		return answer(`{"score": 7}`, 1, 1)(req)
+	}}
+	msgs := newSession(t, memPackage(t, testManifest, testPrompt), h).run(`{"url": "u"}`)
+	if emit, ok := msgs[len(msgs)-2].(protocol.Emit); !ok || string(emit.Payload) != `{"score":7}` || len(h.reqs) != 2 {
+		t.Fatalf("calls %d, messages %+v", len(h.reqs), msgs)
+	}
+	if f := h.reqs[1].Repairs[0].Feedback; !strings.Contains(f, "no fenced json block") ||
+		!strings.Contains(f, "JSON value valid against the output schema") {
+		t.Fatalf("feedback %q", f)
 	}
 }

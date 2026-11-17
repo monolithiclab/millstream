@@ -79,7 +79,8 @@ func lessonsSection(l pipeline.Lessons) string {
 var fence = regexp.MustCompile("(?s)```json[ \t]*\r?\n(.*?)\r?\n?```")
 
 // Extract returns the structured output of a response: the harness's native structured output when it has one,
-// else the last fenced ```json block of its text, else the whole text when it is JSON itself.
+// else the last fenced ```json block of its text, else the whole text when it is JSON itself. An answer without
+// JSON is a schema-class Error, which a repair turn answers; native output that is not JSON is the harness's fault.
 func Extract(resp Response) (json.RawMessage, error) {
 	if len(resp.Structured) > 0 {
 		if !json.Valid(resp.Structured) {
@@ -90,12 +91,12 @@ func Extract(resp Response) (json.RawMessage, error) {
 	if blocks := fence.FindAllStringSubmatch(resp.Text, -1); len(blocks) > 0 {
 		body := []byte(strings.TrimSpace(blocks[len(blocks)-1][1]))
 		if !json.Valid(body) {
-			return nil, retryable("the last fenced json block of the answer is not JSON")
+			return nil, schemaFailure("the last fenced json block of the answer is not JSON")
 		}
 		return body, nil
 	}
 	if body := bytes.TrimSpace([]byte(resp.Text)); len(body) > 0 && json.Valid(body) {
 		return body, nil
 	}
-	return nil, retryable("the answer holds no structured output: no fenced json block")
+	return nil, schemaFailure("the answer holds no structured output: no fenced json block")
 }
