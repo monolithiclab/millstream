@@ -212,3 +212,50 @@ func (f *fakeProposals) RecordPublished(_ context.Context, id, publisher, where 
 	f.events = append(f.events, store.Event{Kind: store.EventProposalPublished, Data: data})
 	return nil
 }
+
+// TestBuildCommand: a distill proposal's publication says how to build the Go action it publishes; no other kind, and
+// no distill patch that adds no action, says anything.
+func TestBuildCommand(t *testing.T) {
+	t.Parallel()
+	add := func(path string) string {
+		return "--- /dev/null\n+++ b/" + path + "\n@@ -0,0 +1 @@\n+x\n"
+	}
+	distillPatch := add("actions/score-rules/main.go") + add("actions/score-rules/action.yaml")
+	want := "cd actions/score-rules && go build -o bin/$(go env GOOS)-$(go env GOARCH)/score-rules ."
+	if got := BuildCommand(store.ProposalDistill, distillPatch); got != want {
+		t.Errorf("BuildCommand(distill) = %q, want %q", got, want)
+	}
+	for name, c := range map[string]struct {
+		kind  store.ProposalKind
+		patch string
+	}{
+		"config kind": {store.ProposalConfig, distillPatch},
+		"no action":   {store.ProposalDistill, diff},
+		"unparsed":    {store.ProposalDistill, "not a patch"},
+		"empty patch": {store.ProposalDistill, ""},
+		"modify only": {store.ProposalDistill, strings.Replace(distillPatch, "/dev/null", "a/actions/x/main.go", 2)},
+	} {
+		if got := BuildCommand(c.kind, c.patch); got != "" {
+			t.Errorf("%s: BuildCommand = %q, want none", name, got)
+		}
+	}
+	// Proposal carries it on the result, published now or before.
+	st := &fakeProposals{p: store.Proposal{NewProposal: store.NewProposal{ID: "pr_2", Pipeline: "extra",
+		Kind: store.ProposalDistill, Patch: distillPatch, PatchSHA256: patch.Hash([]byte(distillPatch))},
+		State: store.ProposalAccepted}}
+	for i, wantAgain := range []bool{false, true} {
+		res, again, err := Proposal(t.Context(), st, stubPublisher{}, "pr_2", st.p.PatchSHA256)
+		if err != nil || again != wantAgain || res.Build != want {
+			t.Errorf("publication %d: build %q, again %v, %v; want %q", i, res.Build, again, err, want)
+		}
+	}
+}
+
+// stubPublisher publishes anything, as a patch file.
+type stubPublisher struct{}
+
+func (stubPublisher) Name() string { return pipeline.PublishPatchFile }
+
+func (stubPublisher) Publish(context.Context, Accepted) (Result, error) {
+	return Result{Publisher: pipeline.PublishPatchFile, Where: "x.patch"}, nil
+}

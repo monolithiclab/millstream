@@ -1109,6 +1109,7 @@ paths:
                   proposal: { type: string }
                   publisher: { type: string, description: "apply or patch-file." }
                   location: { type: string, description: The revision number or the patch file. }
+                  build: { type: string, description: "A distill proposal only: the command, run in the package directory, that builds the Go action it published (nothing builds it on its own)." }
                   again: { type: boolean, description: Published before; nothing was done this time. }
         "400": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }

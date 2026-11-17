@@ -87,5 +87,8 @@ func (a *action) publishOne(ctx context.Context, p api.Proposal) (Outcome, error
 	if res.Again {
 		o.Message = "published already by " + res.Publisher
 	}
+	if res.Build != "" {
+		o.Message += "; build it with: " + res.Build
+	}
 	return o, nil
 }

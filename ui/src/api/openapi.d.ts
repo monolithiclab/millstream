@@ -4046,6 +4046,8 @@ export interface operations {
             publisher: string;
             /** @description The revision number or the patch file. */
             location: string;
+            /** @description A distill proposal only: the command, run in the package directory, that builds the Go action it published (nothing builds it on its own). */
+            build?: string;
             /** @description Published before; nothing was done this time. */
             again: boolean;
           };

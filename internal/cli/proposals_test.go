@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/monolithiclab/millstream/internal/api"
 	"github.com/monolithiclab/millstream/internal/patch"
 	"github.com/monolithiclab/millstream/internal/pipeline"
 	"github.com/monolithiclab/millstream/internal/store"
@@ -103,5 +104,26 @@ func Test_validationSummary(t *testing.T) {
 		if got := validationSummary([]byte(tt.report)); got != tt.want {
 			t.Errorf("%s: %q, want %q", tt.report, got, tt.want)
 		}
+	}
+}
+
+// printProposal tells how to build the action a distill proposal publishes, and says nothing of it for other kinds.
+func Test_printProposalBuild(t *testing.T) {
+	t.Parallel()
+	patchText := "--- /dev/null\n+++ b/actions/score-rules/main.go\n@@ -0,0 +1 @@\n+x\n"
+	var out strings.Builder
+	if err := printProposal(&out, api.Proposal{ID: "pr_1", Kind: "distill", Patch: patchText}, true); err != nil {
+		t.Fatal(err)
+	}
+	want := "build: cd actions/score-rules && go build -o bin/$(go env GOOS)-$(go env GOARCH)/score-rules .\n"
+	if !strings.Contains(out.String(), want) {
+		t.Errorf("distill proposal shows %q, want %q", out.String(), want)
+	}
+	out.Reset()
+	if err := printProposal(&out, api.Proposal{ID: "pr_2", Kind: "config", Patch: patchText}, true); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(out.String(), "build:") {
+		t.Errorf("config proposal shows a build line: %q", out.String())
 	}
 }

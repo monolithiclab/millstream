@@ -103,12 +103,13 @@ first is missing: identity, an accountable owner per agent, and records their ow
   per-pipeline charge outside deliveries yet).
   Replays of runs a replay or an import opened, and of evidence (which carries no run variables, resolved anew), are
   left out or approximated.
-- Distill (spec section 11.5): validation builds the candidate and runs its evals and the holdout, not its unit
-  tests (`go test` in the sandbox would); the holdout run gives the code an empty config and no variables, so a step
-  whose agent reads its config is measured without it; an accepted Go action reaches production as any exec action
-  does, built into its `bin/<os>-<arch>/` (nothing builds it on `apply` yet). A retention or erasure pass between the
-  gathering and the validation that removes an entity's oldest pair can move it to the holdout: record the training
-  entities if that ever matters. Python and other `improve.distill.language` values wait for a sandbox image each.
+- Distill (spec section 11.5): validation builds the candidate and runs its evals and the holdout, not its unit tests
+  (`go test` in the sandbox would); the holdout run gives the code an empty config and no variables, so a step whose
+  agent reads its config is measured without it; an accepted Go action reaches production as any exec action does, built
+  by its author into its `bin/<os>-<arch>/` (the publish result and `proposals show` give the command; no build
+  machinery, by ruling). A retention or erasure pass between the gathering and the validation that removes an entity's
+  oldest pair can move it to the holdout: record the training entities if that ever matters. Python and other
+  `improve.distill.language` values wait for a sandbox image each.
 - The improve package: its actions call the API over plain HTTP on the address the engine serves; with `tls`, a
   self-signed certificate would fail them (trust the configured certificate, or a loopback listener for them). Only the
   embedded `improve` pipeline gets the `improveApi` and `improveToken` secrets: a fork (`init pipeline --from improve`)
@@ -272,6 +273,7 @@ first is missing: identity, an accountable owner per agent, and records their ow
 - Federation of independent instances with their own stores, for data residency.
 - Streams shared across instances.
 - Python SDK.
+- Go SDK schema generation from Go types (spec section 6.6).
 - Vault and Kubernetes secret sources.
 - NATS JetStream store for high-throughput deployments (D2).
 - Alerting rules in the engine (v1 relies on Prometheus alerting).

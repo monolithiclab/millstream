@@ -10,6 +10,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/monolithiclab/millstream/internal/patch"
@@ -43,6 +44,30 @@ type Result struct {
 	Publisher string
 	// Where is the revision apply created (its number) or the file patch-file wrote.
 	Where string
+	// Build is, for a distill proposal, the command that builds the Go action the patch adds, which nothing builds
+	// on its own (spec section 11.5); empty for other proposals.
+	Build string
+}
+
+// BuildCommand is the command that builds the Go action a distill proposal's patch adds, run in the directory of the
+// pipeline's package: an exec action resolves its program to bin/<os>-<arch>/<name> (spec section 6.2), and nothing
+// builds it for the author. It is empty for any other kind of proposal.
+func BuildCommand(kind store.ProposalKind, diff string) string {
+	if kind != store.ProposalDistill {
+		return ""
+	}
+	p, err := patch.Parse([]byte(diff))
+	if err != nil {
+		return ""
+	}
+	for _, f := range p.Files {
+		if rest, ok := strings.CutPrefix(f.Path, "actions/"); ok && f.Op == patch.OpCreate {
+			if dir, _, found := strings.Cut(rest, "/"); found && dir != "" {
+				return fmt.Sprintf("cd actions/%[1]s && go build -o bin/$(go env GOOS)-$(go env GOARCH)/%[1]s .", dir)
+			}
+		}
+	}
+	return ""
 }
 
 // Publisher is a publish action.
@@ -136,12 +161,13 @@ func Proposal(ctx context.Context, st ProposalStore, p Publisher, id, patchSHA25
 		return Result{}, false, fmt.Errorf("%w: proposal %s: patch %.12s is not the validated one (%.12s)", ErrRefused,
 			id, patchSHA256, prop.PatchSHA256)
 	}
+	build := BuildCommand(prop.Kind, prop.Patch)
 	published, err := Publications(ctx, st, prop.Pipeline)
 	if err != nil {
 		return Result{}, false, err
 	}
 	if done, ok := published[id]; ok {
-		return Result{Publisher: done.Publisher, Where: done.Where}, true, nil
+		return Result{Publisher: done.Publisher, Where: done.Where, Build: build}, true, nil
 	}
 	if p.Name() == pipeline.PublishApply {
 		evs, err := st.PipelineEvents(ctx, store.EventFilter{Pipeline: prop.Pipeline,
@@ -155,7 +181,7 @@ func Proposal(ctx context.Context, st ProposalStore, p Publisher, id, patchSHA25
 				Revision json.Number
 			}
 			if ev.Kind == store.EventProposalApplied && json.Unmarshal(ev.Data, &applied) == nil && applied.ID == id {
-				res = Result{Publisher: pipeline.PublishApply, Where: applied.Revision.String()}
+				res = Result{Publisher: pipeline.PublishApply, Where: applied.Revision.String(), Build: build}
 				return res, true, st.RecordPublished(ctx, id, res.Publisher, res.Where)
 			}
 		}
@@ -163,6 +189,7 @@ func Proposal(ctx context.Context, st ProposalStore, p Publisher, id, patchSHA25
 	if res, err = p.Publish(ctx, FromProposal(prop)); err != nil {
 		return res, false, err
 	}
+	res.Build = build
 	return res, false, st.RecordPublished(ctx, id, res.Publisher, res.Where)
 }
 

@@ -148,6 +148,9 @@ func printProposal(w io.Writer, p api.Proposal, full bool) error {
 		}
 		fmt.Fprintln(w)
 	}
+	if build := publish.BuildCommand(store.ProposalKind(p.Kind), p.Patch); build != "" {
+		fmt.Fprintf(w, "build: %s\n", build)
+	}
 	_, err := fmt.Fprintf(w, "\n%s", p.Patch)
 	return err
 }

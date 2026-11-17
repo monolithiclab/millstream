@@ -96,7 +96,9 @@ type PublishedProposal struct {
 	Proposal  string `json:"proposal"`
 	Publisher string `json:"publisher"`
 	Location  string `json:"location"`
-	Again     bool   `json:"again"`
+	// Build is the command that builds the Go action a distill proposal published; empty for other kinds.
+	Build string `json:"build,omitempty"`
+	Again bool   `json:"again"`
 }
 
 // ProposalToken is a proposals-only token, shown once.
@@ -280,7 +282,7 @@ func (s *Server) publishProposal(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	writeJSON(w, http.StatusOK, PublishedProposal{Proposal: id, Publisher: res.Publisher, Location: res.Where,
-		Again: again})
+		Build: res.Build, Again: again})
 	return nil
 }
 
