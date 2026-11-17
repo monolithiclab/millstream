@@ -96,6 +96,11 @@ first is missing: identity, an accountable owner per agent, and records their ow
   quickstart exports nothing.
 - A distinct `run --once` exit code for a run waiting on reviews, so the quickstart's expected outcome is not exit 1
   (today any run that has not succeeded exits 1).
+- Metrics for two alerts `deploy/prometheus/alerts.yaml` cannot write today: a gauge saying whether the engine
+  holds the leadership (an alert on no leader, or on two), and the age of the oldest parked review per pipeline (an
+  alert on a review queue nobody works).
+- A Go line-length lint (`lll` at 120 columns, comments included): comments over 120 columns recurred through the
+  pre-release review, caught only by reviewers.
 - Backtests: the improve budget they charge is a per-process `backtest.Ledger` against `improve.budget.dayUsd`,
   while the improve pipeline's own agents charge its `budget.dayUsd` (the same figure) in the store: charge the
   backtests to the pipeline's `budget_days` too, so both share one day budget across restarts (the store has no
