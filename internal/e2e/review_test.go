@@ -3,6 +3,7 @@
 package e2e
 
 import (
+	"cmp"
 	"encoding/json"
 	"slices"
 	"strings"
@@ -23,11 +24,13 @@ type parkedReview struct {
 	DeliveryID string `json:"deliveryId"`
 	Display    string `json:"display"`
 	Item       struct {
+		ID  string `json:"id"`
 		Key string `json:"key"`
 	} `json:"item"`
 }
 
-// inbox lists the open reviews (or samples) on db, sorted by item key.
+// inbox lists the open reviews (or samples) on db, sorted by item key, then id: the review fixture's shortlisted
+// items have no key, and the store lists them in the order they were parked, which a crash changes.
 func inbox(t *testing.T, db string, args ...string) []parkedReview {
 	t.Helper()
 	r := mustExit(t, 0, db, nil, append([]string{"inbox"}, args...)...)
@@ -42,12 +45,14 @@ func inbox(t *testing.T, db string, args ...string) []parkedReview {
 		}
 		out = append(out, p)
 	}
-	slices.SortFunc(out, func(a, b parkedReview) int { return strings.Compare(a.Item.Key, b.Item.Key) })
+	slices.SortFunc(out, func(a, b parkedReview) int {
+		return cmp.Or(strings.Compare(a.Item.Key, b.Item.Key), strings.Compare(a.Item.ID, b.Item.ID))
+	})
 	return out
 }
 
-// decideAll decides every open review the way the clean reference does, with env set on each command: the first by
-// item key rejected as overpriced, the second approved with its rent edited, the others approved as they are. The
+// decideAll decides every open review the way the clean reference does, with env set on each command: the first in that
+// order rejected as overpriced, the second approved with its rent edited, the others approved as they are. The
 // first decision runs with first's environment (a failpoint) and must exit with firstCode; it is then made again.
 func decideAll(t *testing.T, db string, first []string, firstCode int) {
 	t.Helper()
