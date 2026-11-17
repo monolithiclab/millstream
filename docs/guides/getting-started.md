@@ -204,8 +204,8 @@ millstream trigger listings adhoc --payload '{"name":"Ada"}'
 run_20261020T162512Z-a8bab96e_adhoc
 ```
 
-Now start the engine in a second terminal (same directory, same `PATH`). `millstream run` without `--once` keeps
-running, serves the API and the UI on 127.0.0.1:7070, and picks up the waiting run:
+Now start the engine in a second terminal (same directory, same `PATH` and `MILLSTREAM_REPO`). `millstream run`
+without `--once` keeps running, serves the API and the UI on 127.0.0.1:7070, and picks up the waiting run:
 
 ```sh
 millstream run 2>../engine.log
@@ -603,10 +603,11 @@ tests and CI run agents. With a real provider, only the manifest's `runtime.agen
 The repository ships the stand-in, [`examples/fakemodel`](../../examples/fakemodel/main.go): an OpenAI-compatible
 endpoint on `127.0.0.1:8099` that scores the listing a prompt describes, `Listing <id> in <city>: <surface> m²,
 condition <condition>, asking <price> EUR`, from its price per square metre. Start it from the checkout in a third
-terminal:
+terminal, where `MILLSTREAM_REPO` is not set yet:
 
 ```sh
-cd $MILLSTREAM_REPO
+export MILLSTREAM_REPO=~/path/to/millstream   # the checkout of section 2
+cd "$MILLSTREAM_REPO"
 go run ./examples/fakemodel
 ```
 

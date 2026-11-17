@@ -91,6 +91,11 @@ first is missing: identity, an accountable owner per agent, and records their ow
 
 ## Follow-ups
 
+- An environment-file key for agent record and replay (today only `MILLSTREAM_HARNESS_MODE` and
+  `MILLSTREAM_HARNESS_DIR`), refused in production, so the listings example's `millstream.yaml` sets replay and the
+  quickstart exports nothing.
+- A distinct `run --once` exit code for a run waiting on reviews, so the quickstart's expected outcome is not exit 1
+  (today any run that has not succeeded exits 1).
 - Backtests: the improve budget they charge is a per-process `backtest.Ledger` against `improve.budget.dayUsd`,
   while the improve pipeline's own agents charge its `budget.dayUsd` (the same figure) in the store: charge the
   backtests to the pipeline's `budget_days` too, so both share one day budget across restarts (the store has no

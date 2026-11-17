@@ -168,6 +168,7 @@ its journey through every step, the agent's prompt, tokens and cost included. St
 
 - [Getting started](getting-started.md) builds a pipeline like this one from scratch: actions in Go, routing,
   operations, recording an agent against a stand-in model, evals and budgets.
-- To score with a real model, change `runtime.agent` in `actions/score/action.yaml` and unset
+- To score with a real model, change `runtime.agent` in `actions/score/action.yaml`, export the model's key as
+  `MILLSTREAM_SECRET_SCORER_KEY` (the pipeline's `scorerKey` secret, which a replay does not need) and unset
   `MILLSTREAM_HARNESS_MODE`; getting started's "With a real model" says how.
 - `millstream help` is a short guide to the CLI, and [the documentation index](../README.md) lists every page.
