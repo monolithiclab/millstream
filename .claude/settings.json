@@ -14,7 +14,21 @@
       "Bash(git rev-parse *)",
       "Bash(git ls-files *)",
       "Bash(gh run *)",
-      "Bash(gh pr view *)"
+      "Bash(gh pr view *)",
+      "Bash(git push)",
+      "Bash(git push *)"
+    ],
+    "deny": [
+      "Bash(git push --force*)",
+      "Bash(git push -f*)",
+      "Bash(git push --force-with-lease*)",
+      "Bash(git push --tags*)",
+      "Bash(git push --mirror*)",
+      "Bash(git push --delete*)",
+      "Bash(git push * --force*)",
+      "Bash(git push * -f*)",
+      "Bash(git push * --tags*)",
+      "Bash(git push origin v*)"
     ]
   }
 }
