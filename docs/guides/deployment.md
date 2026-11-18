@@ -17,7 +17,7 @@ three targets: a laptop, a VPS with Docker Compose, and a VPS with systemd.
 | Artefact | Where | Contents |
 | --- | --- | --- |
 | Container image | `make image` (tag `millstream:dev`); releases at `ghcr.io/monolithiclab/millstream` | Distroless static, uid 65532, `ENTRYPOINT ["/millstream"]` |
-| Release archives | `make release-snapshot` writes `dist/` | `linux`/`darwin` × `amd64`/`arm64`, an SPDX SBOM each, `SHA256SUMS` |
+| Release archives | `make release-snapshot` writes `dist/`; CI builds and checks it with `make test-release` | `linux`/`darwin` × `amd64`/`arm64`, an SPDX SBOM each, `SHA256SUMS`, the Homebrew formula |
 | Compose file | [`deploy/compose/`](../../deploy/compose/) | Postgres 17, an active and a standby engine, two nodes |
 | systemd units | [`deploy/systemd/`](../../deploy/systemd/) | `millstream.service` (engine), `millstream-node.service` (node) |
 

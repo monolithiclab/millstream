@@ -1,7 +1,7 @@
-# GoReleaser v2.18.3, pinned in tools/release/go.mod with syft. Snapshot builds only in this phase:
-# make release-snapshot runs `goreleaser release --snapshot --clean --skip=sign`, which publishes nothing and needs no
-# credentials. The release workflow (tag push, cosign keyless signing, GHCR push, Homebrew tap) arrives with the first
-# public release.
+# GoReleaser v2.18.3, pinned in tools/release/go.mod with syft. CI builds a snapshot on every pull request
+# (make test-release: `goreleaser release --snapshot --clean --skip=sign`, which publishes nothing and needs no
+# credentials) and smoke-tests its image. A `v*` tag runs .github/workflows/release.yml, which repeats CI and then
+# make release: cosign keyless signing, the GHCR push and the Homebrew formula.
 version: 2
 
 project_name: millstream
@@ -78,6 +78,32 @@ docker_signs:
   - cmd: cosign
     args: ["sign", "--yes", "${artifact}@${digest}"]
     artifacts: images
+
+# Note: GoReleaser deprecates `brews:` in favor of `homebrew_casks:`, but
+# casks generate macOS-only Cask DSL files (`brew install --cask`) that
+# break Linux installs and require a different `brew install` command.
+# `brews:` still produces the Formula we want for a CLI distributed on
+# both macOS and Linux. Revisit if/when GoReleaser ships a
+# `homebrew_formulas:` key or removes `brews:` outright.
+# The formula goes at the tap's root, next to fngr.rb and gomddoc.rb. A snapshot writes it into dist/ and uploads
+# nothing (skip_upload: auto).
+brews:
+  - name: millstream
+    repository:
+      owner: monolithiclab
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    homepage: "https://github.com/monolithiclab/millstream"
+    description: "Pipeline platform for work that mixes code, LLM agents and human decisions"
+    license: "Apache-2.0"
+    skip_upload: auto
+    install: |
+      bin.install "millstream"
+    test: |
+      system "#{bin}/millstream", "version"
+
+snapshot:
+  version_template: "0.0.0-snapshot"
 
 changelog:
   use: git

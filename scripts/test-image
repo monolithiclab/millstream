@@ -3,11 +3,13 @@
 # UI's e2e fixture (builtin steps only) serves the built web UI, not the placeholder, its assets and the API.
 # run listens on the container's loopback only (it refuses anything else until serve), so a container of the node
 # image joins its network namespace to fetch the pages.
-# Usage: scripts/test-image <image> <node image>
+# With a version, the binary must print exactly `millstream <version>` (make test-release checks the snapshot's).
+# Usage: scripts/test-image <image> <node image> [version]
 set -euo pipefail
 
 image=$1
 node_image=$2
+want_version=${3:-}
 root=$(cd "$(dirname "$0")/.." && pwd)
 name=millstream-test-image-$$
 
@@ -17,6 +19,10 @@ trap cleanup EXIT
 version=$(docker run --rm "$image" version)
 [ -n "$version" ] || { echo "test-image: version printed nothing" >&2; exit 1; }
 echo "version: $version"
+if [ -n "$want_version" ] && [ "$version" != "millstream $want_version" ]; then
+	echo "test-image: version is $version, want millstream $want_version" >&2
+	exit 1
+fi
 
 docker run -d --name "$name" -v "$root/ui/e2e/fixture:/pkg:ro" "$image" run /pkg >/dev/null
 
