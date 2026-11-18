@@ -91,8 +91,11 @@ func TestRealContainer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
+	// The pin is the image id under Docker's classic image store, and repo@digest under the containerd one (the
+	// default on a fresh install), which gives a locally built image a repository digest.
 	if a.Kind != pipeline.KindContainer || a.Version != "1.0.0" || a.Image != repo+":1.0.0" ||
-		!strings.HasPrefix(a.Pin, "sha256:") || a.ImageDigest != a.Pin || !a.Unpinned || a.Input == nil {
+		!strings.HasPrefix(a.ImageDigest, "sha256:") || (a.Pin != a.ImageDigest && a.Pin != repo+"@"+a.ImageDigest) ||
+		!a.Unpinned || a.Input == nil {
 		t.Fatalf("resolved %+v", a)
 	}
 
