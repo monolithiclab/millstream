@@ -6,16 +6,20 @@ on:
   workflow_dispatch:
   workflow_call:
 
+# A newer push supersedes a pull request's run. Called from release.yml, github.workflow and github.event_name are the
+# caller's (Release, push): that run has a group of its own and is never cancelled.
 concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  group: ci-${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
-permissions:
-  contents: read
+# Nothing at workflow scope; each job asks for what it reads.
+permissions: {}
 
 jobs:
   ci:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -32,6 +36,8 @@ jobs:
   # matrix and the chaos suites) is the manual Scenarios workflow.
   e2e:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -45,6 +51,8 @@ jobs:
   # The web UI: typecheck, lint, format and Vitest, in the node image pinned in ui/images.mk (D35).
   ui:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -55,6 +63,8 @@ jobs:
   # The built web UI under Playwright and axe, in the Playwright image pinned in ui/images.mk.
   ui-e2e:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -70,6 +80,8 @@ jobs:
   # config and systemd-analyze. Nothing is pushed; the release job below checks the image a release ships.
   image:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -81,6 +93,8 @@ jobs:
   # image smoke-tested at the snapshot version, so a release tag only repeats what this job proved. Publishes nothing.
   release:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
