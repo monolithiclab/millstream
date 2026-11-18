@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useLocation } from 'react-router-dom';
 import { HelpTip } from '../common/HelpTip';
@@ -34,7 +34,9 @@ export function ScreenPage({
   const heading = useRef<HTMLHeadingElement>(null);
   const documentTitle = t('app.pageTitle', { page: title });
 
-  useEffect(() => {
+  // A layout effect: the title changes in the commit that shows the heading. A passive effect runs in a later task
+  // when the render outlasts the scheduler's frame, so the new heading shows under the previous screen's title.
+  useLayoutEffect(() => {
     document.title = documentTitle;
   }, [documentTitle]);
 

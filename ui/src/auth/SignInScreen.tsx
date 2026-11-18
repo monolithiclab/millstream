@@ -1,4 +1,4 @@
-import { useEffect, useId, useState, type FormEvent } from 'react';
+import { useId, useLayoutEffect, useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ApiError, type Api } from '../api/api';
 import type { Session } from '../api/schema';
@@ -15,7 +15,8 @@ export function SignInScreen({ api, onSignedIn }: { api: Api; onSignedIn: (sessi
   const errorId = useId();
   const title = t('signIn.title');
 
-  useEffect(() => {
+  // A layout effect, as ScreenPage's: the title changes in the commit that shows the screen.
+  useLayoutEffect(() => {
     document.title = t('app.pageTitle', { page: title });
   }, [t, title]);
 
