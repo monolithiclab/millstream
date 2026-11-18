@@ -1,0 +1,94 @@
+#!/usr/bin/env bash
+# Test of the install script (make test-release) against the GoReleaser snapshot in dist/, served from a loopback
+# HTTP server: a checksum-verified install without cosign, MILLSTREAM_REQUIRE_COSIGN, a corrupted archive, and the
+# ~/.local/bin fallback. The snapshot is unsigned, so the signature path itself runs only against a real release.
+# Usage: scripts/test-install [version]   (default: the snapshot's 0.0.0-snapshot)
+set -euo pipefail
+
+version=${1:-0.0.0-snapshot}
+root=$(cd "$(dirname "$0")/.." && pwd)
+install_sh=$root/scripts/install.sh
+work=$(mktemp -d)
+server_pid=
+
+cleanup() {
+	[ -z "$server_pid" ] || kill "$server_pid" 2>/dev/null || true
+	rm -rf "$work"
+}
+trap cleanup EXIT
+
+fail() { echo "test-install: $*" >&2; exit 1; }
+
+[ -s "$root/dist/SHA256SUMS" ] || fail "no dist/SHA256SUMS: run make release-snapshot first"
+
+# The script's tools, linked into one directory used as the whole PATH: cosign (and sudo) are left out.
+tools=$work/tools
+mkdir "$tools"
+for t in sh curl tar awk sed head uname mktemp install chmod mkdir rm cat dirname sha256sum shasum; do
+	if p=$(command -v "$t"); then ln -s "$p" "$tools/$t"; fi
+done
+
+# Serve dist/ under /v<version>/ and a corrupted copy under /bad/v<version>/; python binds port 0 and prints it.
+mkdir -p "$work/www/bad/v$version"
+ln -s "$root/dist" "$work/www/v$version"
+cp "$root"/dist/SHA256SUMS "$root"/dist/*.tar.gz "$work/www/bad/v$version/"
+for f in "$work/www/bad/v$version/"*.tar.gz; do
+	printf 'X' | dd of="$f" bs=1 seek=10 conv=notrunc 2>/dev/null
+done
+python3 -I -c '
+import http.server, functools, sys
+h = functools.partial(http.server.SimpleHTTPRequestHandler, directory=sys.argv[1])
+h.log_message = lambda *a: None
+s = http.server.ThreadingHTTPServer(("127.0.0.1", 0), h)
+print(s.server_address[1], flush=True)
+s.serve_forever()
+' "$work/www" >"$work/port" 2>"$work/server.log" &
+server_pid=$!
+for _ in $(seq 100); do [ -s "$work/port" ] && break; sleep 0.05; done
+port=$(cat "$work/port")
+[ -n "$port" ] || fail "server did not start: $(cat "$work/server.log")"
+base=http://127.0.0.1:$port
+
+# run <name> <extra env>... : runs install.sh with the test's PATH, output in $work/<name>.out and .err; returns its status
+run() {
+	local name=$1
+	shift
+	env -i PATH="$tools" HOME="$work/home" TMPDIR="$work" MILLSTREAM_VERSION="$version" "$@" \
+		sh "$install_sh" >"$work/$name.out" 2>"$work/$name.err"
+}
+
+mkdir "$work/home"
+good=$work/good
+
+# Default case: installs, prints its version, and says the signature was not checked.
+run ok MILLSTREAM_BASE_URL="$base" MILLSTREAM_INSTALL_DIR="$good" || { cat "$work/ok.err" >&2; fail "install failed"; }
+[ -x "$good/millstream" ] || fail "binary not installed in $good"
+got=$("$good/millstream" version)
+[ "$got" = "millstream $version" ] || fail "version is '$got', want 'millstream $version'"
+grep -q 'cosign not found; SHA256SUMS signature not checked' "$work/ok.err" || fail "stderr does not name the missing signature check"
+grep -q 'Checksum verified' "$work/ok.out" || fail "checksum was not verified"
+echo "ok: installed and verified checksum, $got"
+
+# MILLSTREAM_REQUIRE_COSIGN without cosign: refuses, installs nothing.
+if run req MILLSTREAM_BASE_URL="$base" MILLSTREAM_INSTALL_DIR="$work/req" MILLSTREAM_REQUIRE_COSIGN=1; then
+	fail "install succeeded with MILLSTREAM_REQUIRE_COSIGN and no cosign"
+fi
+grep -q 'MILLSTREAM_REQUIRE_COSIGN is set but cosign is not installed' "$work/req.err" || fail "wrong error: $(cat "$work/req.err")"
+[ ! -e "$work/req/millstream" ] || fail "binary installed despite MILLSTREAM_REQUIRE_COSIGN"
+echo "ok: MILLSTREAM_REQUIRE_COSIGN refuses without cosign"
+
+# A corrupted archive: checksum mismatch, nothing installed.
+if run bad MILLSTREAM_BASE_URL="$base/bad" MILLSTREAM_INSTALL_DIR="$work/bad"; then
+	fail "install succeeded with a corrupted archive"
+fi
+grep -q 'checksum mismatch' "$work/bad.err" || fail "wrong error: $(cat "$work/bad.err")"
+[ ! -e "$work/bad/millstream" ] || fail "corrupted binary installed"
+echo "ok: corrupted archive rejected"
+
+# An unwritable default directory and no MILLSTREAM_INSTALL_DIR: ~/.local/bin, with a PATH hint.
+mkdir -p "$work/ro"
+chmod 555 "$work/ro"
+run home MILLSTREAM_BASE_URL="$base" MILLSTREAM_DEFAULT_DIR="$work/ro" || { cat "$work/home.err" >&2; fail "fallback install failed"; }
+[ -x "$work/home/.local/bin/millstream" ] || fail "binary not installed in ~/.local/bin"
+grep -q "is not on your PATH" "$work/home.err" || fail "no PATH hint: $(cat "$work/home.err")"
+echo "ok: fell back to ~/.local/bin with a PATH hint"
