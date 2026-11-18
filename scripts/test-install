@@ -92,3 +92,15 @@ run home MILLSTREAM_BASE_URL="$base" MILLSTREAM_DEFAULT_DIR="$work/ro" || { cat 
 [ -x "$work/home/.local/bin/millstream" ] || fail "binary not installed in ~/.local/bin"
 grep -q "is not on your PATH" "$work/home.err" || fail "no PATH hint: $(cat "$work/home.err")"
 echo "ok: fell back to ~/.local/bin with a PATH hint"
+
+# MILLSTREAM_BASE_URL without MILLSTREAM_VERSION: refuses.
+if run nover MILLSTREAM_BASE_URL="$base" MILLSTREAM_INSTALL_DIR="$work/nover" MILLSTREAM_VERSION=; then
+	fail "install succeeded with MILLSTREAM_BASE_URL and no MILLSTREAM_VERSION"
+fi
+grep -q 'MILLSTREAM_VERSION is required' "$work/nover.err" || fail "wrong error: $(cat "$work/nover.err")"
+echo "ok: MILLSTREAM_BASE_URL requires MILLSTREAM_VERSION"
+
+# A version with its leading v installs the same release.
+run vtag MILLSTREAM_BASE_URL="$base" MILLSTREAM_INSTALL_DIR="$work/vtag" MILLSTREAM_VERSION="v$version" || { cat "$work/vtag.err" >&2; fail "install with a leading v failed"; }
+[ "$("$work/vtag/millstream" version)" = "millstream $version" ] || fail "leading-v install has the wrong version"
+echo "ok: leading v accepted"
