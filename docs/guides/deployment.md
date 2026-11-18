@@ -26,9 +26,11 @@ binary with the UI embedded, then the distroless runtime. Every base image is pi
 published yet: GoReleaser ([`.goreleaser.yaml`](../../.goreleaser.yaml)) builds snapshots only. When releases start,
 `SHA256SUMS` carries a cosign keyless signature (`SHA256SUMS.sigstore.json`) and the image is signed by digest:
 
+Substitute the tag being verified for `v0.1.0`:
+
 ```sh
 cosign verify-blob --bundle SHA256SUMS.sigstore.json \
-  --certificate-identity-regexp '^https://github.com/monolithiclab/millstream/' \
+  --certificate-identity https://github.com/monolithiclab/millstream/.github/workflows/release.yml@refs/tags/v0.1.0 \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com SHA256SUMS
 sha256sum --ignore-missing -c SHA256SUMS
 ```

@@ -135,7 +135,7 @@ verify_checksum() {
 # verify.
 verify_signature() {
 	if ! need cosign; then
-		if [ -n "${MILLSTREAM_REQUIRE_COSIGN:-}" ]; then
+		if [ "${MILLSTREAM_REQUIRE_COSIGN:-}" = 1 ]; then
 			die "MILLSTREAM_REQUIRE_COSIGN is set but cosign is not installed"
 		fi
 		warn "cosign not found; SHA256SUMS signature not checked (it shares an origin with the archive)."
@@ -148,10 +148,10 @@ verify_signature() {
 		die "cosign is installed but the signature bundle for ${3} could not be downloaded"
 
 	cosign verify-blob --bundle "$bundle" \
-		--certificate-identity-regexp "^https://github.com/${REPO}/" \
+		--certificate-identity "https://github.com/${REPO}/.github/workflows/release.yml@refs/tags/${3}" \
 		--certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
-		"$1" >/dev/null 2>&1 ||
-		die "cosign could not verify SHA256SUMS for ${3}; refusing to install"
+		"$1" >/dev/null 2>"${1}.cosign.err" ||
+		{ cat "${1}.cosign.err" >&2; die "cosign could not verify SHA256SUMS for ${3}; refusing to install"; }
 
 	info "Signature verified."
 }
