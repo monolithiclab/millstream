@@ -20,7 +20,8 @@ docs: ## Check Markdown links and 120-column prose
 
 .PHONY: lint-shell
 lint-shell:
-	@shellcheck scripts/check-docs scripts/test-times scripts/test-image scripts/test-deploy
+	@shellcheck scripts/check-docs scripts/test-times scripts/test-image scripts/test-deploy scripts/test-install
+	@shellcheck -s sh scripts/install.sh
 
 # No store query binds a bare LIMIT parameter, which has SQLite compile the statement again at every run: the
 # queries use limitParam (internal/store/sqlstore/read.go).
@@ -265,6 +266,7 @@ SNAPSHOT_IMAGE = ghcr.io/monolithiclab/millstream:$(SNAPSHOT_VERSION)-amd64
 test-release: release-snapshot ## Build the GoReleaser snapshot and smoke-test it: Homebrew formula, image at its version
 	@test -s dist/homebrew/millstream.rb || { echo "test-release: no Homebrew formula in dist/" >&2; exit 1; }
 	@scripts/test-image $(SNAPSHOT_IMAGE) $(UI_NODE_IMAGE) $(SNAPSHOT_VERSION)
+	@scripts/test-install
 
 # The release itself, run only by .github/workflows/release.yml on a v* tag, with its credentials in the environment.
 .PHONY: release
