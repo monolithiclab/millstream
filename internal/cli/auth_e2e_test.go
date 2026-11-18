@@ -91,10 +91,10 @@ func Test_serveWithTokenAndTLS(t *testing.T) {
 	}
 
 	// The CLI sends MILLSTREAM_TOKEN; it trusts the certificate through SSL_CERT_FILE in real use, the test's
-	// client here.
+	// client here. The package is the fixture with its stub action, not the built fake action runPackage places:
+	// nothing runs, and uploading a 4 MB binary under -race outlasts the client's timeout on a CI runner.
 	var cliOut, cliErr bytes.Buffer
-	pkg := runPackage(t, "run")
-	code := Run(ctx, []string{"apply", pkg}, IO{In: strings.NewReader(""), Out: &cliOut, Err: &cliErr}, "dev",
+	code := Run(ctx, []string{"apply", fixture("run")}, IO{In: strings.NewReader(""), Out: &cliOut, Err: &cliErr}, "dev",
 		func(rt *Runtime) {
 			env := map[string]string{ServerEnv: base, TokenEnv: testToken}
 			rt.Env = func(k string) (string, bool) { v, ok := env[k]; return v, ok }
