@@ -70,7 +70,7 @@ func (c InitActionCmd) Run(rt *Runtime) error {
 	}
 	fmt.Fprintf(rt.IO.Out, "created %s\n", dir)
 	if c.Lang == scaffold.LangGo {
-		fmt.Fprintf(rt.IO.Out, "next: point go.mod at the SDK, build as main.go says, then millstream test action %s\n",
+		fmt.Fprintf(rt.IO.Out, "next: go mod tidy, build as main.go says, then millstream test action %s\n",
 			dir)
 		return nil
 	}
