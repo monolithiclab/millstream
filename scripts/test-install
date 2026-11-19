@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 # Test of the install script (make test-release) against the GoReleaser snapshot in dist/, served from a loopback
-# HTTP server: a checksum-verified install without cosign, MILLSTREAM_REQUIRE_COSIGN, a corrupted archive, and the
-# ~/.local/bin fallback. The snapshot is unsigned, so the signature path itself runs only against a real release.
-# Usage: scripts/test-install [version]   (default: the snapshot's 0.0.0-snapshot)
+# HTTP server: a checksum-verified install without cosign, one with shasum alone (macOS), MILLSTREAM_REQUIRE_COSIGN, a
+# corrupted archive, and the ~/.local/bin fallback. The snapshot is unsigned, so the signature path itself runs only
+# against a real release.
+# Usage: scripts/test-install <version>   (make test-release passes the snapshot's version)
 set -euo pipefail
 
-version=${1:-0.0.0-snapshot}
+version=${1:?usage: scripts/test-install <version>}
 root=$(cd "$(dirname "$0")/.." && pwd)
 install_sh=$root/scripts/install.sh
 work=$(mktemp -d)
@@ -21,10 +22,11 @@ fail() { echo "test-install: $*" >&2; exit 1; }
 
 [ -s "$root/dist/SHA256SUMS" ] || fail "no dist/SHA256SUMS: run make release-snapshot first"
 
-# The script's tools, linked into one directory used as the whole PATH: cosign (and sudo) are left out.
+# The script's tools, linked into one directory used as the whole PATH: cosign (and sudo) are left out. gzip is
+# GNU tar's, which execs it for -z (bsdtar has it built in); a tool the host lacks is skipped.
 tools=$work/tools
 mkdir "$tools"
-for t in sh curl tar awk sed head uname mktemp install chmod mkdir rm cat dirname sha256sum shasum; do
+for t in sh curl tar gzip awk sed head uname mktemp install chmod mkdir rm cat sha256sum shasum; do
 	if p=$(command -v "$t"); then ln -s "$p" "$tools/$t"; fi
 done
 
@@ -49,11 +51,13 @@ port=$(cat "$work/port")
 [ -n "$port" ] || fail "server did not start: $(cat "$work/server.log")"
 base=http://127.0.0.1:$port
 
-# run <name> <extra env>... : runs install.sh with the test's PATH, output in $work/<name>.out and .err; returns its status
+# run <name> <extra env>... : runs install.sh with the test's PATH ($path, default $tools), output in
+# $work/<name>.out and .err; returns its status
+path=$tools
 run() {
 	local name=$1
 	shift
-	env -i PATH="$tools" HOME="$work/home" TMPDIR="$work" MILLSTREAM_VERSION="$version" "$@" \
+	env -i PATH="$path" HOME="$work/home" TMPDIR="$work" MILLSTREAM_VERSION="$version" "$@" \
 		sh "$install_sh" >"$work/$name.out" 2>"$work/$name.err"
 }
 
@@ -68,6 +72,23 @@ got=$("$good/millstream" version)
 grep -q 'cosign not found; SHA256SUMS signature not checked' "$work/ok.err" || fail "stderr does not name the missing signature check"
 grep -q 'Checksum verified' "$work/ok.out" || fail "checksum was not verified"
 echo "ok: installed and verified checksum, $got"
+
+# shasum alone, as on macOS: the same PATH without sha256sum.
+if [ -e "$tools/shasum" ]; then
+	path=$work/tools-shasum
+	mkdir "$path"
+	for t in "$tools"/*; do
+		[ "${t##*/}" = sha256sum ] || ln -s "$(readlink "$t")" "$path/${t##*/}"
+	done
+	run shasum MILLSTREAM_BASE_URL="$base" MILLSTREAM_INSTALL_DIR="$work/shasum" ||
+		{ cat "$work/shasum.err" >&2; fail "install with shasum alone failed"; }
+	path=$tools
+	grep -q 'Checksum verified' "$work/shasum.out" || fail "checksum was not verified with shasum"
+	[ "$("$work/shasum/millstream" version)" = "millstream $version" ] || fail "shasum install has the wrong version"
+	echo "ok: installed and verified checksum with shasum alone"
+else
+	echo "skip: no shasum on this host, the shasum-only case did not run"
+fi
 
 # MILLSTREAM_REQUIRE_COSIGN without cosign: refuses, installs nothing.
 if run req MILLSTREAM_BASE_URL="$base" MILLSTREAM_INSTALL_DIR="$work/req" MILLSTREAM_REQUIRE_COSIGN=1; then
@@ -85,10 +106,8 @@ grep -q 'checksum mismatch' "$work/bad.err" || fail "wrong error: $(cat "$work/b
 [ ! -e "$work/bad/millstream" ] || fail "corrupted binary installed"
 echo "ok: corrupted archive rejected"
 
-# An unwritable default directory and no MILLSTREAM_INSTALL_DIR: ~/.local/bin, with a PATH hint.
-mkdir -p "$work/ro"
-chmod 555 "$work/ro"
-run home MILLSTREAM_BASE_URL="$base" MILLSTREAM_DEFAULT_DIR="$work/ro" || { cat "$work/home.err" >&2; fail "fallback install failed"; }
+# A missing default directory (unwritable, even as root) and no MILLSTREAM_INSTALL_DIR: ~/.local/bin, with a PATH hint.
+run home MILLSTREAM_BASE_URL="$base" MILLSTREAM_DEFAULT_DIR="$work/missing" || { cat "$work/home.err" >&2; fail "fallback install failed"; }
 [ -x "$work/home/.local/bin/millstream" ] || fail "binary not installed in ~/.local/bin"
 grep -q "is not on your PATH" "$work/home.err" || fail "no PATH hint: $(cat "$work/home.err")"
 echo "ok: fell back to ~/.local/bin with a PATH hint"

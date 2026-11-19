@@ -248,6 +248,7 @@ test-deploy: ## Check deploy/: docker compose config, and systemd-analyze verify
 # GoReleaser and syft are pinned in their own tools module (tools/release/go.mod), so their dependencies never move
 # the linters'. syft is built onto the PATH GoReleaser runs it from. No signing and no publishing in a snapshot.
 RELEASE_TOOLS = .build/release-tools
+GORELEASER = PATH=$(CURDIR)/$(RELEASE_TOOLS):$$PATH goreleaser
 
 .PHONY: release-tools
 release-tools:
@@ -255,7 +256,7 @@ release-tools:
 
 .PHONY: release-snapshot
 release-snapshot: release-tools ## Build a GoReleaser snapshot into dist/: archives, SBOMs, checksums, local images; publishes nothing
-	@PATH=$(CURDIR)/$(RELEASE_TOOLS):$$PATH goreleaser release --snapshot --clean --skip=sign
+	@$(GORELEASER) release --snapshot --clean --skip=sign
 
 # What CI checks on every pull request (its release job), so a tag only repeats it: the snapshot builds, its formula
 # is written, and its amd64 image serves the built UI at the snapshot version (snapshot.version_template).
@@ -266,9 +267,9 @@ SNAPSHOT_IMAGE = ghcr.io/monolithiclab/millstream:$(SNAPSHOT_VERSION)-amd64
 test-release: release-snapshot ## Build the GoReleaser snapshot and smoke-test it: Homebrew formula, image at its version
 	@test -s dist/homebrew/millstream.rb || { echo "test-release: no Homebrew formula in dist/" >&2; exit 1; }
 	@scripts/test-image $(SNAPSHOT_IMAGE) $(UI_NODE_IMAGE) $(SNAPSHOT_VERSION)
-	@scripts/test-install
+	@scripts/test-install $(SNAPSHOT_VERSION)
 
 # The release itself, run only by .github/workflows/release.yml on a v* tag, with its credentials in the environment.
 .PHONY: release
 release: release-tools
-	@PATH=$(CURDIR)/$(RELEASE_TOOLS):$$PATH goreleaser release --clean
+	@$(GORELEASER) release --clean
