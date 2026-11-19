@@ -105,6 +105,11 @@ brews:
 snapshot:
   version_template: "0.0.0-snapshot"
 
+# The Go SDK's sdk/go/v* tags share the repository: kept out of `git describe`, they never become the previous tag
+# a changelog starts from.
+git:
+  ignore_tags: ["sdk/*"]
+
 changelog:
   use: git
   sort: asc

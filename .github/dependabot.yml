@@ -37,6 +37,9 @@ updates:
       day: monday
     commit-message:
       prefix: "chore(docker)"
+    # The Dockerfile's node stage must equal UI_NODE_IMAGE in ui/images.mk, so the two are bumped by hand together.
+    ignore:
+      - dependency-name: node
     groups:
       docker-minor-patch:
         update-types: [minor, patch]

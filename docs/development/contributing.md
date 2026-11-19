@@ -49,7 +49,8 @@ Parked ideas and follow-ups go in the [roadmap](../../ROADMAP.md), not in code c
 Only the owner pushes tags. A `v*` tag starts the release workflow (`.github/workflows/release.yml`); `make
 test-release` runs the same build as a snapshot in CI first.
 
-1. If `sdk/go` changed, tag `sdk/go/vX.Y.Z` and require it in `internal/scaffold/templates/action/go.mod.tmpl`.
+1. If `sdk/go` changed, require `sdk/go/vX.Y.Z` in `internal/scaffold/templates/action/go.mod.tmpl` and tag it on
+   the release commit, the one the rc tag goes on.
 2. Tag `vX.Y.Z-rc.N`: a prerelease, with no Homebrew formula and no `latest` image tag.
 3. Check the workflow's `verify` job: signatures, the install script, a scaffolded action built against the proxy.
 4. First release only: set the GHCR package `millstream` public after the rc, so the image pulls without a login.
