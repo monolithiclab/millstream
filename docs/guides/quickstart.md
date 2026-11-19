@@ -25,7 +25,7 @@ millstream version
 ```
 
 ```text
-millstream 2847931
+millstream 0.1.0
 ```
 
 The container image is for servers ([deployment guide](deployment.md)): its runtime has no Python for the example's
@@ -77,16 +77,16 @@ millstream inbox
 ```
 
 ```text
-listings run_20261117T102859Z-19d734e3_adhoc waitingReview
+listings run_20261119T145617Z-94e65c9e_adhoc waitingReview
   listings.raw 6
   listings.scored 6
   listings.shortlist 3
   listings.unique 6
   trigger.adhoc 1
 DELIVERY                             PIPELINE  STEP    INBOX     ITEM   PARKED                DEADLINE              DISPLAY
-dl_39efc1f181763817d37ca01b681788e2  listings  review  analysts  L1002  2026-11-17T10:28:59Z  2026-11-20T10:28:59Z  L1002: 70 m² in Nantes at 210000 EUR, score 100
-dl_c32e6f8be019183605aff4b7bfcd967e  listings  review  analysts  L1004  2026-11-17T10:28:59Z  2026-11-20T10:28:59Z  L1004: 45 m² in Lille at 150000 EUR, score 84
-dl_5a32a39a522153dd5aa37b8c4afeaeb9  listings  review  analysts  L1006  2026-11-17T10:28:59Z  2026-11-20T10:28:59Z  L1006: 80 m² in Lyon at 275000 EUR, score 79
+dl_1eb30889eef851fc233754ecdc8fedf3  listings  review  analysts  L1002  2026-11-19T14:56:17Z  2026-11-22T14:56:17Z  L1002: 70 m² in Nantes at 210000 EUR, score 100
+dl_0ed035ccd9218237eaa8b52c319bb5a5  listings  review  analysts  L1004  2026-11-19T14:56:17Z  2026-11-22T14:56:17Z  L1004: 45 m² in Lille at 150000 EUR, score 84
+dl_95ada156ea32c581dbb9219410622d41  listings  review  analysts  L1006  2026-11-19T14:56:17Z  2026-11-22T14:56:17Z  L1006: 80 m² in Lyon at 275000 EUR, score 79
 ```
 
 Six listings were crawled and scored, three scored at least `minScore` (60), and those three wait for a person: the
@@ -111,47 +111,47 @@ and **Reject…** (`r`) asks for one of the pipeline's reason codes.
 The CLI decides too. From a second terminal in the same directory:
 
 ```sh
-millstream inbox approve dl_c32e6f8be019183605aff4b7bfcd967e --set /score=90
-millstream inbox reject dl_5a32a39a522153dd5aa37b8c4afeaeb9 --reason overpriced
+millstream inbox approve dl_0ed035ccd9218237eaa8b52c319bb5a5 --set /score=90
+millstream inbox reject dl_95ada156ea32c581dbb9219410622d41 --reason overpriced
 millstream status
 ```
 
 ```text
 Deciding version 1 of the review, its current one: pass --version to decide the version you saw.
-dl_c32e6f8be019183605aff4b7bfcd967e approved (delivery done)
+dl_0ed035ccd9218237eaa8b52c319bb5a5 approved (delivery done)
 Deciding version 1 of the review, its current one: pass --version to decide the version you saw.
-dl_5a32a39a522153dd5aa37b8c4afeaeb9 rejected (delivery filtered)
+dl_95ada156ea32c581dbb9219410622d41 rejected (delivery filtered)
 PIPELINE  STATE   REVISION  PAUSED STEPS
 listings  active  1         -
 
 RUN                                  PIPELINE  STATE      STARTED               ITEMS  OPEN DEAD LETTERS
-run_20261117T102859Z-19d734e3_adhoc  listings  succeeded  2026-11-17T10:28:59Z  24     0
+run_20261119T145617Z-94e65c9e_adhoc  listings  succeeded  2026-11-19T14:56:17Z  24     0
 ```
 
 With every review decided, the run succeeds. Its report shows the critical path, with the time spent waiting on you
 as `REVIEW`, and the agent's cost from the recorded tokens:
 
 ```sh
-millstream report listings run_20261117T102859Z-19d734e3_adhoc
+millstream report listings run_20261119T145617Z-94e65c9e_adhoc
 ```
 
 ```text
-Run run_20261117T102859Z-19d734e3_adhoc of listings (trigger): succeeded
-Started 2026-11-17T10:28:59Z, settled 2026-11-17T10:29:50Z, 50.731s, cost $0.0108
+Run run_20261119T145617Z-94e65c9e_adhoc of listings (trigger): succeeded
+Started 2026-11-19T14:56:17Z, settled 2026-11-19T14:56:28Z, 11.02s, cost $0.0108
 Items: listings.approved 2, listings.raw 6, listings.scored 6, listings.shortlist 3, listings.unique 6, trigger.adhoc 1
 
-Critical path (50.731s):
+Critical path (11.02s):
   STEP       DELIVERY                             LATENCY  WAIT  WORK  BACKOFF  REVIEW   SHARE
-  crawl      dl_be37e4629320635b66cd8c1becf8a917  39ms     4ms   35ms  0s       0s       0%
-  dedupe     dl_3f3c2fc759519cc463c327470fe187cf  12ms     11ms  1ms   0s       0s       0%
-  score      dl_0ff6bf28d0eabb9da1d5594e77fb8570  91ms     69ms  22ms  0s       0s       0%
-  keep-good  dl_d0c51aeda5d58a9c54f86cd18a75b30e  2ms      1ms   1ms   0s       0s       0%
-  review     dl_5a32a39a522153dd5aa37b8c4afeaeb9  50.587s  1ms   0s    0s       50.586s  100%
+  crawl      dl_84d4d4841686535f4d317f63a2f8a80d  61ms     5ms   56ms  0s       0s       1%
+  dedupe     dl_1c2c7b9ed4f2b9962d85015a9b04056f  14ms     13ms  1ms   0s       0s       0%
+  score      dl_fd77e38b8f05f99b282a7f307207fd5f  66ms     43ms  23ms  0s       0s       1%
+  keep-good  dl_cb59f0fd2ebaccaaa1675898b1d54ee6  5ms      3ms   2ms   0s       0s       0%
+  review     dl_95ada156ea32c581dbb9219410622d41  10.874s  1ms   0s    0s       10.873s  99%
 ...
 ```
 
 Fire the trigger again while the engine runs. The crawler emits the same six listings, and the dedupe holds them all
-back, so nothing reaches the agent:
+back, so nothing reaches the agent. The run takes a second or so, and `status` shows it `running` until then:
 
 ```sh
 millstream trigger listings adhoc
@@ -159,12 +159,12 @@ millstream status --limit 1
 ```
 
 ```text
-run_20261117T102953Z-d3748db7_adhoc
+run_20261119T145631Z-7c6aa6cb_adhoc
 PIPELINE  STATE   REVISION  PAUSED STEPS
 listings  active  1         -
 
 RUN                                  PIPELINE  STATE      STARTED               ITEMS  OPEN DEAD LETTERS
-run_20261117T102953Z-d3748db7_adhoc  listings  succeeded  2026-11-17T10:29:53Z  7      0
+run_20261119T145631Z-7c6aa6cb_adhoc  listings  succeeded  2026-11-19T14:56:31Z  7      0
 ```
 
 In the UI, **Graph** shows the steps with what flowed through them, **Runs** each run's timeline, and an item's page

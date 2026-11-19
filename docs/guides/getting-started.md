@@ -38,7 +38,7 @@ millstream version
 ```
 
 ```text
-millstream 8f3b815
+millstream 0.1.0
 ```
 
 The [quickstart](quickstart.md) shows the install script, for machines without Homebrew. The released binary embeds
