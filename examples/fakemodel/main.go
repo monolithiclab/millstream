@@ -1,7 +1,7 @@
 // Command fakemodel is a stand-in for an OpenAI-compatible model, on http://127.0.0.1:8099/v1: it scores the listing
 // a prompt describes from its price per square metre, so an agent step can be recorded without a model or a key.
-// The getting-started guide records its agent step against it (go run ./examples/fakemodel), and the listings
-// example's recordings come from it (make recordings).
+// The getting-started guide records its agent step against it (go run main.go, downloaded from the tagged source),
+// and the listings example's recordings come from it (make recordings).
 package main
 
 import (

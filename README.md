@@ -21,13 +21,36 @@ steps:
     config: { expr: "item.score >= vars.min_score" }
 ```
 
-**Status:** a proof of concept, not yet released. The five milestones are built and all live on `main`: M1 the core
-engine, M2 agents, containers, budgets and evals, M3 review and the web UI, M4 server deployment with remote nodes
-and failover, M5 insights and self-improvement.
+**Status:** pre-release: v0.1.0 is the first public release. The five milestones are built and all live on `main`:
+M1 the core engine, M2 agents, containers, budgets and evals, M3 review and the web UI, M4 server deployment with
+remote nodes and failover, M5 insights and self-improvement.
 [The quickstart](docs/guides/quickstart.md) runs the example pipeline offline in five minutes,
 [getting started](docs/guides/getting-started.md) walks through what works today, and
 [the post-mortem](docs/reviews/20261020.postmortem.md) says what building it taught. The name is chosen, pending a
 trademark search ([naming note](docs/research/20261014.naming.md)).
+
+## Install
+
+With Homebrew, on macOS or Linux:
+
+```sh
+brew install monolithiclab/tap/millstream
+```
+
+With the install script, which checks the release's checksums, and its signature when `cosign` is installed:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/monolithiclab/millstream/main/scripts/install.sh | sh
+```
+
+With Docker, for servers ([deployment guide](docs/guides/deployment.md)):
+
+```sh
+docker run --rm ghcr.io/monolithiclab/millstream version
+```
+
+From source, with Go and a clone of this repository: `make build` writes `build/millstream`
+([contributing](docs/development/contributing.md)).
 
 ## Documentation
 
@@ -35,7 +58,7 @@ The [documentation index](docs/README.md) lists every page by what you want to d
 
 | Document | Content |
 | --- | --- |
-| [Quickstart](docs/guides/quickstart.md) | Install from source and run the example pipeline offline, to a review in the web UI, in five minutes |
+| [Quickstart](docs/guides/quickstart.md) | Install a release and run the example pipeline offline, to a review in the web UI, in five minutes |
 | [Getting started](docs/guides/getting-started.md) | A tutorial: from nothing to a running pipeline with an agent step and a review, on a laptop |
 | [Agents in production](docs/guides/agents.md) | Validated answers, bounded cost, transcripts, evals and proposals for agent steps |
 | [Deployment](docs/guides/deployment.md) | The container image, Docker Compose, systemd units, remote nodes, backups and upgrades |

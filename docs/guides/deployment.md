@@ -16,23 +16,28 @@ three targets: a laptop, a VPS with Docker Compose, and a VPS with systemd.
 
 | Artefact | Where | Contents |
 | --- | --- | --- |
-| Container image | `make image` (tag `millstream:dev`); releases at `ghcr.io/monolithiclab/millstream` | Distroless static, uid 65532, `ENTRYPOINT ["/millstream"]` |
-| Release archives | `make release-snapshot` writes `dist/`; CI builds and checks it with `make test-release` | `linux`/`darwin` × `amd64`/`arm64`, an SPDX SBOM each, `SHA256SUMS`, the Homebrew formula |
+| Container image | `make image` (tag `millstream:dev`); releases at `ghcr.io/monolithiclab/millstream:<version>`, and `:latest` for the last stable one | Distroless static, uid 65532, `ENTRYPOINT ["/millstream"]` |
+| Release archives | [GitHub Releases](https://github.com/monolithiclab/millstream/releases), installed by Homebrew or `scripts/install.sh`; `make release-snapshot` writes `dist/`, and `make test-release` smoke-tests its image and install script | `linux`/`darwin` × `amd64`/`arm64`, an SPDX SBOM each, `SHA256SUMS`, the Homebrew formula |
 | Compose file | [`deploy/compose/`](../../deploy/compose/) | Postgres 17, an active and a standby engine, two nodes |
 | systemd units | [`deploy/systemd/`](../../deploy/systemd/) | `millstream.service` (engine), `millstream-node.service` (node) |
 
 The image is built from source by the [`Dockerfile`](../../Dockerfile): the UI in the node image `make ui` uses, the
-binary with the UI embedded, then the distroless runtime. Every base image is pinned by digest. Releases are not
-published yet: GoReleaser ([`.goreleaser.yaml`](../../.goreleaser.yaml)) builds snapshots only. When releases start,
-`SHA256SUMS` carries a cosign keyless signature (`SHA256SUMS.sigstore.json`) and the image is signed by digest:
+binary with the UI embedded, then the distroless runtime. Every base image is pinned by digest. Releases are
+published from a `v*` tag by GoReleaser ([`.goreleaser.yaml`](../../.goreleaser.yaml)) and the release workflow: the
+archives, the Homebrew formula and the multi-platform image (from [`Dockerfile.release`](../../Dockerfile.release),
+the same runtime). A prerelease (`v0.2.0-rc.1`) publishes no formula and leaves `latest` where it was. `SHA256SUMS`
+carries a cosign keyless signature (`SHA256SUMS.sigstore.json`) and the image is signed by digest.
 
-Substitute the tag being verified for `v0.1.0`:
+Substitute the tag being verified for `v0.1.0` (image tags carry no `v`):
 
 ```sh
 cosign verify-blob --bundle SHA256SUMS.sigstore.json \
   --certificate-identity https://github.com/monolithiclab/millstream/.github/workflows/release.yml@refs/tags/v0.1.0 \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com SHA256SUMS
 sha256sum --ignore-missing -c SHA256SUMS
+cosign verify ghcr.io/monolithiclab/millstream:0.1.0 \
+  --certificate-identity https://github.com/monolithiclab/millstream/.github/workflows/release.yml@refs/tags/v0.1.0 \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
 ```
 
 ## Laptop

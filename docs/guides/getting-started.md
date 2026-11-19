@@ -24,22 +24,16 @@ flowchart LR
   affordable -->|"listings.ready"| ready[("listings.ready")]
 ```
 
-You need Go (the version in the repository's `go.mod`, 1.27 at the time of writing), Git, and macOS or Linux. Docker
-is optional: it builds the web UI and sandboxes agents, and this tutorial works without it. No model API key is
-needed: the agent step runs against a small local stand-in for a model, then offline from recordings.
+You need Go 1.27 or later, to build the actions, and macOS or Linux. Docker is optional: it sandboxes agents, and
+this tutorial works without it. No model API key is needed: the agent step runs against a small local stand-in for a
+model, then offline from recordings.
 
 ## 2. Install
 
-Clone the repository and build the binary. Keep the checkout's path in a variable: the Go SDK is not published yet,
-so actions point at it.
+Install the binary with Homebrew:
 
 ```sh
-git clone git@github.com:monolithiclab/millstream.git
-cd millstream
-export MILLSTREAM_REPO="$PWD"
-make ui      # optional, needs Docker: builds the web UI, embedded by the next build
-make build   # writes build/millstream
-export PATH="$MILLSTREAM_REPO/build:$PATH"
+brew install monolithiclab/tap/millstream
 millstream version
 ```
 
@@ -47,10 +41,10 @@ millstream version
 millstream 8f3b815
 ```
 
-`go install ./cmd/millstream` works too (it prints `millstream dev` as its version). Without `make ui`, the binary
-serves a page saying the UI was not built; the HTTP API and every CLI command work either way.
+The [quickstart](quickstart.md) shows the install script, for machines without Homebrew. The released binary embeds
+the web UI.
 
-Work in a directory of your own, outside the checkout:
+Work in a directory of your own:
 
 ```sh
 mkdir ~/millstream-tutorial && cd ~/millstream-tutorial
@@ -143,12 +137,11 @@ PASS one name greeted
 listings: 1 passed, 0 failed
 ```
 
-Millstream never builds local actions: you build them where the manifest finds them. Point the action's `go.mod` at
-the SDK in your checkout, build it, then run its fixture, the protocol conformance suite and its eval:
+Millstream never builds local actions: you build them where the manifest finds them. Fetch the Go SDK the action's
+`go.mod` requires, build it, then run its fixture, the protocol conformance suite and its eval:
 
 ```sh
 cd actions/greet
-go mod edit -replace github.com/monolithiclab/millstream/sdk/go=$MILLSTREAM_REPO/sdk/go
 go mod tidy
 go build -o bin/$(go env GOOS)-$(go env GOARCH)/greet .
 millstream test action .
@@ -204,7 +197,7 @@ millstream trigger listings adhoc --payload '{"name":"Ada"}'
 run_20261020T162512Z-a8bab96e_adhoc
 ```
 
-Now start the engine in a second terminal (same directory, same `PATH` and `MILLSTREAM_REPO`). `millstream run`
+Now start the engine in a second terminal (same directory). `millstream run`
 without `--once` keeps running, serves the API and the UI on 127.0.0.1:7070, and picks up the waiting run:
 
 ```sh
@@ -354,7 +347,6 @@ expect:
 Build and test it:
 
 ```sh
-go mod edit -replace github.com/monolithiclab/millstream/sdk/go=$MILLSTREAM_REPO/sdk/go
 go mod tidy
 go build -o bin/$(go env GOOS)-$(go env GOARCH)/crawl .
 millstream test action .
@@ -602,13 +594,12 @@ tests and CI run agents. With a real provider, only the manifest's `runtime.agen
 
 The repository ships the stand-in, [`examples/fakemodel`](../../examples/fakemodel/main.go): an OpenAI-compatible
 endpoint on `127.0.0.1:8099` that scores the listing a prompt describes, `Listing <id> in <city>: <surface> m²,
-condition <condition>, asking <price> EUR`, from its price per square metre. Start it from the checkout in a third
-terminal, where `MILLSTREAM_REPO` is not set yet:
+condition <condition>, asking <price> EUR`, from its price per square metre. It imports the standard library only,
+so it runs from the release's tagged source with no checkout. Start it in a third terminal:
 
 ```sh
-export MILLSTREAM_REPO=~/path/to/millstream   # the checkout of section 2
-cd "$MILLSTREAM_REPO"
-go run ./examples/fakemodel
+mkdir -p ~/millstream-fakemodel && cd ~/millstream-fakemodel
+curl -fsSLO https://raw.githubusercontent.com/monolithiclab/millstream/v0.1.0/examples/fakemodel/main.go && go run main.go
 ```
 
 ```text
