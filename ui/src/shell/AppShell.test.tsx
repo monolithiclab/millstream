@@ -292,7 +292,7 @@ describe('app shell', () => {
     expect(screen.getByRole('heading', { level: 1, name: 'Page not found' })).toBeInTheDocument();
     await user.click(screen.getByRole('link', { name: 'Go to pipelines' }));
     expect(location()).toBe('/pipelines');
-    await waitFor(() => expect(document.title).toBe('Pipelines · Millstream'));
+    expect(document.title).toBe('Pipelines · Millstream');
   });
 
   it.each([
