@@ -5,17 +5,22 @@ estate listings, a dedupe drops the ones already seen, an agent scores each one,
 you approve or reject what is left in the web UI. Every command was run as written; the outputs are real, and your
 ids, times and paths will differ.
 
-You need Go (the version in the repository's `go.mod`), Git, Python 3 and macOS or Linux. Docker is optional: it
-builds the web UI.
+You need macOS or Linux and Python 3, for the example's crawler. No Go, Git or Docker.
 
-## 1. Install from source
+## 1. Install
+
+With Homebrew:
 
 ```sh
-git clone git@github.com:monolithiclab/millstream.git
-cd millstream
-make ui      # optional, needs Docker: builds the web UI, embedded by the next build
-make build   # writes build/millstream
-export PATH="$PWD/build:$PATH"
+brew install monolithiclab/tap/millstream
+millstream version
+```
+
+Or with the install script, which checks the release's checksums (and its signature when `cosign` is installed) and
+writes the binary to `/usr/local/bin` (else `~/.local/bin`), or the directory `MILLSTREAM_INSTALL_DIR` names:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/monolithiclab/millstream/main/scripts/install.sh | sh
 millstream version
 ```
 
@@ -23,11 +28,12 @@ millstream version
 millstream 2847931
 ```
 
-Without `make ui`, the binary serves a page saying the UI was not built; every CLI command works either way.
+The container image is for servers ([deployment guide](deployment.md)): its runtime has no Python for the example's
+crawler.
 
 ## 2. Scaffold the example
 
-Work in a directory of your own, outside the checkout:
+Work in a directory of your own:
 
 ```sh
 mkdir ~/millstream-quickstart && cd ~/millstream-quickstart

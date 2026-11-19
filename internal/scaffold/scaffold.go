@@ -1,7 +1,6 @@
 // Package scaffold writes new pipeline packages and actions from templates embedded in the binary (spec section 13,
 // millstream init). Every scaffold works out of the box: a package passes millstream check and millstream test
-// pipeline, an action's fixtures pass millstream test action once it is built. Go actions use the Go SDK, whose
-// module is not published yet: the generated go.mod says how to point it at a checkout.
+// pipeline, an action's fixtures pass millstream test action once it is built. Go actions require the published Go SDK.
 package scaffold
 
 import (

@@ -5,9 +5,12 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"go/parser"
+	"go/token"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -125,5 +128,20 @@ func TestRecordings(t *testing.T) {
 	}
 	if done != len(listings) {
 		t.Fatalf("%d deliveries done, want %d", done, len(listings))
+	}
+}
+
+// Test_fakemodelStdlibOnly: main.go imports the standard library only, so the getting-started guide can run it with
+// go run main.go from a single downloaded file, outside any module.
+func Test_fakemodelStdlibOnly(t *testing.T) {
+	t.Parallel()
+	f, err := parser.ParseFile(token.NewFileSet(), "main.go", nil, parser.ImportsOnly)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, imp := range f.Imports {
+		if path, _ := strconv.Unquote(imp.Path.Value); strings.Contains(path, ".") {
+			t.Errorf("main.go imports %s: the stand-in model must import the standard library only", path)
+		}
 	}
 }

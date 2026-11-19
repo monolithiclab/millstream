@@ -44,6 +44,17 @@ run once a change is done or a milestone closes, not on every edit; [Testing](te
 
 Parked ideas and follow-ups go in the [roadmap](../../ROADMAP.md), not in code comments.
 
+## Cutting a release
+
+Only the owner pushes tags. A `v*` tag starts the release workflow (`.github/workflows/release.yml`); `make
+test-release` runs the same build as a snapshot in CI first.
+
+1. If `sdk/go` changed, tag `sdk/go/vX.Y.Z` and require it in `internal/scaffold/templates/action/go.mod.tmpl`.
+2. Tag `vX.Y.Z-rc.N`: a prerelease, with no Homebrew formula and no `latest` image tag.
+3. Check the workflow's `verify` job: signatures, the install script, a scaffolded action built against the proxy.
+4. First release only: set the GHCR package `millstream` public after the rc, so the image pulls without a login.
+5. Tag `vX.Y.Z`, which publishes the formula and moves `latest`.
+
 ## Writing documentation
 
 - Each page has one reader and one job: a guide walks a user through a task, a reference page states a contract, a
