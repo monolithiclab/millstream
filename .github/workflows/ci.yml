@@ -105,7 +105,7 @@ jobs:
           go-version-file: go.mod
       # Dockerfile.release has no RUN, so the arm64 image needs no QEMU. The action and its buildkit image are pinned
       # by digest (read from the registry on 2026-10-07): a mutable tag would build every layer a release ships.
-      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
         with:
           driver-opts: image=moby/buildkit:buildx-stable-1@sha256:cec9f139f45e93c5c69c60f8b07cfad9f43f4ef6b6a6cd917527fea5ff2e3dea
       - run: make test-release
