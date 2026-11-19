@@ -208,6 +208,8 @@ first is missing: identity, an accountable owner per agent, and records their ow
   (raised from 500/400 ms during M5). Unit execution in the store
   (about 100 µs a unit through the writer goroutine) dominates; running a unit inline when the connection is free
   would help every store-backed package, and would let the store tests drop their one-processor setting.
+- `internal/cli/serve_e2e_test.go` uploads the built `runPackage` (about 1.8 s under `-race`, through the 30 s
+  client); a stub package would do if the test need not run it.
 - Failover (M4 Task 3): the leadership row records the engine's bound `listen` address, which a standby names to
   clients; a deployment whose engines listen on `0.0.0.0` behind a proxy needs an advertised address key (with
   remote nodes, Task 4). `run` on Postgres takes the lock but has no standby loop: it exits when its store is lost.
