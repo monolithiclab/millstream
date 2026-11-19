@@ -66,16 +66,22 @@ func Test_initAction(t *testing.T) {
 		lang    string
 		files   []string
 		command []string
+		next    string
 	}{
-		{"go", []string{"main.go", "go.mod", "evals/example.yaml", "tests/example.yaml"}, []string{"scorer"}},
-		{"raw", []string{"main.py", "README.md", "tests/example.yaml"}, []string{"python3", "main.py"}},
+		{"go", []string{"main.go", "go.mod", "evals/example.yaml", "tests/example.yaml"}, []string{"scorer"},
+			"next: go mod tidy, build as main.go says, then millstream test action "},
+		{"raw", []string{"main.py", "README.md", "tests/example.yaml"}, []string{"python3", "main.py"},
+			"next: millstream test action "},
 	}
 	for _, tt := range tests {
 		t.Run(tt.lang, func(t *testing.T) {
 			t.Parallel()
 			parent := testdir.New(t)
-			mustRun(t, 0, "init", "action", "scorer", "--lang", tt.lang, "--dir", parent)
+			out, _ := mustRun(t, 0, "init", "action", "scorer", "--lang", tt.lang, "--dir", parent)
 			dir := filepath.Join(parent, "scorer")
+			if !strings.Contains(out, "\n"+tt.next+dir+"\n") {
+				t.Errorf("stdout = %q", out)
+			}
 			for _, f := range tt.files {
 				if _, err := os.Stat(filepath.Join(dir, f)); err != nil {
 					t.Error(err)
